@@ -16,8 +16,9 @@ Windows equivalent is [Windows Runner Host](./windows-runner-host.md).
 **No supported way to run axmc yet.** Since W1's installer pull request no `marshal`
 command line is built and no release carries a macOS file, so axmc has no supported
 way to run its runners until M2's Mac app; the maintainer accepted that gap. A Mac
-that runs the [last command-line release](./cli.md#the-last-command-line-release)
-keeps it. That release is cut from `main` after M1, so its `start` and `build` run
+that runs the last command-line release keeps it; The Last Command-Line Release
+section of [CLI](./cli.md) identifies that release. That release is cut from `main` after M1,
+so its `start` and `build` run
 axmc's pools in Tart VMs; `v0.1.0` predates M1 and refuses `--profile axmc`. That
 release's tag holds this document's procedures with their
 commands: installing `marshal`, `build`, `start` and its clients `status`, `restart`,
@@ -372,7 +373,7 @@ the commands. `start` validates the configuration, opens its log under
 `~/Library/Logs/marshal/`, checks Tart and Softnet, checks the golden VM of each
 configured OS, prepares every pool, and runs every slot until it is stopped. It also holds off idle
 sleep and watches for a sleep or a network change; see
-[Sleep, Wake, and Network Changes](#sleep-wake-and-network-changes). It refuses when
+the Sleep, Wake, and Network Changes section. It refuses when
 the configuration is invalid, when a prerequisite refuses, when a configured OS's golden VM is
 missing or mismatched, or when no pool can start. Nothing starts it at sign-in.
 
@@ -594,7 +595,7 @@ the run goes in this order:
    it was built from.
 3. Build the golden VM, then start the pools, with that release's `build` and
    `start`, as its tag's copy of
-   [Starting, watching and stopping](#starting-watching-and-stopping) gives, with the
+   the Starting, watching and stopping section gives, with the
    sizing of [the example configuration](../../hosts/macos/runner-host.example.json).
    Record the golden VM's and Tart's cache's disk use.
 4. Run a job with `runs-on: [axmc, linux]` and a step that uses `docker run`, and

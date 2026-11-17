@@ -25,16 +25,17 @@ The sections below that name `validate`, `build`, `start` and the clients `stop`
 `restart`, `status` and `diagnostics` describe the library's entry points of those
 names, which the agent shares, and the foreground instance and its protocol version 1,
 which no shipped executable runs: the tests run them through a test-only helper, as
-[Running It](#running-it) says. The command-line procedures, with their commands,
-are at the [last command-line release](#the-last-command-line-release)'s tag.
+the Running It section says. The command-line procedures, with their commands,
+are at the last command-line release's tag, identified in The Last Command-Line
+Release section.
 [Windows Runner Host](./windows-runner-host.md) describes axpc with the app. axmc has
 no supported way to run its Linux and macOS pools from W1's installer pull request until M2's
 Mac app, as [macOS Runner Host](./macos-runner-host.md) says.
 
 ## Running It
 
-The library has no `main`. The app's executable runs it, in the modes
-[App](./app.md#the-executable-and-its-modes) lists: the app, the resident agent, and
+The library has no `main`. The app's executable runs it, in the modes that
+The Executable and Its Modes section of [App](./app.md) lists: the app, the resident agent, and
 the hidden modes the library relaunches it in, the diagnostics exporter and on Unix
 the container and VM shims, which `marshal_cli::command::run` dispatches. No
 user-facing command is dispatched there, so the executable never serves protocol
@@ -3331,7 +3332,7 @@ and `base_old` with `days`, and `leftovers` of kind `vm_unconfigured_pool`.
 
 This section describes the library's foreground instance, its `build` and its version
 1 clients. Since W1's installer pull request no shipped executable runs them: the
-app's agent runs a host instead, as [The Agent](#the-agent) describes, with the
+app's agent runs a host instead, as The Agent section describes, with the
 runtime layer, the image check, the log and containment that this section shares
 with it. The tests run them through `commands-helper`, and the last command-line
 release's tag documents them as commands.
@@ -4406,7 +4407,7 @@ records the controls around it.
 
 Since W1's installer pull request a release carries the Windows app, Marshal, and its
 installer, and no command line and no macOS file. The releases before it carry the
-command line; the [last command-line release](#the-last-command-line-release) says
+command line; The Last Command-Line Release section says
 where their procedures are.
 
 The version is never committed. `cli/Cargo.toml`, `app/Cargo.toml` and their
@@ -4459,7 +4460,7 @@ cross-compilation and no cache action, and:
    [`app/tauri-cli.version`](../../app/tauri-cli.version) by
    [`tauri-cli-version.sh`](../../.github/scripts/tauri-cli-version.sh), the one place
    the merge checks' `app` job reads it from too, so one edit moves both
-   ([App](./app.md#the-tauri-cli-pin));
+   (The `tauri-cli` Pin section of [App](./app.md));
 5. builds the app with `cargo tauri build --no-bundle` in `app/crates/app`, and fails
    if the build changed `app/Cargo.lock`;
 6. fails unless the built `marshal-app.exe`'s product version, read from its version
@@ -4468,7 +4469,7 @@ cross-compilation and no cache action, and:
    the version its caller passed, in a dry run too, and runs the same check with a
    version that differs, which must fail, so a check that cannot fail does not pass;
 7. copies the app to its release name, and fails if it imports a `vcruntime` DLL;
-8. builds the MSI from the app and the licence notices, as [Installers](#installers)
+8. builds the MSI from the app and the licence notices, as the Installers section
    describes, and runs the installer test there;
 9. hands the SHA-256 of the app and of the MSI to the next job as job outputs, and
    uploads those two files by name.
@@ -4661,7 +4662,7 @@ the procedures there. The commit before W1's installer pull request on main, its
 first parent, holds the command line and everything that pull request removed.
 
 Moving a host from the command line to the app is that release's uninstall procedure
-for the command line, then [Installing](#installing) here. The command line's MSI and
+for the command line, then the Installing section here. The command line's MSI and
 this one are separate products that share `%LOCALAPPDATA%\Programs\marshal\`, so
 uninstalling the command line removes `marshal.exe` and its `PATH` entry and leaves
 Marshal's files, and `where.exe marshal` then finds nothing.
@@ -4785,8 +4786,8 @@ The contracts F0 owns are these:
 
 No file of a release is signed until M2's disk-image pull request. The commands that
 read the command line's signed macOS package are in this document at the
-[last command-line release](#the-last-command-line-release)'s tag, under the same
-heading. M2's pull request brings this section back, rewritten for the app and the
+last command-line release's tag, under the same heading; The Last Command-Line
+Release section identifies that tag. M2's pull request brings this section back, rewritten for the app and the
 disk image.
 
 ### Extending the Release Workflows
@@ -5122,7 +5123,7 @@ change after it. The check block below names `2.0.0`. To check another release,
 change the block's `version` and `file` assignment lines. If the first release of the
 app gets another version, a later change corrects the lines. A host that runs the
 command line moves to the app as
-[The Last Command-Line Release](#the-last-command-line-release) says.
+The Last Command-Line Release section says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
 `Install Blocks` job ([What the Install Tests Cover](#what-the-install-tests-cover)).
@@ -5292,8 +5293,8 @@ In PowerShell 5.1 or 7:
   version of Marshal is already installed.", and the installed version stays, so
   uninstall first.
 - **Roll back to the command line.** Uninstall Marshal, then install the
-  [last command-line release](#the-last-command-line-release) by that release's
-  procedure. The command line reads its token files, not Credential Manager, so it
+  last command-line release by that release's procedure; The Last Command-Line
+  Release section identifies it. The command line reads its token files, not Credential Manager, so it
   needs them; the app's tokens stay in Credential Manager.
 
 Immutable releases keep a published release's tag from moving, so a version you

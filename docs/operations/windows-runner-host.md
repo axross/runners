@@ -19,9 +19,10 @@ and the trust rules the host is reviewed against are in
 release carries Marshal and its per-user MSI, and the app's menu and window are how a
 host is run. The axpc host ran its pools with the command line, `marshal`, until then.
 Its procedures, with their commands, token files and `--config` path, are at the
-[last command-line release](./cli.md#the-last-command-line-release)'s tag, and a host
+last command-line release's tag, identified in The Last Command-Line Release
+section of [CLI](./cli.md), and a host
 moves from it to the app with that release's uninstall procedure, then
-[Installing Marshal](#installing-marshal). The verification below that names a command
+the Installing Marshal section. The verification below that names a command
 was made with the command line; the app shares its runtime, image check and
 diagnostics, and its own run on axpc is recorded on
 [#73](https://github.com/axross/runners/issues/73).
@@ -148,7 +149,7 @@ checksum, commit on main, or attestation from `release.yaml` on main does not
 verify, or whose `marshal-app.exe` does not match the release's `SHA256SUMS` line
 for the app, and installs nothing. On a host that runs the command line, first
 uninstall it with the last command-line release's procedure, as
-[The Last Command-Line Release](./cli.md#the-last-command-line-release) describes;
+The Last Command-Line Release section of [CLI](./cli.md) describes;
 otherwise quit a running Marshal. Then open the MSI. It installs
 `%LOCALAPPDATA%\Programs\marshal\marshal-app.exe` and its licence notices for your
 user with no administrator rights, adds a Start menu entry named Marshal, adds
@@ -163,7 +164,7 @@ and the uninstall block have not run on axpc; CI runs them against the release d
 run's MSI in its `Install Blocks` job.
 
 The same procedure updates Marshal with a newer MSI and rolls it back by
-uninstalling and installing the older one, as [Rolling Back](#rolling-back)
+uninstalling and installing the older one, as the Rolling Back section
 describes; quit Marshal first. After an update, rebuild the image and start again,
 as [Updating the Runner](#updating-the-runner) describes. Nothing on the host needs
 a checkout of this repository: the build uses the image definition embedded in the
@@ -197,8 +198,8 @@ Enter each token in Marshal's window: **Open Marshal**, the **Tokens** tab, then
 **Set Token** on the repository's row, paste the token and **Save**. Marshal keeps it
 in the Windows Credential Manager, one entry per repository, and never shows it
 again; the pools of that repository share it. The token rules are in
-[The Agent Keeps Tokens in the Operating System's Store](../conventions/security.md#the-agent-keeps-tokens-in-the-operating-systems-store)
-and the Per-Repository Isolation on a Runner Host section of
+The Agent Keeps Tokens in the Operating System's Store
+and Per-Repository Isolation on a Runner Host sections of
 [Security](../conventions/security.md).
 
 The agent reads the token from the store at every registration, so a rotated token
@@ -237,7 +238,7 @@ form. Start from
 [`config.example.toml`](../../hosts/windows-docker-desktop/config.example.toml), and
 see the Host configuration section of the
 [host README](../../hosts/windows-docker-desktop/README.md) for every field, which
-names each by its JSON key, and [Schema Version 1](./cli.md#schema-version-1) for
+names each by its JSON key, and the Schema Version 1 section of [CLI](./cli.md) for
 the TOML key each JSON key becomes, such as `runners` for `slots` and `memory_gb` for
 `memoryGb`; [The Agent's Configuration](./cli.md#the-agents-configuration) says how
 the agent loads it. Its `[lifecycle]` table sets what the agent does around sign-in,
@@ -289,7 +290,7 @@ neither Docker nor GitHub to do it. A file that breaks a rule is not used: the w
 names every problem, by its key and line, in its stopped banner when Marshal has no
 configuration in use, and in a footer warning beside the last valid configuration
 when it has one, which it keeps running on, as
-[The Configuration File](./app.md#the-configuration-file) describes. Marshal does not
+The Configuration File section of [App](./app.md) describes. Marshal does not
 watch the file, so an edit applies at the next **Start all runners**: after every
 edit, **Stop all runners**, then **Start all runners**, and read the window. It does
 not check that a pool has a token; the Tokens tab shows which have none.
@@ -483,7 +484,7 @@ build left untagged: the prune is limited to images carrying the label `com.gith
 so it does not touch other dangling images or images built by hand. It does not
 reclaim installation stages, build caches, or tagged rollback images. A failed prune
 is a warning, not a failed build. [CLI](./cli.md#build) gives every step, and
-[The Agent's Configuration](./cli.md#the-agents-configuration) what the agent's build
+its section The Agent's Configuration gives what the agent's build
 logs.
 
 While it builds, the window says the image is building, and **Stop the Build** or
@@ -541,7 +542,7 @@ request.
 Start Marshal from the Start menu entry Marshal. A launch starts its agent, which runs
 the pools, and the notification-area icon shows their state; the agent keeps running
 when the window or the app closes. The agent checks the configuration as
-[The Host Configuration](#the-host-configuration) says, writes its log under
+The Host Configuration section says, writes its log under
 `%LOCALAPPDATA%\marshal\logs\`, waits for Docker, checks the image, prepares every
 pool, and then runs every slot until it is stopped. With a configuration that cannot
 be used, an image that cannot run jobs, or no pool able to start, it stays running
@@ -556,11 +557,11 @@ From the notification-area icon's menu:
 | **Open Marshal**      | Opens the window: the agent's state, each pool's state, runners and diagnostics, the image and its freshness warnings, and tokens |
 | **Start all runners** | Reads the configuration file again, checks the image, and runs the pools; use it after editing the configuration                  |
 | **Stop all runners**  | Stops every runner with the stop sequence, within 30 s, and leaves the agent running and stopped                                  |
-| **Build image**       | Builds the runner image while the runners are stopped; see [Building the Runner Image](#building-the-runner-image)                |
+| **Build image**       | Builds the runner image while the runners are stopped; see the Building the Runner Image section                                  |
 | **Quit Marshal**      | Stops every runner as Stop all runners does, cancelling a build first, then ends the agent and the app                            |
 
 [App](./app.md) says what each item and the window do, and when an item is greyed.
-The agent's states, waits and reasons are in [Agent State](./cli.md#agent-state).
+The agent's states, waits and reasons are in the Agent State section of [CLI](./cli.md).
 
 Stop the host with **Stop all runners**, or with **Quit Marshal**. A stop gives the
 ordinary containers their grace period, and finalises each diagnostic container, as
@@ -913,7 +914,7 @@ the image definition:
 3. Quit Marshal from its menu, which stops its runners, then install that release
    with the procedure in [CLI](./cli.md#installing-updating-and-rolling-back). A
    host that still runs the command line moves to the app first, as
-   [Installing Marshal](#installing-marshal) describes.
+   the Installing Marshal section describes.
 4. Start Marshal, build the image from its menu, then start the runners. Containers
    already running when Marshal stopped them have ended; the next ones start on the
    new image.
@@ -994,7 +995,7 @@ Hub. No inbound port is needed.
 - **A slot logging registration failures:** the message carries GitHub's status. A
   401 or 404 usually means the token expired or lacks Administration access to that
   repository; replace it with **Replace Token** in the Tokens tab, as
-  [The Fine-Grained Token](#the-fine-grained-token) describes. Other slots
+  The Fine-Grained Token section describes. Other slots
   continue their own registration loops, but a shared-token problem can affect
   every pool for that repository.
 
@@ -1024,7 +1025,7 @@ a job in flight fails.
    while a newer one is installed.
 2. When the previous release is the last command-line release, install it with that
    release's procedure instead, at its tag, as
-   [The Last Command-Line Release](./cli.md#the-last-command-line-release) describes,
+   The Last Command-Line Release section of [CLI](./cli.md) describes,
    and follow that tag's copy of this section from there. Keep the token files until
    the command line's runners work; the command line reads them, and the app's
    tokens stay in Credential Manager.
@@ -1038,5 +1039,5 @@ a job in flight fails.
 A diagnostic container that the stopped runners retained survives the install. If
 the release you go back to may not finalise it as the installed one does, recover the
 marked containers first, as
-[Recover before disabling diagnostics](#recover-before-disabling-diagnostics)
+the Recover before disabling diagnostics section
 describes.

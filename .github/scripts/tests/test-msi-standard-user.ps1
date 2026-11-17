@@ -12,7 +12,7 @@
     logon is. that process refuses to run as an administrator or without the
     INTERACTIVE group in its token, runs the documented check block from
     docs/operations/cli.md against the dry run's real MSI, with only gh stubbed,
-    then installs the MSI with msiexec /i, runs the installed binary, and runs the
+    then installs the MSI with msiexec /i, checks the installed app's hash, and runs the
     documented uninstall block. the outcome is printed on lines that start with
     MEASURED, and the script throws unless every step succeeded. the hosted
     Windows Server image blocks a non-elevated per-user install (msiexec exits

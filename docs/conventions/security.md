@@ -454,9 +454,9 @@ record a change to either workflow, to the build call in
 - **Signing is held for M2 and W4.** No job signs, declares an Environment or reads
   a signing secret from W1's installer pull request until M2's disk-image pull
   request brings back `sign-macos` and `verify-macos` or W4's feed pull request adds
-  its signing job; [CLI](../operations/cli.md#signing-held-for-m2-and-w4) says what
-  returns, and its [Signing Contracts](../operations/cli.md#the-signing-contracts)
-  stay in force. The Environment and its secrets are kept for those jobs, and the
+  its signing job. The Signing, Held for M2 and W4 section of
+  [CLI](../operations/cli.md) says what returns, and its Signing Contracts stay
+  in force. The Environment and its secrets are kept for those jobs, and the
   record below is held for them:
   - **The Environment `release`** is created and maintained by the maintainer.
     Deployment branches are selected branches, `main` only and no tags. Required
@@ -484,7 +484,8 @@ record a change to either workflow, to the build call in
     `mise run check` fails if any job or step in any workflow declares an
     Environment or reads a signing secret, so the signing job that returns changes
     it in the same pull request.
-    [CLI](../operations/cli.md#what-the-release-tests-cover) lists its rules. A pull
+    The What the Release Tests Cover section of [CLI](../operations/cli.md)
+    lists its rules. A pull
     request can edit it, so it guards against mistakes, not against a hostile pull
     request, and [CLI](../operations/cli.md#extending-the-release-workflows) names
     what it does not read. What keeps pull requests away is the branch rule on the
@@ -917,12 +918,12 @@ later host:
   for all of them, and a secret that can register runners for the automation that
   reads it is not a boundary. The agent reads the token from the operating system's
   store on every registration, one entry per repository, as
-  [The Agent Keeps Tokens in the Operating System's Store](#the-agent-keeps-tokens-in-the-operating-systems-store)
+  the section The Agent Keeps Tokens in the Operating System's Store
   records. Until W1's installer pull request the command line read it from a file
   restricted to the host user; those token-file rules, and the command line that
-  applied them, are at the
-  [last command-line release](../operations/cli.md#the-last-command-line-release)'s
-  tag, and no code path of the app reads a token file.
+  applied them, are at the last command-line release's tag, identified in
+  The Last Command-Line Release section of [CLI](../operations/cli.md).
+  No code path of the app reads a token file.
 - Multiple execution pools for one repository MUST use the same token, the
   repository's one store entry; pools of different repositories never share one.
   Extra pools do not expand the token's repository authority.

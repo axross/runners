@@ -19,23 +19,25 @@ axpc's pools with the app.
 ## What Exists
 
 The app builds, its tests run, and since W1's installer pull request (pull request 3)
-each release carries it and its per-user MSI, as [CLI](./cli.md#releases) describes,
+each release carries it and its per-user MSI, as the Releases section of
+[CLI](./cli.md) describes,
 in place of the command line. W1, [#73](https://github.com/axross/runners/issues/73),
 is the child that owns the app. No host has installed it yet: axpc still runs its
-pools with the [last command-line release](./cli.md#the-last-command-line-release),
+pools with the last command-line release, identified in The Last Command-Line
+Release section of [CLI](./cli.md),
 so this document describes an app that CI builds and tests and the release ships,
 not one a host has run. The same pull request removed the command line: no `marshal`
 binary is built on any operating system, and the app is the only way to run a host.
 
-| Part                                                 | State                                                                                       |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact        |
-| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode              |
-| The token store                                      | The Windows Credential Manager, entered in the main window                                  |
-| The installer, the release, the install layout below | Built and tested by the release build on every pull request; see [CLI](./cli.md#installers) |
-| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request   |
-| The command line's removal                           | Done in W1's installer pull request; the last command-line release keeps it                 |
-| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                   |
+| Part                                                 | State                                                                                                      |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact                       |
+| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode                             |
+| The token store                                      | The Windows Credential Manager, entered in the main window                                                 |
+| The installer, the release, the install layout below | Built and tested by the release build on every pull request; see the Installers section of [CLI](./cli.md) |
+| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request                  |
+| The command line's removal                           | Done in W1's installer pull request; the last command-line release keeps it                                |
+| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                                  |
 
 ## The Executable and Its Modes
 
@@ -566,7 +568,7 @@ meantime are ignored while `config.toml` exists. Delete `config.toml` to migrate
 
 ## Install Layout
 
-W1's MSI creates this layout, as [CLI](./cli.md#installers) describes, and the build
+W1's MSI creates this layout, as the Installers section of [CLI](./cli.md) describes, and the build
 leg's installer test measures it on every run; no host has it installed yet.
 
 | What                                  | Where                                                                             |
@@ -587,10 +589,11 @@ one code object. The name `marshal-app.exe` never collides with a leftover
 ## Rolling Back
 
 A rollback uninstalls Marshal and installs the previous release, as
-[CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back) describes; before the
-first app release, the previous release is the
-[last command-line release](./cli.md#the-last-command-line-release), whose procedures
-are at its tag. The PowerShell host scripts are gone, so a rollback never restores
+the Updating, Repairing, Uninstalling and Rolling Back section of [CLI](./cli.md)
+describes. Before the first app release, the previous release is the last
+command-line release; its procedures are at its tag, identified in
+The Last Command-Line Release section of [CLI](./cli.md).
+The PowerShell host scripts are gone, so a rollback never restores
 them. Going back from the
 app to the command line takes three things the app does not do for you:
 
