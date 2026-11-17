@@ -1,36 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  the per-user Windows installer for marshal, built by build-msi.ps1, which
-  passes MarshalBinary (the release binary) and MarshalVersion (X.Y.Z, from
-  installer-version.sh). it has no dialogs, no UI extension, and no custom action
-  that runs code; the one custom action WiX adds for the downgrade message only
-  shows it and stops. docs/operations/cli.md describes it.
+  the per-user Windows installer for Marshal, built by build-msi.ps1, which passes
+  MarshalApp (the release's app executable), MarshalNotices (the app's licence
+  notices for Windows) and MarshalVersion (X.Y.Z, from installer-version.sh). it
+  has no dialogs and no UI extension. besides the downgrade message, its custom
+  actions start the installed app after an install when the msiexec line sets
+  AUTOLAUNCHAPP=True, and delete the HKCU Run value Marshal on an uninstall that is
+  not part of an upgrade. docs/operations/cli.md describes it.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <!--
     the UpgradeCode never changes: it is how a newer installer finds the product
-    an older one installed, and how the uninstall procedure finds it.
+    an older one installed, and how the uninstall block finds it. it is not the
+    command line's, so neither installer upgrades or removes the other.
   -->
   <Package
-    Name="marshal"
+    Name="Marshal"
     Manufacturer="axross"
     Version="$(MarshalVersion)"
-    UpgradeCode="512F67C6-97ED-4562-84F3-2584FA3BA29C"
+    UpgradeCode="F53C5F78-BA20-4941-9091-988AFDFD656B"
     Scope="perUser"
     Language="1033"
     InstallerVersion="500"
     Compressed="yes"
   >
-    <SummaryInformation Description="marshal, from github.com/axross/runners" />
+    <SummaryInformation Description="Marshal, from github.com/axross/runners" />
     <MajorUpgrade
-      DowngradeErrorMessage="A newer version of marshal is already installed."
+      DowngradeErrorMessage="A newer version of Marshal is already installed."
       AllowSameVersionUpgrades="yes"
     />
     <MediaTemplate EmbedCab="yes" />
 
     <Property Id="ARPNOMODIFY" Value="1" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/axross/runners" />
+    <!-- set on the msiexec line: AUTOLAUNCHAPP=True starts the app with LAUNCHAPPARGS. -->
+    <Property Id="AUTOLAUNCHAPP" Secure="yes" />
+    <Property Id="LAUNCHAPPARGS" Secure="yes" />
 
+    <!-- set only when the Run value exists, so an uninstall without it runs no command. -->
+    <Property Id="MARSHALRUNVALUE">
+      <RegistrySearch
+        Id="MarshalRunValue"
+        Root="HKCU"
+        Key="Software\Microsoft\Windows\CurrentVersion\Run"
+        Name="Marshal"
+        Type="raw"
+      />
+    </Property>
+
+    <StandardDirectory Id="ProgramMenuFolder" />
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="UserProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="marshal" />
@@ -40,30 +58,62 @@
     <Feature Id="Main" Level="1">
       <ComponentGroupRef Id="MarshalComponents" />
     </Feature>
+
+    <!--
+      runs after the install is committed, as the installing user, and does not
+      wait for the app. an uninstall, and the earlier version's removal during an
+      upgrade, run with Installed set, so they never start it.
+    -->
+    <CustomAction Id="LaunchMarshal" FileRef="MarshalAppExe" ExeCommand="[LAUNCHAPPARGS]" Return="asyncNoWait" />
+    <!--
+      runs last in the deferred script and starts reg.exe in System64Folder, so it
+      needs no install folder. a failure to delete the value does not fail the
+      uninstall.
+    -->
+    <CustomAction
+      Id="RemoveRunValue"
+      Directory="System64Folder"
+      ExeCommand="&quot;[System64Folder]reg.exe&quot; delete &quot;HKCU\Software\Microsoft\Windows\CurrentVersion\Run&quot; /v Marshal /f"
+      Execute="deferred"
+      Impersonate="yes"
+      Return="ignore"
+    />
+    <InstallExecuteSequence>
+      <Custom Action="LaunchMarshal" After="InstallFinalize" Condition="AUTOLAUNCHAPP = &quot;True&quot; AND NOT Installed" />
+      <Custom
+        Action="RemoveRunValue"
+        Before="InstallFinalize"
+        Condition="MARSHALRUNVALUE AND REMOVE ~= &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE"
+      />
+    </InstallExecuteSequence>
   </Package>
 
   <Fragment>
-    <ComponentGroup Id="MarshalComponents" Directory="INSTALLFOLDER">
-      <!-- the component Guid never changes, like the UpgradeCode. -->
-      <Component Id="MarshalExecutable" Guid="EE33286A-2CA3-4A0B-A273-FC580EFD27CB">
-        <File Id="MarshalExe" Name="marshal.exe" Source="$(MarshalBinary)" />
-        <!-- a per-user component needs a registry key path under HKCU. -->
-        <RegistryKey Root="HKCU" Key="Software\axross\marshal" ForceDeleteOnUninstall="yes">
+    <ComponentGroup Id="MarshalComponents">
+      <!-- the component Guids never change, like the UpgradeCode. -->
+      <Component Id="MarshalApp" Directory="INSTALLFOLDER" Guid="DA06FAB9-DB59-420D-99F7-2168B10E21E2">
+        <File Id="MarshalAppExe" Name="marshal-app.exe" Source="$(MarshalApp)" />
+        <File Id="MarshalNotices" Name="THIRD-PARTY-NOTICES.txt" Source="$(MarshalNotices)" />
+        <!--
+          a per-user component needs a registry key path under HKCU. the key is not
+          the command line's Software\axross\marshal, which its uninstall deletes.
+        -->
+        <RegistryKey Root="HKCU" Key="Software\axross\marshal-app" ForceDeleteOnUninstall="yes">
           <RegistryValue Name="installed" Type="integer" Value="1" KeyPath="yes" />
         </RegistryKey>
-        <!-- appended to the user PATH, and removed with the product. -->
-        <Environment
-          Id="MarshalPath"
-          Name="PATH"
-          Action="set"
-          Part="last"
-          System="no"
-          Permanent="no"
-          Value="[INSTALLFOLDER]"
-        />
         <!-- the folders the install created, removed when empty. -->
         <RemoveFolder Id="RemoveMarshalFolder" Directory="INSTALLFOLDER" On="uninstall" />
         <RemoveFolder Id="RemoveProgramsFolder" Directory="UserProgramsFolder" On="uninstall" />
+      </Component>
+      <Component Id="MarshalStartMenuEntry" Directory="ProgramMenuFolder" Guid="0A0E70EE-B786-40F8-A713-52A20DCFADBD">
+        <Shortcut
+          Id="MarshalShortcut"
+          Name="Marshal"
+          Description="Marshal"
+          Target="[#MarshalAppExe]"
+          WorkingDirectory="INSTALLFOLDER"
+        />
+        <RegistryValue Root="HKCU" Key="Software\axross\marshal-app" Name="startmenu" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Fragment>

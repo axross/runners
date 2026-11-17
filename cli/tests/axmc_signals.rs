@@ -1,5 +1,5 @@
-//! the signals on the axmc profile as real processes: `marshal start` against the fake
-//! `tart`, the fake `softnet`, the fake `docker` in the VMs and a loopback GitHub stub,
+//! the signals on the axmc profile as real processes: the commands helper's `start`
+//! against the fake `tart`, the fake `softnet`, the fake `docker` in the VMs and a loopback GitHub stub,
 //! with the scripted signal source (`MARSHAL_TEST_SIGNALS`) driving the sleep, the
 //! primary network and the keep-awake hold from outside. The scripted source runs the
 //! real cadence at a fiftieth of its time, so one network check is 100 ms. The tests

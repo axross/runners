@@ -251,6 +251,7 @@ fn a_macos_slot_that_waited_for_the_limit_checks_tart_again_before_its_clone() {
     assert_eq!(finished.status.code(), Some(0), "{}", finished.stderr);
 }
 
+/// a slot retains its VM against the macOS limit until deletion succeeds.
 #[test]
 fn a_macos_job_vm_that_fails_to_delete_is_deleted_again_while_its_slot_waits() {
     let host = holding_host(&[macos("macone", 1)]);
@@ -270,11 +271,10 @@ fn a_macos_job_vm_that_fails_to_delete_is_deleted_again_while_its_slot_waits() {
     });
     assert!(status.contains(" to be deleted"), "{status}");
     let tries = host.count_of("delete");
-    host.wait_for_status("another deletion", RUNNING_WITHIN, |_| {
-        host.count_of("delete") > tries
+    host.wait_for_status("a failed deletion retry", RUNNING_WITHIN, |_| {
+        host.count_of("delete") > tries && host.log_text().contains("could not be deleted")
     });
     let log = host.log_text();
-    assert!(log.contains("could not be deleted"), "{log}");
     assert!(
         !log.contains("retrying in"),
         "the slot deletes its VM again rather than backing off: {log}"
