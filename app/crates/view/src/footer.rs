@@ -137,7 +137,14 @@ fn version(warning: &ImageWarning) -> String {
 
 /// a freshness warning in the words of the boards, which name no command; `image` is
 /// what the warning is about, such as "golden VM" or M3's "golden macOS VM".
-fn warning(kind: &WarningKind, warning: &ImageWarning, image: &str) -> Option<String> {
+/// `pinned` is true for an entry named by its own lines, the golden macOS VM, whose
+/// runner never updates itself, since GitHub's JIT configuration disables it.
+fn warning(
+    kind: &WarningKind,
+    warning: &ImageWarning,
+    image: &str,
+    pinned: bool,
+) -> Option<String> {
     Some(match kind {
         WarningKind::NotBuiltByMarshal => {
             format!("Warning: the {image} was not built by Marshal, so its build age is unknown.")
@@ -148,6 +155,11 @@ fn warning(kind: &WarningKind, warning: &ImageWarning, image: &str) -> Option<St
         ),
         WarningKind::ImageOld => format!(
             "Warning: the {image} is {} days old and should be rebuilt.",
+            days(warning)
+        ),
+        WarningKind::RunnerOld if pinned => format!(
+            "Warning: {} was released {} days ago and never updates itself; update Marshal to get a newer runner, then build the {image} again before GitHub stops sending jobs to it.",
+            version(warning),
             days(warning)
         ),
         WarningKind::RunnerOld => format!(
@@ -275,10 +287,11 @@ pub fn footer(context: &Context<'_>) -> Footer {
             } else {
                 plain(&image.name)
             };
+            let pinned = value(&image.lines, "golden-vm-version").is_some();
             image
                 .warnings
                 .iter()
-                .filter_map(move |each| warning(&each.kind(), each, &subject))
+                .filter_map(move |each| warning(&each.kind(), each, &subject, pinned))
         })
         .collect();
     warnings.extend(configuration_warnings(context));
