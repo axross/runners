@@ -268,6 +268,8 @@ pub enum LoginStatus {
     /// registered, and waiting for the maintainer's approval in Login Items, which macOS
     /// also reports once that approval is withdrawn.
     RequiresApproval,
+    /// what macOS 27 reports for a Marshal that has never registered; the app reads it as
+    /// not registered.
     NotFound,
 }
 

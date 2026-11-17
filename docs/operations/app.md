@@ -140,7 +140,8 @@ web view.
   keeps the app's own bundle registered as its login item with `SMAppService` while
   `start_at_login` is on in effect; the agent leaves the snapshot's sign-in item unset
   on macOS. The app reconciles when a snapshot's settings in effect change: it
-  registers when the setting is on and macOS reports Marshal not registered, and
+  registers when the setting is on and macOS reports Marshal not registered, or not
+  found, which is what macOS 27 reports for a Marshal that has never registered, and
   unregisters when it is off and Marshal is registered or waiting for approval. Only a
   Marshal in `/Applications` or `~/Applications` does either. It never registers over
   "requires approval", and it keeps the empty file `login-item-registered-by-marshal`

@@ -50,7 +50,7 @@ impl LoginItem {
     }
 
     /// the login item's state as the latest bringing in step left it; `None` before
-    /// the first, from outside Applications, or while macOS cannot find the item.
+    /// the first, or from outside Applications.
     #[must_use]
     pub fn state(&self) -> Option<LoginItemState> {
         self.state
@@ -80,7 +80,9 @@ impl LoginItem {
         }
     }
 
-    /// brings the login item in step with `on` and says the state it leaves it in.
+    /// brings the login item in step with `on` and says the state it leaves it in. macOS
+    /// reports a Marshal that has never registered as not found, so not found counts as
+    /// not registered (plan revision 4).
     fn reconcile(&self, on: bool, log: &dyn Log) -> Option<LoginItemState> {
         let status = self.service.status();
         match (on, status) {
@@ -88,27 +90,31 @@ impl LoginItem {
             (true, LoginStatus::RequiresApproval) => log.info(
                 "Marshal's login item waits for approval in Login Items, so Marshal leaves it.",
             ),
-            (true, LoginStatus::NotRegistered) if self.record.exists() => log.info(
-                "Marshal's login item was turned off in Login Items, so Marshal leaves it off.",
-            ),
-            (true, LoginStatus::NotRegistered) => match self.service.register() {
-                Ok(()) => {
-                    log.info("Marshal registered its login item, as Start at login is on.");
-                    if let Err(error) = self.record.write() {
-                        log.warn(&format!(
+            (true, LoginStatus::NotRegistered | LoginStatus::NotFound) if self.record.exists() => {
+                log.info(
+                    "Marshal's login item was turned off in Login Items, so Marshal leaves it off.",
+                )
+            }
+            (true, LoginStatus::NotRegistered | LoginStatus::NotFound) => {
+                match self.service.register() {
+                    Ok(()) => {
+                        log.info("Marshal registered its login item, as Start at login is on.");
+                        if let Err(error) = self.record.write() {
+                            log.warn(&format!(
                             "Marshal could not record that it registered its login item: {error}"
                         ));
+                        }
+                        // macOS may hold a new item for approval
+                        return self.known(self.service.status());
                     }
-                    // macOS may hold a new item for approval
-                    return self.known(self.service.status());
-                }
-                Err(error) => {
-                    log.warn(&format!(
+                    Err(error) => {
+                        log.warn(&format!(
                         "Marshal could not register its login item, and tries again when the settings change: {error}"
                     ));
-                    return Some(LoginItemState::NotAdded { code: error.code });
+                        return Some(LoginItemState::NotAdded { code: error.code });
+                    }
                 }
-            },
+            }
             (false, LoginStatus::Enabled | LoginStatus::RequiresApproval) => {
                 match self.service.unregister() {
                     Ok(()) => {
@@ -123,10 +129,7 @@ impl LoginItem {
             }
             // the item is already off, so a removal by the maintainer has nothing left to
             // protect, and turning the setting on again registers it
-            (false, LoginStatus::NotRegistered) => self.forget(log),
-            (_, LoginStatus::NotFound) => {
-                log.warn("macOS cannot find Marshal's login item, so Marshal leaves it alone.");
-            }
+            (false, LoginStatus::NotRegistered | LoginStatus::NotFound) => self.forget(log),
         }
         self.known(status)
     }
@@ -136,9 +139,10 @@ impl LoginItem {
         match status {
             LoginStatus::Enabled => Some(LoginItemState::On),
             LoginStatus::RequiresApproval => Some(LoginItemState::WaitingForApproval),
-            LoginStatus::NotRegistered if self.record.exists() => Some(LoginItemState::Removed),
-            LoginStatus::NotRegistered => Some(LoginItemState::Off),
-            LoginStatus::NotFound => None,
+            LoginStatus::NotRegistered | LoginStatus::NotFound if self.record.exists() => {
+                Some(LoginItemState::Removed)
+            }
+            LoginStatus::NotRegistered | LoginStatus::NotFound => Some(LoginItemState::Off),
         }
     }
 

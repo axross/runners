@@ -64,6 +64,28 @@ async fn the_setting_on_registers_a_login_item_macos_reports_not_registered_and_
 }
 
 #[tokio::test(start_paused = true)]
+async fn the_setting_on_registers_a_login_item_macos_has_never_seen_and_records_it() {
+    // macOS 27 reports a Marshal that has never registered as not found
+    let login = FakeLoginItem::new(LoginStatus::NotFound, false);
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings(true, true)).await;
+    assert_eq!(login.calls(), [LoginCall::Register]);
+    assert!(login.recorded());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_login_item_not_found_after_marshal_registered_it_counts_as_removed() {
+    let login = FakeLoginItem::new(LoginStatus::NotFound, true);
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings(true, true)).await;
+    assert!(login.calls().is_empty(), "the maintainer's choice stands");
+    assert!(logged(&session, "turned off in Login Items"));
+    send(&agent, &session, settings(false, true)).await;
+    assert!(login.calls().is_empty());
+    assert!(!login.recorded(), "the setting off forgets the record");
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_snapshot_with_no_lifecycle_part_changes_nothing() {
     let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
     let (agent, session) = connected(&login, IN_APPLICATIONS).await;
