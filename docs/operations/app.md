@@ -29,15 +29,15 @@ so this document describes an app that CI builds and tests and the release ships
 not one a host has run. The same pull request removed the command line: no `marshal`
 binary is built on any operating system, and the app is the only way to run a host.
 
-| Part                                                 | State                                                                                                      |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| The app, its menu and its main window                | Built by the Windows job of `merge-checks.yaml`; its build is kept as a run artifact                       |
-| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode                             |
-| The token store                                      | The Windows Credential Manager, entered in the main window                                                 |
-| The installer, the release, the install layout below | Built and tested by the release build on every pull request; see the Installers section of [CLI](./cli.md) |
-| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request                  |
-| The command line's removal                           | Done in W1's installer pull request; the last command-line release keeps it                                |
-| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                                  |
+| Part                                                 | State                                                                                                                                                           |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The app, its menu and its main window                | Built by the Windows and macOS app jobs of `merge-checks.yaml`; each build is kept as a run artifact                                                            |
+| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode                                                                                  |
+| The token store                                      | The Credential Manager on Windows and the login keychain on macOS, entered in the main window                                                                   |
+| The installer, the release, the install layout below | Built and tested by the release build on every pull request; see the Installers section of [CLI](./cli.md). The Mac's disk image comes with M2's pull request 2 |
+| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request                                                                       |
+| The command line's removal                           | Done in W1's installer pull request; the last command-line release keeps it                                                                                     |
+| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                                                                                       |
 
 ## The Executable and Its Modes
 
@@ -72,9 +72,12 @@ release never run the pools together.
 A `fake-docker` binary is built beside `marshal-app` from the CLI's
 [`cli/helpers/fake_docker.rs`](../../cli/helpers/fake_docker.rs), so the tests that
 start this executable's exporter child can run it against a fake engine. The package
-sets `default-run = "marshal-app"`, so `cargo run` still starts the app. The helper
-is built by every build of the package and only the app's own executable is uploaded
-and released.
+sets `default-run = "marshal-app"`, so `cargo run` still starts the app. The helper,
+and the process tests that use it, are built only with the `fake-engine` feature,
+which no shipped build turns on, so run the workspace's tests with
+`cargo test --locked --workspace --features marshal-app/fake-engine`; without the
+feature, Cargo skips those tests without saying so. Only the app's own executable is
+uploaded or released.
 
 ### The Debug-Only Test Variables
 
@@ -87,9 +90,18 @@ first, so a test can point the executable at a scratch host:
 | `MARSHAL_TEST_DOCKER`     | The `docker` program the agent runs, so a test can use `fake-docker` |
 | `MARSHAL_TEST_GITHUB_API` | The address the agent sends registration requests to                 |
 
-They are the names the command line's `start` reads. A release build ignores all of
-them: the `marshal-modes` crate reads them only when `debug_assertions` is on, so no
-environment moves a release build's lock, channel, files, `docker` or GitHub address.
+They are the names the command line's `start` reads. On axmc the agent also reads the
+CLI's other debug-only variables, such as `MARSHAL_TEST_TART` and the sleep and
+network signal variables, as [CLI](./cli.md) lists them. On the Mac, a debug build's
+app mode also reads `MARSHAL_TEST_ANY_LOCATION`, which lets a copy outside
+Applications control an agent, so a test can run the app from its build folder.
+A release build ignores all of
+them: the `marshal-modes` crate reads its three only when `debug_assertions` is on,
+the CLI library does the same for its own, and the location rule reads its variable
+only in a debug build, so no environment moves a release build's lock, channel,
+files, `docker`, `tart` or GitHub address, or lifts the Applications rule. The
+`app-macos` job runs the location rule's tests in the release profile with the
+variable set, so they fail if a release build reads it.
 [Security](../conventions/security.md#the-app-surface) records why. The crate has a
 test of that in the release profile, which the `app-modes` job runs on a macOS hosted
 runner with `cargo test --release` and all three variables set, so the test fails if a
@@ -189,7 +201,9 @@ The web view calls the Rust side through twelve commands, declared in
 [`permissions/autogenerated/`](../../app/crates/app/permissions/autogenerated) that
 `tauri-build` writes and the repository keeps. A window can call a command only when
 its capability grants it, and two capabilities, each limited to one window, grant
-nothing else:
+nothing else. On macOS two more, each limited to one window, grant only dragging a
+window by its top band, and for the main window zooming it, which
+[Security](../conventions/security.md) lists:
 
 | Command                                                    | Called by               | Does                                                                                            |
 | ---------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
@@ -451,7 +465,8 @@ way and, if the SDK changed, replace the loader's licence text and the version i
 ## Building the App
 
 The app's workspace is built with Cargo like the CLI, and the Tauri crate also needs
-the Windows web view, so the whole workspace builds only on Windows. The CLI document
+a platform web view, so the whole workspace builds only on Windows and, for
+[The Mac App](#the-mac-app), on macOS. The CLI document
 lists the gates that run without it under [The App Workspace](./cli.md#the-app-workspace).
 
 The release executable is built with `cargo tauri build --no-bundle` in
@@ -494,7 +509,8 @@ replaces this second manifest and the `embed-resource` build dependency.
 version of `tauri-cli`: one line holding one exact `X.Y.Z`.
 [`tauri-cli-version.sh`](../../.github/scripts/tauri-cli-version.sh) reads it and
 refuses a file that is a range, a prefix or more than one line, so a loose value
-never reaches `cargo install`. The Windows job installs `tauri-cli` with
+never reaches `cargo install`. The Windows `app` job and the macOS `app-macos` job of
+`merge-checks.yaml` install `tauri-cli` with
 `cargo install tauri-cli --version "=<pin>" --locked` under `$RUNNER_TEMP`, with no
 cache, so the tool compiles on every run. The release build that W1's installer pull
 request (pull request 3) adds reads the same file the same way, and so does W4's tool job once it
@@ -526,9 +542,10 @@ loads it. The agent reads each pool's token
 from the token store when it admits the pool and at each registration, never from a
 file: it ignores the configuration's `tokenPath`, which the shared validation still
 requires of a JSON configuration and the TOML format does not have. On Windows a token is a Credential Manager entry
-for the repository, entered in the main window's Tokens tab; the app never shows a
-stored token and never reads the store itself. Before the Mac has a store, the agent
-skips every pool there with "no token store".
+for the repository, and on macOS a login-keychain item, with the names
+[The Token Store](./cli.md#the-token-store) gives; either is entered in the main
+window's Tokens tab, and the app never shows a stored token and never reads the store
+itself.
 
 Today's token files are not imported. A host that moves from the command line to the
 app enters each repository's token in the window, once.
@@ -613,9 +630,15 @@ does not take a build for a host that has run it:
 
 - **Run on every pull request:** the checks of [The App Workspace](./cli.md#the-app-workspace)
   on Linux, the Windows job's clippy, tests and `cargo tauri build --no-bundle`, and
-  the mode dispatch on macOS, in the debug profile and then in the release profile.
+  the mode dispatch on macOS, in the debug profile and then in the release profile,
+  and the macOS app job's clippy, tests, location rule in the release profile, and
+  unsigned `Marshal.app` and disk image.
   The Windows job runs the tests with `--no-fail-fast`, so one test executable that
   fails shows every other executable's result in the same run.
+- **Run by the Windows and macOS app jobs:** the app's whole workspace, including the
+  process tests and the policy and capability files, with the `fake-engine` feature.
+  Of what follows, the Windows-only code and the common controls manifest run only on
+  Windows.
 - **Run only by the Windows job:** the test executables loading with the common
   controls manifest of
   [The Build Script and the Test Manifest](#the-build-script-and-the-test-manifest);
@@ -806,3 +829,136 @@ and does not edit another's:
 
 A new message under protocol version 2 follows the version rules in
 [CLI](./cli.md#protocol-version-2) and is added there, not here.
+
+## The Mac App
+
+M2 ([#84](https://github.com/axross/runners/issues/84)) builds the same app for an
+Apple silicon Mac running macOS 26 or later: a menu bar app whose agent runs axmc's
+Linux and macOS pools in Tart VMs, cloned from the golden VMs, as
+[macOS Runner Host](./macos-runner-host.md) describes. This section owns the bundle and
+disk-image layout and the Mac's own states; [The Token Store](./cli.md#the-token-store)
+owns the Keychain store.
+
+### The Bundle and the Disk Image
+
+| Item                 | Value                                                                                                                                                                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Disk image           | `marshal-<version>-macos-arm64.dmg`: read-only and zlib-compressed, with the volume name `Marshal`, holding `Marshal.app` and a link named `Applications` to `/Applications`                                                                                                                                                                     |
+| Disk image signature | Planned for M2's pull request 2: Developer ID Application, secure timestamp, identifier `app.axross.marshal.dmg`; notarized and stapled                                                                                                                                                                                                          |
+| Bundle               | `Marshal.app`, installed at `/Applications/Marshal.app`, with the bundle identifier `app.axross.marshal`, which is also the executable's signing identifier                                                                                                                                                                                      |
+| Executable           | `Marshal.app/Contents/MacOS/` holds the one executable and nothing else                                                                                                                                                                                                                                                                          |
+| Version              | `CFBundleShortVersionString` and `CFBundleVersion` are the release's `X.Y.Z`, or `0.0.0` for a dry run, since `0.0.0-dryrun.<n>` is not a valid bundle version; the release's app job, planned for M2's pull request 2, passes it to Tauri's build; the macOS app job of `merge-checks.yaml` builds at `0.0.0`. File names keep the full version |
+| Minimum system       | `LSMinimumSystemVersion` is `26.0`; the executable is arm64 only                                                                                                                                                                                                                                                                                 |
+| Menu bar app         | `LSUIElement` is `true`, so Marshal starts with no Dock icon; it becomes a regular app while its main window is open, and an accessory again when it closes                                                                                                                                                                                      |
+| Resources            | `icon.icns`, and the macOS licence notices as `THIRD-PARTY-NOTICES.txt`                                                                                                                                                                                                                                                                          |
+| Not in the bundle    | a command line, a helper, a login item, a framework, a plug-in, an installer package                                                                                                                                                                                                                                                             |
+| Signature            | Planned for M2's pull request 2: Developer ID Application, hardened runtime, secure timestamp, no entitlements, signed inside-out without `--deep`; the app has no stapled ticket of its own, since notarizing the disk image notarizes it                                                                                                       |
+
+While its main window is open, Marshal shows its own menus in place of Tauri's
+default: Marshal (About Marshal, with the name and version only; Hide Marshal, Hide
+Others, Show All; Quit Marshal with Command-Q, which asks W1's question and quits as
+the icon menu's Quit does), Edit (Undo, Redo, Cut, Copy, Paste, Select All, whose key equivalents are the web view's editing shortcuts, such as Command-V in the token field), Runners (Start All Runners, Stop
+All Runners, Build Image, under the icon menu's rules) and Window (Minimize, Close with
+Command-W, which hides the window). The icon menu's items are in title case on the Mac.
+Opening Marshal again from the Finder or Spotlight while it runs shows its window.
+
+`tauri.macos.conf.json` holds the Mac's settings, which Tauri merges over
+`tauri.conf.json` on macOS: the bundle with `app` as its only target, the icon and
+the notices, and the main window again, since a merge replaces the whole window list,
+with the overlay title bar that puts the window buttons in the header band. The Mac
+app is bundled with `cargo tauri build --bundles app` in `app/crates/app`; the disk
+image is made from it with `hdiutil`, not by Tauri's bundler. The app starts its agent with
+the fixed `PATH` `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`, because an app
+opened from the Finder gets launchd's short `PATH`; the agent finds `tart`, and Tart
+finds `softnet`, on it, as
+[macOS Runner Host](./macos-runner-host.md#installing-tart-and-softnet) says. Until M2's pull request 2
+adds the release's app job and restores the signing job, nothing signs or notarizes
+either: the `app-macos` job of `merge-checks.yaml` keeps the unsigned app, as a
+`ditto` archive, and an unsigned disk image as a workflow artifact for testing. The bundler copies every binary of
+`marshal-app` whose features are on, so `fake-docker`, the process tests' stand-in for
+the docker client, and those tests need the `fake-engine` feature, which no shipped
+build turns on: run the workspace's tests with
+`cargo test --locked --workspace --features marshal-app/fake-engine`.
+
+The Mac's app icon is W1's design, the tile and its three lines, drawn on Apple's icon
+grid: the tile is 824 of 1024 units with a corner of 22.5% of its side. From `app/`,
+`cargo run -p marshal-tray --example icons -- mac-icon crates/app/icons` writes
+`icon.icns` at 16 to 1024 px, and `tests/app_icon.rs` fails if the checked-in file
+differs from what the code draws.
+
+### Installing, Upgrading and Uninstalling
+
+Open the disk image and drag Marshal to Applications, then open it from there.
+Marshal controls an agent only from a bundle directly in `/Applications` or
+`~/Applications`: a copy opened from
+the mounted disk image, Downloads or anywhere else starts no agent, says "Move Marshal
+to Applications", and offers only Open Marshal and Quit Marshal; quitting it ends
+only that copy. A Marshal that is moved, renamed or replaced while it runs is a
+changed executable, so its agent stops every runner and ends, and the next copy
+opened from Applications says why it ended: "The last agent ended because Marshal was
+moved". The ending copy leaves an empty marker, `agent-ended-moved`, in
+`~/Library/Application Support/marshal`, and that next copy removes it.
+
+To upgrade, quit Marshal, which stops the runners, replace it in Applications with
+the new version, and open it. The configuration, the logs, the golden VMs and the
+Keychain items are kept. Until M4, Marshal has no login item and no updates of its
+own.
+
+With the command line still running, the app shows that another Marshal holds the
+runner lock. Stop it with `marshal stop`, then remove the command line with the
+uninstall procedure of the last command-line release's documents, as
+[The Last Command-Line Release](./cli.md#the-last-command-line-release) says; from then
+on the app runs the pools.
+
+To uninstall, quit Marshal and move it to the Trash. What it leaves, and how to remove
+each:
+
+| Left                                    | Remove it with                                                                                                                                                                                                                     |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The configuration and the agent's state | `rm -r ~/Library/Application\ Support/marshal`                                                                                                                                                                                     |
+| The logs                                | `rm -r ~/Library/Logs/marshal`                                                                                                                                                                                                     |
+| The web view's data                     | `rm -r ~/Library/WebKit/app.axross.marshal ~/Library/Caches/app.axross.marshal`                                                                                                                                                    |
+| The golden VMs                          | `tart delete <name>` for each `marshal-golden-linux-...` and, with a macOS pool, `marshal-golden-macos-...` that `tart list --source local` shows                                                                                  |
+| The bases in Tart's cache               | `tart delete <source>` for each `ghcr.io/cirruslabs/ubuntu` and `ghcr.io/cirruslabs/macos-tahoe-base` entry that `tart list --source oci` shows; the macOS base alone is a download of about 26 GB, and more once unpacked on disk |
+| The instance lock                       | `rm /Users/Shared/.marshal-instance.lock`, once no Marshal, the app or the command line, runs on the Mac                                                                                                                           |
+| Each token                              | Remove in the Tokens tab before quitting, or `security delete-generic-password -s app.axross.marshal -a github.com/<owner>/<name>`                                                                                                 |
+
+A dry-run disk image from the release's dry run installs the same way; its bundle
+version is `0.0.0`, so the next real release replaces it.
+
+### Tokens and a Locked Keychain
+
+A token is entered in the Tokens tab and kept in the login keychain; only the agent
+reads it, and it never shows a macOS prompt. While the login keychain is locked, a
+pool whose token the agent cannot read is skipped, a registration that cannot read
+it backs off, and a save is refused, each naming a locked keychain or an item another
+build of Marshal stored, since macOS may give both one code. Unlock the login keychain
+in Keychain Access, which asks for its password; never put the password in a script.
+Then choose Stop All and Start All to start the skipped pools. Keychain Access's
+"Lock after" and "Lock when sleeping" settings, under Change Settings for Keychain
+"login", say when it locks by itself; its password must be the login password for it
+to unlock at sign-in. The VMs need the unlocked keychain too, as
+[The Signed-In Session](./macos-runner-host.md#the-signed-in-session) says.
+
+For an item another build stored, enter the token again: Marshal deletes the old item
+and adds one this build may read. If the delete is refused, the window gives the one
+command it shows, `security delete-generic-password -s app.axross.marshal -a
+github.com/<owner>/<name>`, or delete the item labelled `Marshal: <owner>/<name>` in
+Keychain Access, then enter the token again. An organisation's item has the account
+`github.com/<org>` and the label `Marshal: <org> (organisation)`.
+
+### The Mac's Words and States
+
+The window draws W1's states in the Mac's words: the login keychain for the store,
+the menu bar, Activity Monitor, the golden VM and VMs for the image and the
+containers, and "Waiting for Tart" where W1 waits for Docker. `marshal_view::HOST`
+picks the set at compile time; the view takes it from its input, so either set is
+drawn and tested on any operating system.
+
+For macOS runners (M3, [#80](https://github.com/axross/runners/issues/80)), the
+window shows a slot waiting for the macOS VM limit or for a VM's deletion, the golden
+macOS VM after the Linux one with its runner-age and base-age warnings, and a leftover
+VM of a pool no longer configured, which Marshal never deletes, pointing to
+[Removing the VMs of a Pool No Longer Configured](./macos-runner-host.md#removing-the-vms-of-a-pool-no-longer-configured).
+The window shows no command but the Keychain's fallback delete. The agent sends these
+items, and the view's tests draw each of them from a fake snapshot in the same codes.

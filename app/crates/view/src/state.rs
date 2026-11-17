@@ -65,6 +65,7 @@ pub enum Resident {
     NoAgent,
     NotAnswering,
     LockHeld,
+    OutsideApplications,
     Quitting,
     LostContact {
         last_heard_ms: u64,
@@ -209,6 +210,7 @@ impl<'a> Context<'a> {
                     | Resident::NoAgent
                     | Resident::NotAnswering
                     | Resident::LockHeld
+                    | Resident::OutsideApplications
             )
     }
 
@@ -247,6 +249,7 @@ fn resident_of(input: &Input<'_>) -> Resident {
         Connection::NoAgent => Resident::NoAgent,
         Connection::NotAnswering => Resident::NotAnswering,
         Connection::LockHeld => Resident::LockHeld,
+        Connection::OutsideApplications => Resident::OutsideApplications,
         Connection::Quitting => Resident::Quitting,
         Connection::LostContact {
             last_heard_ms,

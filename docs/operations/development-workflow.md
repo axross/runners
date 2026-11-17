@@ -290,9 +290,16 @@ installs `tauri-cli` with `cargo install --locked` at the version in
 `app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
 runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
 left a file that is neither tracked nor ignored, and keeps the built
-`marshal-app.exe` as the run's artifact. Neither job uses a cache action, so
-`tauri-cli` compiles on every run, and the `app` job's timeout is 45 minutes;
-[App](./app.md#building-the-app) records how it was set.
+`marshal-app.exe` as the run's artifact. An `app-macos` job on a macOS hosted runner
+holds `contents: read` and builds the whole workspace for the Mac app: it installs
+`tauri-cli` the same way, lints and tests every crate with the `fake-engine`
+feature, runs the location rule's tests in the release profile, bundles the unsigned
+`Marshal.app` at bundle version 0.0.0, fails as the `app` job does if the build
+changed a tracked file, checks the bundle's layout, and keeps the app as a `ditto`
+archive and an unsigned disk image as the run's artifact. It signs, notarizes and
+publishes nothing. None of the three jobs uses a cache action, so `tauri-cli`
+compiles on every run, and the `app` and `app-macos` jobs' timeouts are 45 minutes;
+[App](./app.md#building-the-app) records how the first was set.
 The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
 own that builds the image, runs the same smoke test, which expects no Android toolchain

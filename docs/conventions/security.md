@@ -202,14 +202,16 @@ W4's tool job, which signs update archives, commits one that moves with the pin 
 it lands. The
 install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
-the Windows job of `merge-checks.yaml` and, since W1's installer pull request, in the
-Windows leg of `release-build.yaml`, which builds the released app. Both hold
-`contents: read`, read no secret and publish nothing, and both install the tool the
-same way, at the same pin read through the same script, under `$RUNNER_TEMP` with no
-cache. `tauri-cli`'s build scripts and procedural macros run code at build time under
-that job's account, which is why the job is what bounds them; in the release build
-the tool's output is the app that the next jobs attest and publish, so the exception
-covers the released app's build too. Nothing else installs the tool. To move the pin, see
+the Windows and macOS app jobs of `merge-checks.yaml` and, since W1's installer pull
+request, in the Windows leg of `release-build.yaml`, which builds the released app.
+Each holds `contents: read`, reads no secret and publishes nothing, and each installs
+the tool the same way, at the same pin read through the same script, under
+`$RUNNER_TEMP` with no cache. The macOS job, which M2 adds, signs nothing and keeps
+the unsigned Mac app and disk image only as a workflow artifact. `tauri-cli`'s build
+scripts and procedural macros run code at build time under those jobs' accounts,
+which is why the jobs are what bounds them; in the release build the tool's output is
+the app that the next jobs attest and publish, so the exception covers the released
+app's build too. Nothing else installs the tool. To move the pin, see
 [App](../operations/app.md#the-tauri-cli-pin); the change needs the maintainer's
 review, since it changes the supply-chain surface (see
 [REVIEW.md](../../REVIEW.md)). Any other unpinned download remains a finding.
@@ -275,7 +277,9 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   to the tree and runs only when the target is Windows with the MSVC environment;
   `serde`, `serde_json` and `tokio` for the session and the view, at versions the
   library already builds, so they add no crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
-  time zone's bias without `unsafe` code; and `keepawake` 0.6 on Windows, without its
+  time zone's bias without `unsafe` code; `core-foundation` 0.10 on macOS, Core
+  Foundation's safe wrapper, which reads the time zone's offset, at the version
+  Tauri's window crate already links there, so it adds no crate; and `keepawake` 0.6 on Windows, without its
   default features, which asks Windows not to idle-sleep while the agent's runners run
   and which the library's policy does not admit, so the executable gives the request to
   the agent. Its `derive_builder` macros bring a second version of the `darling`
@@ -1090,8 +1094,32 @@ named and used.
   persistence back. Any process of the same user can read the credential, as any
   can read a token file the user owns: the Credential Manager is not a boundary
   against the user's other programs.
-- On macOS and Linux the agent has no store, so it skips every pool with "no token
-  store" rather than falling back to a file; it never reads `tokenPath`.
+- On macOS a token is a generic password in the user's login keychain, with the
+  service `app.axross.marshal` and the account `github.com/<owner>/<name>` for a
+  repository or `github.com/<org>` for an organization; its label, which Keychain
+  Access shows, is `Marshal: <owner>/<name>` or `Marshal: <org> (organisation)`. The
+  agent is its only writer and reader. It adds each item with no access object of its
+  own, so macOS trusts the adding program by its designated requirement and its
+  team's partition, `teamid:<team>`. The requirement names the identifier
+  `app.axross.marshal`, the Developer ID markers and the team, not a path or a
+  certificate, so a later release signed by the same team reads the item; changing
+  the identifier or the team breaks that trust. An ad-hoc build, such as a dry run's,
+  is matched by its own code hash and reads only the items it stored. Setting a token
+  deletes the old item and adds a new one, so the item trusts the build that stored
+  it last.
+  - Any program the same team signs under `app.axross.marshal`, including a signed
+    `marshal` command line still on the Mac, can read the items. Another program of
+    the same user can ask for one, and macOS then asks the user, naming its label:
+    the Keychain is a boundary only as far as the user answers that dialog.
+  - The agent turns the Keychain's user interaction off for its whole life, so it
+    never shows a dialog. A read or write that would need the user, such as on a
+    locked keychain, fails at once with the kind `needs_user`, and the pool is
+    skipped with that reason rather than waiting on a dialog that an unattended Mac
+    would leave unseen.
+  - macOS refuses Keychain access to code changed on disk after it started; the
+    agent's changed-executable rule already ends such an agent.
+- On Linux the agent has no store, so it skips every pool with "no token store"
+  rather than falling back to a file. On no OS does it read `tokenPath`.
 - The `token_set` request is the first message in which a secret travels, from the
   client to the agent. The token is held as a `Secret` once the request is parsed,
   is masked in the log from then on, and is never repeated: not in the
@@ -1160,14 +1188,19 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   never as markup. A change to the policy, to the files it governs or to the element
   builder needs the maintainer's review.
 
-- **Two capabilities grant what a window may call.** The app declares its commands, so
+- **Four capabilities grant what a window may call, two of them on macOS only.** The app declares its commands, so
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
   again, set a token, remove a token, hide the window and open a runner's job. The
   confirmation window's
-  grants the two commands that read its question and answer it. Neither grants
-  anything else, each is limited to its window, and a test shows that a call the
+  grants the two commands that read its question and answer it. On macOS, where the
+  unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
+  the main window `core:window:allow-start-dragging` and
+  `core:window:allow-internal-toggle-maximize`, to drag and zoom it by its header
+  band, and `macos-confirmation-drag` grants the question window, which cannot be
+  zoomed, only `core:window:allow-start-dragging`. None grants anything else, each is
+  limited to its window, and a test shows that a call the
   capability does not grant is refused. The permission files Tauri generates are
   checked in, so a change to them shows in a diff, and Tauri's `dynamic-acl` feature
   is off, so no capability can be added while the app runs. Quit has no command: it
@@ -1200,10 +1233,16 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   [Updates Come Only From the Signed Feed](#updates-come-only-from-the-signed-feed).
 - **The debug-only test variables are ignored in a release build.** A debug build's
   agent and app read `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
-  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
-  A release build ignores all three, so no environment can move the lock, channel,
-  log, configuration, `docker` program or GitHub address of an installed Marshal, as
-  for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
+  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host;
+  on axmc the agent also reads the CLI's debug-only `tart` and signal variables, and
+  on the Mac the app reads `MARSHAL_TEST_ANY_LOCATION`, which lifts the rule that
+  only a copy in Applications controls an agent. A release build ignores all of them,
+  so no environment can move the lock, channel, log, configuration, `docker` or
+  `tart` program or GitHub address of an installed Marshal, or let a copy outside
+  Applications start an agent, as for the CLI under
+  [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user). The
+  `app-macos` job tests the location rule in the release profile with the variable
+  set.
 - **The app starts its agent from a file it checked.** It starts it from its own
   executable's absolute path as a plain detached child, never through Tauri's shell
   plugin, and never from a file that is missing, that it could not read when it
@@ -1555,7 +1594,9 @@ five after it are the constraints the VM runtime of
   instead.
 - Every `tart` call MUST set `TART_NO_AUTO_PRUNE`, so a clone never deletes an image
   another program cached; MUST get `marshal`'s own `PATH`, which `marshal` also uses
-  to find `tart` and `softnet`; and MUST have a standard output that is not a
+  to find `tart` and `softnet` (for the Mac app's agent, the fixed
+  `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin` the app gives it, so no
+  directory the user's shell adds is searched); and MUST have a standard output that is not a
   terminal, so Tart never offers to change Softnet's privilege. Only `build`
   deletes golden and build VMs.
 - A VM MUST have a fixed vCPU count, memory size and disk cap, the pool's `cpus`,

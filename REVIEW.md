@@ -366,17 +366,19 @@ Apply the lens for each kind of file in the diff.
   record in [Security](docs/conventions/security.md#the-app-surface), its web view,
   capability and token bullets. The content security policy in `tauri.conf.json`
   stays the one Security states in full, and `tauri.conf.json` keeps the web view
-  on bundled files with no developer tools in the release build. The two
-  capabilities, the main window's and the confirmation window's, and the permission
-  files Tauri generates keep to the permissions Security lists; a permission, a
-  capability or Tauri feature added, such as `dynamic-acl`, is a finding. The
+  on bundled files with no developer tools in the release build. The four
+  capabilities, the main window's and the confirmation window's on both systems and
+  the two macOS-only drag capabilities of those windows, together with
+  `tauri.macos.conf.json`'s window list and the permission files Tauri generates, keep
+  to the permissions Security lists; a permission, a capability or Tauri feature
+  added, such as `dynamic-acl`, is a finding. The
   pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and
   `on*`,
   and text from the configuration, Docker or the agent is set as text, never as
   markup, with no inline script, remote asset or npm package. No token sits in the
   page, a view state or an event after `token_set` is called. A change to the
-  policy, a capability, a permission file, `tauri.conf.json` or the element builder
-  needs the maintainer's review. The test manifest `build.rs` links into the
+  policy, a capability, a permission file, `tauri.conf.json`,
+  `tauri.macos.conf.json` or the element builder needs the maintainer's review. The test manifest `build.rs` links into the
   integration tests holds only the version 6 common controls dependency and only on
   a Windows MSVC target; another entry in it, such as an execution level, a second
   `embed-resource` call, or a test skipped or cfg-ed out to avoid it, is a finding

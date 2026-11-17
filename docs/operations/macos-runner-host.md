@@ -34,7 +34,11 @@ configuration through the library; see
 
 The runtime installs, bundles and repairs neither program. It calls `tart` as an
 external program, and Tart runs the `softnet` that comes first on the `PATH` it
-gets, which is the `PATH` of the process that runs the runtime. Both programs need
+gets, which is the `PATH` of the process that runs the runtime, or, for the Mac
+app's agent, the fixed `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`, since an
+app opened from the Finder gets launchd's short `PATH`. The app's agent therefore
+finds Tart and Softnet only when Homebrew installed them in `/opt/homebrew/bin`.
+Both programs need
 an Apple silicon Mac, and Softnet 0.25.0 needs macOS 26.
 
 The tested versions are recorded in the CLI (`macos::version`):
@@ -334,7 +338,9 @@ entry is a pool of `slots` runners for one repository:
 - `imageName`, when present, names the runner image inside the golden VM; without it
   the image is `actions-runner:local`.
 - `tokenPath` names a file that holds one repository's token, for the command line;
-  the TOML form has none, and the agent has no token store on macOS yet. Create the token as
+  the TOML form has none, since the Mac app's agent keeps each token in the login
+  keychain, entered in the main window's Tokens tab; see
+  [Tokens and a Locked Keychain](./app.md#tokens-and-a-locked-keychain). Create the token as
   [Windows Runner Host](./windows-runner-host.md#the-fine-grained-token) describes,
   one fine-grained token per repository with the Administration permission. On macOS
   the file must be a regular file owned by you with mode `0600`: `chmod 600 <file>`.
@@ -415,6 +421,14 @@ instance.
   with a job. A VM left after a stop is a leftover.
 - **The log:** `~/Library/Logs/marshal/marshal-<time>-<pid>.log` keeps the newest ten
   runs. `Using Tart <v> and Softnet <v>.` records the versions in use.
+
+### Adding Actions: read for Job Names
+
+The Mac app names the job each busy runner runs only when the repository's token also
+has **Actions**, **Read-only**. Add it as
+[Windows Runner Host](./windows-runner-host.md#adding-actions-read-for-job-names)
+describes; the steps are on GitHub and the same on both hosts, and the token's value
+does not change, so nothing changes in the login keychain.
 
 ## Sleep, Wake, and Network Changes
 

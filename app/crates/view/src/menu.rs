@@ -10,7 +10,7 @@ use crate::state::Context;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MenuItem {
     pub action: Action,
-    /// in sentence case, as Windows menus are.
+    /// in the host's case: sentence case on Windows, title case on the Mac.
     pub label: String,
     pub available: bool,
     /// why the item is unavailable. Windows cannot show it in a menu; the window's
@@ -26,12 +26,13 @@ pub struct Menu {
     pub items: Vec<MenuItem>,
 }
 
-const ITEMS: [(Action, &str); 5] = [
-    (Action::OpenMarshal, "Open Marshal"),
-    (Action::StartAll, "Start all runners"),
-    (Action::StopAll, "Stop all runners"),
-    (Action::BuildImage, "Build image"),
-    (Action::Quit, "Quit Marshal"),
+/// the items in order; their labels are the host's words.
+const ITEMS: [Action; 5] = [
+    Action::OpenMarshal,
+    Action::StartAll,
+    Action::StopAll,
+    Action::BuildImage,
+    Action::Quit,
 ];
 
 pub fn menu(context: &Context<'_>, summary: &str) -> Menu {
@@ -39,6 +40,7 @@ pub fn menu(context: &Context<'_>, summary: &str) -> Menu {
         summary: summary.to_string(),
         items: ITEMS
             .into_iter()
+            .zip(context.input.words.menu)
             .map(|(action, label)| {
                 let state = availability(context, &action);
                 MenuItem {

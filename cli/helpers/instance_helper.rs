@@ -273,8 +273,13 @@ fn run_agent(args: &[String]) -> ExitCode {
             .push((OsString::from("FAKE_DOCKER_DIR"), OsString::from(directory)));
     }
     options.store = Some(store);
-    // the tests' configurations are axpc's on every host
-    options.profile = Some(marshal_cli::profile::Profile::Axpc);
+    // the tests' configurations are axpc's on every host unless a test asks for axmc,
+    // which runs the pools on the `tart` and the signals the environment names
+    options.profile = Some(if value_of(args, "--profile") == Some("axmc") {
+        marshal_cli::profile::Profile::Axmc
+    } else {
+        marshal_cli::profile::Profile::Axpc
+    });
     options.max_log_bytes = value_of(args, "--max-log-bytes").and_then(|bytes| bytes.parse().ok());
     ExitCode::from(run(options, &mut std::io::stderr()))
 }

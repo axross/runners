@@ -64,6 +64,14 @@ fn an_absent_mode_counts_as_dark_and_is_logged_once() {
 }
 
 #[test]
+fn the_macs_template_image_has_no_mode_and_logs_nothing() {
+    let mut watch = Watch::new();
+    let first = watch.poll(TaskbarReading::NoMode, Some(2.0));
+    assert!(first.replace.is_some());
+    assert_eq!(first.warn, None);
+}
+
+#[test]
 fn an_unreadable_mode_counts_as_dark_and_is_logged_once() {
     let mut watch = Watch::new();
     polled(&mut watch, 1, 1.0);
