@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# runs assemble-release.sh against temporary directories: the two SHA256SUMS
-# lines in their fixed order that sha256sum accepts, and a refusal for each way
+# runs assemble-release.sh against temporary directories: in unsigned mode the two
+# SHA256SUMS lines, and in signed mode the three with the Mac's disk image, in
+# their fixed order that sha256sum accepts, and a refusal for each way the mode,
 # the directory or a hash can be wrong. each case checks the exit status and the
 # cause the script names, and a refusal also checks that no SHA256SUMS was left.
 set -euo pipefail
@@ -12,6 +13,7 @@ trap 'rm -rf -- "$work"' EXIT
 version=1.2.3
 windows="marshal-${version}-windows-x64.exe"
 windows_msi="marshal-${version}-windows-x64.msi"
+macos_dmg="marshal-${version}-macos-arm64.dmg"
 
 hash_of() {
   local line
@@ -29,12 +31,12 @@ make_set() {
 failures=0
 
 # expect <case> <exit status> <text the output must contain> <directory> <hash arguments...>
-# runs the script on the version above, and for a refusal checks that the directory
-# holds no SHA256SUMS afterwards.
+# runs the script in $mode, unsigned unless a case sets it, on the version above,
+# and for a refusal checks that the directory holds no SHA256SUMS afterwards.
 expect() {
   local name="$1" want_status="$2" want_text="$3" directory="$4" output status=0
   shift 4
-  output="$(bash "$script" "$version" "$directory" "$@" 2>&1)" || status=$?
+  output="$(bash "$script" "${mode:-unsigned}" "$version" "$directory" "$@" 2>&1)" || status=$?
   if [[ $status -ne $want_status ]]; then
     echo "FAIL ${name}: exit ${status}, expected ${want_status}: ${output}" >&2
     failures=$((failures + 1))
@@ -79,13 +81,60 @@ mv "${work}/dry/$windows_msi" "${work}/dry/marshal-0.0.0-dryrun.7-windows-x64.ms
 dry_hashes="$(cd "${work}/dry" && sha256sum marshal-0.0.0-dryrun.7-windows-x64.exe marshal-0.0.0-dryrun.7-windows-x64.msi | awk '{ printf "%s ", $1 }')"
 dry_status=0
 # shellcheck disable=SC2086 # the two hashes are separate arguments.
-dry_output="$(bash "$script" 0.0.0-dryrun.7 "${work}/dry" $dry_hashes 2>&1)" || dry_status=$?
+dry_output="$(bash "$script" unsigned 0.0.0-dryrun.7 "${work}/dry" $dry_hashes 2>&1)" || dry_status=$?
 if [[ $dry_status -ne 0 || "$(wc -l <"${work}/dry/SHA256SUMS")" -ne 2 ]]; then
   echo "FAIL a dry run's prerelease version: exit ${dry_status}: ${dry_output}" >&2
   failures=$((failures + 1))
 else
   echo "ok   a dry run's prerelease version"
 fi
+
+# the signed set: the two files and the Mac's disk image, with its hash last.
+make_signed_set() {
+  make_set "$1"
+  printf 'macos disk image\n' >"$1/$macos_dmg"
+}
+signed_hashes() {
+  echo "$(hashes "$1")" "$(hash_of "$1/$macos_dmg")"
+}
+
+make_signed_set "${work}/signed"
+# shellcheck disable=SC2046 # the three hashes are separate arguments.
+mode=signed expect "the exact signed set" 0 "$macos_dmg" "${work}/signed" $(signed_hashes "${work}/signed")
+want="$(
+  printf '%s  %s\n' \
+    "$(hash_of "${work}/signed/$windows")" "$windows" \
+    "$(hash_of "${work}/signed/$windows_msi")" "$windows_msi" \
+    "$(hash_of "${work}/signed/$macos_dmg")" "$macos_dmg"
+)"
+if [[ "$(cat "${work}/signed/SHA256SUMS")" != "$want" ]]; then
+  echo "FAIL the signed set's SHA256SUMS lines or their order are wrong: $(cat "${work}/signed/SHA256SUMS")" >&2
+  failures=$((failures + 1))
+else
+  echo "ok   the signed set's three lines are in the fixed order"
+fi
+
+make_signed_set "${work}/unsigned-with-dmg"
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
+expect "an unsigned set that holds the disk image" 1 "unsigned set's files are not exactly" "${work}/unsigned-with-dmg" $(hashes "${work}/unsigned-with-dmg")
+
+make_set "${work}/signed-without-dmg"
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
+mode=signed expect "a signed set without the disk image" 1 "signed set's files are not exactly" "${work}/signed-without-dmg" $(hashes "${work}/signed-without-dmg") "$(printf '%064d' 0)"
+
+make_signed_set "${work}/changed-dmg"
+# shellcheck disable=SC2046 # the three hashes are separate arguments.
+set -- $(signed_hashes "${work}/changed-dmg")
+printf 'changed\n' >>"${work}/changed-dmg/$macos_dmg"
+mode=signed expect "a changed disk image" 1 "${macos_dmg} has SHA-256" "${work}/changed-dmg" "$@"
+
+make_signed_set "${work}/signed-short"
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
+mode=signed expect "signed mode without the disk image's hash" 2 "Usage:" "${work}/signed-short" $(hashes "${work}/signed-short")
+
+make_set "${work}/other-mode"
+# shellcheck disable=SC2046 # the two hashes are separate arguments.
+mode=both expect "a mode that is neither unsigned nor signed" 2 "Usage:" "${work}/other-mode" $(hashes "${work}/other-mode")
 
 make_set "${work}/changed-windows"
 # shellcheck disable=SC2046 # the two hashes are separate arguments.
@@ -131,7 +180,7 @@ make_set "${work}/missing"
 # shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/missing")
 rm "${work}/missing/$windows"
-expect "a missing executable" 1 "are not exactly ${windows} and ${windows_msi}" "${work}/missing" "$@"
+expect "a missing executable" 1 "are not exactly ${windows} ${windows_msi}" "${work}/missing" "$@"
 
 make_set "${work}/extra"
 # shellcheck disable=SC2046 # the two hashes are separate arguments.
@@ -150,7 +199,7 @@ make_set "${work}/old-sums"
 set -- $(hashes "${work}/old-sums")
 (cd "${work}/old-sums" && sha256sum "$windows" >SHA256SUMS)
 status=0
-output="$(bash "$script" "$version" "${work}/old-sums" "$@" 2>&1)" || status=$?
+output="$(bash "$script" unsigned "$version" "${work}/old-sums" "$@" 2>&1)" || status=$?
 if [[ $status -ne 1 || "$output" != *"are not exactly"* ]]; then
   echo "FAIL an earlier SHA256SUMS in the directory: exit ${status}: ${output}" >&2
   failures=$((failures + 1))
@@ -176,7 +225,7 @@ expect "an executable that is a symlink" 1 "${windows} is not a regular file" "$
 expect "a directory that does not exist" 1 "is not a directory" "${work}/absent" $(hashes "${work}/exact")
 
 status=0
-output="$(bash "$script" "$version" "${work}/exact" 2>&1)" || status=$?
+output="$(bash "$script" unsigned "$version" "${work}/exact" 2>&1)" || status=$?
 if [[ $status -ne 2 || "$output" != *"Usage:"* ]]; then
   echo "FAIL too few arguments: exit ${status}: ${output}" >&2
   failures=$((failures + 1))
@@ -188,7 +237,7 @@ make_set "${work}/bad-version"
 # shellcheck disable=SC2046 # the two hashes are separate arguments.
 set -- $(hashes "${work}/bad-version")
 status=0
-output="$(bash "$script" "1.2" "${work}/bad-version" "$@" 2>&1)" || status=$?
+output="$(bash "$script" unsigned "1.2" "${work}/bad-version" "$@" 2>&1)" || status=$?
 if [[ $status -ne 1 || "$output" != *"is not X.Y.Z"* ]]; then
   echo "FAIL a version that is not X.Y.Z: exit ${status}: ${output}" >&2
   failures=$((failures + 1))

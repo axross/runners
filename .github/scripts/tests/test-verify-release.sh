@@ -13,15 +13,18 @@ trap 'rm -rf -- "$work"' EXIT
 version=1.2.3
 windows="marshal-${version}-windows-x64.exe"
 windows_msi="marshal-${version}-windows-x64.msi"
-all_files="${windows}, ${windows_msi} and SHA256SUMS"
+macos_dmg="marshal-${version}-macos-arm64.dmg"
+all_files="${windows}, ${windows_msi}, ${macos_dmg} and SHA256SUMS"
+all_listed="${windows}, ${windows_msi} and ${macos_dmg}"
 
-# release_files <directory> [<executable name> [<msi name>]]
+# release_files <directory> [<executable name> [<msi name> [<disk image name>]]]
 release_files() {
-  local directory="$1" windows_name="${2:-$windows}" msi_name="${3:-$windows_msi}"
+  local directory="$1" windows_name="${2:-$windows}" msi_name="${3:-$windows_msi}" dmg_name="${4:-$macos_dmg}"
   mkdir -p "$directory"
   printf 'windows app\n' >"${directory}/${windows_name}"
   printf 'windows installer\n' >"${directory}/${msi_name}"
-  (cd "$directory" && sha256sum "$windows_name" "$msi_name" >SHA256SUMS)
+  printf 'macos disk image\n' >"${directory}/${dmg_name}"
+  (cd "$directory" && sha256sum "$windows_name" "$msi_name" "$dmg_name" >SHA256SUMS)
 }
 
 failures=0
@@ -67,7 +70,8 @@ expect "the release phase with the exact files" 0 "are complete and match SHA256
   release "$version" "${work}/exact"
 
 # the asset globs @semantic-release/github uploads, relative to release/, must
-# each match one file and together the app executable, the MSI and SHA256SUMS.
+# each match one file and together the app executable, the MSI, the disk image and
+# SHA256SUMS.
 expect_assets() {
   local directory="$1" pattern hits names=() problem=""
   local -a assets
@@ -76,8 +80,8 @@ expect_assets() {
     const github = config.plugins.find((plugin) => [].concat(plugin)[0] === "@semantic-release/github");
     for (const asset of github[1].assets) console.log(typeof asset === "string" ? asset : asset.path);
   ' "$config")
-  if [[ ${#assets[@]} -ne 3 ]]; then
-    problem="${config} lists ${#assets[@]} asset globs, not 3"
+  if [[ ${#assets[@]} -ne 4 ]]; then
+    problem="${config} lists ${#assets[@]} asset globs, not 4"
   fi
   for pattern in "${assets[@]}"; do
     [[ -z "$problem" ]] || break
@@ -92,7 +96,7 @@ expect_assets() {
     fi
     names+=("$hits")
   done
-  if [[ -z "$problem" && "$(printf '%s\n' "${names[@]}" | sort)" != "$(printf '%s\n' SHA256SUMS "$windows" "$windows_msi" | sort)" ]]; then
+  if [[ -z "$problem" && "$(printf '%s\n' "${names[@]}" | sort)" != "$(printf '%s\n' SHA256SUMS "$windows" "$windows_msi" "$macos_dmg" | sort)" ]]; then
     problem="the asset globs match ${names[*]}, not ${all_files}"
   fi
   if [[ -n "$problem" ]]; then
@@ -113,6 +117,15 @@ release_files "${work}/missing-msi"
 rm "${work}/missing-msi/${windows_msi}"
 expect "a missing MSI" 1 "are not exactly ${all_files}" \
   release "$version" "${work}/missing-msi"
+
+release_files "${work}/missing-dmg"
+rm "${work}/missing-dmg/${macos_dmg}"
+expect "a missing disk image" 1 "are not exactly ${all_files}" \
+  release "$version" "${work}/missing-dmg"
+
+release_files "${work}/other-version-dmg" "$windows" "$windows_msi" "marshal-1.2.4-macos-arm64.dmg"
+expect "a disk image named for another version" 1 "are not exactly ${all_files}" \
+  release "$version" "${work}/other-version-dmg"
 
 release_files "${work}/extra"
 printf 'helper\n' >"${work}/extra/fake-docker"
@@ -146,12 +159,12 @@ expect "an executable that is a directory" 1 "${windows} is not a regular file" 
 
 release_files "${work}/one-listed"
 (cd "${work}/one-listed" && sha256sum "$windows" >SHA256SUMS)
-expect "a SHA256SUMS that lists only the executable" 1 "SHA256SUMS does not list exactly ${windows} and ${windows_msi}" \
+expect "a SHA256SUMS that lists only the executable" 1 "SHA256SUMS does not list exactly ${all_listed}" \
   release "$version" "${work}/one-listed"
 
 release_files "${work}/no-installers-listed"
 (cd "${work}/no-installers-listed" && sha256sum "$windows_msi" >SHA256SUMS)
-expect "a SHA256SUMS that lists only the MSI" 1 "SHA256SUMS does not list exactly ${windows} and ${windows_msi}" \
+expect "a SHA256SUMS that lists only the MSI" 1 "SHA256SUMS does not list exactly ${all_listed}" \
   release "$version" "${work}/no-installers-listed"
 
 release_files "${work}/mismatch"
@@ -163,6 +176,16 @@ release_files "${work}/mismatch-installer"
 printf 'tampered\n' >>"${work}/mismatch-installer/${windows_msi}"
 expect "an installer checksum mismatch" 1 "a release file does not match SHA256SUMS" \
   release "$version" "${work}/mismatch-installer"
+
+release_files "${work}/dmg-unlisted"
+(cd "${work}/dmg-unlisted" && sha256sum "$windows" "$windows_msi" >SHA256SUMS)
+expect "a SHA256SUMS that does not list the disk image" 1 "SHA256SUMS does not list exactly ${all_listed}" \
+  release "$version" "${work}/dmg-unlisted"
+
+release_files "${work}/mismatch-dmg"
+printf 'tampered\n' >>"${work}/mismatch-dmg/${macos_dmg}"
+expect "a disk image checksum mismatch" 1 "a release file does not match SHA256SUMS" \
+  release "$version" "${work}/mismatch-dmg"
 
 expect "an unset RELEASE_PHASE" 1 "RELEASE_PHASE must be plan or release, not ''" \
   -unset "$version" "${work}/exact"
