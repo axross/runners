@@ -383,8 +383,8 @@ fn no_default_feature_workflow_or_task_enables_the_rehearsal_build() {
         .collect();
     assert_eq!(
         features,
-        ["rehearsal = []"],
-        "the feature is declared alone, so no default or other feature turns it on"
+        ["fake-engine = []", "rehearsal = []"],
+        "no default or other feature turns the rehearsal on"
     );
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let mut files = files_under(&root.join(".github"));

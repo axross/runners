@@ -29,10 +29,8 @@ required-features = ["fake-engine"]
 
 [features]
 fake-engine = []
-
 # `rehearsal` is the Mac rehearsal's build, made by hand: a local test feed replaces the
 # committed one (see src/updates/rehearsal.rs). It is off, and no workflow enables it.
-[features]
 rehearsal = []
 
 [dependencies]
