@@ -14,8 +14,8 @@ fn mac_view_of(snapshot: &Snapshot) -> View {
     build(&Input::new(Connection::Connected, Some(snapshot), now()).words(MACOS))
 }
 
-/// a running Mac with M3's items, in the codes M3 agreed with M2, as a fake until M3's
-/// agent sends them: a slot waiting for the macOS VM limit and one for a VM's deletion,
+/// a running Mac with M3's items, in the codes and fields the agent sends, as a fake
+/// snapshot: a slot waiting for the macOS VM limit and one for a VM's deletion,
 /// the golden macOS VM after the Linux one with its warnings, and leftover VMs of a
 /// configured pool and of one no longer configured.
 fn with_m3_items() -> Snapshot {
@@ -37,13 +37,13 @@ fn with_m3_items() -> Snapshot {
                 {"name": "base-published", "value": "2026-09-20"}
             ],
             "warnings": [
-                {"code": "runner_old", "days": 21, "version": "2.338.2"},
-                {"code": "runner_age_unknown", "version": "2.338.2"},
+                {"code": "runner_old", "days": 21},
+                {"code": "runner_age_unknown"},
                 {"code": "base_old", "days": 45}
             ]
         }));
         value["leftovers"] = json!([
-            {"kind": "vm", "name": "app-1-20261104020000000"},
+            {"kind": "container", "name": "app-1-20261104020000000"},
             {"kind": "vm_unconfigured_pool", "name": "old-1-20261103020000000"}
         ]);
     })
@@ -171,11 +171,11 @@ fn the_golden_macos_vm_follows_the_linux_one_with_its_own_warnings() {
     );
     let warnings = view.window.footer.warnings.join("\n");
     assert!(
-        warnings.contains("Warning: runner 2.338.2 was released 21 days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the golden macOS VM again."),
+        warnings.contains("Warning: the runner was released 21 days ago and never updates itself; update Marshal to get a newer runner, then build the golden macOS VM again before GitHub stops sending jobs to it."),
         "{warnings}"
     );
     assert!(
-        warnings.contains("Warning: the golden macOS VM's runner 2.338.2 has no known release date, so its age is unknown."),
+        warnings.contains("Warning: the golden macOS VM's runner has no known release date, so its age is unknown."),
         "{warnings}"
     );
     assert!(

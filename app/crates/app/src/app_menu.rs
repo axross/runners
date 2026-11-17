@@ -58,13 +58,20 @@ fn build(app: &AppHandle, view: Option<&Menu>) -> tauri::Result<TauriMenu<tauri:
         "Edit",
         true,
         &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
             &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
         ],
     )?;
     let runners = Submenu::new(app, "Runners", true)?;
-    for action in &RUNNERS {
-        runners.append(&item_for(app, view, action, "", None)?)?;
+    // the host's words, Start All Runners and the rest, label the items before the
+    // first view
+    for (action, label) in RUNNERS.iter().zip(marshal_view::HOST.menu.iter().skip(1)) {
+        runners.append(&item_for(app, view, action, label, None)?)?;
     }
     let window = Submenu::with_items(
         app,
@@ -79,7 +86,7 @@ fn build(app: &AppHandle, view: Option<&Menu>) -> tauri::Result<TauriMenu<tauri:
 }
 
 /// the item of `action` with the view's label and availability; with no view yet it is
-/// unavailable, under `fallback` or the action's id.
+/// unavailable, under `fallback`.
 fn item_for(
     app: &AppHandle,
     view: Option<&Menu>,
@@ -91,7 +98,6 @@ fn item_for(
     let found = view.and_then(|menu| menu.items.iter().find(|item| &item.action == action));
     let (label, available) = match found {
         Some(item) => (item.label.as_str(), item.available),
-        None if fallback.is_empty() => (id, false),
         None => (fallback, false),
     };
     MenuItem::with_id(app, format!("{PREFIX}{id}"), label, available, accelerator)

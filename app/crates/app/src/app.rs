@@ -169,7 +169,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(Discard)
         }
     };
-    let executable = std::env::current_exe()?;
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("the app's own executable cannot be found: {error}"))?;
     let in_place = may_control_agent(&executable);
     if !in_place {
         log.warn(&format!(
@@ -196,10 +197,11 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     }
     let fresh = taken.is_none();
     let launch = taken.unwrap_or(Launch::Stopped);
-    // the marker the last copy left if its agent ended because Marshal was moved; only a
-    // copy that may control an agent takes it, so one opened elsewhere leaves it for that copy
+    // the marker the last copy left if its agent ended because Marshal was moved, on the
+    // Mac only; only a copy that may control an agent takes it, so one opened elsewhere
+    // leaves it for that copy
     let moved = MovedFile::new(roots.config_directory().join(MOVED_FILE));
-    let after_moved = in_place && moved.take();
+    let after_moved = cfg!(target_os = "macos") && in_place && moved.take();
     let (updater, processes) = update_seams(app);
     let login_item = login_item(&roots)?;
     let watch = Arc::new(Mutex::new(Watch::new()));
@@ -257,7 +259,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     tauri::async_runtime::spawn(async move {
         let ended = session.run().await;
         log.info(&format!("The app ends: {ended:?}."));
-        if ended == Ended::AgentEnded(EXECUTABLE_CHANGED.to_string())
+        if cfg!(target_os = "macos")
+            && ended == Ended::AgentEnded(EXECUTABLE_CHANGED.to_string())
             && let Err(why) = moved.write()
         {
             log.warn(&format!(

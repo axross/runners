@@ -113,12 +113,16 @@ fn build_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<TauriMenu<tauri::Wr
 }
 
 pub fn set_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<()> {
+    // the two menus are independent: a failure in one does not keep the other stale
     #[cfg(target_os = "macos")]
-    crate::app_menu::set(app, Some(menu))?;
-    match app.tray_by_id(TRAY_ID) {
-        Some(tray) => tray.set_menu(Some(build_menu(app, menu)?)),
+    let app_menu = crate::app_menu::set(app, Some(menu));
+    let tray_menu = match app.tray_by_id(TRAY_ID) {
+        Some(tray) => build_menu(app, menu).and_then(|built| tray.set_menu(Some(built))),
         None => Ok(()),
-    }
+    };
+    #[cfg(target_os = "macos")]
+    app_menu?;
+    tray_menu
 }
 
 fn on_menu_event(app: &AppHandle, event: MenuEvent) {
