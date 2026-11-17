@@ -1,4 +1,4 @@
-//! a stand-in for a second `marshal` process, so the instance-layer tests and CI can
+//! a stand-in for a second Marshal process, so the instance-layer tests and CI can
 //! run the lock and the channel in real processes, and as another user; it takes its
 //! roots from `--root`, which only a debug build allows, so it can never touch a real
 //! lock or channel; a release build of it does nothing.
@@ -17,7 +17,7 @@
 //!                                             run the resident agent as a process, on a
 //!                                             token store in memory that holds the
 //!                                             tokens given, until it is told to quit
-//! instance-helper shim ...                    the other commands of `marshal` run as
+//! instance-helper shim ...                    the hidden modes of the library run as
 //!                                             it does, because the agent starts its
 //!                                             job containers and exports through the
 //!                                             program it runs as
