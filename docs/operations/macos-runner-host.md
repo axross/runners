@@ -338,7 +338,9 @@ entry is a pool of `slots` runners for one repository:
 - `imageName`, when present, names the runner image inside the golden VM; without it
   the image is `actions-runner:local`.
 - `tokenPath` names a file that holds one repository's token, for the command line;
-  the TOML form has none, and the agent has no token store on macOS yet. Create the token as
+  the TOML form has none, since the Mac app's agent keeps each token in the login
+  keychain, entered in the main window's Tokens tab; see
+  [Tokens and a Locked Keychain](./app.md#tokens-and-a-locked-keychain). Create the token as
   [Windows Runner Host](./windows-runner-host.md#the-fine-grained-token) describes,
   one fine-grained token per repository with the Administration permission. On macOS
   the file must be a regular file owned by you with mode `0600`: `chmod 600 <file>`.

@@ -171,7 +171,7 @@ fn the_golden_macos_vm_follows_the_linux_one_with_its_own_warnings() {
     );
     let warnings = view.window.footer.warnings.join("\n");
     assert!(
-        warnings.contains("Warning: the runner was released 21 days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the golden macOS VM again."),
+        warnings.contains("Warning: the runner was released 21 days ago and never updates itself; update Marshal to get a newer runner, then build the golden macOS VM again before GitHub stops sending jobs to it."),
         "{warnings}"
     );
     assert!(
