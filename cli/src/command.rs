@@ -1,6 +1,6 @@
 //! the hidden modes the app's executable relaunches itself in (the diagnostics
 //! exporter, and on Unix the container and VM shims), and reading a host
-//! configuration file for the agent, `start` and `build`. There are no user-facing
+//! configuration file for the agent, `start` and `build`. there are no user-facing
 //! commands; see `docs/operations/cli.md`.
 
 use std::ffi::OsString;

@@ -1,9 +1,9 @@
 //! a stand-in for the command line that the library no longer ships, so the tests can
 //! run the foreground `start`, `build`, `validate` and the version 1 clients as real
 //! processes: they hold the lock, take signals and run in a Job Object, which only a
-//! process shows. Any other first argument is a hidden mode, run as the app's
+//! process shows. any other first argument is a hidden mode, run as the app's
 //! executable runs it, so a test can hand this program to the exporter and the shims
-//! as the program to relaunch. A release must not ship it.
+//! as the program to relaunch. a release must not ship it.
 //!
 //! ```text
 //! commands-helper validate|build|start --config PATH [--profile axpc|axmc]
@@ -11,7 +11,7 @@
 //! commands-helper export|shim|vm-shim ...
 //! ```
 //!
-//! The test variables are read as the agent's options read them: the library honours
+//! the test variables are read as the agent's options read them: the library honours
 //! them in a debug build only.
 
 use std::ffi::OsString;
@@ -35,6 +35,7 @@ struct Options {
     profile: Profile,
 }
 
+/// keeps host-profile selection compatible with the retired foreground interface.
 fn options(args: &[OsString], err: &mut dyn Write) -> Result<Options, u8> {
     let mut config = None;
     let mut profile = None;
@@ -64,6 +65,7 @@ fn options(args: &[OsString], err: &mut dyn Write) -> Result<Options, u8> {
     Ok(Options { config, profile })
 }
 
+/// checks the host plan without starting the library's foreground agent.
 fn validate(options: &Options, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let loaded = load_plan(&options.config, options.profile);
     if loaded.checkout_rule_skipped {
@@ -83,6 +85,7 @@ fn validate(options: &Options, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     }
 }
 
+/// the legacy control requests that only the integration-test process serves.
 fn client(word: &str) -> Option<Client> {
     match word {
         "stop" => Some(Client::Stop),
@@ -93,6 +96,7 @@ fn client(word: &str) -> Option<Client> {
     }
 }
 
+/// runs the library in a real process to expose locks, signals and child cleanup.
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
     let word = args

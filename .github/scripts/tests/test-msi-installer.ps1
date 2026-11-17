@@ -197,6 +197,12 @@ function Get-RelatedProductCode {
     return , $codes
 }
 
+<#
+.SYNOPSIS
+    reads the user's unexpanded PATH so expansion cannot hide an installer's change.
+.DESCRIPTION
+    throws when the user's Environment registry key cannot be read.
+#>
 function Get-UserPath {
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
     try {
@@ -262,7 +268,13 @@ function Assert-KeptMarker {
     foreach ($marker in $KeptMarkers) { Assert-That (Test-Path -LiteralPath $marker) "$Label - the uninstall left $marker" }
 }
 
-# compiles the stand-in that records its launch, with the .NET Framework's csc.
+<#
+.SYNOPSIS
+    compiles the stand-in that records an MSI launch without starting the real app.
+.DESCRIPTION
+    throws if the .NET Framework compiler is absent, compilation fails, or the
+    source cannot be written.
+#>
 function Build-LaunchRecorder {
     param([Parameter(Mandatory = $true)][string]$Path)
     $source = @'
@@ -270,7 +282,11 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Security.Principal;
+/// <summary>exposes the installer's launch identity without starting the resident agent.</summary>
 public static class LaunchRecorder {
+    /// <summary>publishes a complete record for the installer's asynchronous launch.</summary>
+    /// <exception cref="IOException">the record cannot be written or published.</exception>
+    /// <exception cref="UnauthorizedAccessException">the record path denies access.</exception>
     public static int Main(string[] args) {
         int at = Array.IndexOf(args, "--record");
         if (at < 0 || at + 1 >= args.Length) { return 2; }
@@ -280,7 +296,9 @@ public static class LaunchRecorder {
             + "user=" + identity.Name + "\n"
             + "elevated=" + elevated + "\n"
             + "args=" + string.Join("|", args) + "\n";
-        File.WriteAllText(args[at + 1], text);
+        string pending = args[at + 1] + ".pending";
+        File.WriteAllText(pending, text);
+        File.Move(pending, args[at + 1]);
         return 0;
     }
 }
@@ -336,12 +354,16 @@ function Install-MsiAsUpdate {
     return Invoke-Msi -Arguments (@('/i', "`"$Path`"", '/passive', '/promptrestart') + (Get-LaunchProperty -Record $Record)) -LogName $LogName -Ui @()
 }
 
-# waits up to the timeout for the recorder's file and returns what it wrote, or $null.
+<#
+.SYNOPSIS
+    waits up to the timeout for a published launch record, returning $null if absent.
+.DESCRIPTION
+    throws if a published record cannot be read.
+#>
 function Wait-Launch {
     param([Parameter(Mandatory = $true)][string]$Record, [int]$Seconds = 30)
     for ($waited = 0; $waited -lt $Seconds; $waited++) {
         if (Test-Path -LiteralPath $Record) {
-            Start-Sleep -Milliseconds 500
             $fields = @{}
             foreach ($line in (Get-Content -LiteralPath $Record)) {
                 $split = $line.IndexOf('=')
@@ -354,6 +376,11 @@ function Wait-Launch {
     return $null
 }
 
+<#
+.SYNOPSIS
+    checks the MSI's launch contract against the installed stand-in's record;
+    a mismatch throws rather than silently accepting a different launch.
+#>
 function Assert-Launched {
     param([Parameter(Mandatory = $true)][string]$Record, [Parameter(Mandatory = $true)][string]$Label)
     $launch = Wait-Launch -Record $Record
