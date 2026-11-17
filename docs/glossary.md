@@ -99,9 +99,7 @@ checks the download first, and the installer's version is the release's `X.Y.Z`,
 
 **Release Environment** - the GitHub Environment named `release`, which holds the
 macOS signing secrets and the `MACOS_TEAM_ID` variable. It admits `main` only and
-needs the maintainer's approval for each run. No job declares it from W1's installer
-pull request until M2's or W4's signing job returns; it and its secrets are kept for
-that job. The maintainer creates and changes it; agents never do. See
+needs the maintainer's approval for each run. `release.yaml`'s `sign-macos` declares it, and W4's `sign-update` will. The maintainer creates and changes it; agents never do. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed

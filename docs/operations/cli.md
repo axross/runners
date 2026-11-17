@@ -4709,28 +4709,150 @@ this one are separate products that share `%LOCALAPPDATA%\Programs\marshal\`, so
 uninstalling the command line removes `marshal.exe` and its `PATH` entry and leaves
 Marshal's files, and `where.exe marshal` then finds nothing.
 
-### Signing, Held for M2 and W4
+### Signing the Mac App
 
-No job of `release.yaml` signs anything from W1's installer pull request until the
-next signing job joins the chain: M2's disk-image pull request brings back
-`sign-macos` and `verify-macos`, rewritten for the app and the disk image, and W4's
-feed pull request adds `update-tool` and `sign-update`. Each joins before
-`assemble-signed`, which then needs it. Until then no job declares the `release`
-Environment, and the Environment and its secrets are kept for those jobs.
+Three jobs of `release.yaml` sit between `build` and `attest`. The maintainer's
+approval of the first one, `sign-macos`, is the decision to sign. M2's disk-image
+pull request brought `sign-macos` and `verify-macos` back from the restoration
+point, rewritten for the app and the disk image; W4's feed pull request adds
+`update-tool` and `sign-update` beside them, as
+[Release Sets and Job Dependencies](#release-sets-and-job-dependencies) describes.
+
+| Job               | Needs                                         | Runs on, timeout            | Permissions      | Environment | What it holds                                                                                                                                                                                                                                                                                                                |
+| ----------------- | --------------------------------------------- | --------------------------- | ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sign-macos`      | `plan`, `build`                               | `macos-latest`, 60 minutes  | `contents: read` | `release`   | `MACOS_APPLICATION_P12_BASE64`, `MACOS_P12_PASSWORD`, the three notary secrets and `MACOS_TEAM_ID`; not `MACOS_INSTALLER_P12_BASE64`. Downloads `marshal-macos-app`; uploads `marshal-macos-arm64-signed` and `notary-log-macos`. It checks nothing out.                                                                     |
+| `verify-macos`    | `plan`, `build`, `sign-macos`                 | `macos-latest`, 20 minutes  | `contents: read` | none        | No secret and no signing identity. Checks out the repository with `persist-credentials: false`, downloads three artifacts, checks the app archive against `app_sha256` and the disk image against `sign-macos`'s hash, and runs `test-signed-dmg.sh` with the team ID and the notary submission ID that `sign-macos` output. |
+| `assemble-signed` | `plan`, `build`, `sign-macos`, `verify-macos` | `ubuntu-latest`, 10 minutes | `contents: read` | none        | Checks out the repository with `persist-credentials: false`, runs `assemble-release.sh signed` over the Windows files and the signed disk image, and uploads `marshal-release-signed`.                                                                                                                                       |
+
+`attest` then needs `plan` and `assemble-signed`, and `release` needs `plan` and
+`attest`. Both read `marshal-release-signed`, and `marshal-release` stays the
+unsigned build set, which never holds the disk image. `attest` keeps
+`id-token: write` and `attestations: write` alone. The kept uploads, the signed disk
+image, the notary log and `marshal-release-signed`, hold no secret. The workflows ask
+GitHub to keep these uploads for 14 days; GitHub keeps them for the repository's
+artifact retention limit instead when that is shorter.
+
+`sign-macos` is the one job that declares the Environment or reads a signing secret.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-records that period.
+owns what it may hold and run: `contents: read`, no checkout, no repository file, no
+package manager, no fetch, and no action but `actions/download-artifact` and
+`actions/upload-artifact`. Its steps are the job's own definition in `release.yaml`,
+and its only network use is the artifact transfer and Apple's timestamp, notary and
+ticket services. Each signing tool is called by its absolute system path under
+`/usr/bin/`: `security`, `codesign`, `openssl`, `plutil`, `shasum`, `xcrun`, `ditto`
+and `hdiutil`, so nothing earlier on `PATH` can stand in for one. The scripts read the
+prefix from `SYSTEM_BIN`, whose default is that literal path and which only the
+stand-in test overrides; the shape check requires the default and rejects the name,
+and `SYSTEM_SBIN`, as an `env:` key anywhere. Its steps run in this order:
 
-What W1's installer pull request removed, `sign-macos`, `verify-macos`, the macOS
-build leg with its package build, package test and measured-tools step, their
-shape-check rules and test cases, and the macOS scripts and install-block suites, is
-held at the first parent of that pull request's commit on main, the restoration
-point. M2's pull request cites that commit's SHA and brings back what its plan keeps.
-The contracts below stay in force through the gap.
+1. It downloads `marshal-macos-app`, the app job's unsigned app archive and unsigned
+   disk image.
+2. It refuses, before importing anything, unless:
+   - every secret it reads and `MACOS_TEAM_ID` is non-empty, and `MACOS_TEAM_ID` is
+     10 characters of A-Z and 0-9;
+   - the version is `X.Y.Z`, and the app job's `app_sha256` is a lowercase SHA-256;
+   - the downloaded files are exactly `marshal-<version>-macos-arm64-app.zip` and
+     `marshal-<version>-macos-arm64.dmg`, and the archive is a regular file;
+   - the archive's SHA-256 equals `app_sha256`, so it signs what the app job built;
+   - every tool exists at its path, and `xcrun --find` finds `notarytool` and
+     `stapler`.
+3. It creates a temporary keychain with a random password that the log masks. It
+   refuses the embedded Developer ID G2 intermediate unless its SHA-256 equals the pin
+   in [Security](../conventions/security.md#pinning-convention), and that check comes
+   before any `security` call. It then imports the intermediate and the Application
+   `.p12`. The intermediate is embedded because the runner image's trust in it is
+   unknown and the job fetches no certificate. It expires on 2031-09-17, and replacing
+   it is a change to the job and to the pin.
+4. It lists the keychain's identities and refuses unless there is exactly one
+   Developer ID Application identity, and it must be valid. It prints the subject,
+   team and expiry date of the certificate whose SHA-1 hash equals the identity's,
+   found with `security find-certificate -a -Z -c <name>`, and refuses unless the name
+   matches exactly one certificate, so what it checks is what `codesign` signs with.
+   It refuses a certificate whose team differs from `MACOS_TEAM_ID` and an expired
+   one, and it warns with a workflow warning annotation when the certificate expires
+   within 90 days.
+5. It unpacks the archive with `ditto -x -k` and refuses unless it holds only
+   `Marshal.app`, `Contents/MacOS` holds only `marshal-app`, the app has none of
+   `Contents/Frameworks`, `PlugIns`, `Helpers`, `XPCServices` and `Library`, and its
+   `Info.plist` names `app.axross.marshal` and the release version.
+6. It signs the app with the Application identity, selected by its SHA-1 hash,
+   `--options runtime`, `--timestamp` and `--identifier app.axross.marshal`, without
+   `--deep`: the app's one executable is its main executable, so signing the bundle
+   signs inside-out. It then runs `codesign --verify --strict`, reads the designated
+   requirement, and refuses unless it is form A or B of
+   [The Signing Contracts](#the-signing-contracts).
+7. It copies the signed app with `ditto` into a staging folder beside a link
+   `Applications` to `/Applications`, and builds the disk image with
+   `hdiutil create -volname Marshal -srcfolder <stage> -format UDZO -ov`, the app
+   job's arguments, which the shape check compares. `hdiutil create` gets three
+   attempts 10 seconds apart, because it has failed on hosted runners with "Resource
+   busy". It signs the image with `--timestamp` and
+   `--identifier app.axross.marshal.dmg` and verifies it.
+8. It notarizes the disk image with
+   `xcrun notarytool submit … --wait --timeout 30m --output-format json`, and reads
+   the result with `plutil`. It refuses unless the status is `Accepted`, whatever
+   `notarytool` exited with, and a timeout is therefore a failure. Whenever a
+   submission ID exists it fetches the notary log, which Apple says to read even
+   after a success.
+9. It staples the disk image, runs `stapler validate` and `codesign --verify --strict`
+   again.
+10. It outputs the disk image's SHA-256 as `macos_dmg_sha256`, the team ID and the
+    submission ID, and uploads the disk image.
+
+Whether the job passes or fails, the clean-up step deletes the keychain, the `.p12`
+file and the key file, and the notary log is uploaded when one exists. These two
+steps run with `if: always()`, and no other step in the job may.
+
+No secret is printed. Secret values reach the scripts only through `env:` and files
+written with mode 0600 under the runner's temporary directory, and each line of the
+`.p8` is masked as well. Two exceptions to "never passed on a command line" are
+recorded, the password arguments of `security` and the `--key-id` and `--issuer`
+arguments of `notarytool`, and the `.p8` private key reaches `notarytool` only as a
+file path.
+[Security](../conventions/security.md#nothing-identifying-or-secret-is-committed)
+records both and the reasons.
+
+`verify-macos` first checks the app archive against `app_sha256` and the disk image
+against `macos_dmg_sha256`, then runs
+[`test-signed-dmg.sh`](../../.github/scripts/tests/test-signed-dmg.sh) on a runner
+that holds no signing identity, with the team ID and the submission ID that
+`sign-macos` output. The script refuses unless:
+
+- the disk image verifies with `codesign --verify --strict` under
+  `app.axross.marshal.dmg`, signed by a Developer ID Application certificate of the
+  team with a secure timestamp, and not ad hoc;
+- `stapler validate` passes, and `spctl` assesses the image for opening, by its
+  primary signature, as notarized Developer ID;
+- the notary log's `jobId` is the submission `sign-macos` made;
+- mounted read-only, its volume is named `Marshal` and holds only `Marshal.app` and a
+  link `Applications` to `/Applications`, apart from `.DS_Store`, `.fseventsd` and
+  `.Trashes`;
+- the app's files are the unsigned archive's, by path and type, apart from
+  `Contents/_CodeSignature/`, and its `Info.plist` values are the archive's;
+- the app verifies with `codesign --verify --strict` under `app.axross.marshal`,
+  signed by a Developer ID Application certificate of the same team with the
+  hardened runtime and a secure timestamp, and its designated requirement is form A
+  or B, nothing else being accepted;
+- `spctl` accepts the app for execution.
+
+It prints `MEASURED:` lines for both `spctl` answers, which form of the designated
+requirement matched and the requirement itself, and outputs the requirement as
+`designated_requirement`. That is the first time the signed disk image is checked,
+and it happens in the release run: a dry run cannot sign. At M2's first release the
+maintainer compares that requirement with the one recorded for `marshal`.
+
+Nothing here has run with a real signing identity. The dry run builds the unsigned
+app, its archive and an unsigned disk image with the same `hdiutil create`
+arguments, and measures the tools, but `test-sign-macos.sh` and
+`test-signed-dmg-refusals.sh` run the signing and checking scripts against stand-ins
+only. The first signed release is therefore the first real run of `sign-macos` and
+`verify-macos`. A defect stops that release before its tag, and a later pull request
+fixes it.
 
 ### The Signing Contracts
 
-These are held for M2 and W4: no job uses them until M2's or W4's signing job
-joins the chain, and they stay in force through the gap. F0 owns these. W1, W4, M2
+M2's `sign-macos` and `verify-macos` use these, and W4's `sign-update` will.
+F0 owns these. W1, W4, M2
 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
@@ -4826,11 +4948,36 @@ The contracts F0 owns are these:
 
 ### Reading a Signature
 
-No file of a release is signed until M2's disk-image pull request. The commands that
-read the command line's signed macOS package are in this document at the
-last command-line release's tag, under the same heading; The Last Command-Line
-Release section identifies that tag. M2's pull request brings this section back, rewritten for the app and the
-disk image.
+These commands show what a release's Mac files carry. They are information, not
+steps of the install procedure, and the answers below are what the documentation
+leads to expect, not what a Mac has shown.
+
+```bash
+codesign --verify --strict -vv marshal-<version>-macos-arm64.dmg
+spctl --assess --type open --context context:primary-signature -vv marshal-<version>-macos-arm64.dmg
+xcrun stapler validate marshal-<version>-macos-arm64.dmg
+codesign --verify --strict -vv /Applications/Marshal.app
+codesign -d -r- /Applications/Marshal.app
+spctl --assess --type execute -vv /Applications/Marshal.app
+```
+
+- `codesign --verify` on the disk image is expected to pass, and `codesign -dv` to
+  show the identifier `app.axross.marshal.dmg` and a Developer ID Application
+  certificate of the maintainer's team. An operator who wants the team checked
+  compares the team ID it shows with the one this document records once the first
+  signed release has fixed it. Gatekeeper assesses only a file that carries the
+  download mark, which a disk image fetched with `gh` or `curl` lacks.
+  [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
+  records what it is expected to block and accept.
+- `spctl --assess --type open` is expected to print `accepted` with
+  `source=Notarized Developer ID`, and `xcrun stapler validate` passes for a stapled
+  image.
+- `codesign -d -r-` on the installed app prints the designated requirement of the
+  identifier contract, and `spctl --type execute` is expected to accept the app as
+  notarized Developer ID.
+
+The command line's signed macOS package is read by the commands in this document
+at the last command-line release's tag, under the same heading.
 
 ### Extending the Release Workflows
 
@@ -5099,46 +5246,109 @@ such as `if: false`.
 Each of these runs in `mise run check`, on Linux, with no signing identity and no
 secret:
 
-| Task                                | What it covers                                                                                                                                                                                                           |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mise run check:release-shape`      | Reads the `.yaml` and `.yml` workflows and fails unless the rules listed under this table hold.                                                                                                                          |
-| `mise run test:release-shape`       | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                             |
-| `mise run test:assemble-release`    | Runs `assemble-release.sh` against temporary directories: the two lines in order, and a refusal for another file set or a changed file.                                                                                  |
-| `mise run test:verify-release`      | Runs the release gate against temporary directories, and checks that `.releaserc.json`'s asset globs match exactly the three files the gate passes.                                                                      |
-| `mise run test:set-release-version` | Runs the version stamp against copies of the CLI's and the app's manifests and lockfiles, and the committed ones: only the versions they own change, and a file that does not hold the placeholder is refused unchanged. |
+| Task                                | What it covers                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise run check:release-shape`      | Reads the `.yaml` and `.yml` workflows and the `sign-macos` scripts and fails unless the rules listed under this table hold.                                                                                                                                                                                                                             |
+| `mise run test:release-shape`       | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                                                                                                                                                             |
+| `mise run test:sign-macos`          | Runs `sign-macos`'s `run:` scripts, extracted from `release.yaml`, against recording stand-ins of the macOS tools: each refusal, the flags and their order, `hdiutil create`'s three attempts, that the keychain and files are deleted after a pass and after a failure at each step and at each tool call, and that no secret or `.p8` line is printed. |
+| `mise run test:signed-dmg`          | Runs `test-signed-dmg.sh` against stand-ins and produces each of its refusals.                                                                                                                                                                                                                                                                           |
+| `mise run test:assemble-release`    | Runs `assemble-release.sh` against temporary directories in both modes: the lines in order, the disk image only in the signed mode, and a refusal for another file set or a changed file.                                                                                                                                                                |
+| `mise run test:verify-release`      | Runs the release gate against temporary directories, and checks that `.releaserc.json`'s asset globs match exactly the four files the gate passes.                                                                                                                                                                                                       |
+| `mise run test:set-release-version` | Runs the version stamp against copies of the CLI's and the app's manifests and lockfiles, and the committed ones: only the versions they own change, and a file that does not hold the placeholder is refused unchanged.                                                                                                                                 |
 
 `mise run check:release-shape` enforces these rules. They apply to every `.yaml` and
 `.yml` workflow, unless a rule names a file or job. Each failure names its rule, and
-a workflow that cannot be read or a missing `release.yaml` or `release-build.yaml`
-fails it too.
+a workflow that cannot be read or a missing `release.yaml`, `release-build.yaml` or
+`test-signed-dmg.sh` fails it too.
 
-- **The Environment.** No job and no step declares an `environment`, until the next
-  signing job's pull request allows its own.
+- **The Environment.** Only `release.yaml`'s `sign-macos` declares an `environment`,
+  and only `release`. No step declares one.
 - **Triggers.** `release.yaml` is triggered by `workflow_dispatch` alone. A workflow
   that `pull_request` or `pull_request_target` triggers calls only local workflows
-  (`./.github/workflows/...`), so the rule above covers what it calls.
-- **The signing secrets.** No workflow reads one, whether by `secrets.MACOS_*`,
-  `secrets[...]`, `toJSON(secrets)` or `secrets: inherit`.
-- **The chain.** Every job of `release.yaml` but `plan` needs `plan` directly and
-  carries `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`.
-  `assemble-signed` needs `plan` and `build`, `attest` needs `plan` and
-  `assemble-signed`, and `release` needs `plan` and `attest`.
-- **`assemble-signed`.** It runs on `ubuntu-latest`, holds exactly `contents: read`,
-  sets `timeout-minutes` to at most 10, checks out with `persist-credentials: false`,
-  calls `assemble-release.sh`, and no step of it carries an `if`.
-- **`attest` and `release`.** `attest` holds exactly `id-token: write` and
-  `attestations: write`. Each downloads exactly one artifact,
-  `marshal-release-signed`, and no step of `release` reads `needs.build`.
+  (`./.github/workflows/...`), and none of them, directly or through another called
+  workflow, declares an Environment.
+- **The signing secrets.** No workflow but `release.yaml`'s `sign-macos` reads one,
+  whether by `secrets.MACOS_*`, `secrets[...]`, `toJSON(secrets)` or
+  `secrets: inherit`.
+- **The `sign-macos` job.** It holds exactly `contents: read`, declares
+  `environment: release`, and runs on `macos-latest`. No step sets `shell:`, and
+  neither the workflow nor the job sets `defaults.run.shell`.
+- **Its steps.** None checks out the repository. The only actions are
+  `actions/download-artifact` and `actions/upload-artifact`, each on a major tag. The
+  download takes only the inputs `name` and `path`, and the upload only `name`,
+  `path`, `retention-days` and `if-no-files-found`. No `run:` contains `${{ }}`, and
+  each begins with a `# sign-macos: <name>` marker line.
+- **Its commands.** Each command word, a `trap` body included, is a function the
+  script defines, a shell built-in or base utility on a fixed list, which includes
+  `ln` and `sleep`, or a signing tool at `"$SYSTEM_BIN/<tool>"`: `security`,
+  `codesign`, `openssl`, `plutil`, `shasum`, `xcrun`, `ditto` and `hdiutil`. A package
+  manager, `curl` or `wget`, an interpreter, `source`, `eval` or `exec`, a path into
+  the repository, a signing tool called by its bare name, and any other command fail.
+  So do a quoted or expanded command word, a bare command substitution where a
+  command word would stand (one attached to a word, as in `x=$(...)`, is read as that
+  word's value), a backtick, an arithmetic expansion `$(( ... ))` that contains `$(`
+  or a backtick, an unreadable `trap` operand, a `find` option outside `-mindepth`,
+  `-maxdepth`, `-type`, `-name`, `-print` and `-print0`, and a reference to
+  `.github/`, `GITHUB_WORKSPACE` or `github.workspace`. The command substitutions
+  inside a `[[ ]]` test are read as commands too; the rest of the test is not.
+- **The tool prefixes.** A script that uses `SYSTEM_BIN` or `SYSTEM_SBIN` has the line
+  `: "${SYSTEM_BIN:=/usr/bin}"` (`/usr/sbin` for `SYSTEM_SBIN`), gives it no other
+  default, and neither assigns nor exports it. No `env:` of any workflow, job or step
+  sets either name.
+- **The scripts' environment.** No script mentions `GITHUB_PATH`. A script mentions
+  `GITHUB_ENV` only in a block of `echo "NAME=${variable}"` lines for
+  `APPLICATION_IDENTITY`. No script assigns `PATH`, `BASH_ENV` or `ENV`, or starts a
+  `read`, `printf -v`, `declare`, `typeset`, `local`, `export`, `readonly`, `mapfile`,
+  `readarray`, `getopts`, `for` or `select` command that names one of the three. None
+  of the three is an `env:` key at any level of `release.yaml`.
+- **Step conditions in `sign-macos`.** A step with any `if` is the clean-up step
+  (marker `# sign-macos: cleanup`) or the `notary-log-macos` upload, so a condition
+  such as `if: false` or `if: success()` is refused as well as the status functions
+  `always()`, `failure()` and `cancelled()`, whatever their case and inner spaces. Each
+  of those two steps exists exactly once and has `if: always()`.
+- **The check script.** The script marked `# sign-macos: check` lists in `bin_tools`
+  every tool the job calls by `$SYSTEM_BIN`, and looks for `notarytool` and `stapler`
+  with `xcrun --find`.
+- **The disk image.** Every `identifier=` in `sign-macos` is `app.axross.marshal`.
+  The script marked `# sign-macos: dmg` signs the image under
+  `app.axross.marshal.dmg` and calls `hdiutil create` once, with the arguments of the
+  one `hdiutil create` in `release-build.yaml`'s `app-macos` job.
+- **The new jobs.** `sign-macos`, `verify-macos` and `assemble-signed` each need
+  `plan` directly, carry
+  `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`, and set
+  `timeout-minutes` to at most 60, 20 and 10. `verify-macos` runs on `macos-latest`
+  and `assemble-signed` on `ubuntu-latest`, and both hold exactly `contents: read` and
+  declare no environment; their checkouts set `persist-credentials: false`, and no
+  step of either carries an `if`. `assemble-signed` calls `assemble-release.sh` in
+  `signed` mode. `attest` and `release` carry exactly the same `if` as the new jobs.
+- **The chain.** Each job needs these directly: `sign-macos` needs `plan` and
+  `build`; `verify-macos` adds `sign-macos`; `assemble-signed` adds `verify-macos`;
+  `attest` needs `plan` and `assemble-signed`; `release` needs `plan` and `attest`.
+  `attest` holds exactly `id-token: write` and `attestations: write`. `attest` and
+  `release` each download exactly one artifact, `marshal-release-signed`, and no step
+  of `release` reads `needs.build`.
 - **No way past a failure.** No job or step of `release.yaml` sets
-  `continue-on-error`, and no job-level or step `if` uses `always()`, `failure()` or
-  `cancelled()`, whatever their case and inner spaces. A step condition of `attest`
-  or `release` that skips a step, such as `if: false`, is not seen.
-- **The environment of `release.yaml`.** None of `PATH`, `BASH_ENV` and `ENV` is an
-  `env:` key at any level.
+  `continue-on-error`. No job-level `if` uses `always()`, `failure()` or
+  `cancelled()`, and neither does a step of any job but `sign-macos`, whose step
+  conditions are the rule above. A step of `verify-macos` or `assemble-signed` carries
+  no `if` at all. A step condition of `attest` or `release` that skips a step, such as
+  `if: false`, is not seen.
+- **The dry run's tool check.** In `release-build.yaml`, the `app-macos` job runs on
+  `macos-latest`, and its "Check The Signing Tools" step carries no `if`, fails with
+  `exit 1` when a tool is missing, prints `MEASURED: signing tools`, and has no `env:`
+  key that contains `SECRET` or `MACOS_`. Its `bin_tools` and `sbin_tools` list every
+  tool that `sign-macos`'s and `verify-macos`'s scripts and `test-signed-dmg.sh`
+  call, and it looks for `notarytool` and `stapler` with `xcrun --find`.
 - **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
-  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means
-  a `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
-  reading it, as `cat` or `sha256sum -c` does, is not a write.
+  script calls `assemble-release.sh` in `unsigned` mode, and none writes `SHA256SUMS`
+  itself, which means a `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it
+  as the destination; reading it, as `cat` or `sha256sum -c` does, is not a write.
+
+The stand-ins record calls and return canned answers, so these tests show the flow
+and the refusals, not that Apple accepts a signature. The signed disk image is checked
+only in the release run, by `verify-macos`, and on the Mac, and neither has run.
+[Development Workflow](./development-workflow.md#cutting-a-release) has the
+maintainer check the first signed release by hand.
 
 ## Installing, Updating and Rolling Back
 
@@ -5147,7 +5357,9 @@ release's MSI, and it places the app, its licence notices and a Start menu entry
 and handles updates and removal. It adds nothing to `PATH`: Marshal has no command
 line. The MSI is not code-signed ([Releases](#releases)), so Windows warns about it,
 and the steps below say which prompts to expect and how to pass them. macOS has no
-release of the app until M2's disk image.
+release of the app before M2's disk image; from then the Mac installs it from the
+release's disk image, as [App](./app.md#installing-upgrading-and-uninstalling)
+describes.
 
 Checking the downloaded MSI before you open it is optional but recommended. The
 [check block](#checking-the-download) tests its checksum against `SHA256SUMS`, that

@@ -204,7 +204,7 @@ Important; Codex review uses its native priority label.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
-  credential are recorded, both in `sign-macos` and held with it for M2:
+  credential are recorded, both in `sign-macos`:
   `security`'s password arguments, and `notarytool`'s `--key-id` and `--issuer`
   arguments for the notary key's ID and issuer ID. The `.p8` key reaches
   `notarytool` only as a file path. Any other change to how the key's ID, issuer ID
@@ -318,8 +318,8 @@ Apply the lens for each kind of file in the diff.
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
   A publish or attest step outside `release.yaml`, a job that both runs the npm tree
   and holds `id-token: write`, an asset other than the app executable
-  `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi` and
-  `SHA256SUMS`, such as a helper binary or a command-line file, an MSI custom action
+  `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi`, the
+  disk image `marshal-<v>-macos-arm64.dmg` and `SHA256SUMS`, such as a helper binary or a command-line file, an MSI custom action
   that runs code other than the start of the installed app under
   `AUTOLAUNCHAPP=True` and the uninstall's deletion of the HKCU Run value `Marshal`,
   an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade
@@ -331,12 +331,17 @@ Apply the lens for each kind of file in the diff.
   verification is optional for the installer, so a document or comment that presents
   the check block as required of an operator is a finding, and so is a change that
   weakens a pin, drops one of the check block's four checks, or drops the build
-  leg's product-version check or its failing run. From W1's installer pull request
-  until the next signing job, M2's or W4's, joins the chain, an `environment:` in any
-  job or a signing secret read by any job is a finding; the signing job that returns
-  brings its rules back to this list, to `check-release-shape.mjs` and to its test in
-  the same change, and keeps
-  [Security's held record](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  leg's product-version check or its failing run. An `environment:` in any job but
+  `release.yaml`'s `sign-macos`, or a signing secret read by any other job, is a
+  finding; a signing job a later change adds, such as W4's `sign-update`, brings its
+  rules to this list, to `check-release-shape.mjs` and to its test in the same
+  change, and keeps
+  [Security's record](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  In `sign-macos`, a signing tool not called by its `/usr/bin/` path, a read of
+  `MACOS_INSTALLER_P12_BASE64`, a `codesign --deep`, an app signed without the
+  hardened runtime, a timestamp or the identifier `app.axross.marshal`, a disk image
+  made with other `hdiutil create` arguments than the app job's, and a notarization
+  result read from the exit code instead of the status are findings.
   A job or step that a later job can pass without, such as `continue-on-error`, a
   job-level `always()`, `!cancelled()` or `failure()`, a step condition in
   `assemble-signed`, or one in `attest` or `release` that skips a step, which the

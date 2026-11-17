@@ -309,8 +309,8 @@ the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as 
 artifact of the run. Its `app-macos` job builds the unsigned `Marshal.app` with
 `tauri-cli` at the pin, checks the bundle's layout, and keeps the app as a `ditto`
 archive and an unsigned disk image in the `marshal-macos-app` artifact, outside that
-set. The dry run signs nothing and references no Environment, and no
-job of any workflow declares one until the next signing job returns. It holds
+set. The dry run signs nothing and references no Environment; only
+`release.yaml`'s `sign-macos` declares one. It holds
 `contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
 describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
 and holds `contents: read`. It downloads the dry run's artifact and runs the check and
@@ -498,11 +498,11 @@ agent relays it.
 
 ### Before the First Release
 
-The `release` Environment's part of this section, step 2, is held for M2 and W4: from
-W1's installer pull request until M2's or W4's signing job returns, no job declares
-the Environment, and the Environment, its secrets and its variable are kept for that
-job, which then needs them as this step sets them. The other steps were the first
-dispatch's prerequisites.
+Step 2's `release` Environment is the one M2's `sign-macos` declares, and W4's
+`sign-update` will. `sign-macos` reads every secret below except
+`MACOS_INSTALLER_P12_BASE64`, which only the command line's package used; it stays in
+the Environment until the maintainer decides to remove it. The other steps were the
+first dispatch's prerequisites.
 
 Do these once, before the first dispatch:
 
@@ -596,15 +596,21 @@ Do these once, before the first dispatch:
    queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, the run builds, assembles, attests and
-   releases without waiting for an approval: from W1's installer pull request until
-   M2's or W4's signing job returns, no job declares the `release` Environment, so
-   step 1's check at the dispatch is the only one. The signing job that returns
-   brings back an approval here, with its own checks. A failure in `build`,
-   `assemble-signed` or `attest` stops the run before any tag is pushed; fix it in a
-   pull request and dispatch again.
+4. When there is something to release, the run builds, then waits at `sign-macos`
+   for your approval. Before approving it, under the run's "Review deployments",
+   repeat step 1's check with the run's commit SHA in place of `origin/main`, because
+   step 1 checked the tip of `origin/main` when you dispatched and a run can wait up
+   to 30 days. Approve only if every commit since the last `v*` tag, up to that SHA,
+   came from a merged pull request; otherwise reject the run. A rejected deployment
+   fails the run, and the jobs after it are skipped. Once it runs, read
+   `sign-macos`'s log for the expiry warning: it prints the Developer ID Application
+   certificate's subject, team and expiry date, and warns when it expires within 90
+   days. A warning means renewing the certificate, as below, before the next release.
+   A failure in `build`, `sign-macos`, `verify-macos`, `assemble-signed` or `attest`
+   stops the run before any tag is pushed; fix it in a pull request and dispatch
+   again.
 5. After a green run, check that the release exists and carries exactly the app
-   executable, the MSI and `SHA256SUMS`:
+   executable, the MSI, the Mac disk image and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
@@ -627,39 +633,60 @@ Do these once, before the first dispatch:
    the check block before opening the MSI on a host. A failure there is a release
    defect, and it leaves the check unusable for that release. The WiX pin is
    recorded under [Pinning Convention](../conventions/security.md#pinning-convention).
-   The MSI and the app are not signed, as
+   The MSI and the Windows app are not signed, and the Mac disk image and the app in
+   it are signed and notarized, as
    [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
    records.
+7. For the first signed release, also run these on the downloaded disk image, before
+   opening it, and record the output on the tracking issue:
+
+   ```bash
+   spctl --assess --type open --context context:primary-signature -vv marshal-<version>-macos-arm64.dmg
+   codesign -dv marshal-<version>-macos-arm64.dmg
+   ```
+
+   `spctl` is expected to print `accepted` with `source=Notarized Developer ID`, and
+   `codesign` the identifier `app.axross.marshal.dmg` and a Developer ID Application
+   certificate of the team; neither has been observed. That release is also the
+   first run of `sign-macos` and `verify-macos`, so record their outcomes, the team
+   ID, which form of the designated requirement `verify-macos` matched (its
+   `MEASURED:` line names form A or form B), and the app's requirement, which
+   `verify-macos` outputs as `designated_requirement`, and compare it with the one
+   recorded for `marshal`. A later documentation change copies the form and the
+   requirement into [CLI](./cli.md#the-signing-contracts). The real output formats of
+   `verify-macos`, `spctl` and `codesign` have not been observed, so a refusal by
+   `verify-macos`, or a result that differs from the expected one, is input for a
+   follow-up fix pull request, not necessarily a defect in the release.
 
 ### Renewing the Certificates
 
-This section is held for M2 and W4: no job signs from W1's installer pull request
-until M2's `sign-macos` returns, and this yearly work applies to it from then.
+`sign-macos` signs with the Developer ID Application certificate, and the
+Installer certificate is no longer used since the command line's package was
+removed.
 
 The Developer ID certificates are expected to last one year, which the maintainer
 confirms from the certificates' dates, and renewing them is yearly work for the
-maintainer, with the Account Holder, before they expire. `sign-macos` prints both
-expiry dates, warns within 90 days, and refuses an expired certificate, so a lapse
+maintainer, with the Account Holder, before they expire. `sign-macos` prints the
+Application certificate's expiry date, warns within 90 days, and refuses an expired certificate, so a lapse
 stops signing and no release can be made until the certificates are renewed. Software
 that was signed with a secure timestamp keeps working after its certificate expires.
 
 1. Start when `sign-macos` warns, or earlier from the recorded dates. The Account
-   Holder creates a new Developer ID Application certificate and a new Developer ID
-   Installer certificate from the Developer ID G2 intermediate. A lapsed Apple
+   Holder creates a new Developer ID Application certificate from the Developer ID G2
+   intermediate. A lapsed Apple
    Developer Program membership allows no new certificate, so renew the membership
    first.
-2. Export each new identity as a `.p12` with one password, base64-encode them, and
-   replace the secrets `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`
-   and, if the password changed, `MACOS_P12_PASSWORD`. Do not change the identifier
+2. Export the new identity as a `.p12`, base64-encode it, and replace the secret
+   `MACOS_APPLICATION_P12_BASE64` and, if the password changed, `MACOS_P12_PASSWORD`. Do not change the identifier
    or `MACOS_TEAM_ID`: the identifier and the team stay the same, so the designated
    requirement is expected to stay the same and the Keychain trust it carries is kept.
-   Keep one identity of each kind in the exported files, since `sign-macos` refuses
-   two of the same kind.
+   Keep one identity in the exported file, since `sign-macos` refuses two Developer
+   ID Application identities.
 3. Record the new expiry dates on the tracking issue. If the notarization key was
    renewed or revoked, replace its three secrets as well.
-4. The first release after a renewal compares the bare binary's designated
-   requirement with the recorded one, and records whether a package signed before the
-   renewal still installs, which Apple's pages do not settle.
+4. The first release after a renewal compares the app's designated requirement with
+   the recorded one, and records whether an app signed before the renewal still
+   opens, which Apple's pages do not settle.
 
 The embedded G2 intermediate expires on 2031-09-17. Replacing it takes a pull request
 that changes the embedded certificate and its pin together, under

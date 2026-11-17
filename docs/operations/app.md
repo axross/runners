@@ -878,8 +878,11 @@ whose SHA-256 is the workflow's `app_sha256` output. It makes a disk image from 
 app with up to three `hdiutil create` attempts 10 seconds apart, and checks that
 image's layout. It uploads both as the `marshal-macos-app` artifact, outside
 `marshal-release`. Every pull request's release dry run keeps that artifact for
-testing on a Mac. Until the signing job is restored, nothing signs or notarizes
-either file. The bundler copies every binary of
+testing on a Mac. In a release, `release.yaml`'s `sign-macos` signs the app from
+that archive, rebuilds the disk image with the same `hdiutil create` arguments, signs
+and notarizes it, and `verify-macos` checks it, as
+[CLI](./cli.md#signing-the-mac-app) describes; the release's disk image is that
+signed one, and the unsigned files are never published. The bundler copies every binary of
 `marshal-app` whose features are on, so `fake-docker`, the process tests' stand-in for
 the docker client, and those tests need the `fake-engine` feature, which no shipped
 build turns on: run the workspace's tests with
