@@ -613,7 +613,7 @@ impl<C: Clock> TartBackend<C> {
         };
         if let Err(end) = wait_for_agent(&self.client, &self.clock, wait, &vm, &held).await {
             if let BootEnd::Ended(ended) = &end
-                && is_vm_limit_refusal(&format!("{}\n{}", ended.stdout, ended.stderr))
+                && is_vm_limit_refusal(&ended.output())
             {
                 let message = vm_limit_message(&ended.error_text());
                 self.log.warn(&format!("{label}: {message}"));

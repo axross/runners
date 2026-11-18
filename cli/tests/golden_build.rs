@@ -300,9 +300,18 @@ fn a_failed_boot_deletes_the_build_vm_and_keeps_the_old_golden_vm() {
         fails(
             |rig| {
                 rig.fake.script("run_mode", "exit");
+                rig.fake
+                    .script("run_error", "Error: Failed to generate keypair");
+            },
+            "ended with exit code 1 (Error: Failed to generate keypair); Tart's error points to a locked login keychain, see the \"The Signed-In Session\" section of the macOS Runner Host document), so",
+        )
+        .await;
+        fails(
+            |rig| {
+                rig.fake.script("run_mode", "exit");
                 rig.fake.script("run_error", "the keychain is locked");
             },
-            "boot failure: tart run for the build VM",
+            "ended with exit code 1 (the keychain is locked)), so",
         )
         .await;
         fails(

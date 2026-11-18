@@ -37,13 +37,18 @@ use marshal_cli::runtime::tart::names::GoldenVmName;
 use marshal_cli::runtime::tart::{GOLDEN_VM_VERSION, TartTimings, VmLauncher};
 use marshal_cli::validate::validate;
 use support::rig::{
-    LAUNCHER, POOL, Rig, SLOT, TestClock, golden_name, host, job_vm, quick_timings, request,
+    LAUNCHER, POOL, Rig, SLOT, SOFTNET_ENDED_EARLY, TestClock, golden_name, host, job_vm,
+    quick_timings, request,
 };
 use support::{COMMANDS_HELPER, TempDir, write_token_file};
 
 const IMAGE: &str = "actions-runner:local";
 const JIT: &str = "jit-0123456789";
 const STAMP: &str = "20240305060708009";
+const KEYCHAIN_HINT: &str = "; Tart's error points to a locked login keychain, see the \"The Signed-In Session\" section of the macOS Runner Host document";
+const SOFTNET_HINT: &str = "; Tart's error points to Softnet, see the \"Setting Up Softnet\" section of the macOS Runner Host document";
+const BOTH_HINTS: &str = "; Tart's error points to a locked login keychain, see the \"The Signed-In Session\" section of the macOS Runner Host document, and to Softnet, see the \"Setting Up Softnet\" section of the macOS Runner Host document";
+const VIRTUALIZATION_FAILED: &str = "Error Domain=VZErrorDomain Code=1 \"The virtual machine failed to start.\" UserInfo={NSLocalizedFailure=Internal Virtualization error., NSLocalizedFailureReason=The virtual machine failed to start.}";
 
 fn timings(change: impl FnOnce(&mut TartTimings)) -> TartTimings {
     let mut timings = quick_timings();
@@ -719,29 +724,76 @@ async fn a_failure_at_each_step_from_the_clone_on_fails_the_preparation_and_the_
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_failed_tart_run_is_a_boot_failure_with_tarts_error_and_the_signed_in_section() {
-    let rig = Rig::new();
-    rig.fake.script("run_mode", "exit");
-    rig.fake
-        .script("run_error", "Error: the login keychain is locked");
-    let error = failed(rig.backend.prepare_job_host(&request()).await);
+async fn a_failed_tart_run_is_a_boot_failure_with_tarts_error_and_the_hint_its_output_points_to() {
+    let keychain_line = "SecKeyCreateRandomKey_ios failed: Error Domain=NSOSStatusErrorDomain Code=-25308 \"Failed to generate keypair\" (errKCInteractionNotAllowed / errSecInteractionNotAllowed: / Interaction is not allowed with the Security Server.)";
+    let long_output = format!("{}\nError: Failed to generate keypair", "a".repeat(600));
+    let cases = [
+        (SOFTNET_ENDED_EARLY.to_string(), None, SOFTNET_HINT),
+        (
+            "Error: InitializationFailed(why: \"softnet not found in PATH\")".to_string(),
+            None,
+            SOFTNET_HINT,
+        ),
+        (
+            "Error: SecKeyCreateRandomKey_ios failed".to_string(),
+            None,
+            KEYCHAIN_HINT,
+        ),
+        (
+            "Error: Failed to generate keypair".to_string(),
+            None,
+            KEYCHAIN_HINT,
+        ),
+        (
+            "Error: Interaction is not allowed with the Security Server.".to_string(),
+            None,
+            KEYCHAIN_HINT,
+        ),
+        (keychain_line.to_string(), None, KEYCHAIN_HINT),
+        (
+            long_output,
+            Some(format!("{}...", "a".repeat(500))),
+            KEYCHAIN_HINT,
+        ),
+        (
+            format!("Error: Failed to generate keypair\n{SOFTNET_ENDED_EARLY}"),
+            Some(format!(
+                "Error: Failed to generate keypair {SOFTNET_ENDED_EARLY}"
+            )),
+            BOTH_HINTS,
+        ),
+        (VIRTUALIZATION_FAILED.to_string(), None, ""),
+        (
+            "Error: permission denied: /opt/homebrew/bin/softnet".to_string(),
+            None,
+            "",
+        ),
+    ];
     let vm = job_vm();
-    assert_eq!(
-        error,
-        format!(
-            "boot failure: tart run for the job VM {vm} ended with exit code 1 (Error: the login keychain is locked); \
-             a locked login keychain is the documented cause, see the \"The Signed-In Session\" section of the macOS Runner Host document"
-        )
-    );
-    rig.backend
-        .release_job_host(&host(), Duration::from_secs(10))
-        .await
-        .unwrap();
-    assert_eq!(rig.fake.vm_names(), [golden_name()]);
+    for (output, logged, hint) in cases {
+        let logged = logged.unwrap_or_else(|| output.clone());
+        let rig = Rig::new();
+        rig.fake.script("run_mode", "exit");
+        rig.fake.script("run_error", &output);
+        let error = failed(rig.backend.prepare_job_host(&request()).await);
+        assert_eq!(
+            error,
+            format!(
+                "boot failure: tart run for the job VM {vm} ended with exit code 1 ({logged}){hint}"
+            ),
+            "{output}"
+        );
+        rig.backend
+            .release_job_host(&host(), Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(rig.fake.vm_names(), [golden_name()], "{output}");
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_guest_agent_that_does_not_answer_by_the_boot_deadline_is_a_boot_failure() {
+async fn a_guest_agent_that_does_not_answer_by_the_boot_deadline_is_a_boot_failure_without_a_hint()
+{
     let rig = Rig::with(
         VmLauncher::Direct,
         timings(|timings| timings.boot_deadline = Duration::from_millis(800)),
@@ -755,8 +807,7 @@ async fn a_guest_agent_that_does_not_answer_by_the_boot_deadline_is_a_boot_failu
     assert_eq!(
         error,
         format!(
-            "boot failure: the guest agent of the job VM {vm} did not answer by the boot deadline (Error: the guest agent is not up); \
-             a locked login keychain is the documented cause, see the \"The Signed-In Session\" section of the macOS Runner Host document"
+            "boot failure: the guest agent of the job VM {vm} did not answer by the boot deadline (Error: the guest agent is not up)"
         )
     );
     rig.backend
@@ -1530,21 +1581,21 @@ async fn under_the_vm_shim_the_tart_run_is_the_shims_and_dropping_the_backend_de
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_tart_run_that_fails_under_the_shim_is_a_boot_failure_with_tarts_own_text() {
+async fn a_tart_run_that_fails_under_the_shim_is_a_boot_failure_with_tarts_own_text_and_its_hint() {
     let rig = Rig::with(
         VmLauncher::Shim(PathBuf::from(COMMANDS_HELPER)),
         quick_timings(),
     );
     rig.fake.script("run_mode", "exit");
-    rig.fake
-        .script("run_error", "Error: the login keychain is locked");
+    rig.fake.script("run_error", SOFTNET_ENDED_EARLY);
     let error = failed(rig.backend.prepare_job_host(&request()).await);
     assert!(
-        error.contains("ended with exit code 1 (Error: the login keychain is locked)")
-            && error
-                .contains("\"The Signed-In Session\" section of the macOS Runner Host document"),
+        error.contains(&format!(
+            "ended with exit code 1 ({SOFTNET_ENDED_EARLY}){SOFTNET_HINT}"
+        )) && error.ends_with(SOFTNET_HINT),
         "{error}"
     );
+    assert!(!error.contains("login keychain"), "{error}");
 }
 
 #[tokio::test(flavor = "current_thread")]
