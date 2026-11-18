@@ -18,7 +18,8 @@ documented here until it exists; until then
 [Security](./conventions/security.md) and [REVIEW.md](../REVIEW.md) govern it. A
 change that adds a runner image, host, or agent-host surface adds the operations
 document that owns its procedure, an entry below, and a row in
-[Documentation](./conventions/documentation.md)'s invalidation table.
+[Documentation](./conventions/documentation.md)'s invalidation table, which
+names every other document the change corrects.
 
 ## Conventions
 

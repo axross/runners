@@ -988,7 +988,8 @@ selection first. Each round invokes exactly one provider. A failed, silent, or
 unavailable selected route blocks the review gate; it never causes an automatic
 request to another provider.
 
-The literals above are reference documentation, not requests. In each review
+The literals above and in Alternative Claude CI review, below, are reference
+documentation, not requests. In each review
 round of a comment-triggered route, write the trigger literal in exactly one
 GitHub comment, that round's intentional top-level request. Do not copy it into
 a plan or pull request body, recoverable state, summary, progress comment, or

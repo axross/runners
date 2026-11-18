@@ -8,10 +8,10 @@ says where things go.
 
 Each path listed in [The Layout](#the-layout) holds what its row says. A change
 that adds, removes, or repurposes a runner image, host configuration, library,
-app, release, or agent-host path MUST update that table and the
-[documentation index](../index.md) in the same change. Repository tooling, such
-as `docs/`, `tests/`, `.github/`, and the agent directories, is outside the table;
-[Documentation](./documentation.md) routes changes to it.
+app, release, or agent-host path MUST update that table in the same change;
+[Documentation](./documentation.md)'s invalidation table names every other
+document such a change corrects. Repository tooling, such as `docs/`, `tests/`,
+`.github/`, and the agent directories, is outside the table.
 
 ## Technologies
 

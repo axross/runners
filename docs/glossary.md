@@ -299,8 +299,8 @@ archived afterwards when the plan-gate archive confirmation allows it. See
 
 **Claude Code Review Child Session** - a fresh, non-fork general-purpose
 subagent a Claude Code run starts in its own worktree for one
-independent-review round; it posts its own review on the pull request and is
-recorded as completed afterwards, or stopped when its round fails. See
+independent-review round, which posts its own review on the pull request; the
+counterpart of an Amp review child thread for a Claude Code run. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Plan-Gate Archive Confirmation** - the human's answer, collected at the plan

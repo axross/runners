@@ -289,7 +289,10 @@ follows stays under the delivery grant.
 - MUST, when composing the plan-approval question, check the live `TaskStop`
   contract; when it requires the human's request, ask for it as a separate
   question after approval, as the Amp section below does for archiving, and
-  record the answer in run state.
+  record the answer in run state. A run with no plan gate, such as review-only
+  recovery, asks once before its first `TaskStop`, and a fresh session that
+  resumes the run and lacks that exchange in its own conversation asks once
+  before its first `TaskStop`, even when run state records an earlier answer.
 - MUST, when the human confirms delivery but declines the review item,
   open the draft pull request, keep it draft, and report the external-review
   gate as unmet and the loop as not complete.
