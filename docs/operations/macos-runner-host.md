@@ -103,6 +103,16 @@ directory or another kind of file, is owned by another user, lacks the SUID bit,
 can be written by its group or others. It also refuses a `softnet` that does not
 answer `--version` within its bound (5 s, or 2 s at a restart or a resume).
 
+**A boot failure that names this section.** A boot failure's text names this
+section when Tart's output carries `Softnet process terminated prematurely` or
+`softnet not found in PATH`. Tart could not find `softnet` on `PATH`, which
+[Installing Tart and Softnet](#installing-tart-and-softnet) covers, or Softnet's
+process failed or ended early. The text keeps Softnet's and Tart's own error, such
+as `failed to initialize proxy: failed to create vmnet network ...`. A slot deletes
+the VM and tries again on its backoff; a `build` fails instead, so run it again.
+When the failure repeats, check this section's setup and the installed Softnet
+version.
+
 **What the network allows.** Every VM boots with the two rules in
 [The Golden VM Contract](#the-golden-vm-contract), on top of Softnet's defaults. A
 VM can then send to globally routable IPv4 addresses and to DNS on the Mac's address
@@ -134,12 +144,24 @@ afterwards does not stop the runners. SSH and headless use are out of scope.
 Since macOS 15, Apple's Virtualization framework starts a VM only while the user's
 login keychain is unlocked. Without it, Tart's documentation lists errors such as
 `SecKeyCreateRandomKey_ios failed`, `Failed to generate keypair` and
-`Interaction is not allowed with the Security Server`. A boot failure that the runtime
-logs, whether `tart run` ended or the guest agent did not answer in 120 s, names this
-section, since a locked login keychain is the documented cause. The slot then
-deletes the failed VM and tries again on its backoff, so unlocking the keychain is
-enough. FileVault rules out automatic login, so after a restart, sign in at the
-screen and then start the runners again.
+`Interaction is not allowed with the Security Server`. A boot failure whose `tart run`
+printed one of them names this section. These texts may reach only the system log:
+in the one public report,
+[cirruslabs/tart#1067](https://github.com/cirruslabs/tart/issues/1067), `tart run`
+printed only Virtualization's generic `The virtual machine failed to start.`, which
+has other causes too, and such a boot failure names no cause. To check a boot
+failure for a locked keychain, search the system log, widening `--last` to cover the
+time of the logged failure:
+
+```bash
+log show --last 10m --predicate 'process == "tart" OR process CONTAINS "Virtualization"' \
+  | grep -E 'SecKeyCreateRandomKey_ios|Failed to generate keypair|Interaction is not allowed'
+```
+
+No host run has tried this command yet. The slot deletes the failed VM and tries
+again on its backoff, so unlocking the keychain is enough. FileVault rules out
+automatic login, so after a restart, sign in at the screen and then start the
+runners again.
 
 ## The Golden VM Contract
 
@@ -688,9 +710,9 @@ of an Apple tool as the source prints it, and not on a run:
   of the wake, and a network change stops them within 15 s.
 - `caffeinate -i -w <pid>` holds the Mac awake while runners run and releases it after
   `stop`, as `pmset -g assertions` shows.
-- A locked login keychain makes a boot fail with the logged text that names
-  [The Signed-In Session](#the-signed-in-session), and locking the screen after
-  `start` does not stop a new job's VM from booting.
+- A locked login keychain makes a boot fail; record what `tart run` printed and
+  whether the logged text names [The Signed-In Session](#the-signed-in-session).
+  Locking the screen after `start` does not stop a new job's VM from booting.
 - Softnet's rules hold: from a VM, every blocked target that answers from the Mac is
   unreachable, and DNS and an HTTPS request to the internet succeed; with Softnet's
   SUID bit removed, `start` refuses and `tart run` boots no VM. No host run tests

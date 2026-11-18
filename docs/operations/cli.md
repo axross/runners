@@ -1017,8 +1017,24 @@ golden VM whose old runner asks for a rebuild.
    deadline passes.
 
 A boot that fails is `Failed`, with the text
-`boot failure: <tart run for the job VM <vm> ended with exit code N (<Tart's own error>) | the guest agent of the job VM <vm> did not answer by the boot deadline (<last error>)>; a locked login keychain is the documented cause, see the "The Signed-In Session" section of the macOS Runner Host document`.
-The section is [The Signed-In Session](./macos-runner-host.md#the-signed-in-session).
+`boot failure: <tart run for the job VM <vm> ended with exit code N (<Tart's own error>) | the guest agent of the job VM <vm> did not answer by the boot deadline (<last error>)>`.
+When `tart run` ended, a hint follows if its whole output, read before the text is
+cut to 500 characters, carries one of these:
+
+- `SecKeyCreateRandomKey_ios failed`, `Failed to generate keypair` or
+  `Interaction is not allowed with the Security Server`, the texts Tart's FAQ lists
+  for a locked login keychain:
+  `; Tart's error points to a locked login keychain, see the "The Signed-In Session" section of the macOS Runner Host document`.
+- `Softnet process terminated prematurely` or `softnet not found in PATH`, the two
+  Softnet errors of Tart 2.41.1 that the runtime's `tart run` can produce:
+  `; Tart's error points to Softnet, see the "Setting Up Softnet" section of the macOS Runner Host document`.
+- At least one of each:
+  `; Tart's error points to a locked login keychain, see the "The Signed-In Session" section of the macOS Runner Host document, and to Softnet, see the "Setting Up Softnet" section of the macOS Runner Host document`.
+
+Any other boot failure has no hint, including Virtualization's generic
+`The virtual machine failed to start.` and a guest agent that did not answer. The
+sections are [The Signed-In Session](./macos-runner-host.md#the-signed-in-session)
+and [Setting Up Softnet](./macos-runner-host.md#setting-up-softnet).
 
 **Probes.** `select_cpuset` finds the slot's VM from the probe's name and waits up to
 60 s for the Docker Engine in it (`docker info` every 2 s, each call bounded at
@@ -3938,8 +3954,7 @@ does these in order:
 4. **Boot.** `tart run` under the VM shim (this program run again, as for a job VM),
    then the wait for the guest agent, every second with each question bounded at 5 s,
    until it answers, `tart run` ends, or 120 s pass. A boot that fails has the job VM
-   boot failure's text, naming the build VM, and the same section,
-   [The Signed-In Session](./macos-runner-host.md#the-signed-in-session). The wait is
+   boot failure's text, naming the build VM, with the same hints. The wait is
    `tart::boot`, which the Tart backend's job VM boot shares.
 5. **Provisioning.** The six guest calls of [Golden VM Provisioning](#golden-vm-provisioning),
    in order, each through `tart exec` with its own budget. Their output is read as data,

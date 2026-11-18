@@ -33,6 +33,9 @@ pub const START_MILLIS: u64 = 1_709_618_828_009;
 pub const POOL: &str = "example-repo-one";
 pub const SLOT: u32 = 2;
 pub const LAUNCHER: &str = "/usr/local/bin/marshal-launch";
+/// what `tart run` prints when its Softnet process ends early: Softnet's own cause
+/// chain, then Tart's error.
+pub const SOFTNET_ENDED_EARLY: &str = "failed to initialize proxy: failed to create vmnet network 192.0.2.0/29: vmnet returned an error status: Failure RuntimeFailed(why: \"Softnet process terminated prematurely\")";
 
 /// the time never moves, so a job VM's name is the same in every test, and a sleep
 /// is real.
