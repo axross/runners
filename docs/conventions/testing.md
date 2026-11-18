@@ -7,8 +7,8 @@ the pinned tools these commands use, and
 
 ## Check Commands
 
-`mise run check` runs every gate below except the writing `format`, and it is
-what CI runs; run the narrower tasks for the surface a change touches.
+Run the narrower tasks for the surface a change touches; the `mise run check`
+row says which task CI runs.
 
 Run from the repository root.
 

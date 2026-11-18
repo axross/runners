@@ -10,7 +10,7 @@ resident agent runs that library from a Windows machine with Docker Desktop, whi
 each release ships with a per-user MSI. There is no command line: the `marshal`
 command line ended with the
 [last command-line release](./docs/operations/cli.md#the-last-command-line-release),
-with which the axpc host ran its pools until then.
+which the axpc host still runs until it moves to the app.
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
 procedure, including how a host moves to the app, and states what has and has
 not been verified on a real host. The
