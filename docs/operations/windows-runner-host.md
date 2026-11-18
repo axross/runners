@@ -919,12 +919,13 @@ the image definition:
    already running when Marshal stopped them have ended; the next ones start on the
    new image.
 
-Merge runner bumps promptly. GitHub's runner updates itself at start when a newer
-release exists, which an ephemeral container repeats for every job when the image
-is stale, and a runner with automatic updates disabled MUST be updated within 30
-days of a new release; see
+Merge runner bumps promptly, then release, install and build the image soon after.
+The runner in the image never updates itself: Marshal registers every runner through
+GitHub's JIT configuration, which disables automatic updates, so the runner stays at
+the version the image was built with. GitHub stops assigning jobs to a runner that is
+not updated within 63 days of a newer release and, when a critical security update
+is required, assigns none until the runner is updated; see
 [GitHub's self-hosted runner reference](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
-A current image avoids both.
 
 ## Network Access
 

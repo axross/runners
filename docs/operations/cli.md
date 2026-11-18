@@ -2962,10 +2962,10 @@ The check also reads the build-time and runner-release labels. An age is
 00:00 UTC. An age under 7 days gives no warning, 7 to 20 days the first, and 21 or
 more the second:
 
-| Age        | Build age                                                                | Runner release age                                                                                                                                            |
-| ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7 to 20    | `the image is <d> days old and should be rebuilt`                        | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                          |
-| 21 or more | `the image's operating-system packages are <d> days old; build it again` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again` |
+| Age        | Build age                                                                | Runner release age                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7 to 20    | `the image is <d> days old and should be rebuilt`                        | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                                               |
+| 21 or more | `the image's operating-system packages are <d> days old; build it again` | `runner <v> was released <d> days ago and never updates itself; update Marshal to get a newer runner, then build the image again before GitHub stops sending jobs to this version` |
 
 An image without a build-time label, such as one CI or a build by hand made, has an
 unknown build age, and its warning says it was not built by
