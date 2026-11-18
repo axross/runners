@@ -102,6 +102,9 @@ above. It waits on a human only for:
   permitted, authorized wait mechanism delivers that result;
 - on Amp, the plan-gate archive confirmation, when the current session has not
   collected it and no recorded answer declined it;
+- on Claude Code, the `TaskStop` request Agent Sessions describes, when its
+  live contract requires the human's request and the current session has not
+  collected it;
 - on Claude Code, a review child session's permission prompt that the run
   cannot answer on the human's behalf.
 
@@ -1176,9 +1179,10 @@ authoring conversation.
 
 1. Before spawning, confirm that the session exposes a GitHub publication route
    the child can use, `gh` through `Bash` or a GitHub MCP tool; otherwise the
-   route is unavailable and the review gate stays blocked. Use the `TaskStop`
-   answer recorded at the plan gate, as Agent Sessions describes, when its live
-   contract requires the human's request.
+   route is unavailable and the review gate stays blocked. When the live
+   `TaskStop` contract requires the human's request, use the answer this
+   session collected as Agent Sessions' plan-gate confirmation section
+   describes.
 2. Start the child with the general-purpose subagent type and
    `isolation: worktree` on the call, never as a fork. Give it a neutral
    assignment that names the repository, the pull request, the reviewed head
@@ -1196,7 +1200,7 @@ authoring conversation.
    returned, and the child's worktree in run state, through Save and resume run
    state, above.
 4. The child posts its review on the pull request in the form REVIEW.md's
-   Claude Code arrangement sets.
+   Claude Code child arrangement sets.
 5. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
    within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).

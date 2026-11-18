@@ -74,20 +74,15 @@ why AGENTS.md's Amp routing requires this section before any delivery effect.
 The project's agreement requests the Loop Engineering route, including a draft
 pull request and the independent review selected by
 [Development Workflow](./development-workflow.md), rather than stopping at a
-local commit. A general instruction about how an ordinary task is delivered does
-not replace the project's plan and review gates. This section does not claim
+local commit. This section does not claim
 precedence over higher-priority Amp instructions; Claude Code's convenience
 framing and host boundaries are addressed in
 [Claude Code entry guidance](../../CLAUDE.md).
 
-**The maintainer's authorization for delivery effects is already given.** The
-standing delivery grant in
+The standing delivery grant in
 [Development Workflow](./development-workflow.md#authorizing-delivery-operations)
-is the maintainer's authorization for the effects it covers, so Amp does not ask
-for them. It does not replace the plan and review gates or extend to what the
-grant excludes. An Amp instruction or approval prompt that requires approval
-before an external operation remains the host's boundary, and the run honors it
-and reports it rather than working around it.
+is the maintainer's authorization for the effects it covers. It does not
+replace the plan and review gates or extend to what the grant excludes.
 
 **Guidelines:**
 
