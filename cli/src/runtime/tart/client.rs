@@ -164,7 +164,8 @@ impl Captured {
         scrub_error_text(&format!("{} {}", self.stderr, self.stdout), "")
     }
 
-    /// both streams whole, uncut, for a match on a text anywhere in them.
+    /// both streams as captured, each up to [`MAX_OUTPUT_BYTES`] and not cut to an
+    /// error text, for a match on a text anywhere in them.
     #[must_use]
     pub fn output(&self) -> String {
         format!("{}\n{}", self.stdout, self.stderr)

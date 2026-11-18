@@ -728,59 +728,50 @@ async fn a_failed_tart_run_is_a_boot_failure_with_tarts_error_and_the_hint_its_o
     let keychain_line = "SecKeyCreateRandomKey_ios failed: Error Domain=NSOSStatusErrorDomain Code=-25308 \"Failed to generate keypair\" (errKCInteractionNotAllowed / errSecInteractionNotAllowed: / Interaction is not allowed with the Security Server.)";
     let long_output = format!("{}\nError: Failed to generate keypair", "a".repeat(600));
     let cases = [
-        (
-            SOFTNET_ENDED_EARLY.to_string(),
-            SOFTNET_ENDED_EARLY.to_string(),
-            SOFTNET_HINT,
-        ),
+        (SOFTNET_ENDED_EARLY.to_string(), None, SOFTNET_HINT),
         (
             "Error: InitializationFailed(why: \"softnet not found in PATH\")".to_string(),
-            "Error: InitializationFailed(why: \"softnet not found in PATH\")".to_string(),
+            None,
             SOFTNET_HINT,
         ),
         (
             "Error: SecKeyCreateRandomKey_ios failed".to_string(),
-            "Error: SecKeyCreateRandomKey_ios failed".to_string(),
+            None,
             KEYCHAIN_HINT,
         ),
         (
             "Error: Failed to generate keypair".to_string(),
-            "Error: Failed to generate keypair".to_string(),
+            None,
             KEYCHAIN_HINT,
         ),
         (
             "Error: Interaction is not allowed with the Security Server.".to_string(),
-            "Error: Interaction is not allowed with the Security Server.".to_string(),
+            None,
             KEYCHAIN_HINT,
         ),
-        (
-            keychain_line.to_string(),
-            keychain_line.to_string(),
-            KEYCHAIN_HINT,
-        ),
+        (keychain_line.to_string(), None, KEYCHAIN_HINT),
         (
             long_output,
-            format!("{}...", "a".repeat(500)),
+            Some(format!("{}...", "a".repeat(500))),
             KEYCHAIN_HINT,
         ),
         (
             format!("Error: Failed to generate keypair\n{SOFTNET_ENDED_EARLY}"),
-            format!("Error: Failed to generate keypair {SOFTNET_ENDED_EARLY}"),
+            Some(format!(
+                "Error: Failed to generate keypair {SOFTNET_ENDED_EARLY}"
+            )),
             BOTH_HINTS,
         ),
-        (
-            VIRTUALIZATION_FAILED.to_string(),
-            VIRTUALIZATION_FAILED.to_string(),
-            "",
-        ),
+        (VIRTUALIZATION_FAILED.to_string(), None, ""),
         (
             "Error: permission denied: /opt/homebrew/bin/softnet".to_string(),
-            "Error: permission denied: /opt/homebrew/bin/softnet".to_string(),
+            None,
             "",
         ),
     ];
     let vm = job_vm();
     for (output, logged, hint) in cases {
+        let logged = logged.unwrap_or_else(|| output.clone());
         let rig = Rig::new();
         rig.fake.script("run_mode", "exit");
         rig.fake.script("run_error", &output);
