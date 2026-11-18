@@ -1,6 +1,8 @@
-//! the life of a build VM that becomes a golden VM, whatever its OS: booting it
-//! under the launcher, running guest calls under the stop signal, shutting it down,
-//! committing it by renaming it, and deleting it when the build does not commit.
+//! the life of a build VM that becomes a golden VM, whatever its OS: deleting the
+//! build VMs an earlier build left, booting the build VM under the launcher,
+//! running guest calls under the stop signal, shutting it down, committing it by
+//! renaming it, deleting it when the build does not commit, and how a failure or a
+//! stop ends the retirement of the old golden VMs after a commit.
 
 use std::future::Future;
 use std::pin::pin;
@@ -132,6 +134,53 @@ impl BuildVm<'_> {
             biased;
             _ = self.stopped() => Err(Abort::Stopped),
             done = work => done.map_err(Abort::Refused),
+        }
+    }
+
+    /// deletes the build VMs an earlier build left, which a killed CLI leaves to its
+    /// shim and a killed shim leaves to this; `leftovers` picks them from the listing
+    /// and `what` names one, such as "the build VM". A VM that cannot be deleted is a
+    /// warning.
+    pub(super) async fn delete_leftovers(
+        &self,
+        leftovers: impl Fn(&[VmEntry]) -> Vec<&VmEntry>,
+        what: &str,
+    ) -> Result<(), String> {
+        let entries = self
+            .client
+            .list()
+            .await
+            .map_err(|error| format!("the VMs could not be listed ({})", text_of(&error)))?;
+        for leftover in leftovers(&entries) {
+            let name = &leftover.name;
+            self.log.info(&format!(
+                "Deleting {what} {name}, left by an earlier build."
+            ));
+            if let Err(error) =
+                tear_down(self.client, name, Stop::Forced, self.timings.leftover).await
+            {
+                self.log
+                    .warn(&format!("{error}; the next build tries again."));
+            }
+        }
+        Ok(())
+    }
+
+    /// after the commit: runs the best-effort clean-up `delete_old` starts, whose
+    /// failure does not fail the build; a stop skips what is left of it. Taking the
+    /// clean-up unstarted builds its future here rather than copying it in, which
+    /// keeps a debug build's stack within a test thread's.
+    pub(super) async fn retire_old<F: Future<Output = Result<(), String>>>(
+        &self,
+        delete_old: impl FnOnce() -> F,
+        skipped: &str,
+    ) {
+        match self.guard(delete_old()).await {
+            Ok(()) => {}
+            Err(Abort::Failed(reason)) => self
+                .log
+                .warn(&format!("{reason}; the next build tries again.")),
+            Err(_) => self.log.info(skipped),
         }
     }
 

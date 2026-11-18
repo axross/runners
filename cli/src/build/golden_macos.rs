@@ -20,8 +20,7 @@ use crate::macos::count::{ConfiguredPool, count_macos_vms, listed_vms};
 use crate::macos::name::{GOLDEN_MACOS_VM_VERSION, GoldenMacosName, build_name, is_build_name};
 use crate::macos::softnet::OwnerMode;
 use crate::runtime::log::Log;
-use crate::runtime::tart::list::VmSource;
-use crate::runtime::tart::teardown::{Stop, tear_down};
+use crate::runtime::tart::list::{VmEntry, VmSource};
 use crate::runtime::tart::{TartClient, VmLauncher};
 use crate::validate::MAX_MACOS_VMS;
 
@@ -77,7 +76,12 @@ impl GoldenMacosBuild<'_> {
 
     async fn make(&self, session: &mut Session) -> Result<(), Abort> {
         self.vm().check(self.check_prerequisites()).await?;
-        self.vm().guard(self.delete_leftovers()).await?;
+        self.vm()
+            .guard(
+                self.vm()
+                    .delete_leftovers(leftover_macos_build_vms, "the macOS build VM"),
+            )
+            .await?;
         // counted after the clean-up, so a leftover build VM this build deleted
         // never refuses it
         self.vm().check(self.check_limit()).await?;
@@ -117,7 +121,13 @@ impl GoldenMacosBuild<'_> {
             "The golden macOS VM {golden} is built, with runner {} inside.",
             self.runner.version
         ));
-        self.retire_old(&golden).await;
+        self.vm()
+            .retire_old(
+                || self.delete_old(&golden),
+                "The stop skipped removing the old golden macOS VMs and retired macOS bases; \
+                 the next build removes them.",
+            )
+            .await;
         Ok(())
     }
 
@@ -148,32 +158,6 @@ impl GoldenMacosBuild<'_> {
                 count.total(),
                 names.join(", ")
             ));
-        }
-        Ok(())
-    }
-
-    /// deletes the macOS build VMs an earlier build left; one that cannot be deleted
-    /// is a warning.
-    async fn delete_leftovers(&self) -> Result<(), String> {
-        let entries = self
-            .client
-            .list()
-            .await
-            .map_err(|error| format!("the VMs could not be listed ({})", text_of(&error)))?;
-        for leftover in entries
-            .iter()
-            .filter(|entry| entry.source == VmSource::Local && is_build_name(&entry.name))
-        {
-            let name = &leftover.name;
-            self.log.info(&format!(
-                "Deleting the macOS build VM {name}, left by an earlier build."
-            ));
-            if let Err(error) =
-                tear_down(&self.client, name, Stop::Forced, self.timings.leftover).await
-            {
-                self.log
-                    .warn(&format!("{error}; the next build tries again."));
-            }
         }
         Ok(())
     }
@@ -223,20 +207,7 @@ impl GoldenMacosBuild<'_> {
     }
 
     /// after the commit: deletes every other golden macOS VM and the retired macOS
-    /// bases from Tart's cache, best effort; a stop skips what is left.
-    async fn retire_old(&self, golden: &str) {
-        match self.vm().guard(self.delete_old(golden)).await {
-            Ok(()) => {}
-            Err(Abort::Failed(reason)) => self
-                .log
-                .warn(&format!("{reason}; the next build tries again.")),
-            Err(_) => self.log.info(
-                "The stop skipped removing the old golden macOS VMs and retired macOS bases; \
-                 the next build removes them.",
-            ),
-        }
-    }
-
+    /// bases from Tart's cache, best effort.
     async fn delete_old(&self, golden: &str) -> Result<(), String> {
         let entries = self.client.list().await.map_err(|error| {
             format!(
@@ -273,4 +244,11 @@ impl GoldenMacosBuild<'_> {
         }
         Ok(())
     }
+}
+
+fn leftover_macos_build_vms(entries: &[VmEntry]) -> Vec<&VmEntry> {
+    entries
+        .iter()
+        .filter(|entry| entry.source == VmSource::Local && is_build_name(&entry.name))
+        .collect()
 }
