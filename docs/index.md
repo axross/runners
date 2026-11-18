@@ -1,7 +1,7 @@
 # Documentation
 
-This project's own documentation, alongside its README. Which body answers which
-question: **what must a change satisfy?** -> `conventions/`. **How is something
+This project's own documentation, which the README links as its index. Which
+body answers which question: **what must a change satisfy?** -> `conventions/`. **How is something
 run or operated?** -> `operations/`. **What does a project word mean?** ->
 [glossary.md](./glossary.md). This project keeps no decision log: a settled
 constraint's rationale, including a rejected alternative that would otherwise
@@ -14,9 +14,12 @@ SHOULD NOT, and MAY as [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html)
 describes.
 
 The agent-host configuration this repository is also for is planned and is not
-documented here until it exists. A change that adds a runner image, host, or
-agent-host surface adds the operations document that owns its procedure, an
-entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
+documented here until it exists; until then
+[Security](./conventions/security.md) and [REVIEW.md](../REVIEW.md) govern it. A
+change that adds a runner image, host, or agent-host surface adds the operations
+document that owns its procedure, an entry below, and a row in
+[Documentation](./conventions/documentation.md)'s invalidation table, which
+names every other document the change corrects.
 
 ## Conventions
 
@@ -32,20 +35,30 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
   what the TOML configuration holds and what its problems quote, what the Windows
   app's web view, capabilities and process may do, the app's dependency policy, what
   is never committed, and why the review gate admits one bot identity by login.
+- [conventions/testing.md](./conventions/testing.md) - the check commands, what
+  each verifies, and which of them CI runs.
+- [conventions/directory-structure.md](./conventions/directory-structure.md) -
+  the technologies this repository uses, where each listed runner path lives,
+  and the table a change that adds, removes, or repurposes one updates.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
-  documentation checks cover.
+  documentation checks cover, deferring to
+  [Living Project Documentation](../.claude/skills/living-project-documentation/SKILL.md)
+  for the general practice.
 
 ## Operations
 
 - [operations/development-workflow.md](./operations/development-workflow.md) -
-  the change loop, the delivery grant, branch naming, bumping the runner, cutting
-  a release and renewing its signing certificates, and the independent review
-  route.
+  the change loop, tracking-issue completion, the delivery grant, branch naming,
+  bumping the runner, cutting a release and renewing its signing certificates,
+  and the independent review route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
-  Code and Amp sessions start, their hooks, the plan-gate delivery confirmation,
-  Amp's plan-gate archive confirmation for review child threads, subagents, and
-  telemetry.
+  Code and Amp sessions start, their hooks, Amp's and Codex's delivery
+  authorization, the plan-gate delivery confirmation, Amp's plan-gate archive
+  confirmation for review child threads, subagents including the Claude Code
+  review child session, and telemetry.
+- [operations/development-setup.md](./operations/development-setup.md) - the
+  pinned tools a contributor installs, the Rust toolchain, and the hooks.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
   running ephemeral runners for several repositories on a Windows machine with
   Docker Desktop with Marshal: prerequisites, installing Marshal, the
@@ -100,6 +113,6 @@ entry below, and a row in [AGENTS.md](../AGENTS.md)'s routing table.
 - [glossary.md](./glossary.md) - runner, image, host, CLI, golden VM, build VM,
   job VM, Softnet, agent-host, and change-loop vocabulary.
 
-For what this project is, how to start it, and the commands it has, see
+For what this project is and the tools a contributor prepares, see
 [`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement
 for agent sessions.

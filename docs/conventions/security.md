@@ -1893,7 +1893,8 @@ log, not in a process listing.
 `claude-review.yaml`'s reviewer job gates on the comment's `author_association`,
 admitting only `OWNER`, `MEMBER`, and `COLLABORATOR`. The gate exists to keep an
 untrusted author from spending this repository's tokens or steering the reviewer.
-Review requests from the Claude Code route, when posted through the installed
+Review requests from the explicitly selected Claude CI alternative, when posted
+through the installed
 Claude GitHub App, carry the `claude[bot]` identity, whose association GitHub
 reports as `NONE`, the same value an outside contributor's comment carries, so
 those requests were gated out identically to an outsider's. The gate's fourth
@@ -1944,8 +1945,8 @@ Two properties keep the admission bounded, and a third does not hold:
   damage, and is a maintainer decision made outside this repository.
 
 The cost is a silent-skip failure mode. The gate trusts a login string; if that
-login changes, the gate silently reverts to skipping the Claude Code route's
-requests, with no failed run and no comment. The trigger-phrase rule carries the
+login changes, the gate silently reverts to skipping the explicitly selected
+Claude CI alternative's requests, with no failed run and no comment. The trigger-phrase rule carries the
 opposite risk: if the reviewer quotes the phrase, a review starts that nobody
 asked for. Neither is mechanically detected; both are found only by noticing that
 reviews stopped arriving, or arrived when they should not have. Admitting the
