@@ -22,7 +22,6 @@ use crate::runtime::log::Log;
 use crate::runtime::tart::boot::AgentWait;
 use crate::runtime::tart::list::VmSource;
 use crate::runtime::tart::names::{GoldenVmName, build_vm_name, golden_vms, leftover_build_vms};
-use crate::runtime::tart::teardown::{Stop, tear_down};
 use crate::runtime::tart::{Captured, TartClient, VmLauncher};
 
 use super::arguments::{build_arguments, image_remove_arguments, tag_arguments, temporary_tag};
@@ -128,7 +127,12 @@ impl GoldenBuild<'_> {
 
     async fn make(&self, session: &mut Session) -> Result<(), Abort> {
         self.vm().check(self.check_prerequisites()).await?;
-        self.vm().guard(self.delete_leftovers()).await?;
+        self.vm()
+            .guard(
+                self.vm()
+                    .delete_leftovers(leftover_build_vms, "the build VM"),
+            )
+            .await?;
         self.log.info(&format!("Pulling {BASE_REFERENCE}."));
         self.vm()
             .guard(async {
@@ -166,7 +170,13 @@ impl GoldenBuild<'_> {
             "The golden VM {golden} is built, with {} inside.",
             self.image
         ));
-        self.retire_old(&golden).await;
+        self.vm()
+            .retire_old(
+                || self.delete_old(&golden),
+                "The stop skipped removing the old golden VMs and retired base images; the next \
+                 build removes them.",
+            )
+            .await;
         Ok(())
     }
 
@@ -174,29 +184,6 @@ impl GoldenBuild<'_> {
         let (tart, softnet) = self.vm().tart_and_softnet().await?;
         self.log
             .info(&format!("Using Tart {tart} and Softnet {softnet}."));
-        Ok(())
-    }
-
-    /// deletes the build VMs an earlier build left, which a killed CLI leaves to its
-    /// shim and a killed shim leaves to this; a VM that cannot be deleted is a warning.
-    async fn delete_leftovers(&self) -> Result<(), String> {
-        let entries = self
-            .client
-            .list()
-            .await
-            .map_err(|error| format!("the VMs could not be listed ({})", text_of(&error)))?;
-        for leftover in leftover_build_vms(&entries) {
-            let name = &leftover.name;
-            self.log.info(&format!(
-                "Deleting the build VM {name}, left by an earlier build."
-            ));
-            if let Err(error) =
-                tear_down(&self.client, name, Stop::Forced, self.timings.leftover).await
-            {
-                self.log
-                    .warn(&format!("{error}; the next build tries again."));
-            }
-        }
         Ok(())
     }
 
@@ -391,20 +378,7 @@ impl GoldenBuild<'_> {
     }
 
     /// after the commit: deletes every other golden VM and the retired base pins from
-    /// Tart's cache. All of it is best effort, and a stop skips what is left.
-    async fn retire_old(&self, golden: &str) {
-        match self.vm().guard(self.delete_old(golden)).await {
-            Ok(()) => {}
-            Err(Abort::Failed(reason)) => self
-                .log
-                .warn(&format!("{reason}; the next build tries again.")),
-            Err(_) => self.log.info(
-                "The stop skipped removing the old golden VMs and retired base images; the next \
-                 build removes them.",
-            ),
-        }
-    }
-
+    /// Tart's cache, best effort.
     async fn delete_old(&self, golden: &str) -> Result<(), String> {
         let entries = self.client.list().await.map_err(|error| {
             format!(

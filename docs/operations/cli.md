@@ -3341,12 +3341,15 @@ slot's attempt, which backs off.
 
 ### macOS Status
 
-When a macOS pool is configured, `status` adds, after the image lines:
+When a macOS pool is configured, `status` adds these lines after the image lines;
+with no golden macOS VM, the first three read `missing`:
 
 - `golden-macos-vm: <name>`, or `missing`;
-- `golden-macos-vm-version: <n>`, or `mismatch (golden VM version <g>, CLI <n>)`;
-- `golden-macos-runner: <version>, released <d> days ago`, or
-  `<version>, released unknown` for a version the runner record does not hold;
+- `golden-macos-vm-version: <n>`, `mismatch (golden VM version <g>, CLI <n>)`, or
+  `missing`;
+- `golden-macos-runner: <version>, released <d> days ago`,
+  `<version>, released unknown` for a version the runner record does not hold, or
+  `missing`;
 - `macos-base-published: <date>, <d> days ago`;
 - one `warning: <text>` line each for a runner released 7 or more days ago, which
   says from 21 days that the runner never updates itself, since GitHub's JIT
@@ -3381,16 +3384,16 @@ runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it fro
 over the control channel. `build` builds the runner image, and the same clients
 talk to it. On axmc `build` makes the golden VM, which M2's Mac app is to build.
 
-| Module                                   | Holds                                                                                                                                                                                   |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start`                                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                                                                                    |
-| `build`, `build::golden`                 | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build                                                                    |
-| `build::golden_macos`, `build::build_vm` | The golden macOS VM build, and what a build of either OS shares: the Tart and Softnet check, and the build VM's boot, guest calls under the stop signal, shutdown, commit, and deletion |
-| `control`                                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                                                                                              |
-| `shim`                                   | The Unix shim between `start` and one job container's `docker run` client                                                                                                               |
-| `diagnostics`                            | The exporter child, listed under The Runtime Layer                                                                                                                                      |
-| `instance::runtime_core`                 | The runtime core, listed under The Instance Layer                                                                                                                                       |
-| `instance::log_file`                     | The log, listed under The Instance Layer                                                                                                                                                |
+| Module                                   | Holds                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`                                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                                                                                                                                                                                                                  |
+| `build`, `build::golden`                 | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build                                                                                                                                                                                                  |
+| `build::golden_macos`, `build::build_vm` | The golden macOS VM build, and what a build of either OS shares: the Tart and Softnet check, the deletion of build VMs an earlier build left, the build VM's boot, guest calls under the stop signal, shutdown, commit, and deletion, and the stop and failure handling of retiring the old golden VMs after a commit |
+| `control`                                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                                                                                                                                                                                                                            |
+| `shim`                                   | The Unix shim between `start` and one job container's `docker run` client                                                                                                                                                                                                                                             |
+| `diagnostics`                            | The exporter child, listed under The Runtime Layer                                                                                                                                                                                                                                                                    |
+| `instance::runtime_core`                 | The runtime core, listed under The Instance Layer                                                                                                                                                                                                                                                                     |
+| `instance::log_file`                     | The log, listed under The Instance Layer                                                                                                                                                                                                                                                                              |
 
 ### Start
 
