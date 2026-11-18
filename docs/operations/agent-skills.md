@@ -253,9 +253,13 @@ bounded ways, each the maintainer's choice:
   non-resumable, so a completed child is recorded as completed in run state
   rather than closed, and that record ends the round without a per-round
   handoff. The run never resumes a completed child.
-- A failed round's running child is stopped with `TaskStop`. A child the run
-  cannot stop is handed to the maintainer with its agent ID, the reason, and,
-  in a local interactive session, the step "press `x` on its row in `/tasks`".
+- A child still running after its result is verified or its round has failed
+  is stopped with `TaskStop`. The host documentation says a child stopped this
+  way resumes when messaged, so, like a completed child, it is recorded as
+  stopped rather than closed, and the run never messages or resumes it. A
+  child the run cannot stop is handed to the maintainer with its agent ID, the
+  reason, and, in a local interactive session, the step "press `x` on its row
+  in `/tasks`".
 - In a cloud session, where `/tasks` is not documented, the handoff says that
   no human step is verified there instead of naming one.
 

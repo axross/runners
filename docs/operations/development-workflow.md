@@ -288,8 +288,9 @@ Its covered effects, each performed without asking, are:
   serves: creation of one review child session per round in its own worktree,
   that child's reading of the pull request and the required repository and
   policy material, its COMMENT-type review on the run's pull request, and
-  ending it once its result is verified or its round has failed, as the Claude
-  Code review child session procedure below defines
+  stopping it with `TaskStop` when it is still running once its result is
+  verified or its round has failed, as the Claude Code review child session
+  procedure below defines
 
 The grant is standing: it holds across runs, sessions, and executors until the
 maintainer amends or removes this section, and no run's own end expires it.
@@ -1214,15 +1215,16 @@ authoring conversation.
    the host removed the child's worktree; record a worktree left
    for the host's periodic sweep and report it.
 7. Record a completed child as completed, with the review's URL, in run state.
-   Never resume a completed child. The documented host operations offer no way
-   to close a completed child, so that record ends the round without a handoff,
-   as the deviation in Agent Skills registers.
+   Never resume or message a completed or stopped child. The documented host
+   operations offer no way to close a completed or stopped child, so that
+   record ends the round without a handoff, as the deviation in Agent Skills
+   registers.
 
 A child that cannot post, a review that does not appear, and a review that does
 not correlate are failures of the selected route, which block the review gate as
 The Independent Review, above, states. Record the incomplete evidence. Stop
 any round's child that is still running after its result is verified or its
-round has failed with `TaskStop`.
+round has failed with `TaskStop`, and record it as stopped.
 
 When the run cannot stop a running child, give the maintainer the agent ID, the
 reason it remains, and the step: in a local interactive session, press `x` on

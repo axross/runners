@@ -96,8 +96,10 @@ replace the plan and review gates or extend to what the grant excludes.
   - higher-priority approval requirements
   - higher-priority prohibitions
   - the tool's usage conditions
-    Report a prohibited operation as unavailable rather than trying another
-    route.
+
+  Report a prohibited operation as unavailable rather than trying another
+  route.
+
 - MUST surface an irreconcilable host conflict at the plan gate for new
   delivery, or in the current pending phase when resuming an existing pull
   request; report any blocked delivery as incomplete, not silently waive the
