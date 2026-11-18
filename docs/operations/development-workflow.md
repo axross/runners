@@ -1210,9 +1210,10 @@ authoring conversation.
    Record the child's report of the commit it read, the limits its host
    enforced, and its posting identity in run state. Review coverage evidence,
    above, applies to the result.
-6. Before the next commit, confirm that the author's checkout is unchanged and
-   that the pull request head is still the reviewed commit, and check whether
-   the host removed the child's worktree; record a worktree left
+6. After each round, and before any next commit or the ready transition,
+   confirm that the author's checkout is unchanged and that the pull request
+   head is still the reviewed commit, and check whether the host removed the
+   child's worktree; record a worktree left
    for the host's periodic sweep and report it.
 7. Record a completed child as completed, with the review's URL, in run state.
    Never resume or message a completed or stopped child. The documented host
