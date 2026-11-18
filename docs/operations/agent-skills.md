@@ -257,9 +257,10 @@ bounded ways, each the maintainer's choice:
   is stopped with `TaskStop`. The host documentation says a child stopped this
   way resumes when messaged, so, like a completed child, it is recorded as
   stopped rather than closed, and the run never messages or resumes it. A
-  child the run cannot stop is handed to the maintainer with its agent ID, the
-  reason, and, in a local interactive session, the step "press `x` on its row
-  in `/tasks`".
+  child the run cannot stop, including one an earlier session spawned, whose
+  agent ID only that session can use, is handed to the maintainer with its
+  agent ID, the reason, and, in a local interactive session, the step "press
+  `x` on its row in `/tasks`" in the session that spawned it.
 - In a cloud session, where `/tasks` is not documented, the handoff says that
   no human step is verified there instead of naming one.
 

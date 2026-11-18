@@ -12,12 +12,10 @@ being extracted from the runner setup of a private application repository, in
 steps. [README.md](./README.md) introduces the project and its current status;
 [Development Setup](./docs/operations/development-setup.md) owns setup,
 [Testing](./docs/conventions/testing.md) owns the check commands, and
-[Directory Structure](./docs/conventions/directory-structure.md) owns the layout.
+[Directory Structure](./docs/conventions/directory-structure.md) owns the layout
+and the technologies, including the toolchain and the format and lint tools.
 [docs/index.md](./docs/index.md) indexes conventions, operations, and the
-glossary. mise pins the toolchain, and Prettier, markdownlint, shellcheck,
-hadolint, actionlint, PSScriptAnalyzer, rustfmt, clippy, and cargo-deny provide
-format and lint. The Rust toolchain is pinned in `cli/rust-toolchain.toml` and
-provisioned by `.agents/install-rust`.
+glossary.
 
 This repository is public, so its GitHub Actions CI and review jobs run on
 GitHub-hosted runners only, never on a self-hosted one.

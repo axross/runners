@@ -1204,7 +1204,10 @@ authoring conversation.
    and any limitations.
 3. Right after the spawn, checkpoint the round token, the agent ID the spawn
    returned, and the child's worktree in run state, through Save and resume run
-   state, above.
+   state, above. The round token, the posted review, and the worktree are the
+   child's durable identity; Claude Code's subagent documentation says
+   subagents work within a single session, so the agent ID is a handle only the
+   spawning session can use.
 4. The child posts its review on the pull request in the form REVIEW.md's
    Claude Code child arrangement sets.
 5. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
@@ -1236,8 +1239,11 @@ When the run cannot stop a running child, give the maintainer the agent ID, the
 reason it remains, and the step: in a local interactive session, press `x` on
 its row in `/tasks`. In a cloud session, where `/tasks` is not documented, say
 that no human step is verified there. Report the remaining child. On resume,
-check what each recorded child posted and whether it completed or was stopped
-before starting another child or counting another round.
+check what each recorded child posted, by its round token, and its worktree. A
+session other than the one that spawned the child cannot see its state: record
+whether it completed or was stopped as unknown and hand it over with its agent
+ID as a child the run cannot stop, before starting another child or counting
+another round.
 
 ## Acceptance Criteria Verified Out of Tree
 
