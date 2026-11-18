@@ -164,6 +164,12 @@ impl Captured {
         scrub_error_text(&format!("{} {}", self.stderr, self.stdout), "")
     }
 
+    /// both streams whole, uncut, for a match on a text anywhere in them.
+    #[must_use]
+    pub fn output(&self) -> String {
+        format!("{}\n{}", self.stdout, self.stderr)
+    }
+
     /// this answer when the client succeeded, else a [`TartError::Failed`] that
     /// begins with `what`.
     pub fn checked(self, what: &str) -> Result<Self, TartError> {

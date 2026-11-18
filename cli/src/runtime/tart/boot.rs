@@ -119,7 +119,7 @@ pub fn boot_failure_text(kind: &str, vm: &str, end: &BootEnd) -> String {
 /// the hint a boot failure appends for the cause Tart's output points to, empty when
 /// it points to none; read from the whole output, not the cut error text.
 fn tart_hint(ended: &Captured) -> String {
-    let output = format!("{}\n{}", ended.stdout, ended.stderr);
+    let output = ended.output();
     let carries = |texts: &[&str]| texts.iter().any(|text| output.contains(text));
     let keychain = format!(
         "a locked login keychain, see {}",
