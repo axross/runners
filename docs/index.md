@@ -39,7 +39,7 @@ names every other document the change corrects.
   each verifies, and which of them CI runs.
 - [conventions/directory-structure.md](./conventions/directory-structure.md) -
   the technologies this repository uses, where each listed runner path lives,
-  and where a new one goes.
+  and the table a change that adds, removes, or repurposes one updates.
 - [conventions/documentation.md](./conventions/documentation.md) - which
   document a change to each runner surface invalidates, and what the
   documentation checks cover, deferring to

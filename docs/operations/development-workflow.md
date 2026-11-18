@@ -103,8 +103,8 @@ above. It waits on a human only for:
 - on Amp, the plan-gate archive confirmation, when the current session has not
   collected it and no recorded answer declined it;
 - on Claude Code, the `TaskStop` request Agent Sessions describes, when its
-  live contract requires the human's request and the current session has not
-  collected it;
+  live contract requires the human's request, the current session has not
+  collected it, and no recorded answer declined it;
 - on Claude Code, a review child session's permission prompt that the run
   cannot answer on the human's behalf.
 

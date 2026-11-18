@@ -289,7 +289,9 @@ follows stays under the delivery grant.
   record the answer in run state. A run with no plan gate, such as review-only
   recovery, asks once before its first `TaskStop`, and a fresh session that
   resumes the run and lacks that exchange in its own conversation asks once
-  before its first `TaskStop`, even when run state records an earlier answer.
+  before its first `TaskStop`, even when run state records an earlier
+  confirmation. A recorded decline carries forward, so no later session asks
+  again, and a child still running is handed over as one the run cannot stop.
 - MUST, when the human confirms delivery but declines the review item,
   open the draft pull request, keep it draft, and report the external-review
   gate as unmet and the loop as not complete.
