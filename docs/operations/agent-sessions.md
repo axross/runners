@@ -354,7 +354,9 @@ wait followed by sanctioned GitHub reads, or with a subscription only where the
 host and the run already permit it.
 
 For a Claude Code-authored pull request, the awaited results are its required
-GitHub checks and the review its Claude Code review child session posts.
+GitHub checks and the review its Claude Code review child session posts, or,
+when the maintainer selected the Claude CI alternative for the run, the Claude
+CI review.
 Claude Code's [subagent documentation](https://code.claude.com/docs/en/sub-agents)
 says subagents run in the background by default and that, while fork mode is
 on, an interactive session cannot block on one, so the child's completion

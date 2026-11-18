@@ -448,7 +448,12 @@ A Claude Code review child session can:
   edits to the author's checkout but not pushes or publication, and which can
   stay on disk until the host's periodic sweep
 - raise permission prompts in the authoring session, where an answer that lasts
-  for the session also applies to the authoring conversation
+  for the session also applies to the authoring conversation, and where a
+  "don't ask again" answer for a Bash command, a web fetch domain, or web
+  search is saved to the repository's `.claude/settings.local.json` and applies
+  to later sessions and children anywhere in this repository, as Claude Code's
+  [permissions documentation](https://code.claude.com/docs/en/permissions)
+  states
 - be steered within those tools by pull request content it reads, such as a
   comment any GitHub user can post on this public repository
 - publish a COMMENT-type review on the pull request under the identity of the

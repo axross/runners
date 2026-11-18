@@ -50,7 +50,8 @@ selected by
 ready or a reported stop naming an unmet gate, without a further prompt.
 That workflow owns the delivery sequence and handoff boundary. Where a host
 still requires a per-session confirmation, the run obtains it at the plan gate,
-or when a new session resumes the run, and never by stopping after push;
+before the first action that needs it in a run without one, or when a new
+session resumes the run, and never by stopping after push;
 Agent Sessions describes
 [Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
 and
