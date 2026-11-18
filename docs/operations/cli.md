@@ -2491,7 +2491,7 @@ So a client written against today's agent keeps working against a later agent of
 version 2, and a later client works against today's agent by calling only what
 `welcome` lists. [Protocol Version 2](#protocol-version-2) says how the library's
 `Client` follows these rules, and App says how the app follows them, in
-[The View](./app.md#the-view) and
+[The Window's Page](./app.md#the-windows-page) and
 [The Agent and the App's Session](./app.md#the-agent-and-the-apps-session). A
 change that removes or reinterprets anything above is a version 3, which is a new
 framing decision for the maintainer, not an addition.
@@ -4845,7 +4845,7 @@ first argument: `unsigned` for `release-build.yaml` and `signed` for
 the release set changes every place that encodes it in the same change: the
 workflows, `assemble-release.sh`, `verify-release.sh` and their tests,
 `.releaserc.json`, the shape check and its test, `mise.toml` descriptions, the
-documents, REVIEW.md, the glossary and README.
+documents, REVIEW.md, the glossary, Testing and README.
 
 Every extension keeps these rules:
 
@@ -4921,7 +4921,7 @@ pull request: `release-build.yaml`, `release.yaml`, `assemble-release.sh`,
 `verify-release.sh`, `set-release-version.sh` where its version checks change,
 their tests, `release/.releaserc.json`, `check-release-shape.mjs` and its test,
 `mise.toml`'s task descriptions, the affected CLI, Security, Development Workflow
-and Windows Runner Host text, REVIEW.md's asset list, the glossary and README.
+and Windows Runner Host text, REVIEW.md's asset list, the glossary, Testing and README.
 The release-phase checks and semantic-release asset list MUST name the signed set.
 
 #### W1's Installer Pull Request

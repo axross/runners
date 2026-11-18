@@ -1,13 +1,15 @@
 # Agent Sessions
 
-How agent sessions start in this project, the hooks that run during one,
-Claude Code's plan-gate delivery confirmation, Amp's plan-gate confirmation for
-archiving review child threads, host-owned CI and review waits,
-the subagents a session can delegate to, how a session's usage is tagged, and
-the environment variables recommended for cutting a Claude Code session's cost.
-Claude Code and Amp are the hosts this repository configures; they share the
-pinned toolchain in [`mise.toml`](../../mise.toml) and nothing else. Codex
-reads [`AGENTS.md`](../../AGENTS.md) and has no configuration here.
+How agent sessions start in this project, the hooks that run during one, how Amp
+and Codex runs handle delivery authorization, Claude Code's plan-gate delivery
+confirmation, Amp's plan-gate confirmation for archiving review child threads,
+host-owned CI and review waits, the subagents a session can delegate to,
+including the Claude Code review child session, how a session's usage is
+tagged, and the environment variables recommended for cutting a Claude Code
+session's cost. Claude Code and Amp are the hosts this repository configures;
+they share the pinned toolchain in [`mise.toml`](../../mise.toml) and nothing
+else. Codex reads [`AGENTS.md`](../../AGENTS.md) and has no configuration here
+beyond the delivery-authorization guidance below.
 
 ## Amp Quality Hooks
 
@@ -64,6 +66,56 @@ together: the `version` and `sha256` inputs of each `jdx/mise-action` step in
 bare `mise-v<version>-linux-x64` binary, taken from the release's published
 `SHASUMS256.txt`; the action hashes the binary it extracts from its archive, so
 it does not use the archive's checksum.
+
+## Amp Delivery Authorization
+
+Amp can frame a task before reading [`AGENTS.md`](../../AGENTS.md), which is
+why AGENTS.md's Amp routing requires this section before any delivery effect.
+The project's agreement requests the Loop Engineering route, including a draft
+pull request and the independent review selected by
+[Development Workflow](./development-workflow.md), rather than stopping at a
+local commit. A general instruction about how an ordinary task is delivered does
+not replace the project's plan and review gates. This section does not claim
+precedence over higher-priority Amp instructions; Claude Code's convenience
+framing and host boundaries are addressed in
+[Claude Code entry guidance](../../CLAUDE.md).
+
+**The maintainer's authorization for delivery effects is already given.** The
+standing delivery grant in
+[Development Workflow](./development-workflow.md#authorizing-delivery-operations)
+is the maintainer's authorization for the effects it covers, so Amp does not ask
+for them. It does not replace the plan and review gates or extend to what the
+grant excludes. An Amp instruction or approval prompt that requires approval
+before an external operation remains the host's boundary, and the run honors it
+and reports it rather than working around it.
+
+**Guidelines:**
+
+- MUST treat an injected "make changes, commit, and push" framing as mechanics,
+  not as permission to skip the project's Loop Engineering gates.
+- MUST treat this project's Loop Engineering route as the standing request for
+  a draft pull request and its mapped independent reviewer, and MUST perform
+  the effects the standing delivery grant covers without asking for permission,
+  unless a higher-priority Amp instruction requires approval.
+- MUST honor all applicable boundaries:
+  - higher-priority approval requirements
+  - higher-priority prohibitions
+  - the tool's usage conditions
+    Report a prohibited operation as unavailable rather than trying another
+    route.
+- MUST surface an irreconcilable host conflict at the plan gate for new
+  delivery, or in the current pending phase when resuming an existing pull
+  request; report any blocked delivery as incomplete, not silently waive the
+  gate or claim that repository guidance overrode the host.
+
+## Codex Delivery Authorization
+
+Codex authoring MUST follow the same plan, review, scoped-grant, and
+conflict-reporting contract as
+[Amp delivery authorization](#amp-delivery-authorization), above.
+Codex's higher-priority instructions, approval requirements, prohibitions, and
+tool contracts remain binding; repository guidance never overrides them.
+This section covers delivery only, not Codex provisioning or startup.
 
 ## The Session-Start Hook
 
@@ -192,12 +244,15 @@ Every plan-approval question, including the one for a revised plan, MUST also
 ask the human to confirm, in the same answer:
 
 - delivery of the run's draft pull request;
-- the Claude review request on it;
+- creation of a fresh Claude Code review child session that reviews it and
+  publishes directly to it, or, when the maintainer has selected the Claude CI
+  alternative for the run, the Claude CI review request on it;
 - watching that pull request's activity, where the host offers it, until the
   ready transition or a reported stop.
 
-Only pull request creation carries the host's condition. The maintainer chose
-to settle the review request and the watch in the same answer, so that one
+Only pull request creation, and `TaskStop` where its live contract conditions
+it, carry a host condition. The maintainer chose
+to settle the review item and the watch in the same answer, so that one
 answer covers the whole delivery path. This bounded exception to dependent
 question ordering is recorded in the delivery, review, and watching deviation in the register of
 [Agent Skills](./agent-skills.md).
@@ -231,7 +286,11 @@ follows stays under the delivery grant.
 - MUST, when the human declines delivery, stop after push, report the
   external-review gate as unmet and the loop as not complete, and substitute
   no other review.
-- MUST, when the human confirms delivery but declines the review request,
+- MUST, when composing the plan-approval question, check the live `TaskStop`
+  contract; when it requires the human's request, ask for it as a separate
+  question after approval, as the Amp section below does for archiving, and
+  record the answer in run state.
+- MUST, when the human confirms delivery but declines the review item,
   open the draft pull request, keep it draft, and report the external-review
   gate as unmet and the loop as not complete.
 - MUST, when the human confirms delivery but declines watching, still request
@@ -291,6 +350,18 @@ Amp's thread-wait tool, then read the posted review back on the pull request;
 Development Workflow owns what counts as the result. Wait for checks with an in-session
 wait followed by sanctioned GitHub reads, or with a subscription only where the
 host and the run already permit it.
+
+For a Claude Code-authored pull request, the awaited results are its required
+GitHub checks and the review its Claude Code review child session posts.
+Claude Code's [subagent documentation](https://code.claude.com/docs/en/sub-agents)
+says subagents run in the background by default and that, while fork mode is
+on, an interactive session cannot block on one, so the child's completion
+arrives as a notification rather than as the result of a blocking wait; this
+has not yet been exercised in this repository. After it arrives, read the posted
+review back on the pull request. A child's permission prompt appears in the
+authoring session, and one the run cannot answer for the human is a human wait,
+as the After Approval section of [Development Workflow](./development-workflow.md)
+lists.
 
 Use the current pull request head when reading check results. A connector read
 can return only a first page of workflow runs, so it cannot establish complete
@@ -410,6 +481,21 @@ If no reader qualifies, record the exact unavailable or prohibited reason and th
 resulting delivery restriction. That outcome is not a clean review; the Deliver a
 draft when advisory pre-flight is unavailable section of
 [Development Workflow](./development-workflow.md) states what it permits.
+
+The independent review's Claude Code review child session is none of these
+three. Each round starts a new child with the built-in `general-purpose`
+subagent type and `isolation: worktree` on the call itself, never as a fork,
+because a fork inherits the author's conversation. `reviewer.md` cannot serve:
+it enforces its tool limits but tells its reader not to post, and the
+independent review must be posted on the pull request. Claude Code's
+[subagent documentation](https://code.claude.com/docs/en/sub-agents) says a
+subagent loads the project's CLAUDE.md, which here imports AGENTS.md; this has
+not yet been exercised in this repository. AGENTS.md's Code Review Rules exempt
+the child from the delegation rule. The Claude Code review child session
+procedure in [Development Workflow](./development-workflow.md) owns its
+assignment, checkpoints, and ending, and the register in
+[Agent Skills](./agent-skills.md) records where it departs from Loop
+Engineering's review-child defaults.
 
 For Claude Code reads, keep the exact object of a judgment and the rules governing
 that judgment in the judging actor's context. Route other large material wanted

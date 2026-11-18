@@ -211,3 +211,60 @@ project interaction rather than a general defect in the skill. Reassess it if
 the installed ordering rule or the delivery confirmation's dependencies change,
 or the maintainer withdraws this choice. A host rule requiring sequential
 questions takes precedence over this project exception.
+
+Since the merge of the pull request that closes
+[issue #127](https://github.com/axross/runners/issues/127), the confirmation's
+review item is the creation of a Claude Code review child session for the pull
+request, or the Claude CI review request when the maintainer has selected that
+alternative for the run; the dependency this entry records is unchanged.
+
+### Deviation - the Claude Code review child's limits and closure
+
+The project installation of `loop-engineering`, from `axross/skills` revision
+`cce7ecf` (the refresh in #96), whose capability hash in `skills-lock.json` is
+`6a7dc5702473917c880c2f783265d099d555fa5e4e063ac411a2fed599118806`, requires in
+its
+[review workflow](../../.claude/skills/loop-engineering/references/review-workflow.md):
+
+- "MUST use available, permitted tool restrictions for a review child while
+  retaining required material access and direct publication through the
+  target's review mechanism."
+- "MUST close each review child the run created after verifying its posted
+  result, using an available supported end/close/archive operation and
+  preserving review history and posted evidence."
+- For Claude Code, "end the review child session using its supported lifecycle
+  operation. Automatic one-shot termination counts when observed; an idle
+  resumable session is not proof of closure."
+- "MUST tell the human when cleanup cannot be completed for another reason, or
+  permission remains unavailable, identify the exact session/thread and reason,
+  and ask them to close it with concrete host-specific steps."
+
+The Claude Code review child session in
+[Development Workflow](./development-workflow.md) departs from these in four
+bounded ways, each the maintainer's choice:
+
+- The child is a general-purpose subagent started with `isolation: worktree`.
+  The worktree enforces only the no-edit limit on the author's checkout; the
+  no-push, publication-scope, and no-delegation limits are instructions the host
+  does not enforce. `.claude/agents/reviewer.md` enforces tool limits, but its
+  instructions forbid posting, so it cannot serve as a child that publishes
+  directly; it stays the advisory pre-flight reader.
+- The host documentation describes no operation that makes a completed subagent
+  non-resumable, so a completed child is recorded as completed in run state
+  rather than closed, and that record ends the round without a per-round
+  handoff. The run never resumes a completed child.
+- A failed round's running child is stopped with `TaskStop`. A child the run
+  cannot stop is handed to the maintainer with its agent ID, the reason, and,
+  in a local interactive session, the step "press `x` on its row in `/tasks`".
+- In a cloud session, where `/tasks` is not documented, the handoff says that
+  no human step is verified there instead of naming one.
+
+This entry is adopted by the maintainer's merge of the pull request that closes
+[issue #127](https://github.com/axross/runners/issues/127), together with the
+review route and grant amendments it serves. It changes no installed skill,
+host restriction, or plan and review gate, and authorizes no upstream
+publication. Reassess it when the installed review-workflow rules change, when
+Claude Code documents an operation that ends a completed subagent, enforces tool
+limits on a general-purpose subagent, or documents `/tasks` for cloud sessions,
+when a project subagent definition that may post is added, or when the
+maintainer withdraws this choice.
