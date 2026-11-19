@@ -6,7 +6,10 @@ use marshal_cli::agent::{CallError, Client, ConnectError, Push, connect};
 use marshal_cli::instance::roots::Roots;
 use tokio::sync::mpsc;
 
-use crate::seam::{AgentInfo, Connected, Dial, DialError, Failure, Link, Method, Pushed};
+use crate::seam::{
+    AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Link, Method,
+    Pushed,
+};
 
 /// connects to this user's agent at the channel the roots name.
 pub struct Library {
@@ -43,6 +46,9 @@ impl Dial for Library {
                 .methods
                 .iter()
                 .any(|method| method == DRAIN_FOR_UPDATE),
+            edits: CONFIG_METHODS
+                .iter()
+                .all(|wanted| client.welcome.methods.iter().any(|method| method == wanted)),
         };
         Ok(Connected {
             link: Agent { client },
@@ -77,6 +83,16 @@ pub fn failure(error: CallError) -> Failure {
         CallError::Agent(body) => match body.code.as_str() {
             "busy" | "subscription_limit" => Failure::Busy(body.message),
             "not_subscribed" => Failure::NotSubscribed,
+            code if code.starts_with("config_")
+                || code == "runtime_restarting"
+                || code == "image_unusable" =>
+            {
+                Failure::Config {
+                    code: body.code.clone(),
+                    message: body.message,
+                    problems: body.problems.into_vec(),
+                }
+            }
             "store_failed" => Failure::Store {
                 detail: body.store.map(|store| match store.code {
                     Some(code) => format!("kind {}, code {code}", store.kind),
@@ -118,6 +134,32 @@ fn forward(mut pushes: mpsc::UnboundedReceiver<Push>) -> mpsc::UnboundedReceiver
 }
 
 impl Link for Agent {
+    async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        match request {
+            ConfigRequest::Read => self.client.config_read().await.map(ConfigAnswer::Read),
+            ConfigRequest::Edit {
+                revision,
+                edits,
+                check,
+            } => self
+                .client
+                .config_edit(&revision, edits, check)
+                .await
+                .map(ConfigAnswer::Change),
+            ConfigRequest::Reload { revision, check } => self
+                .client
+                .config_reload(&revision, check)
+                .await
+                .map(ConfigAnswer::Change),
+            ConfigRequest::RemoveReleasedToken { repository } => self
+                .client
+                .token_remove(&repository)
+                .await
+                .map(|()| ConfigAnswer::TokenRemoved),
+        }
+        .map_err(failure)
+    }
+
     async fn subscribe(&self) -> Result<(), Failure> {
         self.client.subscribe().await.map_err(failure)
     }
@@ -168,3 +210,6 @@ impl Link for Agent {
 
 /// the method that asks the agent to drain for an update.
 const DRAIN_FOR_UPDATE: &str = "drain_for_update";
+
+/// the methods the editor needs, all of which an agent must list.
+const CONFIG_METHODS: [&str; 3] = ["config_read", "config_edit", "config_reload"];

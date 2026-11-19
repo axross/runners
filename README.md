@@ -113,6 +113,17 @@ Run from the repository root.
 | `mise run check:app-lock`           | Fail when the app's lockfile resolves a crate `marshal-cli` builds with, for Windows, macOS or Linux, to another version than the CLI's                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `mise run check`                    | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
+The Linux x64 rendering gate needs one explicit preparation step:
+`mise run prepare:app-render`. It installs test-only npm dependencies from
+`app/crates/app/tests/render/package-lock.json`, with lifecycle scripts disabled,
+and checksum-verifies Chromium before extracting it under `.amp/in/browser-runtime/`.
+It installs no OS libraries. CI prepares those on its disposable GitHub-hosted
+runner only. `mise run test:app-render` runs the browser gate alone; `mise run check`
+includes it and never installs the browser. Screenshots and results go under
+`.amp/in/artifacts/k3-render-ci/`. [App](./docs/operations/app.md#the-configuration-editor)
+describes the checks and their limits. To regenerate the test-only lock after
+changing its manifest, use `npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
+
 The installed copies under `.claude/skills/` are generated and are excluded from
 formatting and linting. [Agent Skills](./docs/operations/agent-skills.md) owns
 refreshing them and the upstream comparison that `check:skills` does not do.

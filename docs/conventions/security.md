@@ -117,6 +117,17 @@ release, with its download URL and checksum in `mise.lock`, so it needs no compi
 in CI and no exception here. [App](../operations/app.md#licence-notices) describes how
 the notices check holds that version.
 
+The Linux x64 editor rendering gate adds only the test controller `playwright-core`
+under `app/crates/app/tests/render/`, not a dependency of the bundled page or the
+app's Rust workspaces. Its npm lock records the package integrity; preparation
+uses `npm ci --ignore-scripts`. `browser.json` in that directory pins the Chromium
+archive's version, HTTPS URL and SHA-256, computed from the real download.
+Preparation MUST verify that checksum before extracting or running the browser.
+Refresh the controller, browser pin and lock together, then rerun the render gate.
+OS libraries are prepared only on the disposable GitHub-hosted Check runner;
+the worktree preparation task installs no system package and the gate downloads
+nothing. The fake bridge has no credential, live agent or configuration-file access.
+
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain,
 whose exception is recorded below, WiX is the one tool the release build fetches.
 [`fetch-wix.sh`](../../.github/scripts/fetch-wix.sh) downloads the NuGet package
@@ -1176,9 +1187,14 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
-  again, set a token, remove a token, hide the window and open a runner's job. The
-  confirmation window's
-  grants the two commands that read its question and answer it. Neither grants
+  again, set a token, remove a token, hide the window, open a runner's job and
+  forward configuration requests. `configuration` accepts a typed request for
+  read, edit, reload or a separately chosen repository-token removal. The three
+  configuration methods keep all file access with the agent; the page supplies
+  no path, token, schema version or lifecycle field. Removal forwards the existing
+  `token_remove` method, returns a store refusal separately from the saved edit,
+  and reads no token. The confirmation window's capability grants the two
+  commands that read its question and answer it. Neither grants
   anything else, each is limited to its window, and a test shows that a call the
   capability does not grant is refused. The permission files Tauri generates are
   checked in, so a change to them shows in a diff, and Tauri's `dynamic-acl` feature

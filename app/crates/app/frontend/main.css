@@ -270,20 +270,6 @@ svg {
   color: var(--text-destructive-high);
 }
 
-/* an unavailable control takes the neutral look, stays focusable and is never dimmed */
-.button[aria-disabled="true"],
-.pill[aria-disabled="true"] {
-  background: var(--component-neutral-rest);
-  border-color: var(--border-neutral-subtle);
-  color: var(--text-neutral-low);
-}
-
-.button[aria-disabled="true"]:hover,
-.pill[aria-disabled="true"]:hover {
-  background: var(--component-neutral-rest);
-  color: var(--text-neutral-low);
-}
-
 .pill {
   position: relative;
   display: inline-flex;
@@ -340,6 +326,20 @@ svg {
 .pill.destructive:hover {
   background: var(--component-destructive-hovered);
   color: var(--text-destructive-high);
+}
+
+/* an unavailable control takes the neutral look, stays focusable and is never dimmed */
+.button[aria-disabled="true"],
+.pill[aria-disabled="true"] {
+  background: var(--component-neutral-rest);
+  border-color: var(--border-neutral-subtle);
+  color: var(--text-neutral-low);
+}
+
+.button[aria-disabled="true"]:hover,
+.pill[aria-disabled="true"]:hover {
+  background: var(--component-neutral-rest);
+  color: var(--text-neutral-low);
 }
 
 /* the balloon that says why a control is unavailable */
@@ -1008,6 +1008,141 @@ svg {
 .dialog-button.confirm:hover {
   background: var(--component-destructive-hovered);
   color: var(--text-destructive-high);
+}
+
+.config-form,
+.config-review,
+.config-host,
+.config-volumes,
+.config-volume,
+.config-notice,
+.config-footer {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.config-form,
+.config-review,
+.config-removed {
+  padding: 16px;
+}
+
+.config-card,
+.config-review {
+  box-shadow:
+    var(--shadow-list-card),
+    0 0 0 1.5px var(--text-accent-brand);
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.config-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.config-field > .tipwrap {
+  display: block;
+  min-width: 0;
+}
+
+.config-input {
+  letter-spacing: normal;
+  font: inherit;
+}
+
+.config-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.config-stepper .config-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-stepper .pill {
+  flex: none;
+}
+
+textarea.config-input {
+  height: auto;
+  min-height: var(--control-height);
+  padding-block: 10px;
+  resize: vertical;
+}
+
+.config-error {
+  color: var(--text-destructive-low);
+}
+
+.config-actions,
+.config-bar,
+.config-removed,
+.config-checkbox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.config-checkbox {
+  flex-wrap: nowrap;
+  align-items: start;
+}
+
+.config-checkbox input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--solid-accent-rest);
+}
+
+.config-effects {
+  display: grid;
+  gap: 8px;
+}
+
+.config-bar {
+  flex: none;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-neutral-subtle);
+  background: var(--list-card-fill);
+}
+
+.config-bar .grow {
+  flex: 1 1 180px;
+}
+
+.footer.config-expanded {
+  max-height: 50%;
+  overflow-y: auto;
+}
+
+.config-host {
+  padding: 4px;
+}
+
+.config-chip {
+  border: 1px solid var(--border-accent-subtle);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--text-accent-brand);
+}
+
+@media (max-width: 600px) {
+  .config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* the menu's own confirmation window is the dialog on the whole window */

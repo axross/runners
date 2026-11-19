@@ -16,6 +16,7 @@ use tokio::time::timeout;
 
 use crate::instance::roots::Roots;
 
+use super::super::config::{ConfigChange, ConfigRead};
 use super::super::snapshot::Snapshot;
 use super::super::wire::{
     AgentMessage, ClientInfo, ClientMessage, ErrorBody, MAX_AGENT_MESSAGE_BYTES,
@@ -288,6 +289,38 @@ impl Client {
         .await
         .map(|_| ())
     }
+
+    /// reads `config.toml` now: its revision, status, editable values and problems.
+    pub async fn config_read(&self) -> Result<ConfigRead, CallError> {
+        let value = self.call("config_read", serde_json::json!({})).await?;
+        answer(value)
+    }
+
+    /// checks `edits`, the write path's operations as `config_edit` takes them,
+    /// against the file at `revision`, and with `check` false writes and applies them.
+    pub async fn config_edit(
+        &self,
+        revision: &str,
+        edits: serde_json::Value,
+        check: bool,
+    ) -> Result<ConfigChange, CallError> {
+        let params = serde_json::json!({ "revision": revision, "edits": edits, "check": check });
+        answer(self.call("config_edit", params).await?)
+    }
+
+    /// checks the file as it is at `revision`, and with `check` false applies it.
+    pub async fn config_reload(
+        &self,
+        revision: &str,
+        check: bool,
+    ) -> Result<ConfigChange, CallError> {
+        let params = serde_json::json!({ "revision": revision, "check": check });
+        answer(self.call("config_reload", params).await?)
+    }
+}
+
+fn answer<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Result<T, CallError> {
+    serde_json::from_value(value).map_err(|error| CallError::BadAnswer(error.to_string()))
 }
 
 fn lock(

@@ -21,8 +21,9 @@ pub use library::{Agent, Library, dial_error, failure};
 pub use log::{AppLog, KEPT_FILES, MAX_FILE_BYTES};
 pub use record::{RECORD_APPLIES_FOR, RECORD_FILE, RecordFile};
 pub use seam::{
-    AgentInfo, Connected, Dial, DialError, Failure, Later, Launcher, Link, Log, Method, NoUpdates,
-    Present, Process, Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
+    AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Later, Launcher,
+    Link, Log, Method, NoUpdates, Present, Process, Processes, Pushed, Record, Shown, TimeSource,
+    Updater, Verified,
 };
 pub use session::{
     Act, CHECK_EVERY, EXIT_WITHIN, Ended, Forms, GITHUB_ASK_AGAIN, Handle, RENEW_EVERY, Seams,

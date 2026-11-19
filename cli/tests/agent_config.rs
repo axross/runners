@@ -355,6 +355,47 @@ async fn an_edit_on_a_stopped_agent_is_written_and_used_at_the_next_start() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn the_clients_config_methods_read_the_agents_answers() {
+    let rig = rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            let read = conn.client.config_read().await.unwrap();
+            assert_eq!(read.status, "valid");
+            assert_eq!(read.settings["routing_label"], "axpc");
+            assert_eq!(read.pools.len(), 2);
+            assert!(read.problems.is_empty() && !read.too_large);
+            let before = file(rig);
+            let checked = conn
+                .client
+                .config_edit(
+                    &read.revision,
+                    json!([{"op": "remove_entry", "path": "pool[1]"}]),
+                    true,
+                )
+                .await
+                .unwrap();
+            let d = checked.effects.iter().find(|e| e.pool == "d").unwrap();
+            assert_eq!((d.change.as_str(), d.runners_before), ("removed", 1));
+            assert_eq!(checked.repositories_released, ["o/d"]);
+            assert!(!checked.applies);
+            assert_eq!(file(rig), before);
+            let reload = conn
+                .client
+                .config_reload(&read.revision, true)
+                .await
+                .unwrap();
+            assert!(reload.effects.iter().all(|e| e.change == "unchanged"));
+            match conn.client.config_reload("stale", true).await {
+                Err(CallError::Agent(body)) => assert_eq!(body.code, "config_changed"),
+                other => panic!("a stale revision was not refused: {other:?}"),
+            }
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_reload_of_a_bad_file_keeps_the_pools_running_and_a_good_one_applies() {
     let rig = rig();
     let rig = &rig;

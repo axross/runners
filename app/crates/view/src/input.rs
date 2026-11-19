@@ -134,6 +134,8 @@ pub struct Input<'a> {
     /// the pools whose Open run found the job ended, with when, in milliseconds since
     /// the Unix epoch.
     pub ended_jobs: Option<&'a BTreeMap<String, u64>>,
+    /// the agent lists all three configuration methods.
+    pub editor: bool,
 }
 
 impl<'a> Input<'a> {
@@ -148,6 +150,7 @@ impl<'a> Input<'a> {
             tokens: None,
             github: GithubFeed::Off,
             ended_jobs: None,
+            editor: false,
         }
     }
 
@@ -178,6 +181,13 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn ended_jobs(mut self, ended: &'a BTreeMap<String, u64>) -> Self {
         self.ended_jobs = Some(ended);
+        self
+    }
+
+    /// the agent's welcome, not its version, determines whether an editor is offered.
+    #[must_use]
+    pub fn editor(mut self, supported: bool) -> Self {
+        self.editor = supported;
         self
     }
 }

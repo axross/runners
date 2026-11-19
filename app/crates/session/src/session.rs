@@ -39,8 +39,8 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::connect::{Attempt, Found, RETRY_EVERY, attempt};
 use crate::seam::{
-    AgentInfo, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present,
-    Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
+    AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Launcher, Link,
+    Log, Method, Present, Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
 };
 use update::Drain;
 
@@ -131,6 +131,10 @@ impl Act {
 
 type Reply<T> = oneshot::Sender<Result<T, String>>;
 
+/// a configuration answer keeps its failure whole, so the editor can place each
+/// problem beside its field.
+type ConfigReply = oneshot::Sender<Result<ConfigAnswer, Failure>>;
+
 enum Command {
     Read {
         forms: Option<Forms>,
@@ -151,6 +155,10 @@ enum Command {
     RemoveToken {
         repository: String,
         reply: Reply<()>,
+    },
+    Config {
+        request: ConfigRequest,
+        reply: ConfigReply,
     },
     WindowShown(bool),
     OpenJob {
@@ -209,6 +217,18 @@ impl Handle {
     pub async fn remove_token(&self, repository: String) -> Result<(), String> {
         self.ask(|reply| Command::RemoveToken { repository, reply })
             .await
+    }
+
+    /// asks the agent's configuration methods; under lost contact the answer is
+    /// [`Failure::Lost`], and the editor keeps its unapplied changes.
+    pub async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        let (reply, answer) = oneshot::channel();
+        self.commands
+            .send(Command::Config { request, reply })
+            .map_err(|_| Failure::Other(GONE.to_string()))?;
+        answer
+            .await
+            .unwrap_or_else(|_| Err(Failure::Other(GONE.to_string())))
     }
 
     /// says whether the main window is shown and not minimized, which is when the
@@ -568,7 +588,8 @@ impl<D: Dial> Session<D> {
             .pending(self.pending)
             .tokens(&self.tokens)
             .github(feed)
-            .ended_jobs(&self.ended_jobs);
+            .ended_jobs(&self.ended_jobs)
+            .editor(self.agent.edits);
         let Update { view, announced } = self.tracker.update(input);
         self.recheck = announced
             .recheck_at_ms
@@ -871,6 +892,7 @@ impl<D: Dial> Session<D> {
                 reply,
             } => self.set_token(&repository, token, reply),
             Command::RemoveToken { repository, reply } => self.remove_token(&repository, reply),
+            Command::Config { request, reply } => self.config(request, reply),
             Command::WindowShown(shown) => self.set_window_shown(shown),
             Command::OpenJob {
                 pool,
@@ -1059,6 +1081,33 @@ impl<D: Dial> Session<D> {
                 outcome,
                 reply,
             });
+        });
+    }
+
+    /// passes the editor's request to the agent; what an apply does shows in the
+    /// snapshots that follow, so the answer goes straight back to the window.
+    fn config(&mut self, request: ConfigRequest, reply: ConfigReply) {
+        let Some(link) = self.link() else {
+            let _ = reply.send(Err(Failure::Lost));
+            return;
+        };
+        if !self.agent.edits {
+            let _ = reply.send(Err(Failure::NotServed("configuration editing".into())));
+            return;
+        }
+        if let ConfigRequest::RemoveReleasedToken { repository } = &request
+            && TokenKey::parse(repository).is_err()
+        {
+            let _ = reply.send(Err(Failure::Refused(
+                "A repository is written owner/name.".into(),
+            )));
+            return;
+        }
+        tokio::spawn(async move {
+            let answer = tokio::time::timeout(CALL_WITHIN, link.config(request))
+                .await
+                .unwrap_or(Err(Failure::TimedOut));
+            let _ = reply.send(answer);
         });
     }
 

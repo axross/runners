@@ -1,7 +1,7 @@
 //! the commands the web view calls. Each is granted to a window by a capability, so a
 //! window calls only the ones its capability names.
 
-use marshal_session::{Act, Forms, Shown, Then};
+use marshal_session::{Act, ConfigAnswer, ConfigRequest, Failure, Forms, Shown, Then};
 use marshal_view::Confirmation;
 use tauri::ipc::Invoke;
 use tauri::{AppHandle, Runtime, State, Window};
@@ -16,6 +16,59 @@ use crate::state::AppState;
 #[tauri::command]
 pub async fn read_view(state: State<'_, AppState>, forms: Option<Forms>) -> Result<Shown, String> {
     state.handle.read_view(forms).await
+}
+
+/// a configuration refusal retains its field locations rather than flattening them
+/// into a command's error string. No response contains the file's source text.
+#[derive(serde::Serialize)]
+pub struct ConfigurationFailure {
+    code: String,
+    message: String,
+    problems: Vec<marshal_cli::agent::config::Problem>,
+}
+
+/// retains structured refusals so the page can label fields and retry store removal
+/// independently of the configuration that was saved.
+#[tauri::command]
+pub async fn configuration(
+    state: State<'_, AppState>,
+    request: ConfigRequest,
+) -> Result<ConfigAnswer, ConfigurationFailure> {
+    state
+        .handle
+        .config(request)
+        .await
+        .map_err(|failure| match failure {
+            Failure::Config {
+                code,
+                message,
+                problems,
+            } => ConfigurationFailure {
+                code,
+                message,
+                problems,
+            },
+            Failure::Store { detail } => ConfigurationFailure {
+                code: "store_failed".into(),
+                message: detail.map_or_else(
+                    || "The token store refused the removal.".into(),
+                    |detail| format!("The token store refused the removal ({detail})."),
+                ),
+                problems: Vec::new(),
+            },
+            failure => ConfigurationFailure {
+                code: match &failure {
+                    Failure::Busy(_) => "busy",
+                    Failure::TimedOut => "not_answered",
+                    Failure::Lost => "lost_contact",
+                    Failure::NotServed(_) => "not_served",
+                    _ => "refused",
+                }
+                .into(),
+                message: failure.words(),
+                problems: Vec::new(),
+            },
+        })
 }
 
 #[tauri::command]
@@ -127,6 +180,7 @@ pub async fn answer_confirmation<R: Runtime>(
 pub fn handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         read_view,
+        configuration,
         start_all,
         stop_all,
         build,

@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 use marshal_app::state::{AppState, Asking, Latest};
 use marshal_app::{HIDDEN_EVENT, commands, on_window_event, opener};
 use marshal_session::{
-    Act, AgentInfo, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, NoUpdates,
-    Present, Pushed, Seams, Session, Shown, Then, WallClock,
+    Act, AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Launcher,
+    Link, Log, Method, NoUpdates, Present, Pushed, Seams, Session, Shown, Then, WallClock,
 };
 use marshal_view::Confirmation;
 use serde_json::json;
@@ -39,6 +39,9 @@ impl Link for Nothing {
     }
     async fn drain_for_update(&self, _version: &str) -> Result<Option<u32>, Failure> {
         Ok(None)
+    }
+    async fn config(&self, _request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        Err(Failure::Lost)
     }
     async fn subscribe_github(&self) -> Result<(), Failure> {
         Ok(())
@@ -186,8 +189,9 @@ const APP_ORIGIN: &str = if cfg!(windows) {
     "tauri://localhost"
 };
 
-const MAIN_COMMANDS: [&str; 10] = [
+const MAIN_COMMANDS: [&str; 11] = [
     "read_view",
+    "configuration",
     "start_all",
     "stop_all",
     "build",
@@ -206,6 +210,7 @@ fn arguments(command: &str) -> serde_json::Value {
         "set_token" => json!({ "repository": "axross/runners", "token": "" }),
         "remove_token" => json!({ "repository": "axross/runners" }),
         "read_view" => json!({ "forms": null }),
+        "configuration" => json!({ "request": { "kind": "read" } }),
         "answer_confirmation" => json!({ "accepted": false }),
         "open_job" => json!({ "pool": "app", "runner": "app-1-20261104031522114" }),
         _ => json!({}),
@@ -213,7 +218,7 @@ fn arguments(command: &str) -> serde_json::Value {
 }
 
 #[test]
-fn the_main_window_calls_its_ten_commands() {
+fn the_main_window_calls_its_eleven_commands() {
     let app = app();
     let main = window(&app, "main");
     for command in MAIN_COMMANDS {
@@ -460,6 +465,9 @@ impl Link for Watched {
     }
     async fn drain_for_update(&self, _version: &str) -> Result<Option<u32>, Failure> {
         Ok(None)
+    }
+    async fn config(&self, _request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        Err(Failure::Lost)
     }
 }
 

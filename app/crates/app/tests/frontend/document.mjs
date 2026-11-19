@@ -53,6 +53,21 @@ export class Element {
     }
     this.children.push(...nodes);
   }
+  /** the first descendant matching the simple class or tag selectors the cards use. */
+  querySelector(selector) {
+    return (
+      [...this.descendants()].find(
+        (element) =>
+          element !== this &&
+          (selector.startsWith(".")
+            ? element
+                .getAttribute("class")
+                ?.split(" ")
+                .includes(selector.slice(1))
+            : element.tag === selector),
+      ) ?? null
+    );
+  }
   replaceChildren(...nodes) {
     this.children = [];
     this.append(...nodes);

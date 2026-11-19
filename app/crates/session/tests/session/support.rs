@@ -12,9 +12,9 @@ use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::UpdateEnding;
 use marshal_cli::github_status::GithubStatus;
 use marshal_session::{
-    AgentInfo, Connected, Dial, DialError, Ended, Failure, Handle, Later, Launcher, Link, Log,
-    Method, Present, Process, Processes, Pushed, Record, Seams, Session, Shown, TimeSource,
-    Updater, Verified,
+    AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Ended, Failure, Handle,
+    Later, Launcher, Link, Log, Method, Present, Process, Processes, Pushed, Record, Seams,
+    Session, Shown, TimeSource, Updater, Verified,
 };
 use marshal_view::{Clock, View};
 use tokio::sync::mpsc;
@@ -64,6 +64,7 @@ pub enum Called {
     Drain { version: String },
     SubscribeGithub,
     RenewGithub,
+    Config(String),
 }
 
 #[derive(Default)]
@@ -79,6 +80,8 @@ struct AgentState {
     held: Vec<(&'static str, Arc<tokio::sync::Notify>)>,
     /// the process ID a drain answers with.
     pid: Option<u32>,
+    /// the answers to configuration requests, in order; then a refusal.
+    config: VecDeque<Result<ConfigAnswer, Failure>>,
 }
 
 /// the test's end of a fake agent.
@@ -105,6 +108,15 @@ fn name(method: &Method) -> &'static str {
 }
 
 impl Link for FakeLink {
+    async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        let mut state = locked(&self.state);
+        state.calls.push(Called::Config(format!("{request:?}")));
+        state
+            .config
+            .pop_front()
+            .unwrap_or_else(|| Err(Failure::Other("no answer queued".into())))
+    }
+
     async fn subscribe(&self) -> Result<(), Failure> {
         locked(&self.state).subscribe.clone().unwrap_or(Ok(()))
     }
@@ -187,6 +199,7 @@ impl Agent {
         Self::reporting(AgentInfo {
             version: "1.3.0".to_string(),
             drains: true,
+            edits: true,
         })
     }
 
@@ -209,6 +222,11 @@ impl Agent {
 
     pub fn push(&self, snapshot: Snapshot) {
         let _ = self.pushes.send(Pushed::Snapshot(Box::new(snapshot)));
+    }
+
+    /// queues the answer to the next configuration request.
+    pub fn answer_config(&self, answer: Result<ConfigAnswer, Failure>) {
+        locked(&self.state).config.push_back(answer);
     }
 
     pub fn push_github(&self, status: GithubStatus) {
