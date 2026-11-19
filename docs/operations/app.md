@@ -916,9 +916,11 @@ Keychain items are kept. Until M4, Marshal has no login item and no updates of i
 own.
 
 With the command line still running, the app shows that another Marshal holds the
-runner lock. Stop it with `marshal stop`, then remove the command line with the
-uninstall procedure in the recovery release tag's [CLI Recovery](./cli-recovery.md)
-guide; from then on the app runs the pools.
+runner lock. Stop it with `marshal stop` before handing the pools to the app. For a
+pkg install, use the uninstall procedure in the recovery release tag's
+[CLI Recovery](./cli-recovery.md) guide. For a manual copy at `~/.local/bin/marshal`,
+use that guide's macOS block under Migrating From a Manual Install instead. Then
+use the app to run the pools.
 
 To uninstall, quit Marshal and move it to the Trash. What it leaves, and how to remove
 each:

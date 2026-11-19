@@ -301,6 +301,14 @@ assert_check_left_the_file() {
   assert_clean_temp
 }
 
+begin_case "real installer: a non-Actions host is refused before setup"
+exit_status=0
+output="$(env GITHUB_ACTIONS=false RUNNER_ENVIRONMENT=github-hosted RUNNER_OS=macOS \
+  bash "${here}/test-install-blocks-real.sh" "$shell_under_test" "${case_dir}/missing-release" "$version" 2>&1)" || exit_status=$?
+[[ $exit_status -eq 2 && "$output" == *'use a disposable GitHub-hosted macOS runner'* ]] || fail "no host refusal: exit ${exit_status}: ${output}"
+assert_installs_nothing
+finish_case
+
 begin_case "check: a genuine package passes and installs nothing"
 prepare_check
 run_check

@@ -14,6 +14,12 @@
 # usage: test-install-blocks-real.sh <shell> <release directory> <release version>
 set -euo pipefail
 
+if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_ENVIRONMENT:-}" != github-hosted ||
+  "${RUNNER_OS:-}" != macOS || "$(/usr/bin/uname -s)" != Darwin ]]; then
+  echo 'error: this test installs and removes a package; use a disposable GitHub-hosted macOS runner (GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, RUNNER_OS=macOS).' >&2
+  exit 2
+fi
+
 if [[ $# -ne 3 ]]; then
   echo "Usage: test-install-blocks-real.sh <shell> <release directory> <release version>" >&2
   exit 2

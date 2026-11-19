@@ -22,6 +22,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
+    $env:RUNNER_OS -cne 'Windows' -or [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    [Console]::Error.WriteLine('error: this test installs and removes an MSI and changes the user PATH; use a disposable GitHub-hosted Windows runner (GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, RUNNER_OS=Windows).')
+    exit 2
+}
+
 $script:Document = $Document
 . (Join-Path $PSScriptRoot 'install-block-helpers.ps1')
 Assert-JqAvailable

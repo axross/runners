@@ -269,6 +269,18 @@ function Assert-CheckLeftTheFile {
     Assert-CleanTemp
 }
 
+Open-Case 'real installer: a non-Actions host is refused before setup'
+$originalActions = $env:GITHUB_ACTIONS
+try {
+    $env:GITHUB_ACTIONS = 'false'
+    & (Join-Path $PSScriptRoot 'test-install-blocks-real.ps1') -ReleaseDirectory (Join-Path $script:CaseDirectory 'missing-release') -Version $Version -LogDirectory $script:CaseDirectory
+    Assert-True ($LASTEXITCODE -eq 2) "the real installer harness did not refuse before setup (exit $LASTEXITCODE)"
+} finally {
+    $env:GITHUB_ACTIONS = $originalActions
+}
+Assert-InstallsNothing
+Complete-Case
+
 Open-Case 'check: a genuine installer passes and installs nothing'
 Initialize-Check
 Invoke-Check

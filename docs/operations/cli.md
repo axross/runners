@@ -5118,61 +5118,23 @@ archive commands, and its `darwin-aarch64` feed entry follows W4's contract.
 
 #### Extending the Shape Check
 
-An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
-own pull request, under REVIEW.md's release lens and the maintainer's review, and
-allows its signing job the Environment there. The shape check guards against
-mistakes. A pull request can edit it, so it is not the control against a hostile
-one: what keeps pull requests away from the Environment is the maintainer's branch
-rule and that `release.yaml` runs only on a dispatch. It does not see a write to
-`SHA256SUMS` in `release-build.yaml`'s `assemble` job other than by a redirection,
-`tee`, `cp` or `mv`, or a step condition in `attest` or `release` that skips a step,
-such as `if: false`.
+An extension MUST add its jobs or steps to `check-release-shape.mjs` and its
+mutation tests in the same pull request, under REVIEW.md's release lens and the
+maintainer's review. [Security](../conventions/security.md) owns the active release
+boundary, including the permitted signing Environment. The check guards against
+mistakes, not a hostile pull request that edits the check itself. It does not see
+a write to `SHA256SUMS` in either build's `assemble` job other than by a
+redirection, `tee`, `cp` or `mv`.
 
 ### What the Release Tests Cover
 
-Each of these runs in `mise run check`, on Linux, with no signing identity and no
-secret:
-
-| Task                                | What it covers                                                                                                                                                                                                           |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mise run check:release-shape`      | Reads the `.yaml` and `.yml` workflows and fails unless the rules listed under this table hold.                                                                                                                          |
-| `mise run test:release-shape`       | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                             |
-| `mise run test:assemble-release`    | Runs `assemble-release.sh` against temporary directories: the two lines in order, and a refusal for another file set or a changed file.                                                                                  |
-| `mise run test:verify-release`      | Runs the release gate against temporary directories, and checks that `.releaserc.json`'s asset globs match exactly the three files the gate passes.                                                                      |
-| `mise run test:set-release-version` | Runs the version stamp against copies of the CLI's and the app's manifests and lockfiles, and the committed ones: only the versions they own change, and a file that does not hold the placeholder is refused unchanged. |
-
-`mise run check:release-shape` enforces these rules. They apply to every `.yaml` and
-`.yml` workflow, unless a rule names a file or job. Each failure names its rule, and
-a workflow that cannot be read or a missing `release.yaml` or `release-build.yaml`
-fails it too.
-
-- **The Environment.** No job and no step declares an `environment`, until the next
-  signing job's pull request allows its own.
-- **Triggers.** `release.yaml` is triggered by `workflow_dispatch` alone. A workflow
-  that `pull_request` or `pull_request_target` triggers calls only local workflows
-  (`./.github/workflows/...`), so the rule above covers what it calls.
-- **The signing secrets.** No workflow reads one, whether by `secrets.MACOS_*`,
-  `secrets[...]`, `toJSON(secrets)` or `secrets: inherit`.
-- **The chain.** Every job of `release.yaml` but `plan` needs `plan` directly and
-  carries `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`.
-  `assemble-signed` needs `plan` and `build`, `attest` needs `plan` and
-  `assemble-signed`, and `release` needs `plan` and `attest`.
-- **`assemble-signed`.** It runs on `ubuntu-latest`, holds exactly `contents: read`,
-  sets `timeout-minutes` to at most 10, checks out with `persist-credentials: false`,
-  calls `assemble-release.sh`, and no step of it carries an `if`.
-- **`attest` and `release`.** `attest` holds exactly `id-token: write` and
-  `attestations: write`. Each downloads exactly one artifact,
-  `marshal-release-signed`, and no step of `release` reads `needs.build`.
-- **No way past a failure.** No job or step of `release.yaml` sets
-  `continue-on-error`, and no job-level or step `if` uses `always()`, `failure()` or
-  `cancelled()`, whatever their case and inner spaces. A step condition of `attest`
-  or `release` that skips a step, such as `if: false`, is not seen.
-- **The environment of `release.yaml`.** None of `PATH`, `BASH_ENV` and `ENV` is an
-  `env:` key at any level.
-- **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
-  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means
-  a `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
-  reading it, as `cat` or `sha256sum -c` does, is not a write.
+[Testing](../conventions/testing.md) owns the release-check commands, their current
+coverage and CI routes for both the temporary CLI recovery and the retained app
+tooling. `mise run test:verify-release` tests the retained app publication gate;
+`mise run test:cli-recovery` checks the active five-file CLI publication globs in
+`release/.releaserc.json`. The shape check and its mutation tests cover the
+temporary seven-stage CLI route and the retained unsigned app builds. Signing
+stand-ins and unsigned dry runs are not real signing or native-host evidence.
 
 ## Installing, Updating and Rolling Back
 
