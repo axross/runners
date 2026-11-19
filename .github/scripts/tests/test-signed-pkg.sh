@@ -237,7 +237,19 @@ assert_equal "the notary log is of the submission sign-macos made" "$(lowercase 
 cdhash="$(sed -n 's/^CDHash=//p' <<<"$details")"
 cdhash_pattern='^[0-9a-f]{40}$'
 [[ "$cdhash" =~ $cdhash_pattern ]] || fail "codesign printed no CDHash for the signed binary"
-grep -q -i -F -e "$cdhash" "$notary_log" || fail "the notary log does not list the binary's CDHash ${cdhash}"
+ticket_count="$("$SYSTEM_BIN/plutil" -extract ticketContents raw -expect array -o - "$notary_log" 2>/dev/null)" \
+  || fail "the notary log has no ticketContents array"
+ticket_found=0
+for ((ticket = 0; ticket < ticket_count; ticket++)); do
+  ticket_hash="$("$SYSTEM_BIN/plutil" -extract "ticketContents.${ticket}.cdhash" raw -expect string -o - "$notary_log" 2>/dev/null)" || continue
+  ticket_arch="$("$SYSTEM_BIN/plutil" -extract "ticketContents.${ticket}.arch" raw -expect string -o - "$notary_log" 2>/dev/null)" || continue
+  ticket_path="$("$SYSTEM_BIN/plutil" -extract "ticketContents.${ticket}.path" raw -expect string -o - "$notary_log" 2>/dev/null)" || continue
+  if [[ "$(lowercase "$ticket_hash")" == "$cdhash" && "$ticket_arch" == arm64 && "$ticket_path" == */usr/local/bin/marshal ]]; then
+    ticket_found=1
+    break
+  fi
+done
+[[ "$ticket_found" -eq 1 ]] || fail "the notary log does not list the binary's CDHash ${cdhash} in an ARM64 CLI payload ticket"
 ok "the notary log lists the binary's CDHash ${cdhash}"
 
 echo "== installing the signed package =="

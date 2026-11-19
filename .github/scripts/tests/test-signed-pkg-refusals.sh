@@ -186,11 +186,23 @@ case "$tool" in
     esac
     ;;
   plutil)
-    # plutil -extract <key> raw -o - <file>
-    key="$2"
-    value="$(sed -n "s/.*\"${key}\" *: *\"\([^\"]*\)\".*/\1/p" "${@: -1}" | head -n 1)"
-    [[ -n "$value" ]] || exit 1
-    echo "$value"
+    node - "$@" <<'NODE'
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+try {
+  const document = JSON.parse(fs.readFileSync(args.at(-1), 'utf8'));
+  const value = args[1].split('.').reduce((value, key) => value[key], document);
+  const type = Array.isArray(value) ? 'array' : typeof value;
+  const expect = args.indexOf('-expect');
+  if (value === undefined || value === null ||
+      (expect !== -1 && args[expect + 1] !== type)) process.exit(1);
+  if (type === 'array') console.log(value.length);
+  else if (type === 'object') console.log(Object.keys(value).sort().join('\n'));
+  else console.log(value);
+} catch {
+  process.exit(1);
+}
+NODE
     ;;
   lsbom)
     [[ "$1" == -p && "$2" == fmUG ]] || exit 2
@@ -525,12 +537,24 @@ run_case "an assessment that does not say accepted" 1 "spctl accepts the package
 bin_meta=$'#@ cdhash=\n'
 log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
 run_case "a binary with no CDHash" 1 "codesign printed no CDHash for the signed binary" no
-log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"cdhash\":\"ffffffffffffffffffffffffffffffffffffffff\"}]}"
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"path\":\"x.pkg/Payload/usr/local/bin/marshal\",\"arch\":\"arm64\",\"cdhash\":\"ffffffffffffffffffffffffffffffffffffffff\"}]}"
 run_case "a notary log that lacks the binary's CDHash" 1 "the notary log does not list the binary's CDHash" no
-log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"cdhash\":\"$(tr 'a-f' 'A-F' <<<"$cdhash")\"}]}"
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"path\":\"x.pkg/Payload/usr/local/bin/marshal\",\"arch\":\"arm64\",\"cdhash\":\"$(tr 'a-f' 'A-F' <<<"$cdhash")\"}]}"
 run_case "a notary log that spells the CDHash in capitals" 0 "the notary log lists the binary's CDHash" yes
-log_text="{\"jobId\":\"$(tr 'a-f' 'A-F' <<<"$submission")\",\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
+log_text="{\"jobId\":\"$(tr 'a-f' 'A-F' <<<"$submission")\",\"ticketContents\":[{\"path\":\"x.pkg/Payload/usr/local/bin/marshal\",\"arch\":\"arm64\",\"cdhash\":\"${cdhash}\"}]}"
 run_case "a notary log that spells the job ID in capitals" 0 "the notary log is of the submission sign-macos made" yes
+log_text="{\"jobId\":\"${submission}\",\"message\":\"${cdhash}\",\"ticketContents\":[{\"cdhash\":\"ffffffffffffffffffffffffffffffffffffffff\"}]}"
+run_case "the hash occurs only outside the ticket" 1 "the notary log does not list the binary's CDHash" no
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"path\":\"x.pkg/Payload/usr/local/bin/marshal\",\"arch\":\"arm64\",\"cdhash\":\"f${cdhash}f\"}]}"
+run_case "the ticket hash only contains the binary hash as a substring" 1 "the notary log does not list the binary's CDHash" no
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"path\":\"x.pkg/Payload/usr/local/bin/marshal\",\"arch\":\"x86_64\",\"cdhash\":\"${cdhash}\"}]}"
+run_case "the hash occurs only in another architecture's ticket" 1 "the notary log does not list the binary's CDHash" no
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"path\":\"x.pkg/Payload/usr/local/bin/other\",\"arch\":\"arm64\",\"cdhash\":\"${cdhash}\"}]}"
+run_case "the hash occurs only in another payload's ticket" 1 "the notary log does not list the binary's CDHash" no
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":{\"cdhash\":\"${cdhash}\"}}"
+run_case "ticketContents is not an array" 1 "the notary log has no ticketContents array" no
+log_text="{\"jobId\":\"${submission}\",\"ticketContents\":[{\"path\":\"x.pkg\",\"cdhash\":\"ffffffffffffffffffffffffffffffffffffffff\"},{\"path\":\"x.pkg/Payload/usr/local/bin/marshal\",\"arch\":\"arm64\",\"cdhash\":\"${cdhash}\"}]}"
+run_case "the CLI ticket follows the package ticket" 0 "the notary log lists the binary's CDHash" yes
 log_text="{\"jobId\":\"${other_submission}\",\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
 run_case "a notary log of another submission" 1 "the notary log is of the submission sign-macos made: got '${other_submission}', expected '${submission}'" no
 log_text="{\"ticketContents\":[{\"cdhash\":\"${cdhash}\"}]}"
@@ -573,7 +597,7 @@ make_binary "${existing_directory}/unsigned/${macos}" ""
 make_package "${existing_directory}/unsigned/${macos_pkg}" "${existing_directory}/unsigned/${macos}" ""
 make_binary "${existing_directory}/signed/${macos}" ""
 make_package "${existing_directory}/signed/${macos_pkg}" "${existing_directory}/signed/${macos}" ""
-printf '{"jobId":"%s","cdhash":"%s"}\n' "$submission" "$cdhash" >"${existing_directory}/notary/log.json"
+printf '{"jobId":"%s","ticketContents":[{"path":"x.pkg/Payload/usr/local/bin/marshal","arch":"arm64","cdhash":"%s"}]}\n' "$submission" "$cdhash" >"${existing_directory}/notary/log.json"
 write_sums "${existing_directory}/unsigned" ""
 printf 'a manual install\n' >"${existing_directory}/install/marshal"
 : >"${existing_directory}/record"

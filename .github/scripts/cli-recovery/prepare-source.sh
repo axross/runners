@@ -50,6 +50,13 @@ git -C "$checkout" diff --quiet "$source_commit" -- . \
   ':(exclude)cli/Cargo.toml' ':(exclude)cli/Cargo.lock' \
   || refuse 'the historical input has a non-version mutation'
 
+for file in Cargo.toml Cargo.lock; do
+  [[ -f "${checkout}/cli/${file}" && ! -L "${checkout}/cli/${file}" ]] \
+    || refuse "cli/${file} is not a regular non-symlink file"
+done
+mode_changes="$(git -C "$checkout" diff --summary "$source_commit" -- cli/Cargo.toml cli/Cargo.lock)"
+[[ -z "$mode_changes" ]] || refuse "stamped file modes changed: ${mode_changes}"
+
 work="$(mktemp -d "${TMPDIR:-/tmp}/cli-recovery-source.XXXXXX")"
 trap 'rm -rf -- "$work"' EXIT
 git -C "$checkout" show "${source_commit}:cli/Cargo.toml" >"${work}/Cargo.toml"

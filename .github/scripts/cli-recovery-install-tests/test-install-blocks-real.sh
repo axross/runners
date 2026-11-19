@@ -237,8 +237,16 @@ resolved="$(env -i HOME="$HOME" PATH="$shell_path" "$shell_under_test" -c 'comma
 resolved_is="$(which_binary "$resolved")"
 found="$(env -i HOME="$HOME" PATH="$shell_path" "$shell_under_test" -c 'command -v marshal; marshal --version' | tr '\n' ' ')"
 measured "installing the pkg beside a manual copy at ~/.local/bin/marshal, without the migration block: ${installed} is ${at_install_path}; the manual copy remains: ${manual_remains}; with ~/.local/bin ahead of /usr/local/bin on PATH, command -v marshal resolves to ${resolved_is}, and command -v marshal and marshal --version print: ${found}"
+assert_equal "the pkg installed the bare binary beside the manual copy" "$(sha256_of "$installed")" "$bare_hash"
+installed_version="$("$installed" --version)" || fail "the installed binary did not run after the install beside the manual copy"
+assert_equal "the installed binary prints the release version" "$installed_version" "marshal ${version}"
+assert_equal "the pkg left the manual copy unchanged" "$(sha256_of "$manual")" "$manual_hash"
+assert_equal "PATH still resolves marshal to the manual copy" "$resolved" "$manual"
+assert_equal "PATH finds the manual copy and its version" "$found" "${manual} marshal 0.0.1-manual "
 run_block macos-uninstall
 measured "the uninstall block after that install: exit status ${block_status}; ${installed} afterwards: $([[ -e "$installed" ]] && echo present || echo absent); the manual copy afterwards: $([[ -e "$manual" ]] && echo present || echo absent)"
 [[ $block_status -eq 0 ]] || fail "the uninstall block did not pass after the install over a manual copy"
+nothing_installed "after the uninstall following the install beside the manual copy"
+assert_equal "the uninstall left the manual copy unchanged" "$(sha256_of "$manual")" "$manual_hash"
 
 echo "All macOS install block checks passed under ${shell_under_test}."

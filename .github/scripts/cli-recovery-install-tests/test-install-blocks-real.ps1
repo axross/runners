@@ -298,16 +298,37 @@ try {
     Add-InstallDirectoryToPath
     $code = Invoke-Msi -Arguments @('/i', "`"$GenuineMsi`"") -LogName 'over-manual-install'
     $atPath = 'absent'
+    $hash = $null
     if (Test-Path -LiteralPath $InstalledBinary) {
         $hash = Get-Sha256 $InstalledBinary
         if ($hash -eq $binaryHash) { $atPath = "the installer's binary" }
         elseif ($hash -eq $manualHash) { $atPath = 'the manual copy' }
         else { $atPath = 'another file' }
     }
-    $printed = if (Test-Path -LiteralPath $InstalledBinary) { (& $InstalledBinary --version 2>&1 | Out-String).Trim() } else { 'no file' }
+    $versionExitCode = $null
+    $printed = if (Test-Path -LiteralPath $InstalledBinary) {
+        $versionOutput = (& $InstalledBinary --version 2>&1 | Out-String).Trim()
+        $versionExitCode = $LASTEXITCODE
+        $versionOutput
+    } else { 'no file' }
     Write-Measured "installing the MSI over a manual copy at the install path, without the migration block: msiexec exit code $code; the file at the install path is $atPath; marshal --version there prints '$printed'; products listed: $((Get-InstalledProduct).Count); the install directory is on the user PATH $((Get-InstallDirectoryPathEntry).Count) time(s)"
+    Assert-That ($code -eq 0) "the MSI installs over the manual copy (msiexec exit code $code)"
+    Assert-That ($hash -eq $binaryHash) 'the MSI replaced the manual copy with the installer binary'
+    Assert-That ($versionExitCode -eq 0) "marshal --version after the install over the manual copy exits 0 (exit code $versionExitCode)"
+    Assert-That ($printed -eq "marshal $Version") "marshal --version after the install over the manual copy prints 'marshal $Version'"
+    $products = Get-InstalledProduct
+    Assert-That ($products.Count -eq 1) 'one product is listed as marshal after the install over the manual copy'
+    $installerVersion = ($Version -split '-')[0]
+    Assert-That ($products[0].Version -eq $installerVersion) "the listed product version is $installerVersion"
+    Assert-That ($products[0].Publisher -eq 'axross' -and $products[0].Context -eq 2) 'the listed product is from axross and installed for the user, not the machine'
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $related = @(Invoke-ComMethod -Target $installer -Name 'RelatedProducts' -Kind 'GetProperty' -Arguments @('{512F67C6-97ED-4562-84F3-2584FA3BA29C}'))
+    Assert-That ($related.Count -eq 1 -and $related[0] -eq $products[0].ProductCode) 'the listed product holds the legacy CLI upgrade code'
+    Assert-That ((Get-InstallDirectoryPathEntry).Count -eq 2) 'the user PATH holds the manual entry and the MSI entry'
     $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
     Write-Measured "the uninstall block after that install: $(if ($null -eq $result.Failure) { 'passed' } else { $result.Failure }); the file at the install path afterwards: $(if (Test-Path -LiteralPath $InstalledBinary) { 'present' } else { 'absent' })"
+    Assert-That ($null -eq $result.Failure) "the uninstall block passes after the install over the manual copy ($($result.Failure))"
+    Assert-NothingInstalled -Label 'after the uninstall following the install over the manual copy'
     Write-Output 'All Windows install block checks passed.'
 } finally {
     if ($cleanupArmed) {

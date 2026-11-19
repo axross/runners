@@ -81,6 +81,26 @@ expect 'a conflicting version fails revalidation' 1 'not the declared version-on
 expect 'stamping twice cannot hide changed inputs' 1 'not clean before version stamping' \
   bash "${scripts}/prepare-source.sh" prepare "$checkout" 1.2.3
 
+for file in Cargo.toml Cargo.lock; do
+  cp "${checkout}/cli/${file}" "${work}/${file}"
+  rm "${checkout}/cli/${file}"
+  ln -s "${work}/${file}" "${checkout}/cli/${file}"
+  expect "a symlink ${file} with the stamped bytes" 1 "cli/${file} is not a regular non-symlink file" \
+    bash "${scripts}/prepare-source.sh" verify "$checkout" 1.2.3
+  rm "${checkout}/cli/${file}"
+  cp "${work}/${file}" "${checkout}/cli/${file}"
+  if [[ "$(git -C "$checkout" config --get core.filemode)" == true ]]; then
+    chmod +x "${checkout}/cli/${file}"
+    expect "a mode-only ${file} mutation after stamping" 1 'stamped file modes changed' \
+      bash "${scripts}/prepare-source.sh" verify "$checkout" 1.2.3
+    chmod -x "${checkout}/cli/${file}"
+  else
+    echo "SKIP ${file} executable-mode check: Git does not track modes on this filesystem"
+  fi
+done
+expect 'restored file types and modes retain the version stamp' 0 'version: 1.2.3' \
+  bash "${scripts}/prepare-source.sh" verify "$checkout" 1.2.3
+
 printf '\n' >>"${checkout}/cli/Cargo.lock"
 expect 'a non-version lock mutation after stamping' 1 'cli/Cargo.lock is not the declared version-only stamp' \
   bash "${scripts}/prepare-source.sh" verify "$checkout" 1.2.3
