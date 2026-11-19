@@ -15,13 +15,15 @@ host configuration, with the reference for every field, is under
 and the trust rules the host is reviewed against are in
 [Security](../conventions/security.md).
 
-**The command line.** Since W1's installer pull request there is no command line: a
-release carries Marshal and its per-user MSI, and the app's menu and window are how a
-host is run. The axpc host ran its pools with the command line, `marshal`, until then.
-Its procedures, with their commands, token files and `--config` path, are at the
-last command-line release's tag, identified in The Last Command-Line Release
-section of [CLI](./cli.md), and a host
-moves from it to the app with that release's uninstall procedure, then
+**The command line.** W1's installer pull request removed `marshal` from main;
+the app release baseline carries Marshal and its per-user MSI. During bounded F0
+recovery, app publication is suspended and the temporary release route builds the
+fixed historical CLI instead. [CLI Recovery](./cli-recovery.md) owns its
+actual-version installation lifecycle procedures, not the app procedures below.
+The Last Command-Line Release section of [CLI](./cli.md)
+identifies the historical tree with the runtime commands, token files and
+`--config` path. The axpc host still runs the command line. Once an app release is
+available, a host moves to it with the CLI release's uninstall procedure, then
 the Installing Marshal section. The verification below that names a command
 was made with the command line; the app shares its runtime, image check and
 diagnostics, and its own run on axpc is recorded on
@@ -141,7 +143,16 @@ and so does `runs-on: self-hosted`.
 
 ## Installing Marshal
 
-Install Marshal from a release by opening its MSI, with the Windows procedure in
+The following is the app install procedure for the suspended app release baseline.
+A recovery release's `marshal-<version>-windows-x64.msi` is the legacy CLI product,
+not the app MSI: it installs `marshal.exe` and adds its directory to the user
+`Path`, not a Start menu entry for `marshal-app.exe`. Use the recovery tag's
+[CLI Recovery](./cli-recovery.md) procedures for that MSI. No recovery release
+version or native installer evidence is recorded yet. App source and normal builds
+remain; publication resumes only after successful public F0 evidence and a separate
+reviewed restoration.
+
+Install Marshal from an app release by opening its MSI, with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
 host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
 choose, run the optional check block on it first; that block refuses a file whose
@@ -228,7 +239,8 @@ The command line read each token from a file at the pool's `tokenPath`, which it
 own access control step restricted. Marshal reads no token file and imports none:
 enter each repository's token in the window once, as above. Keep the old token files
 until the app's runners work, because rolling back to the command line reads them,
-then delete them. Their procedure is at the last command-line release's tag.
+then delete them. The fixed historical tree identified in The Last Command-Line
+Release section of [CLI](./cli.md) keeps their procedure.
 
 ## The Host Configuration
 
@@ -901,6 +913,10 @@ calls for a runner bump, below.
 
 ## Updating the Runner
 
+This app-update procedure applies when app publication resumes. During F0 recovery,
+the fixed historical CLI does not incorporate runner bumps on main; use
+[CLI Recovery](./cli-recovery.md) for the bounded release route, not an app update.
+
 A newer runner reaches the host only through a new release, because the app embeds
 the image definition:
 
@@ -1012,7 +1028,10 @@ Hub. No inbound port is needed.
 
 ## Rolling Back
 
-Roll back when a release misbehaves on the host. Rolling back means uninstalling the
+For a recovery CLI release, use the rollback procedure in
+[CLI Recovery](./cli-recovery.md), not the app procedure below.
+
+Roll back when an app release misbehaves on the host. Rolling back means uninstalling the
 installed release and installing the previous one: it needs an earlier release to go
 back to, so a host on the first release has none, and a fault in it is fixed forward
 in a new release. Pick a quiet time, because quitting Marshal stops its runners and
@@ -1023,10 +1042,10 @@ a job in flight fails.
    in the window only if you will not install Marshal again, quit Marshal, uninstall,
    then install the previous release's MSI, because the MSI refuses a lower version
    while a newer one is installed.
-2. When the previous release is the last command-line release, install it with that
-   release's procedure instead, at its tag, as
-   The Last Command-Line Release section of [CLI](./cli.md) describes,
-   and follow that tag's copy of this section from there. Keep the token files until
+2. When the previous release is the recovery CLI release, use its tag's
+   [CLI Recovery](./cli-recovery.md) install procedure instead, then follow the
+   runtime procedures in the fixed historical tree that guide identifies.
+   Keep the token files until
    the command line's runners work; the command line reads them, and the app's
    tokens stay in Credential Manager.
 3. Start the release you installed, rebuild the image and start the runners. The

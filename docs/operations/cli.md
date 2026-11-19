@@ -17,20 +17,26 @@ export, the toolchain and the gates that cover it, the app's workspace that buil
 the library and the gates it adds, how a release is built
 and installed, and why its name is fixed.
 
-There is no command line. Since W1's installer pull request no `marshal` executable is
-built on any operating system, and the app,
-[App](./app.md) and its executable `marshal-app.exe`, is the only way to run a host:
-its resident agent runs the pools, builds the image and serves protocol version 2.
+The current `marshal-cli` package has no command-line target. Since W1's installer
+pull request its normal builds produce no `marshal` executable on any operating
+system. [App](./app.md) and its executable `marshal-app.exe` run the current
+library: the resident agent runs the pools, builds the image and serves protocol
+version 2.
 The sections below that name `validate`, `build`, `start` and the clients `stop`,
 `restart`, `status` and `diagnostics` describe the library's entry points of those
 names, which the agent shares, and the foreground instance and its protocol version 1,
-which no shipped executable runs: the tests run them through a test-only helper, as
+which the app does not run: the tests run them through a test-only helper, as
 the Running It section says. The command-line procedures, with their commands,
 are at the last command-line release's tag, identified in The Last Command-Line
 Release section.
-[Windows Runner Host](./windows-runner-host.md) describes axpc with the app. axmc has
-no supported way to run its Linux and macOS pools from W1's installer pull request until M2's
-Mac app, as [macOS Runner Host](./macos-runner-host.md) says.
+
+During the bounded F0 recovery, the release workflow temporarily builds a fixed
+historical CLI instead of the app, not a command-line target for this current
+library. [CLI Recovery](./cli-recovery.md) owns that route and its actual-version
+installation and runtime procedures; the recovery is not a supported parallel CLI
+product. [Windows Runner Host](./windows-runner-host.md) describes axpc with the app.
+Outside that recovery, axmc has no supported release route until M2's Mac app, as
+[macOS Runner Host](./macos-runner-host.md) says.
 
 ## Running It
 
@@ -3370,11 +3376,14 @@ and `base_old` with `days`, and `leftovers` of kind `vm_unconfigured_pool`.
 ## Running a Host
 
 This section describes the library's foreground instance, its `build` and its version
-1 clients. Since W1's installer pull request no shipped executable runs them: the
+1 clients. The normal app executable does not run them: the
 app's agent runs a host instead, as The Agent section describes, with the
 runtime layer, the image check, the log and containment that this section shares
 with it. The tests run them through `commands-helper`, and the last command-line
 release's tag documents them as commands.
+
+The temporary recovery CLI uses its fixed historical program tree, not this
+current library. Use [CLI Recovery](./cli-recovery.md) for that release's procedures.
 
 `start` runs the host's pools in the foreground through the instance layer and the
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
@@ -4435,11 +4444,19 @@ build tool has.
 
 ## Releases
 
+The active dispatch route is temporarily the fixed historical CLI, not the app.
+[CLI Recovery](./cli-recovery.md) owns its seven-stage release, both source
+identities, actual-version CLI procedures and the successful native-evidence
+prerequisite for a separate app-path restoration. App source and normal builds
+remain. The app release descriptions below are the suspended baseline to
+reconcile on restoration, not a second active release graph. No recovery-code
+PR, dry run or app merge completes F0 or changes its dependency gates.
+
 A release is a `v<version>` tag on the default branch and the GitHub release that
 carries its files, such as `v0.1.0`. The maintainer starts one by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main, and semantic-release
 works out the version from the commits since the last `v*` tag. Releases are never
-prereleases. The run has five jobs, and none of them declares an Environment or
+prereleases. The suspended app baseline has five jobs, and none declares an Environment or
 reads a signing secret: from W1's installer pull request until the next signing job,
 M2's or W4's, joins the chain, the maintainer's dispatch is the only decision.
 [Development Workflow](./development-workflow.md#cutting-a-release) gives the
@@ -4447,7 +4464,7 @@ maintainer's steps and the version rules, and
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records the controls around it.
 
-Since W1's installer pull request a release carries the Windows app, Marshal, and its
+The suspended app baseline carries the Windows app, Marshal, and its
 installer, and no command line and no macOS file. The releases before it carry the
 command line; The Last Command-Line Release section says
 where their procedures are.
@@ -4687,21 +4704,20 @@ an update.
 
 ### The Last Command-Line Release
 
-The last command-line release is the newest `v*` release made before W1's installer
-pull request merged: the newest release whose files hold no `marshal-app.exe`. It is
-not `v0.1.0`, which has only the bare binaries. The maintainer cuts it from `main`
-before W1's installer pull request merges, since that pull request waits for F0's
-issue to close and F0's issue closes only after that release's host checks. It
-carries F0's MSI, the signed macOS package and the axmc runtime, and is expected to
-be `1.0.0`, since `main` holds breaking changes since `v0.1.0`. Its tag's
-`docs/operations/cli.md`, `docs/operations/windows-runner-host.md` and
-`docs/operations/macos-runner-host.md` hold every command-line procedure, with their
-blocks: installing and checking the command line on Windows and macOS, migrating
-from a manual install, updating it, uninstalling it, rolling back, and reading the
-macOS package's signature. Open that tag's documents on GitHub, at
-`https://github.com/axross/runners/blob/v<version>/docs/operations/cli.md`, and use
-the procedures there. The commit before W1's installer pull request on main, its
-first parent, holds the command line and everything that pull request removed.
+The required last CLI installer release did not precede W1's installer merge.
+That missed ordering is not satisfied by the app merges. The temporary recovery
+instead releases the fixed complete program tree at
+`dc8e1ebcc0722997206487f3dcca2ae7e519cf02`, W1's first parent, through main's
+current workflow. Semantic-release selects the actual version from main history;
+it is not a hard-coded next version. Its five files include the legacy CLI MSI
+and signed/notarized pkg, not an app or test helper.
+
+Use the recovery tag's `docs/operations/cli-recovery.md` for its executable
+CLI procedures, not this file's app blocks. That guide distinguishes the workflow/tag
+commit from the historical program input and preserves the optional verifier pins.
+The historical tree keeps the CLI runtime documentation and embedded inputs.
+No public recovery signing measurement or native outcome is implied by these
+instructions; the final record stays pending until the actual evidence exists.
 
 Moving a host from the command line to the app is that release's uninstall procedure
 for the command line, then the Installing section here. The command line's MSI and
@@ -4711,7 +4727,11 @@ Marshal's files, and `where.exe marshal` then finds nothing.
 
 ### Signing, Held for M2 and W4
 
-No job of `release.yaml` signs anything from W1's installer pull request until the
+The temporary recovery reinstates bare-CLI/pkg signing under CLI Recovery's
+bounded exception. The following held contract concerns the app path after
+restoration, not that temporary CLI job.
+
+No job of the suspended app baseline signs anything from W1's installer pull request until the
 next signing job joins the chain: M2's disk-image pull request brings back
 `sign-macos` and `verify-macos`, rewritten for the app and the disk image, and W4's
 feed pull request adds `update-tool` and `sign-update`. Each joins before
@@ -4729,8 +4749,8 @@ The contracts below stay in force through the gap.
 
 ### The Signing Contracts
 
-These are held for M2 and W4: no job uses them until M2's or W4's signing job
-joins the chain, and they stay in force through the gap. F0 owns these. W1, W4, M2
+The temporary recovery uses these contracts for the bare CLI/pkg. They also remain
+held for M2 and W4's app-signing jobs after restoration. F0 owns these. W1, W4, M2
 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
@@ -4826,11 +4846,25 @@ The contracts F0 owns are these:
 
 ### Reading a Signature
 
-No file of a release is signed until M2's disk-image pull request. The commands that
-read the command line's signed macOS package are in this document at the
-last command-line release's tag, under the same heading; The Last Command-Line
-Release section identifies that tag. M2's pull request brings this section back, rewritten for the app and the
-disk image.
+For the temporary CLI recovery, these read-only commands inspect the actual
+release package and installed CLI. Replace `<version>` with its real version.
+They do not install or sign anything, and expected output is not measured evidence:
+
+```bash
+pkgutil --check-signature marshal-<version>-macos-arm64.pkg
+spctl --assess --type install -vv marshal-<version>-macos-arm64.pkg
+xcrun stapler validate marshal-<version>-macos-arm64.pkg
+codesign --verify --strict -vv /usr/local/bin/marshal
+codesign -d -r- /usr/local/bin/marshal
+```
+
+The package is expected to show a Developer ID Installer chain of the same team
+as the CLI, a notarized Developer ID assessment and a valid staple. The bare or
+installed CLI's designated requirement must match the existing identifier/team
+contract; its notarization is read from the CDHash in the notary log, not
+`spctl --type execute`. The actual team, requirement form and native outcomes remain
+pending for F0's measured record. App/dmg signature instructions remain M2's work
+after restoration, not substitutes for these CLI/pkg subjects.
 
 ### Extending the Release Workflows
 
