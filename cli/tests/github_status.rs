@@ -915,3 +915,698 @@ async fn retry_after_is_waited_out_and_a_poll_interval_lengthens_the_checks() {
         .collect();
     assert_eq!(at, [0, 100, 140, 180]);
 }
+
+const ORGANIZATION_RUNNERS: &str = "/orgs/owner/actions/runners?per_page=100";
+const ORGANIZATION_TOKEN: &str = "github_pat_fake_organization_status_token";
+
+/// builds wire-shaped pools independently of the producer, so a defaulted
+/// repository field cannot conceal an organisation-only decoding failure.
+fn organization_snapshot(
+    pools: &[(&str, &str, &str)],
+    has_token: bool,
+    repository: bool,
+) -> Arc<Snapshot> {
+    let mut value = serde_json::to_value(&*snapshot(
+        if repository {
+            &["app-1-20261112000000000"]
+        } else {
+            &[]
+        },
+        repository,
+    ))
+    .unwrap();
+    let entries: Vec<_> = pools
+        .iter()
+        .enumerate()
+        .map(|(index, (organization, group, runner))| {
+            serde_json::json!({
+                "name": format!("pool-{index}"),
+                "organization": organization,
+                "runner_group": group,
+                "has_token": has_token,
+                "runners": if runner.is_empty() { vec![] } else {
+                    vec![serde_json::json!({"workload": runner, "state": "running"})]
+                }
+            })
+        })
+        .collect();
+    value["pools"].as_array_mut().unwrap().extend(entries);
+    value["organizations"] = serde_json::json!([
+        {"organization": "owner", "has_token": has_token, "pools": []},
+        {"organization": "other", "has_token": has_token, "pools": []}
+    ]);
+    Arc::new(serde_json::from_value(value).unwrap())
+}
+
+/// keeps the repository credential distinct from two organisation credentials,
+/// making accidental reuse of a repository scope observable to the fake fetch.
+fn organization_world(
+    handler: impl FnMut(&str, Option<&str>, Duration) -> Result<Answer, Cause> + 'static,
+) -> World {
+    let world = World::new(handler);
+    for organization in ["owner", "other"] {
+        world
+            .store
+            .set(
+                &TokenKey::parse_organization(organization).unwrap(),
+                &Secret::new(ORGANIZATION_TOKEN.to_string()),
+            )
+            .unwrap();
+    }
+    world
+}
+
+/// several pools in one group and another group share one paged scope; an
+/// unrelated host's runner and a same-named repository runner are controls.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn organization_pools_share_conditional_pages_but_not_repository_scope_or_jobs() {
+    const PAGE2: &str = "/orgs/owner/actions/runners?per_page=100&page=2";
+    let world = organization_world(|path, etag, _| {
+        if etag.is_some() {
+            assert_eq!(etag, Some(if path == PAGE2 { "\"p2\"" } else { "\"p1\"" }));
+            return Ok(status(304));
+        }
+        match path {
+            ORGANIZATION_RUNNERS => {
+                let mut answer = json(
+                    &runners(&[
+                        ("alpha-1", "online", true),
+                        ("another-host", "online", true),
+                        ("app-1-20261112000000000", "online", true),
+                    ]),
+                    "\"p1\"",
+                );
+                answer.link = Some(format!("<{BASE}{PAGE2}>; rel=\"next\""));
+                Ok(answer)
+            }
+            PAGE2 => Ok(json(
+                &runners(&[("alpha-2", "offline", false), ("beta-1", "online", false)]),
+                "\"p2\"",
+            )),
+            "/orgs/other/actions/runners?per_page=100" => {
+                Ok(json(&runners(&[("other-1", "online", false)]), "\"p1\""))
+            }
+            RUNNERS => Ok(json(
+                &runners(&[("app-1-20261112000000000", "online", false)]),
+                "\"p1\"",
+            )),
+            other => panic!("unexpected request, including an organization job lookup: {other}"),
+        }
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+        organization_snapshot(
+            &[
+                ("owner", "alpha", "alpha-1"),
+                ("owner", "alpha", "alpha-2"),
+                ("owner", "beta", "beta-1"),
+                ("other", "alpha", "other-1"),
+            ],
+            true,
+            true,
+        ),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(16)).await;
+    })
+    .await;
+    let seen = world.fetch.seen();
+    for path in [
+        ORGANIZATION_RUNNERS,
+        PAGE2,
+        "/orgs/other/actions/runners?per_page=100",
+        RUNNERS,
+    ] {
+        assert_eq!(
+            seen.iter().filter(|request| request.path == path).count(),
+            2,
+            "{path}"
+        );
+    }
+    assert!(seen.iter().all(|request| request.token
+        == if request.path.starts_with("/orgs/") {
+            ORGANIZATION_TOKEN
+        } else {
+            TOKEN
+        }));
+    let status = status_rx.borrow().clone();
+    assert_eq!(status.repositories.len(), 1);
+    assert_eq!(status.repositories[0].repository, "owner/app");
+    assert_eq!(status.repositories[0].runners[0].github, "idle");
+    let groups: BTreeMap<_, _> = status
+        .organizations
+        .iter()
+        .map(|organization| {
+            assert_eq!(organization.status, "ok");
+            assert!(organization.checked_at.unwrap() >= START_MS + 15_000);
+            (
+                (
+                    organization.organization.as_str(),
+                    organization.runner_group.as_str(),
+                ),
+                organization
+                    .runners
+                    .iter()
+                    .map(|runner| (runner.name.as_str(), runner.github.as_str()))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        groups,
+        BTreeMap::from([
+            (
+                ("owner", "alpha"),
+                vec![("alpha-1", "busy"), ("alpha-2", "offline")]
+            ),
+            (("owner", "beta"), vec![("beta-1", "idle")]),
+            (("other", "alpha"), vec![("other-1", "idle")]),
+        ])
+    );
+    let value = serde_json::to_value(&*status).unwrap();
+    for organization in value["organizations"].as_array().unwrap() {
+        let keys: Vec<_> = organization
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "checked_at",
+                "organization",
+                "runner_group",
+                "runners",
+                "status"
+            ]
+        );
+        for runner in organization["runners"].as_array().unwrap() {
+            let keys: Vec<_> = runner
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(keys, ["github", "name"]);
+        }
+    }
+}
+
+/// toggling the subscription must not shorten the interval measured from the
+/// previous check; removing the final host runner also removes its display row.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn organization_checks_resume_only_at_the_exact_interval_and_stop_without_host_runners() {
+    let world = organization_world(|path, _, _| {
+        assert_eq!(path, ORGANIZATION_RUNNERS);
+        Ok(json(&runners(&[("alpha-1", "online", false)]), "\"r\""))
+    });
+    let (snapshot_tx, snapshot_rx, active_tx, active_rx, status_tx, status_rx) = channels(
+        organization_snapshot(&[("owner", "alpha", "alpha-1")], true, false),
+        false,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(5)).await;
+        assert!(world.fetch.seen().is_empty());
+        active_tx.send_replace(true);
+        sleep(Duration::from_secs(5)).await;
+        active_tx.send_replace(false);
+        sleep(Duration::from_secs(4)).await;
+        active_tx.send_replace(true);
+        sleep(Duration::from_millis(5999)).await;
+        assert_eq!(world.fetch.seen().len(), 1);
+        sleep(Duration::from_millis(2)).await;
+        assert_eq!(world.fetch.seen().len(), 2);
+        sleep(Duration::from_secs(1)).await;
+        active_tx.send_replace(false);
+        sleep(Duration::from_secs(60)).await;
+        active_tx.send_replace(true);
+        sleep(Duration::from_secs(1)).await;
+        snapshot_tx.send_replace(organization_snapshot(
+            &[("owner", "alpha", "")],
+            true,
+            false,
+        ));
+        sleep(Duration::from_secs(60)).await;
+    })
+    .await;
+    let at: Vec<_> = world
+        .fetch
+        .seen()
+        .iter()
+        .map(|request| request.at)
+        .collect();
+    assert_eq!(
+        at,
+        [
+            Duration::from_secs(5),
+            Duration::from_secs(20),
+            Duration::from_millis(81_001)
+        ]
+    );
+    assert!(status_rx.borrow().organizations.is_empty());
+}
+
+/// summary-level token presence can arrive before a pool's copy in a snapshot;
+/// neither representation licenses requests while both report no token.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_organization_without_a_token_is_not_checked_and_its_summary_can_supply_token_presence()
+{
+    let world = organization_world(|path, _, _| {
+        assert_eq!(path, ORGANIZATION_RUNNERS);
+        Ok(json(&runners(&[]), "\"r\""))
+    });
+    let (snapshot_tx, snapshot_rx, _a, active_rx, status_tx, _status_rx) = channels(
+        organization_snapshot(&[("owner", "alpha", "alpha-1")], false, false),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(60)).await;
+        assert!(world.fetch.seen().is_empty());
+        let mut value = serde_json::to_value(&*organization_snapshot(
+            &[("owner", "alpha", "alpha-1")],
+            false,
+            false,
+        ))
+        .unwrap();
+        value["organizations"][0]["has_token"] = serde_json::json!(true);
+        snapshot_tx.send_replace(Arc::new(serde_json::from_value(value).unwrap()));
+        sleep(Duration::from_secs(1)).await;
+    })
+    .await;
+    assert_eq!(world.fetch.paths(), [ORGANIZATION_RUNNERS]);
+}
+
+/// cached runner lists outlive individual pools, but must not keep deleted
+/// configuration visible until the next scheduled GitHub request.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn removed_organization_groups_and_names_do_not_survive_cached_status() {
+    let world = organization_world(|_, _, _| {
+        Ok(json(
+            &runners(&[
+                ("alpha-1", "online", false),
+                ("alpha-2", "online", false),
+                ("beta-1", "online", false),
+            ]),
+            "\"r\"",
+        ))
+    });
+    let (snapshot_tx, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+        organization_snapshot(
+            &[
+                ("owner", "alpha", "alpha-1"),
+                ("owner", "alpha", "alpha-2"),
+                ("owner", "beta", "beta-1"),
+            ],
+            true,
+            false,
+        ),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(1)).await;
+        snapshot_tx.send_replace(organization_snapshot(
+            &[("owner", "alpha", "alpha-2")],
+            true,
+            false,
+        ));
+        sleep(Duration::from_secs(1)).await;
+    })
+    .await;
+    let status = status_rx.borrow().clone();
+    assert_eq!(world.fetch.paths(), [ORGANIZATION_RUNNERS]);
+    assert_eq!(status.organizations.len(), 1);
+    assert_eq!(status.organizations[0].runner_group, "alpha");
+    assert_eq!(status.organizations[0].runners.len(), 1);
+    assert_eq!(status.organizations[0].runners[0].name, "alpha-2");
+}
+
+/// a repository request is the control for a pause caused by organisation
+/// headers, including the boundary where a new hourly budget becomes usable.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_organization_response_updates_and_pauses_the_one_host_budget() {
+    let world = organization_world(|path, _, at| {
+        let mut answer = json(&runners(&[]), "\"r\"");
+        if at < Duration::from_secs(3600) {
+            assert_eq!(
+                path, ORGANIZATION_RUNNERS,
+                "repository bypassed the organization's pause"
+            );
+            answer.rate = rate(500);
+        } else {
+            answer.rate = RateHeaders {
+                reset: Some(START_MS / 1000 + 7200),
+                ..rate(4999)
+            };
+        }
+        Ok(answer)
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+        organization_snapshot(&[("owner", "alpha", "alpha-1")], true, true),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(3599)).await;
+        assert_eq!(world.fetch.paths(), [ORGANIZATION_RUNNERS]);
+        let status = status_rx.borrow().clone();
+        let budget = status.budget.as_ref().unwrap();
+        assert_eq!(
+            (
+                budget.limit,
+                budget.remaining,
+                budget.resets_at,
+                budget.level.as_str()
+            ),
+            (5000, 500, START_MS + 3_600_000, "paused")
+        );
+        sleep(Duration::from_secs(2)).await;
+    })
+    .await;
+    let seen = world.fetch.seen();
+    assert_eq!(seen.len(), 3);
+    assert_eq!(seen[1].at, Duration::from_secs(3600));
+    assert!(seen[2].at >= Duration::from_secs(3600));
+    assert!(seen.iter().skip(1).any(|request| request.path == RUNNERS));
+    assert_eq!(status_rx.borrow().budget.as_ref().unwrap().level, "normal");
+}
+
+/// retry-after constrains all scopes, whereas a longer poll interval constrains
+/// only the organisation that returned it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn organization_secondary_limits_hold_repository_requests_and_poll_headers_apply() {
+    let world = organization_world(|path, _, at| {
+        if at < Duration::from_secs(100) {
+            assert_eq!(path, ORGANIZATION_RUNNERS);
+            let mut answer = status(429);
+            answer.retry_after = Some(Duration::from_secs(100));
+            return Ok(answer);
+        }
+        let mut answer = json(&runners(&[]), "\"r\"");
+        if path == ORGANIZATION_RUNNERS {
+            answer.poll_interval = Some(Duration::from_secs(40));
+        }
+        Ok(answer)
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, _status_rx) = channels(
+        organization_snapshot(&[("owner", "alpha", "alpha-1")], true, true),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(181)).await;
+    })
+    .await;
+    let seen = world.fetch.seen();
+    let org_at: Vec<_> = seen
+        .iter()
+        .filter(|request| request.path == ORGANIZATION_RUNNERS)
+        .map(|request| request.at.as_secs())
+        .collect();
+    assert_eq!(org_at, [0, 100, 140, 180]);
+    assert!(
+        seen.iter()
+            .filter(|request| request.path == RUNNERS)
+            .all(|request| request.at >= Duration::from_secs(100))
+    );
+}
+
+/// same-origin links can still cross the credential's scope or endpoint; path
+/// normalisation must not turn such a link into an authorised next page.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn organization_paging_refuses_other_origins_scopes_and_endpoints() {
+    for target in [
+        "https://evil.example/orgs/owner/actions/runners?page=2".to_string(),
+        format!("{BASE}/orgs/other/actions/runners?page=2"),
+        format!("{BASE}/repos/owner/app/actions/runners?page=2"),
+        format!("{BASE}/repositories/7/actions/runners?page=2"),
+        format!("{BASE}/orgs/owner/actions/runner-groups?page=2"),
+        format!("{BASE}/orgs/owner/actions/runners/../runner-groups?page=2"),
+    ] {
+        let world = organization_world(move |path, _, _| {
+            assert_eq!(path, ORGANIZATION_RUNNERS, "followed a refused page");
+            let mut answer = json(&runners(&[]), "\"r\"");
+            answer.link = Some(format!("<{target}>; rel=\"next\""));
+            Ok(answer)
+        });
+        let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+            organization_snapshot(&[("owner", "alpha", "alpha-1")], true, false),
+            true,
+        );
+        drive(&world, snapshot_rx, active_rx, status_tx, async {
+            sleep(Duration::from_secs(1)).await;
+        })
+        .await;
+        assert_eq!(world.fetch.paths(), [ORGANIZATION_RUNNERS]);
+        assert_eq!(status_rx.borrow().organizations[0].status, "error");
+    }
+}
+
+/// a successful busy state precedes each failure, distinguishing retained last
+/// data from falsely treating an error response as a fresh successful check.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn organization_failures_back_off_without_exposing_tokens_or_response_fields() {
+    for (code, cause) in [
+        (401, "token_rejected"),
+        (403, "token_rejected"),
+        (404, "not_found"),
+        (302, "moved"),
+        (502, "error"),
+    ] {
+        let world = organization_world(move |path, _, at| {
+            assert_eq!(path, ORGANIZATION_RUNNERS);
+            if at < Duration::from_secs(15) {
+                return Ok(json(&runners(&[("alpha-1", "online", true)]), "\"r\""));
+            }
+            let mut answer = status(code);
+            answer.message = Some(format!("raw response {ORGANIZATION_TOKEN}"));
+            answer.body = format!("raw body {ORGANIZATION_TOKEN}").into_bytes();
+            Ok(answer)
+        });
+        let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+            organization_snapshot(&[("owner", "alpha", "alpha-1")], true, false),
+            true,
+        );
+        drive(&world, snapshot_rx, active_rx, status_tx, async {
+            sleep(Duration::from_secs(62)).await;
+        })
+        .await;
+        let at: Vec<_> = world
+            .fetch
+            .seen()
+            .iter()
+            .map(|request| request.at.as_secs())
+            .collect();
+        assert_eq!(at, [0, 15, 30, 60]);
+        let status = status_rx.borrow().clone();
+        assert_eq!(status.organizations[0].status, cause);
+        assert_eq!(status.organizations[0].runners[0].github, "busy");
+        assert_eq!(status.organizations[0].checked_at, Some(START_MS + 100));
+        let value = serde_json::to_string(&*status).unwrap();
+        assert!(!value.contains(ORGANIZATION_TOKEN));
+        assert!(!value.contains("raw"));
+        let explanation = match code {
+            404 => Some("GitHub cannot find the organisation with its token"),
+            302 => Some("the organisation has moved on GitHub"),
+            _ => None,
+        };
+        if let Some(explanation) = explanation {
+            assert!(
+                world
+                    .log
+                    .lines()
+                    .iter()
+                    .any(|line| line.contains(explanation))
+            );
+            assert!(
+                world
+                    .log
+                    .lines()
+                    .iter()
+                    .all(|line| !line.contains("repository"))
+            );
+        }
+        assert!(
+            world
+                .log
+                .lines()
+                .iter()
+                .all(|line| !line.contains(ORGANIZATION_TOKEN))
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn repository_failures_keep_their_repository_explanation() {
+    for (code, explanation) in [
+        (404, "GitHub cannot find the repository with its token"),
+        (302, "the repository has moved on GitHub"),
+    ] {
+        let world = World::new(move |path, _, _| {
+            assert_eq!(path, RUNNERS);
+            Ok(status(code))
+        });
+        let (_s, snapshot_rx, _a, active_rx, status_tx, _status_rx) =
+            channels(snapshot(&["app-1-20261112000000000"], true), true);
+        drive(&world, snapshot_rx, active_rx, status_tx, async {
+            sleep(Duration::from_secs(1)).await;
+        })
+        .await;
+        assert!(
+            world
+                .log
+                .lines()
+                .iter()
+                .any(|line| line.contains(explanation))
+        );
+        assert!(
+            world
+                .log
+                .lines()
+                .iter()
+                .all(|line| !line.contains("organisation"))
+        );
+    }
+}
+
+/// a store error can itself contain a secret; recovering the store must permit
+/// the next scheduled attempt without exposing that error text.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_unreadable_organization_token_is_not_requested_or_logged_and_recovers() {
+    let world = organization_world(|path, _, _| {
+        assert_eq!(path, ORGANIZATION_RUNNERS);
+        Ok(json(&runners(&[("alpha-1", "online", false)]), "\"r\""))
+    });
+    world.store.fail_with(Some(ORGANIZATION_TOKEN));
+    let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+        organization_snapshot(&[("owner", "alpha", "alpha-1")], true, false),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(1)).await;
+        assert!(world.fetch.seen().is_empty());
+        assert_eq!(
+            status_rx.borrow().organizations[0].status,
+            "token_unreadable"
+        );
+        world.store.fail_with(None);
+        sleep(Duration::from_secs(15)).await;
+    })
+    .await;
+    assert_eq!(world.fetch.seen()[0].at, Duration::from_secs(15));
+    assert_eq!(status_rx.borrow().organizations[0].status, "ok");
+    assert!(
+        world
+            .log
+            .lines()
+            .iter()
+            .all(|line| !line.contains(ORGANIZATION_TOKEN))
+    );
+}
+
+/// omission counts describe group entries, not distinct organisation logins;
+/// all runner rows must be exhausted before group summaries are cut.
+#[test]
+fn organization_status_fits_by_counting_omitted_runners_then_groups() {
+    let mut status: GithubStatus = serde_json::from_value(serde_json::json!({
+        "organizations": (0..100).map(|index| serde_json::json!({
+            "organization": "owner", "runner_group": format!("group-{index}"),
+            "status": "ok", "runners": [{"name": "runner".repeat(50), "github": "idle"}]
+        })).collect::<Vec<_>>()
+    }))
+    .unwrap();
+    status.fit(2000);
+    assert!(serde_json::to_vec(&status).unwrap().len() <= 2000);
+    assert_eq!(status.omitted_runners, 100);
+    assert!(status.omitted_organizations > 0);
+    assert_eq!(
+        status.organizations.len() + usize::try_from(status.omitted_organizations).unwrap(),
+        100
+    );
+}
+
+/// an in-flight response may finish after unsubscribe, but must not start its
+/// next page; resubscription reauthorises cached pages within the interval rule.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn ending_a_subscription_during_an_organization_page_stops_the_next_page() {
+    const PAGE2: &str = "/orgs/owner/actions/runners?per_page=100&page=2";
+    let world = organization_world(|path, etag, _| match (path, etag) {
+        (ORGANIZATION_RUNNERS, None) => {
+            let mut answer = json(&runners(&[]), "\"p1\"");
+            answer.link = Some(format!("<{BASE}{PAGE2}>; rel=\"next\""));
+            Ok(answer)
+        }
+        (ORGANIZATION_RUNNERS, Some("\"p1\"")) => Ok(status(304)),
+        (PAGE2, None) => Ok(json(&runners(&[("alpha-1", "online", true)]), "\"p2\"")),
+        other => panic!("unexpected request {other:?}"),
+    });
+    let (_s, snapshot_rx, active_tx, active_rx, status_tx, status_rx) = channels(
+        organization_snapshot(&[("owner", "alpha", "alpha-1")], true, false),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_millis(50)).await;
+        active_tx.send_replace(false);
+        sleep(Duration::from_millis(950)).await;
+        assert_eq!(world.fetch.paths(), [ORGANIZATION_RUNNERS]);
+        active_tx.send_replace(true);
+        sleep(Duration::from_secs(15)).await;
+    })
+    .await;
+    let seen = world.fetch.seen();
+    assert_eq!(
+        world.fetch.paths(),
+        [ORGANIZATION_RUNNERS, ORGANIZATION_RUNNERS, PAGE2]
+    );
+    assert_eq!(seen[1].at, Duration::from_secs(15));
+    assert_eq!(seen[2].at, Duration::from_millis(15_100));
+    assert_eq!(
+        status_rx.borrow().organizations[0].runners[0].github,
+        "busy"
+    );
+}
+
+/// a conditional response still carries budget evidence; a larger remaining
+/// count in the same reset window must not shorten the conservative interval.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn organization_304_rate_headers_slow_checks_and_keep_the_lowest_budget() {
+    let world = organization_world(|path, etag, at| {
+        assert_eq!(path, ORGANIZATION_RUNNERS);
+        let mut answer = if etag.is_some() {
+            assert_eq!(etag, Some("\"r\""));
+            status(304)
+        } else {
+            json(&runners(&[("alpha-1", "online", false)]), "\"r\"")
+        };
+        answer.rate = rate(if at < Duration::from_secs(60) {
+            1250
+        } else {
+            4000
+        });
+        Ok(answer)
+    });
+    let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+        organization_snapshot(&[("owner", "alpha", "alpha-1")], true, false),
+        true,
+    );
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(121)).await;
+    })
+    .await;
+    let at: Vec<_> = world
+        .fetch
+        .seen()
+        .iter()
+        .map(|request| request.at)
+        .collect();
+    assert_eq!(
+        at,
+        [
+            Duration::ZERO,
+            Duration::from_secs(60),
+            Duration::from_secs(120)
+        ]
+    );
+    let status = status_rx.borrow().clone();
+    let budget = status.budget.as_ref().unwrap();
+    assert_eq!((budget.remaining, budget.level.as_str()), (1250, "slowed"));
+    assert_eq!(status.organizations[0].runners[0].github, "idle");
+}

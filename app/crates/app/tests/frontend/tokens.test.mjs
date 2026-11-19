@@ -53,3 +53,29 @@ test("the form stays open, so the field is still the one the panel draws", () =>
   const again = tokensPanel({ intro: "Tokens.", rows: [ROW] }, false, {});
   assert.equal(again[1].find("input"), field);
 });
+
+test("organisation forms keep a distinct key and accessible section when repository rows redraw", () => {
+  const organization = { ...ROW, repository: "", organization: "axross" };
+  const tab = { intro: "Tokens.", rows: [ROW], organizations: [organization] };
+  const panel = tokensPanel(tab, false, {});
+  assert.equal(panel[1].find("h2").find("span").textContent, "Repositories");
+  assert.equal(panel[2].find("h2").find("span").textContent, "Organisations");
+  const repositoryField = panel[1].find("input");
+  const organizationField = panel[2].find("input");
+  assert.notEqual(repositoryField, organizationField);
+  assert.equal(organizationField.getAttribute("data-key"), "field:axross");
+  organizationField.value = "typed-but-not-sent";
+  const again = tokensPanel(tab, false, {});
+  assert.equal(again[2].find("input"), organizationField);
+  assert.equal(organizationField.value, "typed-but-not-sent");
+  tokensPanel(
+    { ...tab, organizations: [{ ...organization, form: null }] },
+    false,
+    {},
+  );
+  assert.equal(
+    organizationField.value,
+    "",
+    "a closed organisation form discards the input",
+  );
+});

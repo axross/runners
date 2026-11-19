@@ -249,6 +249,7 @@ async fn the_token_is_read_again_at_every_registration() {
     assert_eq!(tokens, [TOKEN, "ghp_rotated", "ghp_rotated"]);
 }
 
+/// the registration target must not change the container isolation contract.
 #[tokio::test(flavor = "current_thread")]
 async fn a_container_runs_under_the_run_contract_with_the_jit_config_and_a_utc_name() {
     let rig = Rig::new();
@@ -300,8 +301,11 @@ async fn a_container_runs_under_the_run_contract_with_the_jit_config_and_a_utc_n
         "the runner and the container share one name"
     );
     assert_eq!(
-        (seen.owner.as_str(), seen.repository.as_str()),
-        ("example-owner", "example-repo-one")
+        seen.target,
+        marshal_cli::validate::PoolTarget::Repository {
+            owner: "example-owner".to_string(),
+            repository: "example-repo-one".to_string()
+        }
     );
     assert_eq!(seen.labels, ["self-hosted", "linux", "x64", "axpc"]);
     assert_eq!(rig.backend.state.borrow().jit_values[0], "the-jit-config");

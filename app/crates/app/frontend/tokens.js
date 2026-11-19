@@ -13,6 +13,14 @@ import { icon } from "./icons.js";
 const fields = new Map();
 const saves = new Map();
 
+export function tokenKey(row) {
+  return row.organization ?? row.repository;
+}
+
+export function tokenRows(tab) {
+  return [...tab.rows, ...(tab.organizations ?? [])];
+}
+
 function fieldFor(repository, hintId, errorId) {
   let field = fields.get(repository);
   if (!field) {
@@ -37,9 +45,7 @@ function fieldFor(repository, hintId, errorId) {
 
 /** drops the fields of rows that no longer show one, clearing them first. */
 export function forgetClosedFields(rows) {
-  const open = new Set(
-    rows.filter((row) => row.form).map((row) => row.repository),
-  );
+  const open = new Set(rows.filter((row) => row.form).map(tokenKey));
   for (const [repository, field] of fields) {
     if (!open.has(repository)) {
       field.value = "";
@@ -95,7 +101,7 @@ function saveButton(form, repository, field, ctx) {
 
 function tokenForm(row, ctx) {
   const form = row.form;
-  const repository = row.repository;
+  const repository = tokenKey(row);
   const fieldId = nextId("token");
   const hintId = nextId("hint");
   const errorId = form.error ? nextId("error") : null;
@@ -149,6 +155,7 @@ function tokenForm(row, ctx) {
 
 /** the row's own question before a token is removed; Cancel comes first. */
 function removalQuestion(row, ctx) {
+  const repository = tokenKey(row);
   const question = row.controls.find(
     (spec) => typeof spec.action === "object" && "remove_token" in spec.action,
   )?.confirmation;
@@ -173,17 +180,17 @@ function removalQuestion(row, ctx) {
       h("button", {
         type: "button",
         class: "button neutral",
-        "data-key": `cancel-remove:${row.repository}`,
+        "data-key": `cancel-remove:${repository}`,
         text: question.cancel,
-        on: { click: () => ctx.cancelRemoval(row.repository) },
+        on: { click: () => ctx.cancelRemoval(repository) },
       }),
       h(
         "button",
         {
           type: "button",
           class: "button destructive",
-          "data-key": `confirm-remove:${row.repository}`,
-          on: { click: () => ctx.removeToken(row.repository) },
+          "data-key": `confirm-remove:${repository}`,
+          on: { click: () => ctx.removeToken(repository) },
         },
         icon("trash", 20),
         h("span", { text: question.confirm }),
@@ -193,27 +200,33 @@ function removalQuestion(row, ctx) {
 }
 
 function tokenRow(row, ctx) {
+  const repository = tokenKey(row);
   const asking = row.form || row.confirming_removal;
   const controls = asking
     ? []
     : row.controls.map((spec, index) =>
         controlButton(spec, {
           shape: "pill",
-          key: `row:${row.repository}:${index === 0 ? "primary" : "remove"}`,
-          name: `${spec.label} for ${row.repository}`,
+          key: `row:${repository}:${index === 0 ? "primary" : "remove"}`,
+          name: `${spec.label} for ${row.organization ? "organisation " : ""}${repository}`,
           onPress: (button) => ctx.press(spec, button),
         }),
       );
   return h(
     "li",
-    { class: "token-row", "data-repository": row.repository },
+    {
+      class: "token-row",
+      "data-repository": row.repository,
+      "data-organization": row.organization,
+      "data-token-key": repository,
+    },
     h(
       "div",
       { class: "token-line" },
       h(
         "div",
         { class: "r" },
-        h("p", { class: "row-label wrap", text: row.repository }),
+        h("p", { class: "row-label wrap", text: repository }),
         h("p", { class: "caption low wrap", text: row.pools }),
       ),
       h(
@@ -237,7 +250,26 @@ function tokenRow(row, ctx) {
 
 /** the Tokens panel. */
 export function tokensPanel(tab, stale, ctx) {
-  forgetClosedFields(tab.rows);
+  forgetClosedFields(tokenRows(tab));
+  if (tab.organizations?.length) {
+    return [
+      h("p", { class: "description low wrap intro", text: tab.intro }),
+      tokenSection(
+        "Repositories",
+        "a token for one repository, with Administration: read and write",
+        tab.rows,
+        stale,
+        ctx,
+      ),
+      tokenSection(
+        "Organisations",
+        "a token for organisation runners, with Self-hosted runners: read and write",
+        tab.organizations,
+        stale,
+        ctx,
+      ),
+    ];
+  }
   return [
     h("p", { class: "description low wrap intro", text: tab.intro }),
     h(
@@ -250,4 +282,33 @@ export function tokensPanel(tab, stale, ctx) {
       ),
     ),
   ];
+}
+
+/** a heading belongs outside the list so its rows retain the same layout in both sections. */
+function tokenSection(title, permission, rows, stale, ctx) {
+  const headingId = nextId("token-section");
+  return h(
+    "section",
+    { class: "panel token-section", "aria-labelledby": headingId },
+    h(
+      "h2",
+      { id: headingId, class: "token-heading" },
+      h("span", { class: "row-label", text: title }),
+      h("span", {
+        class: "caption low wrap token-permission",
+        "aria-hidden": "true",
+        text: permission,
+      }),
+      h("span", { class: "vh", text: `: ${permission}` }),
+    ),
+    h(
+      "div",
+      { class: `token-list${stale ? " stale" : ""}` },
+      h(
+        "ul",
+        {},
+        rows.map((row) => tokenRow(row, ctx)),
+      ),
+    ),
+  );
 }

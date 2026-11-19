@@ -4,7 +4,7 @@ use crate::fold;
 use crate::profile::Profile;
 
 use super::fields::Errors;
-use super::plan::Entry;
+use super::plan::{Entry, PoolTarget};
 use super::problem::{Key, KeyPath, Kind};
 
 fn names_collide(first: &str, second: &str) -> bool {
@@ -20,7 +20,8 @@ fn extends(name: &str, prefix: &str) -> bool {
 /// pair without a collision allocates nothing.
 struct Keys<'a> {
     entry: &'a Entry,
-    repository: String,
+    owner: String,
+    repository: Option<String>,
     token_path: Option<String>,
     /// the labels that are not platform labels of this entry's own OS, each with its
     /// ASCII lowercase form; two entries' lists compare only when their OS is the
@@ -29,11 +30,16 @@ struct Keys<'a> {
 }
 
 impl<'a> Keys<'a> {
+    /// platform labels route by OS and must not count as custom-label collisions.
     fn new(entry: &'a Entry, profile: Profile) -> Self {
         let platform = profile.platform_labels(entry.os);
         Self {
             entry,
-            repository: format!("{}/{}", entry.owner, entry.repository).to_ascii_lowercase(),
+            owner: entry.target.owner().to_ascii_lowercase(),
+            repository: match &entry.target {
+                PoolTarget::Repository { repository, .. } => Some(repository.to_ascii_lowercase()),
+                PoolTarget::Organization { .. } => None,
+            },
             token_path: entry.token_path.as_deref().map(fold::folded),
             routing_labels: entry
                 .labels
@@ -68,29 +74,11 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
                     },
                 );
             }
-            if a.repository == b.repository {
+            let same_repository =
+                a.owner == b.owner && a.repository.is_some() && a.repository == b.repository;
+            if same_repository {
                 if a.token_path != b.token_path {
                     errors.add(path.key(Key::TokenPath), Kind::TokenFileDiffers { other });
-                }
-                let overlap: Vec<&str> = if a.entry.os == b.entry.os {
-                    b.routing_labels
-                        .iter()
-                        .filter(|(_, label)| {
-                            a.routing_labels.iter().any(|(_, known)| known == label)
-                        })
-                        .map(|(label, _)| *label)
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                if !overlap.is_empty() {
-                    errors.add(
-                        path.key(Key::Labels),
-                        Kind::AmbiguousRouting {
-                            labels: overlap.join(", "),
-                            other,
-                        },
-                    );
                 }
             } else if let Some(token_path) = b
                 .entry
@@ -105,6 +93,25 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
                         other,
                     },
                 );
+            }
+            let organization_overlap =
+                a.owner == b.owner && (a.repository.is_none() || b.repository.is_none());
+            if a.entry.os == b.entry.os && (same_repository || organization_overlap) {
+                let overlap: Vec<&str> = b
+                    .routing_labels
+                    .iter()
+                    .filter(|(_, label)| a.routing_labels.iter().any(|(_, known)| known == label))
+                    .map(|(label, _)| *label)
+                    .collect();
+                if !overlap.is_empty() {
+                    let labels = overlap.join(", ");
+                    let kind = if organization_overlap {
+                        Kind::OrganizationRoutingOverlap { labels, other }
+                    } else {
+                        Kind::AmbiguousRouting { labels, other }
+                    };
+                    errors.add(path.key(Key::Labels), kind);
+                }
             }
         }
     }

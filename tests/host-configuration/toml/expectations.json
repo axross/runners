@@ -278,7 +278,7 @@
     "problems": [
       "line 5: pool[0].runners: required key is missing",
       "line 5: pool[0].name: required key is missing",
-      "line 8: pool[1].repository: required key is missing",
+      "line 8: pool[1]: names neither repository nor organization",
       "line 17: pool[2].volumes[0].mount_path: required key is missing"
     ],
     "contains": [],

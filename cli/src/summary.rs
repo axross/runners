@@ -2,7 +2,7 @@
 
 use crate::affinity::{affinity_count, affinity_offset};
 use crate::profile::Profile;
-use crate::validate::{Plan, format_cpu_count, format_nanos, usage};
+use crate::validate::{Plan, PoolTarget, format_cpu_count, format_nanos, usage};
 
 /// returns the summary lines of a plan.
 #[must_use]
@@ -17,6 +17,20 @@ fn flag(value: bool) -> &'static str {
     if value { "True" } else { "False" }
 }
 
+/// keeps a group visible in human-readable output without inventing a repository
+/// key for an organisation destination.
+fn target_summary(target: &PoolTarget) -> String {
+    match target {
+        PoolTarget::Repository { owner, repository } => format!("Repository {owner}/{repository}"),
+        PoolTarget::Organization {
+            organization,
+            runner_group,
+        } => format!("Organization {organization}, runner group {runner_group}"),
+    }
+}
+
+/// describes the container host's quota and placement rules; CPU ids are not
+/// available until launch.
 fn axpc_summary(plan: &Plan) -> Vec<String> {
     let mut lines = vec![
         format!(
@@ -29,7 +43,7 @@ fn axpc_summary(plan: &Plan) -> Vec<String> {
     ];
     for (index, entry) in plan.entries.iter().enumerate() {
         lines.push(String::new());
-        lines.push(format!("Repository {}/{}", entry.owner, entry.repository));
+        lines.push(target_summary(&entry.target));
         lines.push(format!("  slots:             {}", entry.slots));
         lines.push(format!("  labels:            {}", entry.labels.join(", ")));
         if let Some(token_path) = &entry.token_path {
@@ -68,6 +82,8 @@ fn axpc_summary(plan: &Plan) -> Vec<String> {
     lines
 }
 
+/// describes the VM host's per-pool and host-wide limits without implying that
+/// configuration validation has checked live host prerequisites.
 fn axmc_summary(plan: &Plan) -> Vec<String> {
     let mut header = format!(
         "Host configuration is valid: {} entries, profile axmc",
@@ -79,7 +95,7 @@ fn axmc_summary(plan: &Plan) -> Vec<String> {
     let mut lines = vec![header];
     for entry in &plan.entries {
         lines.push(String::new());
-        lines.push(format!("Repository {}/{}", entry.owner, entry.repository));
+        lines.push(target_summary(&entry.target));
         if let Some(os) = entry.os {
             lines.push(format!("  os:                {os}"));
         }

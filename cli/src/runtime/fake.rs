@@ -11,7 +11,7 @@ use tokio::sync::{Notify, watch};
 
 use crate::image::check::{ImageCheck, ImageLabels};
 use crate::image::contract::CONTRACT_VERSION;
-use crate::validate::PlannedVolume;
+use crate::validate::{PlannedVolume, PoolTarget};
 
 use super::backend::{
     Backend, BackendError, ContainerSpec, CpuRequest, DiagnosticRecord, ExportOutcome, Exported,
@@ -525,18 +525,17 @@ fn bundles_of(state: &FakeState, pool: &str) -> u32 {
 /// what a [`FakeRegistrar`] was asked for.
 #[derive(Clone, PartialEq, Eq)]
 pub struct SeenRegistration {
-    pub owner: String,
-    pub repository: String,
+    pub target: PoolTarget,
     pub name: String,
     pub labels: Vec<String>,
     pub token: String,
 }
 
 impl std::fmt::Debug for SeenRegistration {
+    /// assertion failures may print this value, so its captured credential stays hidden.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SeenRegistration")
-            .field("owner", &self.owner)
-            .field("repository", &self.repository)
+            .field("target", &self.target)
             .field("name", &self.name)
             .field("labels", &self.labels)
             .field("token", &"<redacted>")
@@ -555,11 +554,11 @@ pub struct FakeRegistrar {
 }
 
 impl Registrar for FakeRegistrar {
+    /// supplies controlled registration outcomes without contacting GitHub.
     async fn request_jit(&self, request: &JitRequest<'_>) -> Result<Secret, RegistrationError> {
         self.timeline.push("register");
         self.seen.borrow_mut().push(SeenRegistration {
-            owner: request.owner.to_string(),
-            repository: request.repository.to_string(),
+            target: request.target.clone(),
             name: request.name.to_string(),
             labels: request.labels.to_vec(),
             token: request.token.expose().to_string(),

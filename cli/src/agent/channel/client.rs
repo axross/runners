@@ -288,6 +288,31 @@ impl Client {
         .await
         .map(|_| ())
     }
+
+    /// stores the organization's token; the token is sent once, in this call.
+    pub async fn organization_token_set(
+        &self,
+        organization: &str,
+        token: &str,
+    ) -> Result<(), CallError> {
+        self.call(
+            "organization_token_set",
+            serde_json::json!({ "organization": organization, "token": token }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// removes the stored token, not a running job's registration; availability
+    /// comes from this connection's welcome, as for every optional method.
+    pub async fn organization_token_remove(&self, organization: &str) -> Result<(), CallError> {
+        self.call(
+            "organization_token_remove",
+            serde_json::json!({ "organization": organization }),
+        )
+        .await
+        .map(|_| ())
+    }
 }
 
 fn lock(
@@ -640,6 +665,7 @@ mod tests {
         agent.await.unwrap();
     }
 
+    /// newer clients must remain usable with agents that predate organisation methods.
     #[tokio::test]
     async fn a_method_the_welcome_did_not_list_is_not_sent() {
         let (near, far) = duplex(4096);
@@ -649,7 +675,7 @@ mod tests {
             let mut hello = String::new();
             reader.read_line(&mut hello).await.unwrap();
             write
-                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\"],\"topics\":[\"state\"],\"later\":1}\n")
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\",\"token_set\",\"token_remove\"],\"topics\":[\"state\"],\"later\":1}\n")
                 .await
                 .unwrap();
             let mut next = String::new();
@@ -660,6 +686,18 @@ mod tests {
         assert_eq!(
             client.call("quit", serde_json::Value::Null).await,
             Err(CallError::NotServed("quit".to_string()))
+        );
+        assert_eq!(
+            client
+                .organization_token_set("example-org", "fake-token")
+                .await,
+            Err(CallError::NotServed("organization_token_set".to_string()))
+        );
+        assert_eq!(
+            client.organization_token_remove("example-org").await,
+            Err(CallError::NotServed(
+                "organization_token_remove".to_string()
+            ))
         );
         drop(client);
         assert_eq!(agent.await.unwrap(), "", "nothing was sent");

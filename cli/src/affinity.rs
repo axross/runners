@@ -280,12 +280,15 @@ mod tests {
         );
     }
 
+    /// isolates CPU placement from configuration validation and routing choices.
     fn entry(slots: u32, cpus: f64) -> Entry {
         Entry {
             index: 0,
             path: String::new(),
-            owner: String::new(),
-            repository: String::new(),
+            target: crate::validate::PoolTarget::Repository {
+                owner: String::new(),
+                repository: String::new(),
+            },
             name: String::new(),
             slots,
             token_path: None,

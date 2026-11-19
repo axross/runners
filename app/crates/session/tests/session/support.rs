@@ -61,6 +61,8 @@ pub enum Called {
     Quit,
     TokenSet { repository: String, token: String },
     TokenRemove { repository: String },
+    OrganizationTokenSet { organization: String, token: String },
+    OrganizationTokenRemove { organization: String },
     Drain { version: String },
     SubscribeGithub,
     RenewGithub,
@@ -101,6 +103,8 @@ fn name(method: &Method) -> &'static str {
         Method::Quit => "quit",
         Method::TokenSet { .. } => "token_set",
         Method::TokenRemove { .. } => "token_remove",
+        Method::OrganizationTokenSet { .. } => "organization_token_set",
+        Method::OrganizationTokenRemove { .. } => "organization_token_remove",
     }
 }
 
@@ -134,6 +138,16 @@ impl Link for FakeLink {
                 token: token.expose().to_string(),
             },
             Method::TokenRemove { repository } => Called::TokenRemove { repository },
+            Method::OrganizationTokenSet {
+                organization,
+                token,
+            } => Called::OrganizationTokenSet {
+                organization,
+                token: token.expose().to_string(),
+            },
+            Method::OrganizationTokenRemove { organization } => {
+                Called::OrganizationTokenRemove { organization }
+            }
         };
         let (answer, held) = {
             let mut state = locked(&self.state);

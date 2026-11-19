@@ -374,20 +374,22 @@ tables, an inline array of tables, and hexadecimal integers.
 | `[lifecycle]`    | table                                   | Optional. Four optional booleans, below.                                                                                                                                                                                                              |
 | `[[pool]]`       | array of tables                         | At least one. Each table is one entry of today's `repositories`.                                                                                                                                                                                      |
 
-| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                                            |
-| ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                   | string                              | `name`                           | Required.                                                                                                                                                       |
-| `repository`             | string                              | `owner` and `repository`         | Required, `"owner/name"`. Anything that is not one owner, a slash, and one name is `must be "owner/name"`; each part then follows the owner or repository rule. |
-| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                                                       |
-| `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                                                       |
-| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`.                         |
-| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                                                |
-| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                                                |
-| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                                        |
-| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                                                     |
-| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                                                       |
-| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                                            |
-| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                                           |
+| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                    |
+| ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                   | string                              | `name`                           | Required.                                                                                                                               |
+| `repository`             | string                              | `owner` and `repository`         | Exactly one of this and `organization` is required. Its value is `"owner/name"`; each part follows the owner or repository rule.        |
+| `organization`           | string                              | none                             | The organisation's login, under the owner rule. TOML only.                                                                              |
+| `runner_group`           | string                              | none                             | Required with `organization`, rejected without it. The exact group name in GitHub, not blank and without control characters.            |
+| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                               |
+| `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                               |
+| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`. |
+| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                        |
+| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                        |
+| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                |
+| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                             |
+| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                               |
+| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                    |
+| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                   |
 
 Every key follows the rule of the JSON key it renames on the host's profile:
 whether it is required, its default, and its range. The shared rule set applies
@@ -400,6 +402,15 @@ changes:
   axpc. A TOML pool without them is a Linux pool without volumes.
 - **One `repository` key.** The owner is part of it, so a missing owner is a problem
   on `repository`.
+- **Organisation pools.** `organization` and `runner_group` select an organisation
+  runner group instead of one repository. Such a pool rejects `volumes`, including
+  an empty list, and `scale_set`. JSON gains no organisation keys. With the same OS,
+  an organisation pool must not share a non-platform label with another pool of
+  that organisation or any of its repositories, comparing logins and labels
+  without case. This includes the default `routing_label`, so overlapping pools
+  need distinct explicit labels. Repository-only files retain their validation
+  rules; a pool naming neither target reports
+  `pool[i]: names neither repository nor organization`.
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
@@ -1368,7 +1379,7 @@ inventories the selection refuses.
 
 ### Registration
 
-A registration is `POST /repos/<owner>/<repo>/actions/runners/generate-jitconfig`
+A repository registration is `POST /repos/<owner>/<repo>/actions/runners/generate-jitconfig`
 to `https://api.github.com`, with these headers
 (`Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
 `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`) and this body
@@ -1403,6 +1414,25 @@ The base address can be overridden only by a debug build, and only to
 value. A release build ignores the request and always uses GitHub, so a release
 binary cannot send a token anywhere else. `tests/base_address.rs` shows both halves,
 and CI runs it again in the release profile.
+
+An organisation registration first reads
+`GET /orgs/<org>/actions/runner-groups?per_page=100` and finds the configured
+`runner_group` by exact name. Every required page must succeed. It accepts only a
+non-default, non-inherited group with `visibility: selected` and
+`allows_public_repositories: false`; `restricted_to_workflows` may be either
+value. It does not read the group's selected repositories, so an empty group is
+accepted. Missing, renamed, ambiguous or refused groups fail registration with
+their cause and enter the slot's backoff.
+
+The group check uses each page's last `ETag`, and a cached page is usable only
+after an authorised `304` for that request. A failed read never reuses an old
+permission. Next pages must have the first request's origin and exact path;
+cycles, more than ten pages, missing flags and invalid responses fail closed.
+The check repeats before every registration, outside the display queue and its
+budget. A group fixed in GitHub is accepted at the next attempt, without a
+restart. Only then does the registrar send
+`POST /orgs/<org>/actions/runners/generate-jitconfig` with that check's group id.
+Both the reads and the POST keep the outbound limits and secret handling above.
 
 ### Names and the Slot Loop
 
@@ -2393,25 +2423,27 @@ opens two connections; a `subscribe` to another topic on a connection that holds
 is answered with `invalid_request`, and one to the same topic again changes nothing
 but, for `github`, counts as a renewal.
 
-| Method             | Params                                              | Result                                                             |
-| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------ |
-| `status`           | none                                                | The snapshot                                                       |
-| `subscribe`        | `topic`: `state`, `github`                          | `{topic}`; the first event follows at once                         |
-| `renew`            | `topic`: `github`                                   | `{topic}`; keeps the connection's `github` subscription            |
-| `start_all`        | none                                                | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`         | none                                                | `{state}`                                                          |
-| `build`            | none                                                | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`             | none                                                | `{state}`                                                          |
-| `token_set`        | `repository`, `token`                               | `{repository}`, the key it was stored under                        |
-| `token_remove`     | `repository`                                        | `{repository}`                                                     |
-| `drain_for_update` | `version`                                           | `{state, update}`; see The Update Drain                            |
-| `config_read`      | none                                                | `{revision, status, settings, pools, problems, too_large}`         |
-| `config_edit`      | `revision`, `edits`, `check`                        | `{revision, effects, repositories_released, applies}`              |
-| `config_reload`    | `revision`, `check`                                 | `{revision, effects, repositories_released, applies}`              |
-| `launch`           | none                                                | `{state}`, with `reason` when it stays stopped                     |
-| `lifecycle_set`    | `key`, `value` (`true`, `false` or `null` to unset) | `{lifecycle}`, the snapshot's part                                 |
+| Method                      | Params                                              | Result                                                             |
+| --------------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
+| `status`                    | none                                                | The snapshot                                                       |
+| `subscribe`                 | `topic`: `state`, `github`                          | `{topic}`; the first event follows at once                         |
+| `renew`                     | `topic`: `github`                                   | `{topic}`; keeps the connection's `github` subscription            |
+| `start_all`                 | none                                                | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`                  | none                                                | `{state}`                                                          |
+| `build`                     | none                                                | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`                      | none                                                | `{state}`                                                          |
+| `token_set`                 | `repository`, `token`                               | `{repository}`, the key it was stored under                        |
+| `token_remove`              | `repository`                                        | `{repository}`                                                     |
+| `organization_token_set`    | `organization`, `token`                             | `{organization}`, the lower-case key it was stored under           |
+| `organization_token_remove` | `organization`                                      | `{organization}`                                                   |
+| `drain_for_update`          | `version`                                           | `{state, update}`; see The Update Drain                            |
+| `config_read`               | none                                                | `{revision, status, settings, pools, problems, too_large}`         |
+| `config_edit`               | `revision`, `edits`, `check`                        | `{revision, effects, repositories_released, applies}`              |
+| `config_reload`             | `revision`, `check`                                 | `{revision, effects, repositories_released, applies}`              |
+| `launch`                    | none                                                | `{state}`, with `reason` when it stays stopped                     |
+| `lifecycle_set`             | `key`, `value` (`true`, `false` or `null` to unset) | `{lifecycle}`, the snapshot's part                                 |
 
-`token_set` is the one message that carries a secret: the token travels only in its
+`token_set` and `organization_token_set` carry a secret: the token travels only in the
 `token` param, from the client to the agent, and the agent never sends, logs or
 repeats it. Its error text never quotes the params. A method a later slice adds
 under the version rules above that carries a secret is handled as `token_set` is.
@@ -2549,7 +2581,8 @@ methods, at its start and at `start_all`, and never watches it.
   `runners_after` and `stops_runners`, true when the change stops runners the pool has, which fails
   the jobs on them, on a running agent only. `repositories_released` lists the
   repositories no pool names after the change, whose tokens the client may offer to
-  remove; the agent removes none. `applies` is true when the change applies now.
+  remove; it never lists organisation keys, and the agent removes no token.
+  `applies` is true when the change applies now.
 - **A reload of a file with problems** answers `config_invalid` or
   `config_unusable` and records the problems in the snapshot; the configuration in use
   stays, as `last_valid` when it came from the file.
@@ -2598,24 +2631,26 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                          | Holds                                                                                                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
-| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
-| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
-| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
-| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
-| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
-| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
-| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
-| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
-| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
-| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
-| `pools[].runners`              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
-| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
-| `leftovers`                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
-| `images`                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
-| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                                                               |
+| Field                                          | Holds                                                                                                                                                       |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
+| `agent.update`                                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
+| `agent.build`                                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
+| `configuration`                                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
+| `configuration.last_apply`                     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
+| `configuration.status`                         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
+| `configuration.in_use`                         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
+| `configuration.migration`                      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
+| `runners_up`, `runners_wanted`                 | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
+| `repositories`                                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
+| `organizations`                                | Each organisation login in lower case, `has_token` and its pools                                                                                            |
+| `pools`                                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
+| `pools[].organization`, `pools[].runner_group` | Present only for an organisation pool, which has no `repository` field                                                                                      |
+| `pools[].runners`                              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
+| `pools[].diagnostics`                          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
+| `leftovers`                                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
+| `images`                                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
+| `omitted`                                      | How many `runners`, `problems`, `pools`, `repositories`, `organizations`, `leftovers` and `images` it left out                                              |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the
@@ -2659,7 +2694,7 @@ client shows an event with a state and a warning from a later agent.
 A snapshot is cut to at most 64 KiB less the message's envelope. When it is larger
 it first lists no more than 100 configuration problems, then leaves out runner rows
 from the end, as many as it must and no more, then pools from the end, then
-leftovers, repositories, images and configuration problems from their ends, and says
+leftovers, repositories, organisations, images and configuration problems from their ends, and says
 how many in `omitted`. Last of all the long texts, the configuration path, the
 migration's reason and the agent's version, reason and build message, are cut to 512
 characters. `runners_up`
@@ -2671,9 +2706,22 @@ GitHub status is what GitHub says about this host's runners, for the window only
 whether each is offline, idle or busy, the job a busy runner runs, and the request
 budget. It lives in the library's `github_status` module beside registration, and the
 agent runs it and publishes it as the `github` topic. It owns the busy flag, the job
-lookup, the request budget and the back-off; a repository is one kind of scope, and a
-later scope, such as an organisation's, adds its own fields under the version rules
-above, so no field here changes meaning.
+lookup, the request budget and the back-off. Repositories and organisations are
+separate scopes in the same queue; organisation status adds fields without
+changing the repository fields' meaning.
+
+The `github` value's `organizations` lists `organization`, `runner_group`,
+`checked_at`, `status` and `runners`; each runner has only `name` and `github`
+(`offline`, `idle` or `busy`), never `job` or `job_names`. An organisation is read
+only while a configured pool has a registered runner on this host and its token
+is present, through `GET /orgs/<org>/actions/runners?per_page=100`. Only this host's
+runner names are shown. Pools and groups of one organisation share a conditional,
+paged read and check time, with the same 15 s minimum, budget, subscription and
+backoff rules as repositories. Group rows reflect configured pools, not detection
+of a runner moved in GitHub. Organisation tokens never trigger repository job
+lookups. Message cutting drops organisation runners, then repository runners, then
+organisation group rows; `omitted_runners` counts dropped runners and
+`omitted_organizations` counts dropped group rows.
 
 **Collection follows the subscription.** The agent reads GitHub only while at least
 one connection holds a `github` subscription that was subscribed or renewed in the

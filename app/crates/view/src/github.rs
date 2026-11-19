@@ -1,10 +1,12 @@
 //! what GitHub says about the runners, beside their local state: each runner's GitHub
-//! state with the job a busy one runs, a pool's GitHub notices, the request budget,
+//! state with a repository runner's job, a pool's GitHub notices, the request budget,
 //! the pause, and the job page Open run opens. Workflow and job names come from GitHub
 //! and are shown only as plain text.
 
 use marshal_cli::agent::snapshot::{PoolInfo, RunnerInfo, Snapshot};
-use marshal_cli::github_status::{GithubStatus, RepositoryStatus, RunnerStatus, clean};
+use marshal_cli::github_status::{
+    GithubStatus, OrganizationStatus, RepositoryStatus, RunnerStatus, clean,
+};
 use marshal_cli::token_store::TokenKey;
 use serde::Serialize;
 
@@ -88,6 +90,15 @@ fn repository<'a>(status: &'a GithubStatus, pool: &PoolInfo) -> Option<&'a Repos
         .find(|repository| repository.repository == key)
 }
 
+/// a pool's organisation status; group names keep GitHub's casing.
+fn organization<'a>(status: &'a GithubStatus, pool: &PoolInfo) -> Option<&'a OrganizationStatus> {
+    let organization = pool.organization.as_deref()?;
+    let group = pool.runner_group.as_deref()?;
+    status.organizations.iter().find(|each| {
+        each.organization.eq_ignore_ascii_case(organization) && each.runner_group == group
+    })
+}
+
 fn paused(status: Option<&GithubStatus>) -> bool {
     status
         .and_then(|status| status.budget.as_ref())
@@ -128,22 +139,45 @@ pub fn runner(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Op
     let Some(value) = status else {
         return Some(checking);
     };
-    let Some(repository) = repository(value, pool) else {
-        return Some(checking);
+    let (checked_at, failed, github, job) = if pool.organization.is_some() {
+        let Some(organization) = organization(value, pool) else {
+            return Some(checking);
+        };
+        let listed = organization
+            .runners
+            .iter()
+            .find(|each| each.name == workload);
+        (
+            organization.checked_at,
+            organization_cause(&organization.status).is_some(),
+            listed.map(|each| each.github.as_str()),
+            None,
+        )
+    } else {
+        let Some(repository) = repository(value, pool) else {
+            return Some(checking);
+        };
+        let listed = entry(repository, workload);
+        (
+            repository.checked_at,
+            cause(&repository.status).is_some(),
+            listed.map(|each| each.github.as_str()),
+            listed.and_then(|each| each.job.as_ref()),
+        )
     };
     // while paused, or while GitHub cannot answer, the last values stay, marked with
     // their time, even when they were read before the window opened
-    let held = cause(&repository.status).is_some() || paused(status);
+    let held = failed || paused(status);
     let since = if held {
         runner.since
     } else {
         runner.since.max(opened_ms)
     };
-    let Some(checked_at) = repository.checked_at.filter(|at| *at > since) else {
+    let Some(checked_at) = checked_at.filter(|at| *at > since) else {
         return Some(checking);
     };
     let checked = held.then(|| format!("checked {}", context.input.clock.when(checked_at)));
-    let Some(listed) = entry(repository, workload) else {
+    let Some(github) = github else {
         let state = if value.omitted_runners > 0 {
             "GitHub: not shown"
         } else {
@@ -155,23 +189,24 @@ pub fn runner(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Op
             ..checking
         });
     };
-    let busy = listed.github == "busy";
+    let busy = github == "busy";
     // a word this reader does not know is not known: the runner reads as checking
-    let state = match listed.github.as_str() {
+    let state = match github {
         "offline" => "GitHub: offline",
         "idle" => "GitHub: idle",
         "busy" => "GitHub: running a job",
         _ => "GitHub: checking…",
     }
     .to_string();
-    let job = listed
-        .job
-        .as_ref()
-        .filter(|_| busy)
-        .map(|job| job_text(&job.workflow, &job.name));
+    let job = if busy && pool.organization.is_some() {
+        Some("Job not shown for organisation runners".to_string())
+    } else {
+        job.filter(|_| busy)
+            .map(|job| job_text(&job.workflow, &job.name))
+    };
     let open_run = job
         .as_ref()
-        .filter(|_| !context.is_stale())
+        .filter(|_| pool.organization.is_none() && !context.is_stale())
         .map(|job| OpenRun {
             label: "Open run".to_string(),
             name: format!(
@@ -225,6 +260,19 @@ fn cause(word: &str) -> Option<&'static str> {
     })
 }
 
+/// GitHub status failures in organisation wording; unknown causes stay silent.
+fn organization_cause(word: &str) -> Option<&'static str> {
+    match word {
+        "token_rejected" => {
+            Some("GitHub rejected this organisation's token. Replace it on the Tokens tab.")
+        }
+        "not_found" => Some("GitHub cannot find this organisation with its token."),
+        "moved" => Some("This organisation has moved on GitHub."),
+        "token_unreadable" => Some("This organisation's token cannot be read."),
+        _ => cause(word),
+    }
+}
+
 fn time_line(context: &Context<'_>, checked_at: Option<u64>, retry_at: Option<u64>) -> String {
     let clock = &context.input.clock;
     let checked = checked_at.map_or_else(
@@ -260,6 +308,30 @@ pub fn notes(context: &Context<'_>, pool: &PoolInfo, token_note: bool) -> Vec<Gi
         return found;
     };
     if !pool.has_token {
+        return found;
+    }
+    if pool.organization.is_some() {
+        let Some(organization) = organization(value, pool) else {
+            return found;
+        };
+        let token_cause = matches!(
+            organization.status.as_str(),
+            "token_rejected" | "token_unreadable"
+        );
+        if let Some(text) =
+            organization_cause(&organization.status).filter(|_| !(token_cause && token_note))
+        {
+            let key = plain(&organization.organization);
+            let group = plain(&organization.runner_group);
+            found.push(GithubNote {
+                text: text.to_string(),
+                line: Some(time_line(context, organization.checked_at, None)),
+                attention: Some(Attention {
+                    key: format!("github:organization:{key}:{group}:{}", organization.status),
+                    text: format!("{key}: {text}"),
+                }),
+            });
+        }
         return found;
     }
     let Some(repository) = repository(value, pool) else {
@@ -431,7 +503,7 @@ pub fn feed_attention(context: &Context<'_>) -> Option<Attention> {
 
 /// the address of the job a runner of `pool` named `runner` runs, built from the pool's
 /// configured repository and the two numbers GitHub gave, or `None` when the snapshot
-/// no longer lists that runner or its job is not known.
+/// no longer lists that runner, its job is not known, or the pool serves an organisation.
 #[must_use]
 pub fn job_page(
     snapshot: &Snapshot,
@@ -440,6 +512,9 @@ pub fn job_page(
     runner: &str,
 ) -> Option<String> {
     let pool = snapshot.pools.iter().find(|each| each.name == pool)?;
+    if pool.organization.is_some() {
+        return None;
+    }
     pool.runners
         .iter()
         .find(|each| each.workload.as_deref() == Some(runner))?;

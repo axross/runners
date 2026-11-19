@@ -477,6 +477,23 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
                 }
                 Err(error) => Err(ApiError::store_failed("removed", &error)),
             }),
+            Method::OrganizationTokenSet { key, token } => {
+                self.log.mask(&token);
+                Ok(match self.tokens.set(&key, &token) {
+                    Ok(()) => {
+                        self.publish();
+                        Ok(json!({ "organization": key.as_str() }))
+                    }
+                    Err(error) => Err(ApiError::store_failed("saved", &error)),
+                })
+            }
+            Method::OrganizationTokenRemove { key } => Ok(match self.tokens.remove(&key) {
+                Ok(()) => {
+                    self.publish();
+                    Ok(json!({ "organization": key.as_str() }))
+                }
+                Err(error) => Err(ApiError::store_failed("removed", &error)),
+            }),
             other => Err(other),
         }
     }
@@ -631,11 +648,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
         }
     }
 
+    /// refreshes presence only; a registration still reads its secret from the store.
     fn refresh_tokens(&self, plan: &Plan) {
         let keys: Vec<TokenKey> = plan
             .entries
             .iter()
-            .map(|entry| TokenKey::of(&entry.owner, &entry.repository))
+            .map(|entry| TokenKey::for_pool(&entry.target))
             .collect();
         self.tokens.refresh(&keys);
     }

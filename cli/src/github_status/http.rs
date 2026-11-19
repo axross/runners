@@ -178,7 +178,14 @@ fn id_endpoint(route: &str) -> Option<&str> {
 /// `/repos/`, or a next page in GitHub's `/repositories/<id>/` form, without `..`.
 fn is_request_path(path: &str) -> bool {
     let (route, query) = path.split_once('?').unwrap_or((path, ""));
-    (repos_endpoint(route).is_some() || id_endpoint(route).is_some())
+    let organization = route.strip_prefix("/orgs/").is_some_and(|rest| {
+        rest.split_once('/')
+            .is_some_and(|(organization, endpoint)| {
+                crate::validate::patterns::is_owner(organization)
+                    && matches!(endpoint, "actions/runners" | "actions/runner-groups")
+            })
+    });
+    (organization || repos_endpoint(route).is_some() || id_endpoint(route).is_some())
         && plain(route)
         && (query.is_empty() || plain(query))
         && !route.split('/').any(|part| part == "." || part == "..")

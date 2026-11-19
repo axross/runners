@@ -26,7 +26,7 @@ pub enum Method {
     StopAll,
     Build,
     Quit,
-    /// the token travels only here, as a [`Secret`](marshal_cli::runtime::secret::Secret)
+    /// token-bearing methods use a [`Secret`](marshal_cli::runtime::secret::Secret)
     /// whose `Debug` hides it.
     TokenSet {
         repository: String,
@@ -34,6 +34,13 @@ pub enum Method {
     },
     TokenRemove {
         repository: String,
+    },
+    OrganizationTokenSet {
+        organization: String,
+        token: marshal_cli::runtime::secret::Secret,
+    },
+    OrganizationTokenRemove {
+        organization: String,
     },
 }
 

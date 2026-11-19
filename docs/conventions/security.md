@@ -1031,6 +1031,44 @@ is an operator rule and a review rule, not a check.
   address. A reader builds a job's address itself from its configured repository
   and the two numbers it was given.
 
+## Organisation Pools Share a Runner Group's Trust Boundary
+
+An organisation pool's isolation boundary is its named runner group, not one
+repository. Every repository the group admits can run jobs on those runners.
+Repositories in one group are one trust domain; Marshal does not isolate them
+from each other. The organisation token's permissions and cost if leaked are
+stated in A Token Carries Only Its Pool Kind's Permissions above.
+
+- The group MUST admit selected repositories only and MUST forbid public
+  repositories. Marshal refuses the default group, inherited groups, `all` and
+  `private` visibility, and `allows_public_repositories: true`. It checks every
+  required page before each registration; a failed read never reuses a previous
+  permission. A conditional page counts only after an authorised `304`.
+- An organisation pool MUST NOT have persistent volumes, since jobs from
+  different repositories may use its slots. Its diagnostic bundles may contain
+  evidence from any admitted repository and remain subject to the private-sink
+  rules in Diagnostic Evidence Stays Private.
+- The operator MUST disable fork pull request workflows in private repositories,
+  or require their approval, for every private repository the group admits.
+  Marshal changes no group, repository or organisation policy.
+- An organisation pool and another pool for that organisation or one of its
+  repositories MUST NOT share a custom label when their OS labels match.
+  Validation checks pools on this host. Across hosts this remains an operator
+  and review rule, since no host knows another host's configuration.
+- A registered idle runner may wait indefinitely for a job. The group can be
+  opened, or the runner moved to another group, after a successful check and
+  before that job arrives. Marshal neither deletes such runners nor polls group
+  settings outside registration. This residual risk is accepted only under the
+  test prerequisite that the maintainer is the organisation's only owner and no
+  other member holds a CI/CD admin or runner-managing role. Owners, those roles,
+  and holders of the organisation token can change the boundary.
+- A program running as the host's user can read that user's Credential Manager
+  entry or request the Keychain item. Reading an organisation token reaches the
+  whole organisation rather than one repository. The token is present on each
+  host that serves its organisation. The same-user store and channel risks also
+  apply to organisation keys; the agent accepts any well-formed login, not just
+  those currently configured.
+
 ## One Instance per Machine, Reached Only by Its User
 
 The CLI's single-instance lock and control channel decide who can start, stop, or
@@ -1165,8 +1203,8 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
 
 - **The app process is a client only.** It never holds the instance lock, reads the
   configuration, touches the token store or runs Docker: it talks to the agent in
-  protocol version 2 and passes a newly entered token to it in `token_set`, then drops
-  it. One executable runs as both, so the operating system cannot enforce the rule
+  protocol version 2 and passes a newly entered token to it in `token_set` or
+  `organization_token_set`, then drops it. One executable runs as both, so the operating system cannot enforce the rule
   for the app mode. Only the `marshal-modes` crate reaches the library's agent entry,
   and only when the executable is started in its agent mode; the app's session
   reaches the agent through the library's client alone. A review checks that no
@@ -1213,7 +1251,7 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   the default browser from the Rust side with Tauri's opener plugin. The plugin's
   page script, which sends link clicks to its own command, is off, and no capability
   grants any of the plugin's three commands, which a test shows are refused.
-- **A token passes only through `token_set`.** The window's token field is a password
+- **A token passes only through `token_set` or `organization_token_set`.** The window's token field is a password
   input without autocomplete or spell checking. The page clears it when the token is
   submitted, whatever the outcome, and keeps the token in no variable once it has
   called the command. A token half typed is cleared when the window hides: the app

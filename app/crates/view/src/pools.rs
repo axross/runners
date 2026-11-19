@@ -10,7 +10,7 @@ use crate::github::{self, GithubNote, OpenRun};
 use crate::host::HostWords;
 use crate::state::{Context, Resident};
 use crate::text::{humanised, plain};
-use crate::tokens::{Repository, pool_note, repositories};
+use crate::tokens::{TokenOwner, pool_note, token_owners};
 
 /// the mark that goes with a state's words; the state is always written out too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -59,6 +59,8 @@ pub struct RunnerRow {
 pub struct PoolCard {
     pub name: String,
     pub repository: String,
+    pub organization: Option<String>,
+    pub runner_group: Option<String>,
     /// "Running", "Skipped", "Waiting for Docker".
     pub state: String,
     pub mark: Option<Mark>,
@@ -166,7 +168,7 @@ fn runner_row(context: &Context<'_>, pool: &PoolInfo, runner: &RunnerInfo) -> Ru
     }
 }
 
-fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> PoolCard {
+fn card(context: &Context<'_>, repositories: &[TokenOwner], pool: &PoolInfo) -> PoolCard {
     let (state, mark) = pool_state(pool, &context.input.words);
     let diagnostics = section(pool, &context.input.words);
     let count = format!("{} of {} up", pool.runners_up, pool.slots);
@@ -195,6 +197,8 @@ fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> 
     PoolCard {
         name: plain(&pool.name),
         repository: plain(&pool.repository),
+        organization: pool.organization.as_deref().map(plain),
+        runner_group: pool.runner_group.as_deref().map(plain),
         state,
         mark: (!context.is_stale()).then_some(mark).flatten(),
         count,
@@ -218,7 +222,7 @@ fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> 
 
 /// every pool of the snapshot, in the agent's order.
 pub fn cards(context: &Context<'_>) -> Vec<PoolCard> {
-    let repositories = repositories(context);
+    let repositories = token_owners(context);
     context
         .pools
         .iter()

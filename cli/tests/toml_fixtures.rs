@@ -91,6 +91,7 @@ fn problems(bytes: &[u8], profile: Profile) -> Vec<String> {
     }
 }
 
+/// fixture expectations cover semantic defaults without depending on Rust's Debug form.
 fn describe(plan: &Plan) -> Vec<String> {
     let settings = plan.settings.as_ref().unwrap();
     let show = |setting: Option<bool>| setting.map_or("unset".to_string(), |s| s.to_string());
@@ -123,11 +124,10 @@ fn describe(plan: &Plan) -> Vec<String> {
             .map(|volume| format!("{}:{}", volume.name, volume.mount_path))
             .collect();
         lines.push(format!(
-            "{}: name={} repository={}/{} runners={} os={} cpus={} memory_gb={} disk_gb={} labels=[{}] volumes=[{}] diagnostics={} diagnostic_directory={} raw_records={} token_path={}",
+            "{}: name={} repository={} runners={} os={} cpus={} memory_gb={} disk_gb={} labels=[{}] volumes=[{}] diagnostics={} diagnostic_directory={} raw_records={} token_path={}",
             entry.path,
             entry.name,
-            entry.owner,
-            entry.repository,
+            entry.target,
             entry.slots,
             entry.os.map_or("none", |os| os.name()),
             entry.cpus,

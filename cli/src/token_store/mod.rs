@@ -15,6 +15,7 @@ pub mod windows;
 use std::fmt;
 
 use crate::runtime::secret::Secret;
+use crate::validate::PoolTarget;
 use crate::validate::patterns::{is_owner, is_repository};
 
 pub use keyring::{Classified, EntryName, KeyringTokenStore, Naming};
@@ -70,6 +71,17 @@ impl TokenKey {
     #[must_use]
     pub fn of(owner: &str, name: &str) -> Self {
         Self(format!("{owner}/{name}").to_ascii_lowercase())
+    }
+
+    /// the credential key of a target whose names passed configuration validation.
+    #[must_use]
+    pub fn for_pool(target: &PoolTarget) -> Self {
+        match target {
+            PoolTarget::Repository { owner, repository } => Self::of(owner, repository),
+            PoolTarget::Organization { organization, .. } => {
+                Self(organization.to_ascii_lowercase())
+            }
+        }
     }
 
     /// reads `owner/name`, in any case, with the patterns a configuration applies to

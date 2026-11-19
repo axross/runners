@@ -477,6 +477,7 @@ mod tests {
 
     type Change = fn(&mut Plan);
 
+    /// conversion equivalence must cover settings beyond the registration target.
     #[test]
     fn the_comparison_finds_a_change_to_any_setting_of_a_pool() {
         let original = plan(WINDOWS_FILE);
@@ -492,8 +493,20 @@ mod tests {
                     disk_gb: 1,
                 });
             }),
-            ("owner", |plan| plan.entries[1].owner.push('x')),
-            ("repository", |plan| plan.entries[1].repository.push('x')),
+            ("owner", |plan| {
+                if let crate::validate::PoolTarget::Repository { owner, .. } =
+                    &mut plan.entries[1].target
+                {
+                    owner.push('x');
+                }
+            }),
+            ("repository", |plan| {
+                if let crate::validate::PoolTarget::Repository { repository, .. } =
+                    &mut plan.entries[1].target
+                {
+                    repository.push('x');
+                }
+            }),
             ("name", |plan| plan.entries[1].name.push('x')),
             ("runners", |plan| plan.entries[1].slots += 1),
             ("labels", |plan| plan.entries[1].labels.push("x".into())),

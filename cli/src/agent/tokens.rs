@@ -1,4 +1,4 @@
-//! the agent's tokens: every pool's registration reads its repository's token from
+//! the agent's tokens: every pool's registration reads its target's token from
 //! the store, and a request changes it; a token file is never read, and no text
 //! this module makes holds a token.
 
@@ -12,6 +12,7 @@ use tokio::sync::watch;
 use crate::runtime::secret::Secret;
 use crate::runtime::token::TokenSource;
 use crate::token_store::{StoreError, TokenKey, TokenStore};
+use crate::validate::PoolTarget;
 
 /// why a pool has no token to start with; the snapshot and the log show it.
 pub const NO_TOKEN: &str = "no token";
@@ -26,7 +27,7 @@ pub const STORE_FAILED: &str = "the token store failed";
 /// the agent's view of the token store.
 pub struct StoreTokens {
     store: Option<Arc<dyn TokenStore>>,
-    /// which repositories had a token when the store was last asked.
+    /// which keys had a token when the store was last asked.
     known: RefCell<BTreeMap<TokenKey, bool>>,
     changed: watch::Sender<u64>,
 }
@@ -47,14 +48,14 @@ impl StoreTokens {
         self.changed.subscribe()
     }
 
-    /// whether the repository had a token when the store was last asked.
+    /// whether the key had a token when the store was last asked.
     #[must_use]
     pub fn has_token(&self, key: &TokenKey) -> bool {
         self.known.borrow().get(key).copied().unwrap_or(false)
     }
 
-    /// asks the store about each repository, and keeps the answers for the snapshot;
-    /// a store that fails leaves the repository without one.
+    /// asks the store about each key, and keeps the answers for the snapshot;
+    /// a store that fails leaves the key without one.
     pub fn refresh<'a>(&self, keys: impl IntoIterator<Item = &'a TokenKey>) {
         let mut known = self.known.borrow_mut();
         known.clear();
@@ -82,7 +83,7 @@ impl StoreTokens {
         Ok(())
     }
 
-    /// the repository's token for a registration, or why there is none.
+    /// the target's token for a registration, or why there is none.
     pub fn read(&self, key: &TokenKey) -> Result<Secret, String> {
         let Some(store) = &self.store else {
             return Err(NO_TOKEN_STORE.to_string());
@@ -100,8 +101,8 @@ fn no_store() -> StoreError {
 }
 
 impl TokenSource for StoreTokens {
-    fn token(&self, owner: &str, repository: &str, _file: Option<&Path>) -> Result<Secret, String> {
-        self.read(&TokenKey::of(owner, repository))
+    fn token(&self, target: &PoolTarget, _file: Option<&Path>) -> Result<Secret, String> {
+        self.read(&TokenKey::for_pool(target))
     }
 }
 
@@ -119,6 +120,7 @@ mod tests {
         (StoreTokens::new(Some(store.clone())), store)
     }
 
+    /// agent registration must not fall back to a token file outside its user store.
     #[test]
     fn a_registration_reads_the_stored_token_by_the_lower_case_key_and_never_the_file() {
         let (tokens, _) = tokens();
@@ -126,7 +128,13 @@ mod tests {
             .set(&key(), &Secret::new("fake-token".to_string()))
             .unwrap();
         let token = tokens
-            .token("OWNER", "repo", Some(Path::new("/no/such/file")))
+            .token(
+                &PoolTarget::Repository {
+                    owner: "OWNER".to_string(),
+                    repository: "repo".to_string(),
+                },
+                Some(Path::new("/no/such/file")),
+            )
             .unwrap();
         assert_eq!(token.expose(), "fake-token");
     }

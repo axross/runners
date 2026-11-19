@@ -9,7 +9,7 @@ use tokio::time::Instant;
 
 use crate::affinity::{affinity_count, affinity_offset, slot_offset};
 use crate::profile::Profile;
-use crate::validate::{Entry, Plan, PlannedVolume, format_cpu_count};
+use crate::validate::{Entry, Plan, PlannedVolume, PoolTarget, format_cpu_count};
 
 use super::backend::{Backend, DiagnosticRecord, HostRequest, JobHost, Mount, StopRequest};
 use super::board::{Board, PoolState};
@@ -29,8 +29,7 @@ pub struct PoolSpec {
     pub path: String,
     /// the entry's name: the start of every container and runner name.
     pub name: String,
-    pub owner: String,
-    pub repository: String,
+    pub target: PoolTarget,
     pub slots: u32,
     /// the token file the commands read; the agent reads the token store and gives
     /// none.
@@ -57,8 +56,7 @@ pub struct PoolSpec {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlotSpec {
     pub pool: String,
-    pub owner: String,
-    pub repository: String,
+    pub target: PoolTarget,
     pub number: u32,
     pub token_path: Option<PathBuf>,
     pub labels: Vec<String>,
@@ -137,6 +135,7 @@ pub fn diagnostic_records(plan: &Plan) -> Vec<DiagnosticRecord> {
     plan.entries.iter().filter_map(diagnostic_record).collect()
 }
 
+/// prepares container placement; VM disk sizing belongs to the VM pool path.
 fn pool_from_entry(
     plan: &Plan,
     index: usize,
@@ -146,8 +145,7 @@ fn pool_from_entry(
     Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
-        owner: entry.owner.clone(),
-        repository: entry.repository.clone(),
+        target: entry.target.clone(),
         slots: entry.slots,
         token_path: entry.token_path.as_ref().map(PathBuf::from),
         labels: entry.labels.clone(),
@@ -172,8 +170,7 @@ fn vm_pool_from_entry(entry: &Entry, image: &str) -> Result<PoolSpec, PlanError>
     Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
-        owner: entry.owner.clone(),
-        repository: entry.repository.clone(),
+        target: entry.target.clone(),
         slots: entry.slots,
         token_path: entry.token_path.as_ref().map(PathBuf::from),
         labels: entry.labels.clone(),
@@ -193,7 +190,7 @@ impl PoolSpec {
     /// the pool and its repository as a warning names them.
     #[must_use]
     pub fn describe(&self) -> String {
-        format!("{} ({}/{})", self.path, self.owner, self.repository)
+        format!("{} ({})", self.path, self.target)
     }
 
     /// the pool's slots, numbered from 1.
@@ -203,8 +200,7 @@ impl PoolSpec {
             .zip(&self.slot_offsets)
             .map(|(number, offset)| SlotSpec {
                 pool: self.name.clone(),
-                owner: self.owner.clone(),
-                repository: self.repository.clone(),
+                target: self.target.clone(),
                 number,
                 token_path: self.token_path.clone(),
                 labels: self.labels.clone(),
@@ -280,7 +276,7 @@ pub fn admit_pool(
     log: &dyn Log,
     board: &Board,
 ) -> bool {
-    match tokens.token(&pool.owner, &pool.repository, pool.token_path.as_deref()) {
+    match tokens.token(&pool.target, pool.token_path.as_deref()) {
         Err(error) => {
             skip(log, board, pool, &format!("{}: {error}.", pool.path));
             false

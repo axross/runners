@@ -347,7 +347,8 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         let named = |plan: &Plan| -> BTreeSet<TokenKey> {
             plan.entries
                 .iter()
-                .map(|entry| TokenKey::of(&entry.owner, &entry.repository))
+                .map(|entry| TokenKey::for_pool(&entry.target))
+                .filter(|key| key.as_str().contains('/'))
                 .collect()
         };
         let released = in_use.map_or_else(Vec::new, |in_use| {
