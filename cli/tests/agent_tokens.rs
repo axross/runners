@@ -10,7 +10,8 @@ mod support;
 
 use marshal_cli::agent::machine::Launch;
 use marshal_cli::agent::{CallError, Push};
-use marshal_cli::token_store::{StoreError, StoreErrorKind};
+use marshal_cli::runtime::secret::Secret;
+use marshal_cli::token_store::{StoreError, StoreErrorKind, TokenKey, TokenStore};
 use serde_json::json;
 use support::agent::{ONE_POOL, OTHER_TOKEN, Rig, TOKEN, TWO_POOLS};
 
@@ -82,21 +83,35 @@ async fn after_token_remove_the_next_registration_fails_and_the_runner_backs_off
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_pool_skipped_for_want_of_a_token_starts_when_one_is_set() {
-    let rig = Rig::new(TWO_POOLS);
-    rig.store_token("o", "r", TOKEN);
+async fn an_organisation_owned_repository_starts_only_with_its_own_token() {
+    let config = TWO_POOLS.replace(r#""owner":"o""#, r#""owner":"Example-Org""#);
+    let rig = Rig::new(&config);
+    let organisation_token = "fake-organisation-token-not-for-a-repository";
+    rig.store
+        .set(
+            &TokenKey::parse_organization("Example-Org").unwrap(),
+            &Secret::new(organisation_token.to_string()),
+        )
+        .unwrap();
+    rig.store_token("Example-Org", "r", TOKEN);
     rig.hold_jobs();
     let rig = &rig;
     let (_, ()) = rig
         .drive(Launch::Running, |conn| async move {
             conn.until_runner_runs().await;
+            assert_eq!(rig.registered_with(), [TOKEN]);
             let snapshot = conn.status().await;
             let pool = snapshot.pools.iter().find(|pool| pool.name == "d").unwrap();
             assert_eq!(pool.state, "skipped");
             assert!(pool.reason.as_deref().unwrap().contains("no token"));
-            conn.set_token("o/d", OTHER_TOKEN).await.unwrap();
+            conn.set_token("EXAMPLE-ORG/D", OTHER_TOKEN).await.unwrap();
             conn.until("both pools up", |s| s.runners_up == 2).await;
             assert!(rig.registered_with().contains(&OTHER_TOKEN.to_string()));
+            assert!(
+                rig.registered_with()
+                    .iter()
+                    .all(|token| token != organisation_token)
+            );
             rig.mark_running();
             conn.ok("quit").await;
         })

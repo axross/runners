@@ -399,7 +399,10 @@ changes:
 - **`os` and `volumes` may be omitted.** JSON requires `os` on axmc and `volumes` on
   axpc. A TOML pool without them is a Linux pool without volumes.
 - **One `repository` key.** The owner is part of it, so a missing owner is a problem
-  on `repository`.
+  on `repository`. The owner may be a personal account or an organisation. An
+  organisation-owned repository keeps the same repository-scoped behaviour.
+  The Fine-Grained Token section of [Windows Runner Host](./windows-runner-host.md)
+  gives its token setup steps.
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
