@@ -742,51 +742,56 @@ marshal-feed-check [--public-key <file>] <latest.json> <version> <SHA256SUMS> <p
 
 It checks the feed's version, that it has exactly the given platforms, each entry's
 address under the release's tag, each file's SHA-256 against `SHA256SUMS`, and each
-signature against the key committed in `tauri.conf.json`, and lists every problem.
-`--public-key` names another key, for the merge checks' round trip with a throwaway
-key; the release run never passes it, and the shape check fails `release.yaml` if it
-does. Its tests use throwaway keys in `app/crates/feed/tests/fixtures/`.
+signature, and lists every problem. Security's Updates Come Only From the Signed
+Feed section owns the release-verification trust rules. `--public-key` selects a
+throwaway key for the merge checks' round trip; its tests use throwaway keys in
+`app/crates/feed/tests/fixtures/`.
 
-**How the release signs the feed.** [CLI](./cli.md#the-update-feed-in-the-release)
-gives the release run's jobs: `update-tool` builds the signer, `cargo-tauri` from the
-crate archive whose SHA-256 is committed, and the feed check; `sign-update`, under the
-`release` Environment, signs the build's unchanged MSI with
-`signer sign --app-version <version>`; and `assemble-signed` writes `latest.json` with
-[`write-update-feed.sh`](../../.github/scripts/write-update-feed.sh), checks it with
-the feed check against the committed key, and adds it to the release with its
-`SHA256SUMS` line and attestation.
+[CLI](./cli.md), under The Update Feed in the Release, owns the signing jobs,
+artifacts and feed-check procedure; [Security](../conventions/security.md) owns
+their trust and secret-handling requirements.
 
 ### The Update-Feed Key
 
 The key is a minisign key made by `tauri signer generate`, protected by a password.
 Agents never handle the private key or its password.
 
-- **Generation.** The maintainer generates the key on their own machine, sets a
-  password, and posts the public key on [#78](https://github.com/axross/runners/issues/78);
-  it is committed as the updater's `pubkey` in `app/crates/app/tauri.conf.json`. The
-  key now committed has the minisign key ID `6F39E3131E21E1E4`.
+The maintainer manages the key as follows:
+
+- **Generation.** Generate and publish the public key as follows:
+  1. Generate the key on your own machine with a password.
+  2. Post the public key on [#78](https://github.com/axross/runners/issues/78).
+  3. Commit the public key as the updater's `pubkey` in
+     `app/crates/app/tauri.conf.json`, with the same approved public value in the
+     release-verification source.
+
+  Both keys now committed have the minisign key ID `6F39E3131E21E1E4`.
+
 - **The two secrets.** The maintainer stores the private key, the whole text of the
   file `tauri signer generate` wrote, as the `release` Environment secret
   `UPDATE_FEED_SIGNING_KEY`, and its password as `UPDATE_FEED_SIGNING_KEY_PASSWORD`.
-  `sign-update`'s sign step alone reads them, through its `env:`, and refuses to sign
-  when either is empty.
 - **The offline backup.** The maintainer keeps a copy of the key file and of the
   password offline, the two stored apart, and reports on the tracking issue that the
   secrets and the backup exist before the first release after the feed lands.
 - **Rotation.** Installed apps trust one key, so a new key is introduced through a
   release:
-  1. Commit the new public key, and release it signed with the old key, which every
-     installed app accepts.
-  2. Once the hosts have taken that release, replace the two secrets with the new
-     key and its password.
-  3. A host that missed the release in step 1 is reinstalled from a newer release's
+  1. Commit the new app public key, retaining the old public key in the separate
+     release-verification source. Sign the transition release with the old key,
+     which the installed apps and the publication check both accept.
+  2. Replace the two secrets with the new key and its password, and switch the
+     committed release-verification source to the new public key, only after the
+     maintainer confirms that the hosts have taken that release and before
+     publishing the next release. A mismatch blocks publication; no override
+     bypasses the check.
+  3. Reinstall any host that missed the release in step 1 from a newer release's
      MSI.
 - **Loss.** Without the old key no installed app accepts a new one through the feed.
-  Generate a new key, commit its public key, release, and reinstall each host from
-  that release's MSI.
-- **A leak.** The key is the barrier against anyone who can publish a release here,
-  which includes the release job's npm tree and any session acting under the
-  maintainer's identity. Rotate at once, as above.
+  Recover as follows:
+  1. Generate a new key.
+  2. Commit its public key in both the app and release-verification sources.
+  3. Release with the new signing key.
+  4. Reinstall each host from that release's MSI.
+- **A leak.** Rotate at once, as above.
 
 ## GitHub Status in the Window
 

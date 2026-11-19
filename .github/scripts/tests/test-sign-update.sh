@@ -5,8 +5,9 @@
 # hash-checked signer under unshare with the two secrets in its environment and
 # nowhere in the output; and a refusal, before the signer runs, of a changed MSI,
 # an MSI the build's SHA256SUMS does not list once, a changed signer, and an
-# empty key or password. merge-checks.yaml's update-feed job runs the same
-# scripts with the real signer and a throwaway key.
+# empty key or password. a two-file list signs both files, and corruption of
+# either refuses the whole list before any signer runs. merge-checks.yaml's
+# update-feed job runs the same scripts with the real signer and a throwaway key.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,8 +26,8 @@ password="PASSWORD-2b9d44e0"
 cat >"${work}/cargo-tauri" <<'SIGNER'
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "$*" >"${STANDIN_RECORD}.signer"
-printf 'key=%s password=%s\n' "${TAURI_SIGNING_PRIVATE_KEY-}" "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD-}" >"${STANDIN_RECORD}.secrets"
+printf '%s\n' "$*" >>"${STANDIN_RECORD}.signer"
+printf 'key=%s password=%s\n' "${TAURI_SIGNING_PRIVATE_KEY-}" "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD-}" >>"${STANDIN_RECORD}.secrets"
 printf 'c2lnbmF0dXJl\n' >"${!#}.sig"
 SIGNER
 chmod +x "${work}/cargo-tauri"
@@ -49,7 +50,7 @@ while [[ "\${1:-}" == --* ]]; do
   options+=("\$1")
   shift
 done
-printf '%s\n' "\${options[*]}" >"\${record}.unshare"
+printf '%s\n' "\${options[*]}" >>"\${record}.unshare"
 STANDIN_RECORD="\$record" exec "\$@"
 UNSHARE
 chmod +x "${bin}/unshare"
@@ -60,18 +61,25 @@ fail() {
   failures=$((failures + 1))
 }
 
-# run_case <name> <msi file> <SHA256SUMS file> [VAR=value...]: runs the scripts
+# run_case <name> <SHA256SUMS file> [VAR=value...] -- <file>...: runs the scripts
 # in a directory of the case's own; sets status, output and record.
 run_case() {
-  local name="$1" file="$2" sums="$3"
-  shift 3
+  local name="$1" sums="$2"
+  shift 2
+  local environment=()
+  while [[ "${1:-}" != -- ]]; do
+    [[ $# -gt 0 ]] || { fail "${name}: missing -- before files"; return; }
+    environment+=("$1")
+    shift
+  done
+  shift
   record="${work}/${name}/record"
   mkdir -p "${work}/${name}"
   echo "$record" >"${work}/record-path"
   status=0
   output="$(env SIGN_VERSION="$version" SIGN_TAURI_CLI_SHA256="$tool_sha256" \
-    SIGN_KEY="$key" SIGN_PASSWORD="$password" SIGN_SYSTEM_BIN="$bin" "$@" \
-    bash "$runner" "${work}/${name}/run" "$file" "$sums" "${work}/cargo-tauri" 2>&1)" || status=$?
+    SIGN_KEY="$key" SIGN_PASSWORD="$password" SIGN_SYSTEM_BIN="$bin" "${environment[@]}" \
+    bash "$runner" "${work}/${name}/run" "$sums" "${work}/cargo-tauri" "$@" 2>&1)" || status=$?
 }
 
 # expect_refusal <name> <text>: the case failed naming <text>, and never signed.
@@ -90,7 +98,7 @@ expect_refusal() {
 printf 'windows installer\n' >"${work}/${msi}"
 (cd "$work" && sha256sum "$msi" >"${work}/SHA256SUMS")
 
-run_case pass "${work}/${msi}" "${work}/SHA256SUMS"
+run_case pass "${work}/SHA256SUMS" -- "${work}/${msi}"
 if [[ $status -ne 0 ]]; then
   fail "a signature for the build's MSI: exit ${status}: ${output}"
 else
@@ -110,28 +118,77 @@ else
   fi
 fi
 
+extra=stand-in-update.archive
+printf 'another update file\n' >"${work}/${extra}"
+(cd "$work" && sha256sum "$msi" "$extra" >"${work}/two-file-sums")
+node - "${here}/../../workflows/release.yaml" "${work}/two-files.yaml" "$extra" <<'WORKFLOW'
+const fs = require("node:fs");
+const [source, target, extra] = process.argv.slice(2);
+const workflow = fs.readFileSync(source, "utf8");
+const from = '"marshal-${VERSION}-windows-x64.msi" > checked-files';
+if (workflow.split(from).length !== 2) {
+  throw new Error("the workflow does not declare its checked-file list exactly once");
+}
+fs.writeFileSync(target, workflow.replace(from,
+  '"marshal-${VERSION}-windows-x64.msi" \\\n            "' + extra + '" > checked-files'));
+WORKFLOW
+
+run_case two-files "${work}/two-file-sums" SIGN_WORKFLOW="${work}/two-files.yaml" -- "${work}/${msi}" "${work}/${extra}"
+if [[ $status -ne 0 ]]; then
+  fail "two checked files: exit ${status}: ${output}"
+else
+  expected_calls="$(printf 'signer sign --app-version %s signing/%s\n' "$version" "$msi" "$version" "$extra")"
+  expected_paths="$(printf '%s/run/job/signature/%s.sig\n' "${work}/two-files" "$msi" "${work}/two-files" "$extra")"
+  if [[ "$(<"${record}.signer")" != "$expected_calls" ]]; then
+    fail "two checked files: the signer calls were: $(<"${record}.signer")"
+  elif [[ "$(<"${record}.unshare")" != $'--map-root-user --net\n--map-root-user --net' ]]; then
+    fail "two checked files: both signer calls must run under unshare"
+  elif [[ "$(<"${record}.secrets")" != "$(printf 'key=%s password=%s\n' "$key" "$password" "$key" "$password")" ]]; then
+    fail "two checked files: both signer calls must receive the secrets"
+  elif [[ "$(printf '%s\n' "$output" | tail -n 2)" != "$expected_paths" ]]; then
+    fail "two checked files: the runner did not return both signature paths: ${output}"
+  elif [[ "$output" == *"$key"* || "$output" == *"$password"* ]]; then
+    fail "two checked files: a secret appears in the output"
+  else
+    for file in "$msi" "$extra"; do
+      signature="${work}/two-files/run/job/signature/${file}.sig"
+      if [[ ! -f "$signature" || "$(<"$signature")" != c2lnbmF0dXJl ]]; then
+        fail "two checked files: no expected signature for ${file}"
+      fi
+    done
+    echo "ok   both checked files signed under unshare, with secrets only in the environment"
+  fi
+fi
+
 cp "${work}/${msi}" "${work}/changed.msi"
 printf 'changed\n' >>"${work}/changed.msi"
 mkdir -p "${work}/changed"
 mv "${work}/changed.msi" "${work}/changed/${msi}"
-run_case changed-msi "${work}/changed/${msi}" "${work}/SHA256SUMS"
+run_case changed-msi "${work}/SHA256SUMS" -- "${work}/changed/${msi}"
 expect_refusal "a changed MSI" "${msi} has SHA-256"
 
+run_case two-files-changed-msi "${work}/two-file-sums" SIGN_WORKFLOW="${work}/two-files.yaml" -- "${work}/changed/${msi}" "${work}/${extra}"
+expect_refusal "a changed first file of two, before any signer runs" "${msi} has SHA-256"
+cp "${work}/${extra}" "${work}/changed/${extra}"
+printf 'changed\n' >>"${work}/changed/${extra}"
+run_case two-files-changed-extra "${work}/two-file-sums" SIGN_WORKFLOW="${work}/two-files.yaml" -- "${work}/${msi}" "${work}/changed/${extra}"
+expect_refusal "a changed second file of two, before any signer runs" "${extra} has SHA-256"
+
 printf '%s  %s\n' "$(cut -d' ' -f1 "${work}/SHA256SUMS")" other.msi >"${work}/unlisted-sums"
-run_case unlisted "${work}/${msi}" "${work}/unlisted-sums"
+run_case unlisted "${work}/unlisted-sums" -- "${work}/${msi}"
 expect_refusal "an MSI the build's SHA256SUMS does not list" "does not list ${msi} exactly once"
 
 cat "${work}/SHA256SUMS" "${work}/SHA256SUMS" >"${work}/twice-sums"
-run_case twice "${work}/${msi}" "${work}/twice-sums"
+run_case twice "${work}/twice-sums" -- "${work}/${msi}"
 expect_refusal "an MSI the build's SHA256SUMS lists twice" "does not list ${msi} exactly once"
 
-run_case changed-tool "${work}/${msi}" "${work}/SHA256SUMS" SIGN_TAURI_CLI_SHA256="$(printf '0%.0s' {1..64})"
+run_case changed-tool "${work}/SHA256SUMS" SIGN_TAURI_CLI_SHA256="$(printf '0%.0s' {1..64})" -- "${work}/${msi}"
 expect_refusal "a changed signer" "cargo-tauri has SHA-256"
 
-run_case empty-key "${work}/${msi}" "${work}/SHA256SUMS" SIGN_KEY=
+run_case empty-key "${work}/SHA256SUMS" SIGN_KEY= -- "${work}/${msi}"
 expect_refusal "an empty key" "must both be set"
 
-run_case empty-password "${work}/${msi}" "${work}/SHA256SUMS" SIGN_PASSWORD=
+run_case empty-password "${work}/SHA256SUMS" SIGN_PASSWORD= -- "${work}/${msi}"
 expect_refusal "an empty password" "must both be set"
 
 if [[ $failures -ne 0 ]]; then

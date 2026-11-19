@@ -1,8 +1,8 @@
 # cargo-deny's advisory check of the lockfile inside the tauri-cli crate archive that
-# app/tauri-cli.crate.sha256 commits. The release run's update-tool job builds the
+# app/tauri-cli.crate.sha256 commits. the release run's update-tool job builds the
 # update signer from that archive (.github/scripts/build-update-tools.sh), and any
-# advisory not listed here stops it. Each entry is one the maintainer accepted for that
-# archive; a pull request that moves the pin and the checksum revisits the list. See
+# advisory not listed here stops it. each entry is one the maintainer accepted for that
+# archive; a pull request that moves the pin and the checksum revisits the list. see
 # docs/operations/app.md.
 [advisories]
 ignore = [

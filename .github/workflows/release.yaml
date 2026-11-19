@@ -114,6 +114,8 @@ jobs:
         working-directory: ${{ runner.temp }}/update-tools
         run: |
           set -euo pipefail
+          # hash_file <binary> <output-name>: publishes the digest outside the artifact
+          # for downstream transport checks. exits on hashing failure or an invalid SHA-256.
           hash_file() {
             local line hash
             line="$(sha256sum "$1")"
@@ -169,25 +171,27 @@ jobs:
           # sign-update: check
           set -euo pipefail
           : "${SYSTEM_BIN:=/usr/bin}"
-          msi="marshal-${VERSION}-windows-x64.msi"
           refuse() {
             echo "error: $*" >&2
             exit 1
           }
-          # the hash the build's SHA256SUMS lists for the MSI, on exactly one line.
-          # shellcheck disable=SC2016 # the awk program is literal.
-          listed="$("$SYSTEM_BIN/awk" -v name="$msi" '$2 == name { print $1 }' unsigned/SHA256SUMS)"
-          if [[ -z "$listed" || "$listed" == *$'\n'* ]]; then
-            refuse "the build's SHA256SUMS does not list ${msi} exactly once"
-          fi
-          line="$("$SYSTEM_BIN/sha256sum" "unsigned/${msi}")"
-          [[ "${line%% *}" == "$listed" ]] || refuse "${msi} has SHA-256 ${line%% *}, not the ${listed} the build's SHA256SUMS lists"
           line="$("$SYSTEM_BIN/sha256sum" "${RUNNER_TEMP}/update-tools/cargo-tauri")"
           [[ "${line%% *}" == "$TAURI_CLI_SHA256" ]] || refuse "cargo-tauri has SHA-256 ${line%% *}, not the ${TAURI_CLI_SHA256} update-tool built"
           chmod 0755 "${RUNNER_TEMP}/update-tools/cargo-tauri"
           mkdir signing signature
-          cp "unsigned/${msi}" "signing/${msi}"
-          echo "${msi} and cargo-tauri have the hashes they were handed."
+          printf '%s\n' \
+            "marshal-${VERSION}-windows-x64.msi" > checked-files
+          while IFS= read -r file; do
+            # shellcheck disable=SC2016 # the awk program is literal.
+            listed="$("$SYSTEM_BIN/awk" -v name="$file" '$2 == name { print $1 }' unsigned/SHA256SUMS)"
+            if [[ -z "$listed" || "$listed" == *$'\n'* ]]; then
+              refuse "the build's SHA256SUMS does not list ${file} exactly once"
+            fi
+            line="$("$SYSTEM_BIN/sha256sum" "unsigned/${file}")"
+            [[ "${line%% *}" == "$listed" ]] || refuse "${file} has SHA-256 ${line%% *}, not the ${listed} the build's SHA256SUMS lists"
+            cp "unsigned/${file}" "signing/${file}"
+            echo "${file} has the hash it was handed."
+          done < checked-files
       # the signer runs without a network, under unshare. the secrets are checked
       # here, where they are set.
       - name: Sign The Installer
@@ -199,14 +203,15 @@ jobs:
           # sign-update: sign
           set -euo pipefail
           : "${SYSTEM_BIN:=/usr/bin}"
-          msi="marshal-${VERSION}-windows-x64.msi"
           if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" || -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]]; then
             echo "error: UPDATE_FEED_SIGNING_KEY and UPDATE_FEED_SIGNING_KEY_PASSWORD must both be set in the release Environment" >&2
             exit 1
           fi
-          "$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION" "signing/${msi}"
-          mv "signing/${msi}.sig" "signature/${msi}.sig"
-          echo "Signed ${msi} for ${VERSION}."
+          while IFS= read -r file; do
+            "$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION" "signing/${file}"
+            mv "signing/${file}.sig" "signature/${file}.sig"
+            echo "Signed ${file} for ${VERSION}."
+          done < checked-files
       - name: Upload The Signature
         uses: actions/upload-artifact@v7
         with:
@@ -283,7 +288,7 @@ jobs:
           bash .github/scripts/write-update-feed.sh "$VERSION" dist/latest.json \
             "windows-x86_64=dist/${windows_msi}=signature/${windows_msi}.sig"
           # against the committed public key, before anything is published.
-          "$check" dist/latest.json "$VERSION" unsigned/SHA256SUMS "windows-x86_64=dist/${windows_msi}"
+          "$check" dist/latest.json "$VERSION" unsigned/SHA256SUMS "windows-x86_64=dist/${windows_msi}" || exit 1
           line="$(sha256sum dist/latest.json)"
           bash .github/scripts/assemble-release.sh signed "$VERSION" dist "$windows_sha256" "$windows_msi_sha256" "${line%% *}"
       - name: Upload The Signed Release Files

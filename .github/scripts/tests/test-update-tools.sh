@@ -108,6 +108,37 @@ expect "a platform name with a slash" 1 "is not a platform name" \
 expect "a version that is not X.Y.Z" 1 "is not X.Y.Z" \
   bash "${scripts}/write-update-feed.sh" 1.2 "${work}/x.json" "windows-x86_64=${msi}=${work}/msi.sig"
 
+node --input-type=module - "$repository" >"${work}/scope.sh" <<'JS'
+import { pathToFileURL } from "node:url";
+const root = process.argv[2];
+const { readWorkflow } = await import(pathToFileURL(`${root}/.github/scripts/workflow-reader.mjs`));
+const workflow = readWorkflow(`${root}/.github/workflows/merge-checks.yaml`);
+const scope = workflow.jobs["update-feed"].steps.find(step => step.id === "scope");
+if (typeof scope?.run !== "string") throw new Error("update-feed has no scope script");
+process.stdout.write(scope.run);
+JS
+mkdir "${work}/bin"
+cat >"${work}/bin/git" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$CHANGED"
+SH
+chmod 0755 "${work}/bin/git"
+cat >"${work}/scope-run.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+bash "$1"
+cat "$GITHUB_OUTPUT"
+SH
+for changed in app/crates/feed/release-public-key.txt README.md; do
+  selected=false
+  [[ "$changed" != README.md ]] && selected=true
+  : >"${work}/scope-output"
+  expect "update-feed selection for ${changed} alone" 0 "run=${selected}" \
+    env PATH="${work}/bin:${PATH}" EVENT=pull_request BASE=base HEAD=head \
+    CHANGED="$changed" GITHUB_OUTPUT="${work}/scope-output" \
+    bash "${work}/scope-run.sh" "${work}/scope.sh"
+done
+
 # the archive's lockfile check reads its list of accepted advisories from here.
 [[ -f "${repository}/app/tauri-cli.deny.toml" ]] || {
   echo "FAIL app/tauri-cli.deny.toml is missing" >&2

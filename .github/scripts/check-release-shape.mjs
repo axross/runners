@@ -41,15 +41,11 @@ const GUARD =
   "github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''";
 const SIGNING_ENVIRONMENT = "release";
 const SIGNING_JOB = "sign-update";
-// the marker of the one step that reads the update-feed key, and the variables
-// it reads it into.
 const SIGNING_STEP = `# ${SIGNING_JOB}: sign`;
 const SIGNING_SECRETS = {
   TAURI_SIGNING_PRIVATE_KEY: "UPDATE_FEED_SIGNING_KEY",
   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "UPDATE_FEED_SIGNING_KEY_PASSWORD",
 };
-// how the sign step runs the signer: by its path under RUNNER_TEMP, without a
-// network, bound to the release's version.
 const SIGNER_CALL =
   '"$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION"';
 const SIGNING_ACTIONS = [
@@ -101,7 +97,6 @@ const INTERPRETERS = [
   "pwsh",
   "powershell",
 ];
-// shell built-ins and base utilities, which sign-update may call by name.
 const ALLOWED_COMMANDS = new Set([
   ":",
   "[[",
@@ -144,7 +139,6 @@ const SHELL_KEYWORDS = new Set([
   "{",
   "time",
 ]);
-// the jobs of release.yaml after plan and build, with what each needs directly.
 const CHAIN = {
   "update-tool": ["plan"],
   "sign-update": ["plan", "build", "update-tool"],
@@ -278,8 +272,6 @@ for (const [file, doc] of Object.entries(workflows)) {
   }
 }
 
-// ---- the secrets ---------------------------------------------------------
-
 // in release.yaml and release-build.yaml, any read of the `secrets` context,
 // by any name, outside sign-update's sign step, and there only the two
 // variables of SIGNING_SECRETS. in every other workflow file, a read of a
@@ -342,8 +334,6 @@ for (const [file, doc] of Object.entries(workflows)) {
   }
 }
 
-// ---- sign-update ---------------------------------------------------------
-
 const jobs = release ? (release.jobs ?? {}) : {};
 const signing = jobs[SIGNING_JOB];
 // a script's lines without comments or line continuations.
@@ -383,6 +373,11 @@ const OPTION_LIKE = /^-[^\s"'`()\\]*$/;
 // be an option, which find's arguments are checked for.
 function skeleton(script) {
   const source = script.replace(/\\\n/g, " ");
+  /**
+   * masks shell data for command detection, not shell evaluation.
+   * @returns {[string, number]} masked span and the next unread source offset.
+   * @throws {Error} when quoting or expansion cannot be analysed safely.
+   */
   function scan(start, closer) {
     let out = "";
     let i = start;
@@ -606,6 +601,10 @@ function commandWords(script) {
   return { words, functions, refused };
 }
 
+/**
+ * collects candidate tool names for an allowlist, not proof of execution.
+ * @throws {SyntaxError} when variable cannot form a regular expression.
+ */
 function usedTools(script, variable) {
   const found = new Set();
   const pattern = new RegExp(`\\$\\{?${variable}\\}?/([A-Za-z0-9_]+)`, "g");
@@ -614,6 +613,7 @@ function usedTools(script, variable) {
   }
   return found;
 }
+/** records signing-boundary violations without executing artifact-supplied code. */
 function checkSigningJob() {
   if (!signing) {
     problem(`release.yaml has no ${SIGNING_JOB} job`);
@@ -688,7 +688,6 @@ function checkSigningJob() {
       );
     }
 
-    // the stand-in prefix: a literal default, set by nothing else.
     const lines = codeLines(script).map((line) => line.trim());
     if (
       /\$\{?SYSTEM_BIN\b/.test(script) &&
@@ -721,7 +720,6 @@ function checkSigningJob() {
       );
     }
 
-    // the environment the script's commands run in.
     const code = codeLines(script).join("\n");
     for (const match of code.matchAll(/\bGITHUB_(PATH|ENV|OUTPUT)\b/g)) {
       problem(
@@ -744,7 +742,6 @@ function checkSigningJob() {
       );
     }
 
-    // commands.
     let analysis;
     try {
       analysis = commandWords(script);
@@ -795,8 +792,6 @@ function checkSigningJob() {
       );
   }
 
-  // the one step that reads the key, how it reads it, and how it runs the
-  // signer; no other step runs the signer.
   const signSteps = stepsOf(signing).filter(isSigningStep);
   if (signSteps.length !== 1) {
     problem(`${where} must have exactly one "${SIGNING_STEP}" step`);
@@ -827,8 +822,10 @@ function checkSigningJob() {
   }
 }
 
-// ---- update-tool and assemble-signed --------------------------------------
-
+/**
+ * records isolation violations for a secret-free release job; the chain check
+ * handles absent jobs.
+ */
 function checkPlainJob(id, script) {
   const job = jobs[id];
   if (!job) return;
@@ -859,6 +856,10 @@ function checkPlainJob(id, script) {
   }
 }
 
+/**
+ * records publication paths that could skip the committed-trust feed check;
+ * artifact verification belongs to the release run, not this static check.
+ */
 function checkFeed() {
   const assemble = jobs["assemble-signed"];
   if (!assemble) return;
@@ -868,19 +869,21 @@ function checkFeed() {
     .join("\n");
   if (!scripts.includes(".github/scripts/write-update-feed.sh"))
     problem(`${where} does not write the feed with write-update-feed.sh`);
-  if (!/"\$check" dist\/latest\.json /.test(scripts))
-    problem(`${where} does not run the feed check on dist/latest.json`);
+  if (
+    !/^[\t ]*"\$check" dist\/latest\.json [^|;&\n]+ \|\| exit 1[\t ]*$/m.test(
+      scripts,
+    )
+  )
+    problem(
+      `${where} does not run the feed check on dist/latest.json with || exit 1`,
+    );
   if (!scripts.includes(".github/scripts/assemble-release.sh signed"))
     problem(`${where} does not run assemble-release.sh in signed mode`);
-  // the throwaway-key option is for the merge checks; the release checks the
-  // feed against the committed key.
   if (JSON.stringify(release).includes("--public-key"))
     problem(
       "release.yaml passes --public-key; the release checks the feed against the committed key",
     );
 }
-
-// ---- the chain -----------------------------------------------------------
 
 function checkChain() {
   // every job but plan needs plan directly and carries the guard.

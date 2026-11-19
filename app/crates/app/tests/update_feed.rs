@@ -2,7 +2,7 @@
 //! feed and the dry-run MSI that the release run's own signing scripts signed with a
 //! throwaway key are accepted by the updater plugin's own verification, under the app's
 //! updater configuration with that key, and a changed file, another key's signature and a
-//! signature for another version are refused. The job hands the files over in the
+//! signature for another version are refused. the job hands the files over in the
 //! directory `MARSHAL_UPDATE_FEED_DIR` names, so these tests are ignored by default and
 //! fail when run without it.
 #![cfg(windows)]
@@ -35,11 +35,11 @@ fn read(name: &str) -> Vec<u8> {
 }
 
 /// the update the plugin restores from `feed`, a feed file of the round trip, and the
-/// bytes of the MSI its entry names. The app's own updater configuration is used, with
+/// bytes of the MSI its entry names. the app's own updater configuration is used, with
 /// the throwaway public key in place of the committed one; any version counts as newer,
 /// since the dry run's version is below a mock app's.
-fn update(feed: &str) -> (Update, Vec<u8>) {
-    let public_key = String::from_utf8(read("update.pub")).unwrap();
+fn update(feed: &str, installed_key: &str) -> (Update, Vec<u8>) {
+    let public_key = String::from_utf8(read(installed_key)).unwrap();
     let mut configuration: Value =
         serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
     let mut updater = configuration["plugins"]["updater"].take();
@@ -73,15 +73,15 @@ fn update(feed: &str) -> (Update, Vec<u8>) {
 
 #[test]
 #[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
-fn the_signed_feed_and_msi_are_accepted() {
-    let (update, msi) = update("latest.json");
+fn the_installed_old_key_accepts_the_transition_signature() {
+    let (update, msi) = update("latest.json", "update.pub");
     update.verify(&msi).unwrap();
 }
 
 #[test]
 #[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
 fn a_changed_msi_is_refused() {
-    let (update, mut msi) = update("latest.json");
+    let (update, mut msi) = update("latest.json", "update.pub");
     let last = msi.last_mut().expect("the MSI is not empty");
     *last ^= 1;
     assert!(update.verify(&msi).is_err());
@@ -89,8 +89,26 @@ fn a_changed_msi_is_refused() {
 
 #[test]
 #[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
-fn another_keys_signature_is_refused() {
-    let (update, msi) = update("latest-another-key.json");
+fn the_installed_old_key_refuses_the_new_keys_signature() {
+    let (update, msi) = update("latest-another-key.json", "update.pub");
+    let refusal = update.verify(&msi).unwrap_err();
+    assert!(
+        !matches!(refusal, Error::SignedVersionMismatch { .. }),
+        "{refusal}"
+    );
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn the_installed_new_key_accepts_the_subsequent_signature() {
+    let (update, msi) = update("latest-another-key.json", "other.pub");
+    update.verify(&msi).unwrap();
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn the_installed_new_key_refuses_the_old_keys_signature() {
+    let (update, msi) = update("latest.json", "other.pub");
     let refusal = update.verify(&msi).unwrap_err();
     assert!(
         !matches!(refusal, Error::SignedVersionMismatch { .. }),
@@ -101,7 +119,7 @@ fn another_keys_signature_is_refused() {
 #[test]
 #[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
 fn a_signature_for_another_version_is_refused() {
-    let (update, msi) = update("latest-another-version.json");
+    let (update, msi) = update("latest-another-version.json", "update.pub");
     assert!(matches!(
         update.verify(&msi),
         Err(Error::SignedVersionMismatch { .. })

@@ -100,21 +100,17 @@ checks the download first, and the installer's version is the release's `X.Y.Z`,
 **Release Environment** - the GitHub Environment named `release`, which holds the
 update-feed key's two secrets, the macOS signing secrets and the `MACOS_TEAM_ID`
 variable. It admits `main` only and needs the maintainer's approval for each run.
-`sign-update` is the one job that declares it until M2's signing jobs return. The
-maintainer creates and changes it; agents never do. See
+The maintainer creates and changes it; agents never do. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Update Feed** - `latest.json`, the file of each **Marshal Release** that names its
 version and, per platform, the address of the file to install and its minisign
-signature, which the release run makes with the update-feed key and checks before it
-publishes. The **Marshal App** reads it on the latest release and installs only what
-verifies against the key committed in `tauri.conf.json`. See
-[operations/app.md](./operations/app.md#updates).
+signature. It is the **Marshal App**'s source of update information on the latest
+release.
 
-**Update Drain** - the **Resident Agent**'s wait, at the app's request, for the jobs
-already running to finish before an update installs: it registers no new runner,
-waits for each busy runner's container to exit, at most 6 hours, then ends for the
-update. See [operations/cli.md](./operations/cli.md#the-update-drain).
+**Update Drain** - the **Resident Agent**'s wait, at the **Marshal App**'s request,
+for the jobs already running to finish before an update installs. See
+[operations/cli.md](./operations/cli.md), under The Update Drain.
 
 **Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed
 under: the **CLI**'s macOS binary in the command-line releases, and the Mac app once

@@ -416,7 +416,7 @@ description = "Check the update tools' scripts: the committed tauri-cli checksum
 run = "bash .github/scripts/tests/test-update-tools.sh"
 
 [tasks."check:release-shape"]
-description = "Check that the release workflows keep the shape the release record describes: no job in an Environment or reading a signing secret, and each job's place in the chain"
+description = "Check that the release workflows keep the shape the release record describes: only sign-update declares the release Environment, only its sign step reads the update-feed secrets, and each job keeps its place in the chain"
 run = "node .github/scripts/check-release-shape.mjs"
 
 [tasks."test:release-shape"]
@@ -435,6 +435,8 @@ depends = [
   "test:set-release-version",
   "test:verify-release",
   "test:assemble-release",
+  "test:sign-update",
+  "test:update-tools",
   "check:release-shape",
   "test:release-shape",
   "test:installer-version",

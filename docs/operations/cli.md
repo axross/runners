@@ -4018,7 +4018,7 @@ Each release carries four files, and nothing else:
 
 The `.exe` is the bytes of the built `marshal-app.exe`, a bare file, not an archive,
 and the `.msi` is the installer that holds it unchanged. `latest.json` is the update
-feed, which [The Update Feed in the Release](#the-update-feed-in-the-release)
+feed, which The Update Feed in the Release section below
 describes. `SHA256SUMS` is in the `sha256sum` format, one line for each of the other
 three files. Neither the `.exe` nor the `.msi` is code-signed: Windows signing is deferred until a need arises, such as Smart App
 Control being On, so the MSI raises the prompts that [Installing](#installing)
@@ -4200,7 +4200,7 @@ needs `plan` directly and runs only when the plan job handed out a version:
 2. `build` is the build workflow, which builds and assembles the unsigned files at
    that version into `marshal-release`.
 3. `update-tool` builds the update signer and the feed check, as
-   [The Update Feed in the Release](#the-update-feed-in-the-release) describes.
+   The Update Feed in the Release section below describes.
 4. `sign-update`, under the `release` Environment, signs the build's MSI for the
    update feed and uploads only the detached signature.
 5. `assemble-signed`, where every file of the release meets, needs `plan`, `build`,
@@ -4257,9 +4257,9 @@ Marshal's files, and `where.exe marshal` then finds nothing.
 
 ### The Update Feed in the Release
 
-W4 ([#78](https://github.com/axross/runners/issues/78)) owns these jobs and scripts;
-[App](./app.md#updates) gives what the installed app does with the feed and
-[the key's procedure](./app.md#the-update-feed-key).
+[App](./app.md), under Updates and The Update-Feed Key, owns the installed app's
+behavior and the key procedure. [Security](../conventions/security.md), under
+Updates Come Only From the Signed Feed, owns the release-verification trust rules.
 
 - **`update-tool`** runs on `ubuntu-latest` with `contents: read`, no Environment, no
   secret and no cache. It runs
@@ -4275,8 +4275,9 @@ W4 ([#78](https://github.com/axross/runners/issues/78)) owns these jobs and scri
   job's time in its first run, as the build leg's was.
 - **`sign-update`** runs on `ubuntu-latest` with `contents: read` under the `release`
   Environment, with no checkout; its only actions download and upload artifacts.
-  Each script starts with a `# sign-update: <name>` marker and calls system tools by
-  `$SYSTEM_BIN/<tool>`. The check step refuses unless the MSI's SHA-256 equals the
+  Each script starts with a `# sign-update: <name>` marker. Shell built-ins and base
+  utilities run by name; `awk`, `sha256sum` and `unshare` use `$SYSTEM_BIN/<tool>`.
+  The check step refuses unless the MSI's SHA-256 equals the
   build's `SHA256SUMS` line and `cargo-tauri`'s equals `update-tool`'s output. The
   sign step refuses unless both secrets are set, then runs
   `unshare --map-root-user --net "$RUNNER_TEMP/update-tools/cargo-tauri" signer sign --app-version <version>`
@@ -4287,7 +4288,7 @@ W4 ([#78](https://github.com/axross/runners/issues/78)) owns these jobs and scri
   writes `latest.json` with
   [`write-update-feed.sh`](../../.github/scripts/write-update-feed.sh), one
   `<platform>=<file>=<signature>` argument per signed file, and runs the feed check on
-  it against the committed public key before `assemble-release.sh signed` writes
+  it against the committed release-verification public key before `assemble-release.sh signed` writes
   `SHA256SUMS`. The platform entries are a list, so M4
   ([#90](https://github.com/axross/runners/issues/90)) adds `darwin-aarch64` as one
   more argument, with `sign-update` signing the Mac archive beside the MSI.
@@ -4426,8 +4427,7 @@ The contracts F0 owns are these:
 
 ### Reading a Signature
 
-No file of a release is signed until M2's disk-image pull request. The commands that
-read the command line's signed macOS package are in this document at the
+The commands that read the command line's signed macOS package are in this document at the
 [last command-line release](#the-last-command-line-release)'s tag, under the same
 heading. M2's pull request brings this section back, rewritten for the app and the
 disk image.
@@ -4446,7 +4446,7 @@ points:
   update-signing job, `sign-update`, which roadmap
   [#72](https://github.com/axross/runners/issues/72) adopted, to sign the update
   archive; `assemble-signed` needs both and writes `latest.json`
-  ([The Update Feed in the Release](#the-update-feed-in-the-release)). The archive's
+  (see The Update Feed in the Release above). The archive's
   signature is W4's contract. M2 adds `sign-macos` beside `sign-update` in the shape
   check's rules.
 - **M4** may sign the Mac's update archive in W4's update-signing job.
@@ -4542,7 +4542,7 @@ fails it too.
   `build-update-tools.sh`. `assemble-signed` writes the feed with
   `write-update-feed.sh`, runs the feed check on `dist/latest.json`, and runs
   `assemble-release.sh signed`; nothing in `release.yaml` passes `--public-key`, so
-  the feed is checked against the committed key.
+  the feed is checked against the committed release-verification key.
 - **No step condition.** No step of `update-tool`, `sign-update` or `assemble-signed`
   carries an `if`.
 - **`attest` and `release`.** `attest` holds exactly `id-token: write` and

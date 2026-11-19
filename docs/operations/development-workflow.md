@@ -507,7 +507,7 @@ Do these once, before the first dispatch:
    - **Allow administrators to bypass:** off.
    - **Secrets**, Environment secrets and not repository secrets:
      `UPDATE_FEED_SIGNING_KEY` and `UPDATE_FEED_SIGNING_KEY_PASSWORD`, which
-     [The Update-Feed Key](./app.md#the-update-feed-key) describes, and, for M2,
+     [App](./app.md) describes under The Update-Feed Key, and, for M2,
      `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`,
      `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and
      `MACOS_NOTARY_ISSUER_ID`.
@@ -516,7 +516,7 @@ Do these once, before the first dispatch:
 
    What the secrets hold:
    - The update-feed key and its password, as
-     [The Update-Feed Key](./app.md#the-update-feed-key) records.
+     [App](./app.md) records under The Update-Feed Key.
    - The two Developer ID certificates, Application and Installer, both from the
      Developer ID G2 intermediate. Only the Account Holder of the Apple Developer
      Program creates them. Export each identity as its own `.p12` with the same
@@ -627,7 +627,7 @@ Do these once, before the first dispatch:
 This section is held for M2: no job signs with a Developer ID certificate until M2's
 `sign-macos` returns, and this yearly work applies to it from then. The update-feed
 key `sign-update` uses does not expire;
-[The Update-Feed Key](./app.md#the-update-feed-key) records its rotation.
+[App](./app.md), under The Update-Feed Key, records its rotation.
 
 The Developer ID certificates are expected to last one year, which the maintainer
 confirms from the certificates' dates, and renewing them is yearly work for the

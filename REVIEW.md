@@ -134,7 +134,9 @@ Important; Codex review uses its native priority label.
   are the default runner labels `axpc` and `axmc`, the two committed host labels,
   kept by the maintainer's decision, and the macOS signing team ID and designated
   requirement that a later CLI record may hold, and the maintainer's update-feed
-  public key in `app/crates/app/tauri.conf.json` and the test that pins it, as
+  public key in `app/crates/app/tauri.conf.json`, the separate release-verification
+  public key in `app/crates/feed/release-public-key.txt`, and the tests that pin
+  each, as
   Security records (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
   Verbatim third-party licence and copyright text in the notices under
@@ -306,7 +308,7 @@ Apply the lens for each kind of file in the diff.
   `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi`, the update
   feed `latest.json` and `SHA256SUMS`, such as a helper binary or a command-line
   file, a `latest.json` that is published without passing the feed check against the
-  committed public key, or is outside `SHA256SUMS` and the attestation, an MSI custom action
+  committed release-verification public key, or is outside `SHA256SUMS` and the attestation, an MSI custom action
   that runs code other than the start of the installed app under
   `AUTOLAUNCHAPP=True` and the uninstall's deletion of the HKCU Run value `Marshal`,
   an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade

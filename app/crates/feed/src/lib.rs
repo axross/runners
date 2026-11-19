@@ -2,8 +2,8 @@
 //! check the release run makes of `latest.json` before it publishes it. The app
 //! downloads and verifies through Tauri's updater plugin; this crate holds what the
 //! plugin does not, the download address rule and the committed public key, and the same
-//! signature rules the plugin applies, so the feed check accepts exactly what the app
-//! would.
+//! signature rules the plugin applies. the release CLI supplies its own embedded key,
+//! independent of the app's, so a transition release can rotate the app's key.
 
 use std::collections::BTreeMap;
 use std::fmt;

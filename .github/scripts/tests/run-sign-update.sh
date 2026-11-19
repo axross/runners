@@ -6,25 +6,26 @@
 # update-feed job runs it with the real cargo-tauri and a throwaway key, and
 # test-sign-update.sh with a stand-in signer.
 #
-#   run-sign-update.sh <work directory> <msi> <SHA256SUMS> <cargo-tauri>
+#   run-sign-update.sh <work directory> <SHA256SUMS> <cargo-tauri> <file>...
 #
 # the step values come from the environment: SIGN_VERSION, SIGN_TAURI_CLI_SHA256,
 # SIGN_KEY and SIGN_PASSWORD stand for the job's version, the tool job's hash and
 # the two secrets, and a `${{ }}` this script does not know fails it. SIGN_WORKFLOW
 # names another workflow file, and SIGN_SYSTEM_BIN, when set, is handed to the
 # scripts as SYSTEM_BIN, so a test can put stand-ins in place of system tools.
-# the signature ends up in <work directory>/job/signature, and the script prints
-# its path.
+# the signatures end up in <work directory>/job/signature, and the script prints
+# their paths, one per input file, in the same order.
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-  echo "Usage: run-sign-update.sh <work directory> <msi> <SHA256SUMS> <cargo-tauri>" >&2
+if [[ $# -lt 4 ]]; then
+  echo "Usage: run-sign-update.sh <work directory> <SHA256SUMS> <cargo-tauri> <file>..." >&2
   exit 2
 fi
 work="$1"
-msi="$2"
-sums="$3"
-tool="$4"
+sums="$2"
+tool="$3"
+shift 3
+files=("$@")
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 workflow="${SIGN_WORKFLOW:-${here}/../../workflows/release.yaml}"
@@ -38,7 +39,7 @@ job="${work}/job"
 runner_temp="${work}/runner-temp"
 scripts="${work}/scripts"
 mkdir -p "${job}/unsigned" "${runner_temp}/update-tools"
-cp -- "$msi" "${job}/unsigned/"
+cp -- "${files[@]}" "${job}/unsigned/"
 cp -- "$sums" "${job}/unsigned/SHA256SUMS"
 cp -- "$tool" "${runner_temp}/update-tools/cargo-tauri"
 
@@ -86,6 +87,12 @@ while IFS=$'\t' read -r script names; do
 done < <(jq -r '.[] | select(.kind == "run") | [.script, (.env | keys | join(" "))] | @tsv' "$steps")
 
 signatures=("${job}"/signature/*)
-[[ ${#signatures[@]} -eq 1 && -f "${signatures[0]}" ]] \
-  || refuse "the scripts did not leave exactly one file in signature/"
-echo "${signatures[0]}"
+[[ ${#signatures[@]} -eq ${#files[@]} ]] \
+  || refuse "the scripts did not leave exactly ${#files[@]} files in signature/"
+for file in "${files[@]}"; do
+  signature="${job}/signature/${file##*/}.sig"
+  [[ -f "$signature" ]] || refuse "the scripts left no ${signature}"
+done
+for file in "${files[@]}"; do
+  echo "${job}/signature/${file##*/}.sig"
+done

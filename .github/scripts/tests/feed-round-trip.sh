@@ -10,7 +10,7 @@
 #   feed-round-trip.sh <update tools> <dry run release files> <version> <output>
 #
 # <output> receives what the update-feed-app job hands to the app's updater
-# test: the MSI, update.pub, latest.json, latest-another-key.json and
+# test: the MSI, update.pub, other.pub, latest.json, latest-another-key.json and
 # latest-another-version.json.
 set -euo pipefail
 
@@ -50,13 +50,14 @@ key="$(<"${work}/update.key")"
 line="$(sha256sum "$signer")"
 signature="$(SIGN_VERSION="$version" SIGN_TAURI_CLI_SHA256="${line%% *}" \
   SIGN_KEY="$key" SIGN_PASSWORD="$password" \
-  bash "${here}/run-sign-update.sh" "${work}/sign" "${release}/${msi}" "${release}/SHA256SUMS" "$signer" 2>&1 \
+  bash "${here}/run-sign-update.sh" "${work}/sign" "${release}/SHA256SUMS" "$signer" "${release}/${msi}" 2>&1 \
   | tee -a "$log" | tail -n 1)"
 [[ -f "$signature" ]] || refuse "sign-update's scripts left no signature"
 
 mkdir -p "$output"
 cp -- "${release}/${msi}" "${output}/${msi}"
 cp -- "${work}/update.key.pub" "${output}/update.pub"
+cp -- "${work}/other.key.pub" "${output}/other.pub"
 bash "${scripts}/write-update-feed.sh" "$version" "${output}/latest.json" \
   "windows-x86_64=${output}/${msi}=${signature}" 2>&1 | tee -a "$log"
 "$check" --public-key "${output}/update.pub" "${output}/latest.json" "$version" \

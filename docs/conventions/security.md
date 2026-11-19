@@ -457,24 +457,18 @@ record a change to either workflow, to the build call in
   `@semantic-release/github` skips an asset that is missing rather than failing, so
   the gate is what holds the file set.
 - **The update feed is signed in its own job.** `sign-update` is the one job that
-  declares the `release` Environment and reads a secret. It has no checkout, uses
-  only the artifact actions, runs only the hash-checked `cargo-tauri` and
-  `$SYSTEM_BIN/awk`, `sha256sum` and `unshare`, and refuses to sign unless the MSI
-  matches the build's `SHA256SUMS` line, the signer matches `update-tool`'s output,
-  and both secrets are set. `UPDATE_FEED_SIGNING_KEY` and
-  `UPDATE_FEED_SIGNING_KEY_PASSWORD` reach only its sign step, through `env:`, never a
-  command line, and the signer runs there without a network under
-  `unshare --map-root-user --net`. It uploads only the detached signature.
-  `assemble-signed` writes `latest.json` and checks it with the hash-checked feed
-  check against the committed public key before anything is published; the feed then
-  gets its `SHA256SUMS` line and its attestation. The merge checks run the same
-  scripts with a throwaway key, and [CLI](../operations/cli.md#the-update-feed-in-the-release)
-  describes both.
+  declares the `release` Environment and reads a secret. It has no checkout and
+  permits only artifact actions, the hash-checked `cargo-tauri`, shell built-ins,
+  base utilities and `$SYSTEM_BIN/awk`, `sha256sum` and `unshare`. An MSI or signer hash mismatch, or an
+  empty signing secret, MUST prevent signing. The signer MUST have no network.
+  `UPDATE_FEED_SIGNING_KEY` and `UPDATE_FEED_SIGNING_KEY_PASSWORD` reach only its sign
+  step through `env:`, never a command line. [CLI](../operations/cli.md), under The
+  Update Feed in the Release, owns the jobs, artifacts and merge-check procedure.
 - **Mac signing is held for M2.** No job signs the Mac from W1's installer pull
   request until M2's disk-image pull request brings back `sign-macos` and
-  `verify-macos`; [CLI](../operations/cli.md#signing-held-for-m2) says what returns,
-  and its [Signing Contracts](../operations/cli.md#the-signing-contracts) stay in
-  force. The record below holds for `sign-update` and the jobs M2 brings back:
+  `verify-macos`; [CLI](../operations/cli.md), under Signing, Held for M2, says what
+  returns. The Signing Contracts section there stays in force. The record below
+  holds for `sign-update` and the jobs M2 brings back:
   - **The Environment `release`** is created and maintained by the maintainer.
     Deployment branches are selected branches, `main` only and no tags. Required
     reviewers are the maintainer, with "Prevent self-review" off, because the
@@ -564,12 +558,14 @@ record a change to either workflow, to the build call in
 - **Context values reach a script through `env:`**, never expanded into `run:`.
 - **Pins.** `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`,
   `actions/download-artifact`, and `actions/attest` stay on major tags, under
-  [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). Neither release
-  workflow uses a third-party action, and the one tool the build fetches besides
-  the recorded Rust toolchain and `tauri-cli` exceptions is WiX, pinned under
-  [Pinning Convention](#pinning-convention). `jdx/mise-action` was rejected for Node
-  here: at this repository's pin it caches by default, installs every mise tool, and
-  receives the job token. `actions/setup-node` installs Node `24.21.0`, the version
+  [`actions/*` Stays on Major Tags](#actions-stays-on-major-tags). `release.yaml`'s
+  `update-tool` also uses the pinned `jdx/mise-action` to install only `cargo-deny`,
+  with `install_args: cargo-deny` and `cache: false`, without the Environment.
+  No other release job uses a third-party action. The one tool the build fetches
+  besides the recorded Rust toolchain and `tauri-cli` exceptions is WiX, pinned under
+  [Pinning Convention](#pinning-convention). `jdx/mise-action` was rejected for Node:
+  its defaults cache and install every mise tool, and the action receives the job
+  token. `actions/setup-node` installs Node `24.21.0`, the version
   in `mise.toml`, and the Node download is trusted under the same joint-trust
   decision, not by a checksum; see [Pinning Convention](#pinning-convention).
   `release/package.json` names an exact version of semantic-release and of each
@@ -661,41 +657,40 @@ Residual risks, accepted:
   dispatching needs only that access. That is the account the agents run as. The rule
   above is the only control on agents. The maintainer accepted this in choosing a
   manual dispatch with no ruleset.
-- **A hostile change on main gets signed if it is approved (held for M2 and W4).**
-  Once a signing job returns, it signs whatever the dispatched commit builds, with the maintainer's Developer ID. The
-  control is the check in
-  [Each Release](../operations/development-workflow.md#each-release), before each
-  dispatch and before the approval, that every commit on main since the last `v*`
-  tag came from a merged pull request. A stronger option is a rule on main that
-  requires a pull request, which is the maintainer's choice and is not in place.
-- **One identity can dispatch and approve (held for M2 and W4).** The Environment allows self-approval,
-  because the roadmap requires it and the maintainer is the only reviewer, and agents
-  share the maintainer's GitHub identity. A session could therefore dispatch and
-  approve a signed release. The rule above, which now covers approving a deployment,
-  is the control, and a second reviewer is not an option here.
-- **A certificate or membership lapse stops signing (held for M2 and W4).** The
+- **A hostile change on main gets signed if it is approved.** `sign-update` signs
+  whatever the dispatched commit builds with the update-feed key. M2's
+  `sign-macos` will also sign with the maintainer's Developer ID. The control is the
+  check in [Development Workflow](../operations/development-workflow.md), under
+  Each Release, before dispatch and approval. A stronger option is a rule on main
+  that requires a pull request, which is the maintainer's choice and is not in place.
+- **One identity can dispatch and approve.** The Environment allows self-approval,
+  because the roadmap requires it and the maintainer is the only reviewer, and
+  agents share the maintainer's GitHub identity. A session could therefore dispatch
+  and approve a signed release. The rule above, which covers approving a
+  deployment, is the control, and a second reviewer is not an option here.
+- **A certificate or membership lapse stops Mac signing (held for M2).** The
   Developer ID certificates are expected to last one year, which the maintainer
-  confirms from the certificates' dates, and the signing job refuses an expired one and warns within 90 days.
+  confirms from the certificates' dates. When M2 brings `sign-macos` back, that job
+  refuses an expired certificate and warns within 90 days.
   Signatures made with a secure timestamp stay valid after the certificate expires.
   Whether an older release's package still installs after its Installer certificate
   expires is not confirmed, and Apple's pages disagree, which bears on rolling back
   through that package. A membership lapse leaves signed software working but allows
   no new certificate. [Development
-  Workflow](../operations/development-workflow.md#renewing-the-certificates) records
-  the dates and the renewal.
-- **An early dispatch creates an empty Environment (held for M2 and W4).** Once a
-  signing job declares it again, a dispatch before the maintainer creates the
-  `release` Environment makes GitHub create one with no protection rules and no
-  secrets. The signing job refuses on the empty secrets before it imports
-  anything, and [Before the First
-  Release](../operations/development-workflow.md#before-the-first-release) creates the
-  Environment first. Until the maintainer reports its settings, nothing in the
+  Workflow](../operations/development-workflow.md), under Renewing the Certificates,
+  records the dates and the renewal.
+- **An early dispatch creates an empty Environment.** `sign-update` declares the
+  `release` Environment. A dispatch before the maintainer creates it makes GitHub
+  create one with no protection rules and no secrets. `sign-update` refuses on the
+  empty secrets before running the signer. [Development
+  Workflow](../operations/development-workflow.md), under Before the First Release,
+  owns its setup. Until the maintainer reports its settings, nothing in the
   repository shows that its branch rule and reviewer are in place.
-- **The first signed release after signing returns is its first run (held for M2
-  and W4).** The last command-line release ran F0's signing; M2's or W4's
-  signing job first runs for real at the first release after its pull request, and
-  nothing before merge can exercise it. The stand-in suites and the shape check cover the flow,
-  not Apple's answers. A failure stops that release before its tag.
+- **Production signing is not yet verified.** The last command-line release ran
+  F0's signing. W4's first real production signing run remains unverified; the
+  stand-in suites and the shape check cover the flow, not the production key or
+  `release` Environment. M2's first production Mac signing run will also be its first exercise
+  against Apple's services. A signing failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
   push, move, or delete a `v*` tag that has no published release, `v0.0.0`
   included, and that changes the version semantic-release works out next.
@@ -1263,6 +1258,16 @@ runs; these are the rules it is reviewed against.
   one public key committed there, with `requireSignedVersion`, so the signature's
   trusted comment must name the feed's version. A build with no committed key, or a
   development build at `0.0.0-dev`, never checks.
+- **Separate release trust.** The publication check MUST use the hash-checked feed
+  check with the public key embedded from `app/crates/feed/release-public-key.txt`,
+  not the newly built app's key. The
+  separate source lets a transition app carry a new key while the installed apps
+  and publication check still trust the old signing key. Missing, malformed or
+  wrong release trust MUST prevent publication, with no fallback to the app's key.
+  The release workflow MUST NOT override that key or bypass signature, signed-version,
+  build-hash or release-address checks. Only merge checks use the throwaway-key
+  override; the rotation procedure is in [App](../operations/app.md), under The
+  Update-Feed Key.
 - **Only newer, only from this repository.** The app takes a release only when its
   version is newer than its own, and only when the download address is `https`, on
   `github.com` with no port or credentials, under
@@ -1283,7 +1288,7 @@ Residual risks, accepted:
 - Anyone who can publish a release here and holds the update-feed key can ship code
   every installed app runs. The key is in the `release` Environment, which admits
   `main` only and needs the maintainer's approval for each run; its offline backup,
-  rotation and recovery are in [App](../operations/app.md#the-update-feed-key).
+  rotation and recovery are in [App](../operations/app.md), under The Update-Feed Key.
 - The pinned `tauri-cli` and its locked dependencies run beside the key in
   `sign-update`. The committed archive checksum and the binary's hash between the
   jobs fix what runs, not whether it is trustworthy; the roadmap accepts that, with
@@ -1773,10 +1778,12 @@ designated requirement, which a documentation change records in the CLI document
 after the first signed release as the contract text for later work. The team ID is
 public in every signed file, so recording it discloses nothing; it is not an account
 credential. Another is the maintainer's update-feed public key, committed in
-`app/crates/app/tauri.conf.json` and pinned by the feed crate's configuration test:
-the app verifies every update against it, so it must be in the build, and a public key
-lets no one sign or sign in. Its private key and password are never committed; their
-custody is the feed's pull request's to record.
+`app/crates/app/tauri.conf.json` and the separate release-verification public key in
+`app/crates/feed/release-public-key.txt`, with the tests that pin each. The app and
+publication check need these public values in their builds, and a public key lets
+no one sign or sign in. The sources may differ during rotation. This exception
+permits only those public sources and their pinning tests, never a private key or
+password; their custody is the feed's pull request's to record.
 
 The checked-in licence notices under `app/notices/` reproduce third-party licence
 texts and copyright notices verbatim, as those licences require, including the names
@@ -1794,13 +1801,15 @@ e-mail address of any other kind, or anywhere else, is still a finding.
 token files, and private keys so that a local working file cannot be committed by
 accident; it is a backstop, not the control. The workflows read one repository
 secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
-maintainer. The `release` Environment keeps six Environment secrets, held for M2's
-and W4's signing jobs and read by no job until one returns,
+maintainer. The `release` Environment keeps six Mac signing secrets, held for M2
+and read by no job until its signing job returns:
 `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`,
-`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
-Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
-them, and no value is committed. A secret value is never echoed, passed on a command
-line, or written into an image layer or build cache. Two exceptions for a
+`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`. It also
+keeps the non-secret Environment variable `MACOS_TEAM_ID`. The maintainer creates
+them, and no value is committed. W4's two update-feed Environment secrets,
+`UPDATE_FEED_SIGNING_KEY` and `UPDATE_FEED_SIGNING_KEY_PASSWORD`, reach only
+`sign-update`'s signing step through its `env:`. A secret value is never echoed,
+passed on a command line, or written into an image layer or build cache. Two exceptions for a
 credential on a command line are recorded, both in `sign-macos`, and held with it for
 M2. The password
 arguments of `security` were allowed at the plan gate. The `--key-id` and `--issuer`

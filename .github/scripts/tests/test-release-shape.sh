@@ -204,6 +204,22 @@ expect_fail "assemble-signed that writes no feed" "does not write the feed with 
   "$release" 'bash .github/scripts/write-update-feed.sh' 'bash .github/scripts/other-feed.sh'
 expect_fail "assemble-signed that does not check the feed" "does not run the feed check on dist/latest.json" \
   "$release" '"$check" dist/latest.json' 'echo dist/latest.json'
+expect_fail "assemble-signed with a commented-out feed check" "does not run the feed check on dist/latest.json" \
+  "$release" '"$check" dist/latest.json' '# "$check" dist/latest.json'
+feed_check='"$check" dist/latest.json "$VERSION" unsigned/SHA256SUMS "windows-x86_64=dist/${windows_msi}"'
+guarded_feed_check="${feed_check} || exit 1"
+expect_fail "assemble-signed without the feed check failure guard" "does not run the feed check on dist/latest.json" \
+  "$release" "$guarded_feed_check" "$feed_check"
+expect_fail "assemble-signed with a disabled feed check failure guard" "does not run the feed check on dist/latest.json" \
+  "$release" "$guarded_feed_check" "${feed_check} || exit 0"
+expect_fail "assemble-signed with a successful feed check fallback" "does not run the feed check on dist/latest.json" \
+  "$release" "$guarded_feed_check" "${feed_check} || true"
+expect_fail "assemble-signed that disables errexit before an unguarded feed check" "does not run the feed check on dist/latest.json" \
+  "$release" "$guarded_feed_check" $'set +e\n          '"$feed_check"
+expect_pass_with "assemble-signed with errexit disabled and the feed check failure guard" \
+  "$release" "$guarded_feed_check" $'set +e\n          '"$guarded_feed_check"
+expect_fail "assemble-signed that ignores a failed feed check" "does not run the feed check on dist/latest.json" \
+  "$release" '"windows-x86_64=dist/${windows_msi}"' '"windows-x86_64=dist/${windows_msi}" || true'
 expect_fail "assemble-signed that checks the feed against another key" "the release checks the feed against the committed key" \
   "$release" '"$check" dist/latest.json' '"$check" --public-key other.pub dist/latest.json'
 expect_fail "assemble-signed in unsigned mode" "does not run assemble-release.sh in signed mode" \
@@ -306,6 +322,9 @@ expect_fail "sign-update not after update-tool" "release.yaml sign-update must n
   "$release" "$sign_needs" $'    needs: [plan, build]\n'"$guard"
 expect_fail "sign-update without the guard" "release.yaml sign-update must carry" \
   "$release" "$sign_needs"$'\n' $'    needs: [plan, build, update-tool]\n'
+expect_pass_with "another file in the checked update list" \
+  "$release" '"marshal-${VERSION}-windows-x64.msi" > checked-files' \
+  $'"marshal-${VERSION}-windows-x64.msi" \\\n            "stand-in-update.archive" > checked-files'
 expect_fail "a checkout in sign-update" "release.yaml sign-update: step \"Checkout\" checks out the repository" \
   "$release" "$sign_runner"$'    steps:\n' "$sign_runner"$'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n'
 expect_fail "another action in sign-update" "uses actions/setup-node@v7; only actions/download-artifact and actions/upload-artifact are allowed" \

@@ -1,14 +1,13 @@
 //! `marshal-feed-check [--public-key <file>] <latest.json> <version> <SHA256SUMS>
 //! <platform>=<file>...`: the release run's check of the feed it wrote, before anything is
-//! published. It checks the feed against the public key committed in the app's
-//! configuration, the same key every installed app verifies with, and exits 1 listing
-//! every problem it found. `--public-key` names another key, for the merge checks' feed
-//! signed with a throwaway key; the release run never passes it.
+//! published. its embedded `release-public-key.txt` is independent of the app's key so
+//! an old-key-signed transition can carry a new app key. it exits 1 listing every
+//! problem. `--public-key` is only for throwaway merge checks, never a release run.
 
 use std::path::Path;
 use std::process::ExitCode;
 
-use marshal_feed::{Released, check_feed, committed_public_key, recorded_sha256};
+use marshal_feed::{Released, check_feed, recorded_sha256};
 
 const USAGE: &str = "usage: marshal-feed-check [--public-key <file>] <latest.json> <version> <SHA256SUMS> <platform>=<file>...";
 
@@ -78,7 +77,9 @@ fn run(arguments: &[String]) -> Result<Vec<String>, Vec<String>> {
             .map_err(|_| vec![format!("{file} is not text")])?
             .trim_end()
             .to_string(),
-        None => committed_public_key().map_err(|refusal| vec![refusal.to_string()])?,
+        None => include_str!("../release-public-key.txt")
+            .trim_end()
+            .to_string(),
     };
     let released: Vec<Released<'_>> = loaded
         .iter()
