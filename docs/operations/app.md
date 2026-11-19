@@ -615,12 +615,18 @@ one code object. The name `marshal-app.exe` never collides with a leftover
 
 ## Rolling Back
 
-A rollback uninstalls Marshal and installs the previous release, as
-the Updating, Repairing, Uninstalling and Rolling Back section of [CLI](./cli.md)
-describes. Before the first app release, the previous release is the last
-command-line release. Use that release tag's [CLI Recovery](./cli-recovery.md)
-for CLI installation, and the fixed historical tree it identifies for runtime
-procedures.
+Before uninstalling Marshal, select the target release and verify that it supports
+this host's profile and configuration. If no compatible target is verified, keep
+the installed app. For an app target, follow the Updating, Repairing, Uninstalling
+and Rolling Back section of [CLI](./cli.md).
+
+Before the first app release, the previous release is the last command-line
+release. For a recovery CLI target, open
+`https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`
+before uninstalling, replacing `<version>` with that published release's actual
+version without the `v`. Use that tag's guide for CLI installation and its
+identified fixed historical tree for runtime procedures.
+
 The PowerShell host scripts are gone, so a rollback never restores
 them. Going back from the
 app to the command line takes three things the app does not do for you:

@@ -1037,14 +1037,19 @@ back to, so a host on the first release has none, and a fault in it is fixed for
 in a new release. Pick a quiet time, because quitting Marshal stops its runners and
 a job in flight fails.
 
-1. Roll back with the Windows procedure in
+1. Select the target release and verify that it supports this host's profile and
+   configuration before uninstalling anything. If no compatible target is
+   verified, keep the installed app. For a recovery CLI target, open
+   `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`
+   now, replacing `<version>` with that published release's actual version without
+   the `v`; use that tag's install procedure, not the guide at another ref.
+2. Follow the Windows procedure in
    [CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back): remove the tokens
    in the window only if you will not install Marshal again, quit Marshal, uninstall,
-   then install the previous release's MSI, because the MSI refuses a lower version
-   while a newer one is installed.
-2. When the previous release is the recovery CLI release, use its tag's
-   [CLI Recovery](./cli-recovery.md) install procedure instead, then follow the
-   runtime procedures in the fixed historical tree that guide identifies.
+   then install the selected release's MSI, because the MSI refuses a lower version
+   while a newer one is installed. For a recovery CLI target, install with the
+   target-tag guide you opened in step 1, then follow the runtime procedures in
+   the fixed historical tree that guide identifies.
    Keep the token files until
    the command line's runners work; the command line reads them, and the app's
    tokens stay in Credential Manager.

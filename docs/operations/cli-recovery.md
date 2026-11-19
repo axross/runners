@@ -9,10 +9,10 @@ to dispatch, sign, change settings or operate a host.
 
 ## Release the Fixed CLI
 
-The temporary `release.yaml` keeps seven stages: plan, build, sign-macos,
-verify-macos, assemble-signed, attest and release. The normal app source and
-`release-build.yaml` remain unchanged and tested, but app releases are unavailable
-until the separate restoration PR. This is not a second supported CLI product.
+The Temporary CLI Recovery section of [Security](../conventions/security.md)
+governs the temporary release route. Normal app source and build behavior remain
+available and tested, but app publication is suspended until the separate
+restoration PR. This is not a second supported CLI product.
 
 The build has two source identities:
 
@@ -25,14 +25,8 @@ The build has two source identities:
   independently prove each secondary checkout's input. The build records its
   checked historical HEAD and lock/source identities separately.
 
-The reusable `cli-recovery-build.yaml` checks the historical input before its
-version-only stamp and again after building the production `marshal` target.
-It uses no app library from main and ships no test helper. Its unsigned artifact,
-`marshal-cli-recovery`, is not a signed release. `sign-macos` alone reaches the
-`release` Environment, runs inline system tools without a checkout or package
-manager, and cleans up after success or failure. The unprivileged verification
-job checks the signed bytes, both accepted designated-requirement forms,
-notarization and stapling before checksums, attestation or publication.
+The reusable `cli-recovery-build.yaml` produces the unsigned
+`marshal-cli-recovery` dry-run artifact, not a signed release.
 
 For this bounded release, follow this order:
 
