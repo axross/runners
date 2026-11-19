@@ -382,6 +382,68 @@ expect_fail "a skipped historical input check" "historical source binding must n
 expect_fail "a tolerated historical input failure" "historical source binding must not be skippable" \
   "$release_build" $'      - name: Recheck Historical Input After Build\n' $'      - name: Recheck Historical Input After Build\n        continue-on-error: true\n'
 
+verify_body=$'        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+dependency_verify=$'      - name: Recheck Historical Input After Dependency Checks\n'"$verify_body"
+build_verify=$'      - name: Recheck Historical Input After Build\n'"$verify_body"
+final_verify=$'      - name: Recheck Historical Input After Packaging And Installer Tests\n'"$verify_body"
+prepare_step=$'      - name: Check And Stamp The Historical Input\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n          WORKFLOW_COMMIT: ${{ github.sha }}\n        run: |\n          echo "Current workflow/tag commit: ${WORKFLOW_COMMIT}"\n          bash .github/scripts/cli-recovery/prepare-source.sh prepare historical "$VERSION"\n'
+dependency_check=$'      - name: Check The Historical Licence Source And Duplicate Policy\n'
+production_build=$'      - name: Build The Production CLI\n        run: cargo build --locked --release --bin marshal\n'
+msi_build=$'      - name: Build The Legacy CLI MSI\n'
+msi_test=$'      - name: Test The MSI On The Hosted Runner\n'
+unsigned_upload=$'      - name: Upload The Unsigned CLI And Installer\n'
+
+expect_fail "only the final historical verification removed" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+  "$release_build" "$final_verify" ''
+expect_fail "only the post-build historical verification removed" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+  "$release_build" "$build_verify" ''
+expect_fail "only the post-dependency historical verification removed" "dependencies must verify the historical source binding" \
+  "$release_build" "$dependency_verify" ''
+expect_fail "historical preparation after dependency installation" "dependencies historical source checks must surround" \
+  "$release_build" "$prepare_step" '' \
+  "$release_build" "$dependency_check" "${prepare_step}${dependency_check}"
+expect_fail "historical verification before dependency checks" "dependencies historical source checks must surround" \
+  "$release_build" "$dependency_verify" '' \
+  "$release_build" "$dependency_check" "${dependency_verify}${dependency_check}"
+expect_fail "historical post-build verification before compilation" "build historical source checks must surround cargo build" \
+  "$release_build" "$build_verify" '' \
+  "$release_build" "$production_build" "${build_verify}${production_build}"
+expect_fail "release override tests after the post-build verification" "build historical source checks must surround cargo test" \
+  "$release_build" '        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides' '        run: echo release tests moved' \
+  "$release_build" "$msi_build" $'      - name: Release Override Tests\n        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides\n'"$msi_build"
+expect_fail "final historical verification before packaging" "build historical source checks must surround build-msi.ps1" \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$msi_build" "${final_verify}${msi_build}"
+expect_fail "final historical verification before installer tests" "build historical source checks must surround test-msi-installer.ps1" \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$msi_test" "${final_verify}${msi_test}"
+expect_fail "final historical verification after hashing" 'build historical source checks must surround hash_file "$ASSET"' \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$unsigned_upload" "${final_verify}${unsigned_upload}"
+expect_fail "both historical verifications in the post-build step" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$build_verify" $'      - name: Recheck Historical Input After Build\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: |\n          bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n          bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+for setting in 'if: false' 'continue-on-error: true'; do
+  expect_fail "final historical verification with ${setting}" "historical source binding must not be skippable" \
+    "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n'"        ${setting}"$'\n'"$verify_body"
+done
+expect_fail "a conditional historical dependency job" "dependencies historical source binding must not be skippable" \
+  "$release_build" $'    name: Check Historical CLI Dependencies\n' $'    name: Check Historical CLI Dependencies\n    if: false\n'
+for command in 'if false; then bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"; fi' 'bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION" || true' 'echo bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"'; do
+  expect_fail "final historical verification replaced with ${command}" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+    "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: '"${command}"$'\n'
+done
+expect_fail "final historical verification with a shell that ignores its script" "historical source binding must use bash at the workflow root" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        shell: bash -c true {0}\n'"$verify_body"
+expect_fail "final historical verification in the historical working directory" "historical source binding must use bash at the workflow root" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: historical\n        env:\n          VERSION: ${{ inputs.version }}\n        run: bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+expect_fail "final historical verification with the wrong version" "historical source binding must use bash at the workflow root with the input version" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: .\n        env:\n          VERSION: 1.2.3\n        run: bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+expect_pass_with "renaming the final historical verification" \
+  "$release_build" "$final_verify" $'      - name: Verify Historical Input Before Hashing\n'"$verify_body"
+expect_pass_with "a comment before the final historical verification" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: |\n          # packaging must leave the checked historical input unchanged.\n          bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+
 echo "-- the signing secrets --"
 expect_fail "a signing secret in attest" "only sign-macos may read a signing secret" \
   "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'

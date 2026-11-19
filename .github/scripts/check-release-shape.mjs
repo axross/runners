@@ -1012,7 +1012,8 @@ function checkPackageArguments(where, scripts) {
 function checkHistoricalBuild() {
   for (const id of ["dependencies", "build"]) {
     const job = recoveryBuild.jobs?.[id];
-    const checkouts = stepsOf(job).filter(
+    const steps = stepsOf(job);
+    const checkouts = steps.filter(
       (step) =>
         text(step.uses).startsWith("actions/checkout@") &&
         step.with?.path === "historical",
@@ -1031,6 +1032,7 @@ function checkHistoricalBuild() {
       step.run.includes(".github/scripts/cli-recovery/prepare-source.sh"),
     );
     if (
+      "if" in (job ?? {}) ||
       "continue-on-error" in (job ?? {}) ||
       bindings.some((step) => "if" in step || "continue-on-error" in step)
     ) {
@@ -1038,20 +1040,110 @@ function checkHistoricalBuild() {
         `cli-recovery-build.yaml ${id} historical source binding must not be skippable`,
       );
     }
-    const scripts = scriptsOf(job)
-      .map((step) => step.run)
-      .join("\n");
-    for (const phase of ["prepare", "verify"]) {
+    for (const step of bindings) {
       if (
-        !scripts.includes(
-          `bash .github/scripts/cli-recovery/prepare-source.sh ${phase} historical "$VERSION"`,
-        )
+        step["working-directory"] !== "." ||
+        (step.shell ??
+          job?.defaults?.run?.shell ??
+          recoveryBuild.defaults?.run?.shell) !== "bash" ||
+        step.env?.VERSION !== "${{ inputs.version }}"
       ) {
         problem(
-          `cli-recovery-build.yaml ${id} must ${phase} the historical source binding`,
+          `cli-recovery-build.yaml ${id} historical source binding must use bash at the workflow root with the input version`,
         );
       }
     }
+    const expectedPhases =
+      id === "dependencies"
+        ? ["prepare", "verify"]
+        : ["prepare", "verify", "verify"];
+    const phases = bindings.map((step) => {
+      const lines = codeLines(step.run)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (
+        lines[0] === 'echo "Current workflow/tag commit: ${WORKFLOW_COMMIT}"'
+      ) {
+        lines.shift();
+      }
+      return ["prepare", "verify"].find(
+        (phase) =>
+          lines.length === 1 &&
+          lines[0] ===
+            `bash .github/scripts/cli-recovery/prepare-source.sh ${phase} historical "$VERSION"`,
+      );
+    });
+    for (const phase of ["prepare", "verify"]) {
+      const count = expectedPhases.filter((value) => value === phase).length;
+      if (phases.filter((value) => value === phase).length !== count) {
+        problem(
+          `cli-recovery-build.yaml ${id} must ${phase} the historical source binding in ${count} distinct unconditional step(s)`,
+        );
+      }
+    }
+    if (phases.join() !== expectedPhases.join()) {
+      problem(
+        `cli-recovery-build.yaml ${id} historical source checks must follow ${expectedPhases.join(" -> ")} in distinct steps`,
+      );
+    } else {
+      const checkpoints = bindings.map((step) => steps.indexOf(step));
+      if (
+        checkouts.length === 1 &&
+        steps.indexOf(checkouts[0]) >= checkpoints[0]
+      ) {
+        problem(
+          `cli-recovery-build.yaml ${id} must prepare the historical source binding after its checkout`,
+        );
+      }
+      const stages =
+        id === "dependencies"
+          ? [
+              [
+                "rustup show active-toolchain",
+                "jdx/mise-action@",
+                "cargo fetch --locked",
+                "mise exec cargo-deny -- cargo deny",
+              ],
+            ]
+          : [
+              [
+                "rustup show active-toolchain",
+                "installer-version.sh",
+                "cargo test --locked --release",
+                "cargo build --locked --release --bin marshal",
+              ],
+              [
+                "fetch-wix.sh",
+                "build-msi.ps1",
+                "build-pkg.sh",
+                "test-msi-installer.ps1",
+                "test-pkg-installer.sh",
+              ],
+              ['hash_file "$ASSET"', 'hash_file "$INSTALLER"'],
+            ];
+      for (const [stage, commands] of stages.entries()) {
+        for (const command of commands) {
+          const operations = steps.filter(
+            (step) =>
+              text(step.run).includes(command) ||
+              text(step.uses).startsWith(command),
+          );
+          const at = steps.indexOf(operations[0]);
+          if (
+            operations.length !== 1 ||
+            at <= checkpoints[stage] ||
+            at >= (checkpoints[stage + 1] ?? steps.length)
+          ) {
+            problem(
+              `cli-recovery-build.yaml ${id} historical source checks must surround ${command} in order`,
+            );
+          }
+        }
+      }
+    }
+    const scripts = scriptsOf(job)
+      .map((step) => step.run)
+      .join("\n");
     if (
       id === "dependencies" &&
       !scripts

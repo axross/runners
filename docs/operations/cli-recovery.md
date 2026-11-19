@@ -497,7 +497,11 @@ On Windows, in PowerShell 5.1 or 7:
   installed, runs no `sudo`, and leaves any file at `/usr/local/bin/marshal` in place,
   because the package did not install it. If the block reports such a file and you do
   not want it, remove it with `sudo rm /usr/local/bin/marshal`.
-- **Roll back.** Uninstall, then install the older version, steps 1 to 5. The MSI
+- **Roll back.** Before uninstalling, verify that the older release supports the
+  host's profile and configuration. No verified older M1-capable release is
+  established here for axmc, so this guide provides no supported axmc rollback;
+  keep its current CLI until a compatible baseline is verified. For a supported
+  target, uninstall, then install the older version, steps 1 to 5. The MSI
   refuses a lower version while a newer one is installed, with the message "A newer
   version of marshal is already installed.", and the installed version stays, so
   uninstall first. The pkg does not refuse, as the lower pkg bullet above says, so on
@@ -506,8 +510,10 @@ On Windows, in PowerShell 5.1 or 7:
   The Developer ID certificates are expected to last one year, and whether a
   notarized pkg still installs once its Installer certificate has expired is not
   confirmed, so a rollback through an older release's pkg may fail. The bare-binary
-  route to `v0.1.0` and a newer release stay available.
-- **Roll back to `v0.1.0`.** Uninstall, then use the bare-binary
+  route to a compatible release avoids that certificate risk.
+- **Roll back to `v0.1.0`.** This version predates M1 and refuses `--profile axmc`;
+  do not uninstall axmc's CLI for this route. For a configuration that `v0.1.0`
+  supports, uninstall, then use the bare-binary
   blocks below and add the install directory to the user's `PATH`
   by hand, as the manual install always needed. On Windows, add
   `%LOCALAPPDATA%\Programs\marshal` to the user `Path` under **Settings, System,
@@ -585,8 +591,13 @@ On Windows, in PowerShell 5.1 or 7:
 
 ### Rolling Back to v0.1.0
 
-`v0.1.0` has no installer, so it is installed from a bare binary. If an installer is
-installed, uninstall it first with the uninstall block. On macOS, a remaining
+Before uninstalling, verify that `v0.1.0` supports your configuration. It predates
+M1 and refuses `--profile axmc`, so these blocks are not an axmc rollback. Keep
+axmc's current CLI; no verified compatible rollback baseline is established here.
+
+`v0.1.0` has no installer, so install it from a bare binary only on a supported
+configuration. Remove any installed MSI or pkg with the uninstall block first.
+On macOS, a remaining
 `/usr/local/bin/marshal` comes first on `PATH` unless you add `~/.local/bin` ahead
 of `/usr/local/bin`, so remove it first. The blocks do not touch `PATH`: add
 `%LOCALAPPDATA%\Programs\marshal` to the user `Path` on Windows, or `~/.local/bin`

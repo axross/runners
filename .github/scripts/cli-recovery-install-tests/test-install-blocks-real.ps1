@@ -328,7 +328,11 @@ try {
     $result = Invoke-DocumentedBlock -Id 'windows-uninstall'
     Write-Measured "the uninstall block after that install: $(if ($null -eq $result.Failure) { 'passed' } else { $result.Failure }); the file at the install path afterwards: $(if (Test-Path -LiteralPath $InstalledBinary) { 'present' } else { 'absent' })"
     Assert-That ($null -eq $result.Failure) "the uninstall block passes after the install over the manual copy ($($result.Failure))"
-    Assert-NothingInstalled -Label 'after the uninstall following the install over the manual copy'
+    Assert-That (-not (Test-Path -LiteralPath $InstalledBinary)) 'the uninstall following the install over the manual copy removed marshal.exe'
+    Assert-That ((Get-InstalledProduct).Count -eq 0) 'the uninstall following the install over the manual copy removed the product'
+    $remainingPathEntries = Get-InstallDirectoryPathEntry
+    Write-Measured "the install directory is on the user PATH after that uninstall $($remainingPathEntries.Count) time(s)"
+    Assert-That ($remainingPathEntries.Count -eq 1 -and $remainingPathEntries[0] -ceq '%LOCALAPPDATA%\Programs\marshal') 'the uninstall removed the MSI PATH entry and kept the manual entry'
     Write-Output 'All Windows install block checks passed.'
 } finally {
     if ($cleanupArmed) {
