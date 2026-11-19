@@ -635,6 +635,7 @@ runs a line that starts with `#` as a command unless `interactive_comments` is s
   version=0.1.0
   asset="marshal-${version}-macos-arm64"
   work="$(mktemp -d)" || refuse "no temporary directory"
+  trap 'rm -rf "$work"' EXIT
   cd "$work"
 
   gh release download "v${version}" --repo axross/runners --pattern "$asset" --pattern SHA256SUMS \
@@ -702,61 +703,65 @@ On Windows, in PowerShell:
   try {
     $work = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName()))
   } catch { Refuse "no temporary directory: $_" }
-  $file = Join-Path $work $asset
-  $sums = Join-Path $work 'SHA256SUMS'
-
-  gh release download "v$version" --repo axross/runners --pattern $asset --pattern SHA256SUMS --dir $work
-  if ($LASTEXITCODE -ne 0) { Refuse 'the release files could not be downloaded' }
-
   try {
-    $listed = @(Get-Content -LiteralPath $sums | Where-Object { ($_ -split '\s+')[1] -eq $asset })
-    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
-  } catch { Refuse "$asset or SHA256SUMS could not be read: $_" }
-  if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $actual) { Refuse "$asset does not match SHA256SUMS" }
+    $file = Join-Path $work $asset
+    $sums = Join-Path $work 'SHA256SUMS'
 
-  $ref = gh api "repos/axross/runners/git/ref/tags/v$version"
-  if ($LASTEXITCODE -ne 0) { Refuse "the tag v$version could not be read" }
-  $object = ($ref | ConvertFrom-Json).object
-  if ($object.type -eq 'tag') {
-    $ref = gh api "repos/axross/runners/git/tags/$($object.sha)"
-    if ($LASTEXITCODE -ne 0) { Refuse "the annotated tag v$version could not be read" }
+    gh release download "v$version" --repo axross/runners --pattern $asset --pattern SHA256SUMS --dir $work
+    if ($LASTEXITCODE -ne 0) { Refuse 'the release files could not be downloaded' }
+
+    try {
+      $listed = @(Get-Content -LiteralPath $sums | Where-Object { ($_ -split '\s+')[1] -eq $asset })
+      $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+    } catch { Refuse "$asset or SHA256SUMS could not be read: $_" }
+    if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $actual) { Refuse "$asset does not match SHA256SUMS" }
+
+    $ref = gh api "repos/axross/runners/git/ref/tags/v$version"
+    if ($LASTEXITCODE -ne 0) { Refuse "the tag v$version could not be read" }
     $object = ($ref | ConvertFrom-Json).object
-  }
-  if ($object.type -ne 'commit') { Refuse "v$version does not resolve to a commit" }
-  $commit = $object.sha
-
-  $comparison = gh api "repos/axross/runners/compare/main...$commit" --jq .status
-  if ($LASTEXITCODE -ne 0) { Refuse "$commit could not be compared with main" }
-  if ($comparison -notin 'identical', 'behind') { Refuse "$commit is not on main ($comparison)" }
-  Write-Host "$commit is on main."
-
-  gh attestation verify $file --repo axross/runners `
-    --signer-workflow axross/runners/.github/workflows/release.yaml `
-    --source-ref refs/heads/main --source-digest $commit `
-    --deny-self-hosted-runners
-  if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
-
-  try { $downloaded = & $file --version } catch { Refuse "the downloaded binary does not run: $_" }
-  if ($LASTEXITCODE -ne 0 -or "$downloaded" -ne "marshal $version") { Refuse "the downloaded binary is not marshal ${version}: $downloaded" }
-
-  $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
-  $target = Join-Path $directory 'marshal.exe'
-  if (Test-Path -LiteralPath $target) {
-    $stopped = & {
-      $ErrorActionPreference = 'Continue'
-      (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    if ($object.type -eq 'tag') {
+      $ref = gh api "repos/axross/runners/git/tags/$($object.sha)"
+      if ($LASTEXITCODE -ne 0) { Refuse "the annotated tag v$version could not be read" }
+      $object = ($ref | ConvertFrom-Json).object
     }
-    if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
-  }
-  try {
-    New-Item -ItemType Directory -Force -Path $directory | Out-Null
-    Copy-Item -LiteralPath $file -Destination "$target.new" -Force
-    Move-Item -LiteralPath "$target.new" -Destination $target -Force
-  } catch { Refuse "the binary could not be installed in ${directory}: $_" }
+    if ($object.type -ne 'commit') { Refuse "v$version does not resolve to a commit" }
+    $commit = $object.sha
 
-  try { $installed = & $target --version } catch { Refuse "the installed binary does not run: $_" }
-  if ($LASTEXITCODE -ne 0 -or "$installed" -ne "marshal $version") { Refuse "the installed binary is not marshal ${version}: $installed" }
-  Write-Host "Installed marshal $version at $target."
+    $comparison = gh api "repos/axross/runners/compare/main...$commit" --jq .status
+    if ($LASTEXITCODE -ne 0) { Refuse "$commit could not be compared with main" }
+    if ($comparison -notin 'identical', 'behind') { Refuse "$commit is not on main ($comparison)" }
+    Write-Host "$commit is on main."
+
+    gh attestation verify $file --repo axross/runners `
+      --signer-workflow axross/runners/.github/workflows/release.yaml `
+      --source-ref refs/heads/main --source-digest $commit `
+      --deny-self-hosted-runners
+    if ($LASTEXITCODE -ne 0) { Refuse 'the attestation does not verify' }
+
+    try { $downloaded = & $file --version } catch { Refuse "the downloaded binary does not run: $_" }
+    if ($LASTEXITCODE -ne 0 -or "$downloaded" -ne "marshal $version") { Refuse "the downloaded binary is not marshal ${version}: $downloaded" }
+
+    $directory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
+    $target = Join-Path $directory 'marshal.exe'
+    if (Test-Path -LiteralPath $target) {
+      $stopped = & {
+        $ErrorActionPreference = 'Continue'
+        (& $target stop 2>&1 | ForEach-Object { "$_" }) -join "`n"
+      }
+      if ($LASTEXITCODE -ne 0 -and $stopped.Trim() -ne 'No instance is running.') { Refuse "the instance did not stop: $stopped" }
+    }
+    try {
+      New-Item -ItemType Directory -Force -Path $directory | Out-Null
+      Copy-Item -LiteralPath $file -Destination "$target.new" -Force
+      Move-Item -LiteralPath "$target.new" -Destination $target -Force
+    } catch { Refuse "the binary could not be installed in ${directory}: $_" }
+
+    try { $installed = & $target --version } catch { Refuse "the installed binary does not run: $_" }
+    if ($LASTEXITCODE -ne 0 -or "$installed" -ne "marshal $version") { Refuse "the installed binary is not marshal ${version}: $installed" }
+    Write-Host "Installed marshal $version at $target."
+  } finally {
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 ```
 

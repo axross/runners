@@ -270,11 +270,8 @@ jobs:
               missing="${missing} xcrun:${tool}"
             fi
           done
-          base64_path="$(command -v base64)" || base64_path=""
-          if [[ -n "$base64_path" && "$(printf 'dGVzdA==' | base64 --decode)" == "test" ]]; then
-            found="${found} base64=${base64_path}"
-          else
-            missing="${missing} base64:--decode"
+          if [[ "$(printf 'dGVzdA==' | /usr/bin/openssl enc -base64 -d -A)" != "test" ]]; then
+            missing="${missing} openssl:base64-decode"
           fi
           if [[ "$(/usr/bin/shasum -a 256 </dev/null)" != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855* ]]; then
             missing="${missing} shasum:-a-256"

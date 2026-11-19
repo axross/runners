@@ -162,6 +162,7 @@ function Open-Case {
 }
 
 function Complete-Case {
+    Assert-CleanTemp
     if ($script:Failures -gt $script:FailuresAtStart) {
         Write-Output "not ok $($script:CaseName)"
     } else {
@@ -574,6 +575,15 @@ Initialize-Bare
 Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value ('0' * 64 + "  $BareAsset")
 Invoke-Block -Id 'windows-bare'
 Assert-Refused "$BareAsset does not match SHA256SUMS"
+Assert-Absent (Join-Path (& $ManualDirectory) 'marshal.exe')
+Assert-NotCalled 'gh attestation'
+Complete-Case
+
+Open-Case 'bare binary: release files that cannot be downloaded'
+Initialize-Bare
+$script:Scenario.DownloadFail = $true
+Invoke-Block -Id 'windows-bare'
+Assert-Refused 'the release files could not be downloaded'
 Assert-Absent (Join-Path (& $ManualDirectory) 'marshal.exe')
 Assert-NotCalled 'gh attestation'
 Complete-Case

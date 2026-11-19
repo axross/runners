@@ -212,6 +212,12 @@ case "$tool" in
     ;;
   openssl)
     case "$1" in
+      enc)
+        [[ "$*" == "enc -base64 -d -A" ]] || exit 91
+        encoded="$(cat)"
+        [[ "$encoded" != *$'\n'* && "$encoded" != *$'\r'* ]] || exit 91
+        printf '%s' "$encoded" | base64 --decode
+        ;;
       rand) echo "$KEYCHAIN_PASSWORD" ;;
       x509)
         kind=Application
@@ -619,6 +625,10 @@ reset_case
 run_case "a passing run's outputs, the signed files and the notary log" pass "Submission ${submission} was accepted." some check_outputs
 reset_case
 run_case "the notary log upload step reads the log's directory" pass "" some check_upload_path
+reset_case
+s_application_p12="${secret_application:0:8}"$'\n'"${secret_application:8}"
+s_installer_p12="${secret_installer:0:8}"$'\r\n'"${secret_installer:8}"
+run_case "a passing run with LF and CRLF-wrapped P12 secrets" pass "Imported the Developer ID G2 certificate and both identities." some
 
 echo "-- refusals before any security call --"
 for name in MACOS_APPLICATION_P12_BASE64 MACOS_INSTALLER_P12_BASE64 MACOS_P12_PASSWORD MACOS_NOTARY_KEY_P8 MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID MACOS_TEAM_ID; do

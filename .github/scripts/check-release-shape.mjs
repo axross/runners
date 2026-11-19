@@ -101,7 +101,6 @@ const ALLOWED_COMMANDS = new Set([
   "cp",
   "mv",
   "chmod",
-  "base64",
   "mktemp",
   "find",
   "sort",

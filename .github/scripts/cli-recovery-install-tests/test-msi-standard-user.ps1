@@ -18,9 +18,9 @@
     Windows Server image blocks a non-elevated per-user install (msiexec exits
     1625), so the script prints the Windows Installer policy as found, sets the
     DisableMSI policy value to 0 for the run, and restores it at the end. it needs
-    an elevated shell to create the user, and removes the user at the end. it refuses
-    to run anywhere but a GitHub Actions runner, because it creates and deletes a
-    local user and a folder under Public.
+    an elevated shell on a disposable GitHub-hosted Windows runner. an existing
+    test account or staging path is a refusal, not permission to replace it;
+    cleanup removes only the account and staging folder this invocation created.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
@@ -30,8 +30,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if ($env:GITHUB_ACTIONS -ne 'true') {
-    [Console]::Error.WriteLine('error: this test creates and deletes a local user and a folder under Public, so it runs only on a GitHub Actions runner (GITHUB_ACTIONS=true).')
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
+    $env:RUNNER_OS -ne 'Windows' -or [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    [Console]::Error.WriteLine('error: this test creates a local user and a folder under Public and temporarily changes Windows Installer policy, so it requires a disposable GitHub-hosted Windows runner (GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, RUNNER_OS=Windows).')
     exit 2
 }
 
@@ -376,19 +377,23 @@ foreach ($character in $password.ToCharArray()) { $secure.AppendChar($character)
 $secure.MakeReadOnly()
 $policyBefore = $null
 $policyTouched = $false
+$userCreated = $false
+$stagingCreated = $false
 $runFailure = $null
 $restoreFailure = $null
 try {
-    if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
+    if (Get-LocalUser -ErrorAction Stop | Where-Object { $_.Name -eq $UserName }) { throw "refused: the local user $UserName already exists" }
+    if (Test-Path -LiteralPath $Staging -ErrorAction Stop) { throw "refused: the staging path $Staging already exists" }
     $null = New-LocalUser -Name $UserName -Password $secure -AccountNeverExpires -PasswordNeverExpires -Description 'standard user for the marshal install test'
+    $userCreated = $true
     $users = Get-LocalGroup -SID 'S-1-5-32-545'
     Add-LocalGroupMember -Group $users -Member $UserName
     $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
     $members = @(Get-LocalGroupMember -Group $administrators | ForEach-Object { $_.Name })
     if (@($members | Where-Object { $_ -like "*\$UserName" }).Count -ne 0) { throw "$UserName is an administrator" }
 
-    if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $Staging | Out-Null
+    New-Item -ItemType Directory -Path $Staging -ErrorAction Stop | Out-Null
+    $stagingCreated = $true
     foreach ($name in $MsiName, 'SHA256SUMS') { Copy-Item -LiteralPath (Join-Path $ReleaseDirectory $name) -Destination $Staging }
     Copy-Item -LiteralPath $Document -Destination (Join-Path $Staging 'cli.md')
     Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'tests/install-block-helpers.ps1') -Destination $Staging
@@ -454,9 +459,11 @@ try {
             Write-Output "could not restore the Windows Installer policy DisableMSI: $($_.Exception.Message)"
         }
     }
-    Save-InstallerLog -Source $Staging -Destination $LogDirectory
-    if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
-    if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($userCreated) { Remove-LocalUser -Name $UserName }
+    if ($stagingCreated) {
+        Save-InstallerLog -Source $Staging -Destination $LogDirectory
+        Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
     # a throw here replaces the failure in flight, so the message carries both.
     if ($null -ne $restoreFailure) {
         $original = if ($null -ne $runFailure) { "; the run had failed first: $($runFailure.Exception.Message)" } else { '' }

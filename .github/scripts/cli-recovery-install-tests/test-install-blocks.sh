@@ -49,7 +49,13 @@ commit_sha=0123456789abcdef0123456789abcdef01234567
 failures=0
 cases=0
 
-cp "${here}/standin-gh.sh" "${stand_ins}/gh"
+{
+  cat <<'STANDIN'
+#!/usr/bin/env bash
+echo "gh working directory $PWD" >>"$STANDIN_LOG"
+STANDIN
+  cat "${here}/standin-gh.sh"
+} >"${stand_ins}/gh"
 
 # STANDIN_SUDO_RM_FAIL and STANDIN_SUDO_FORGET_FAIL make sudo rm and sudo pkgutil
 # --forget fail without running them.
@@ -231,13 +237,16 @@ assert_installs_nothing() {
 assert_exists() { [[ -e "$1" ]] || fail "$1 does not exist"; }
 assert_absent() { [[ ! -e "$1" && ! -L "$1" ]] || fail "$1 exists"; }
 
-# the directory the block passed to `gh release download --dir`, which is its
-# mktemp -d directory wherever mktemp put it. empty when the block never got that far.
+# macOS mktemp can ignore TMPDIR, so use the recorded --dir or gh working directory.
 recorded_work_dir() {
   local line
   line="$(grep -F -e "gh release download " "$STANDIN_LOG" | head -n 1)" || true
-  [[ "$line" == *" --dir "* ]] || return 0
-  printf '%s' "${line##* --dir }"
+  if [[ "$line" == *" --dir "* ]]; then
+    printf '%s' "${line##* --dir }"
+  else
+    line="$(grep -F -e "gh working directory " "$STANDIN_LOG" | head -n 1)" || true
+    printf '%s' "${line#gh working directory }"
+  fi
 }
 
 # the destination of the recorded `cp <source> <destination>` call.
@@ -261,6 +270,7 @@ assert_clean_temp() {
 }
 
 finish_case() {
+  assert_clean_temp
   if [[ $failures -gt $failures_at_start ]]; then
     echo "not ok ${case_name}"
   else
@@ -663,6 +673,15 @@ prepare_bare
 printf '%s  %s\n' "0000000000000000000000000000000000000000000000000000000000000000" "$bare_asset" >"${STANDIN_RELEASE}/SHA256SUMS"
 run_block macos-bare
 assert_refused "does not match SHA256SUMS"
+assert_absent "${case_dir}/${bare_target}"
+assert_not_called "gh attestation"
+finish_case
+
+begin_case "bare binary: release files that cannot be downloaded"
+prepare_bare
+export STANDIN_DOWNLOAD_FAIL=1
+run_block macos-bare
+assert_refused "the release files could not be downloaded"
 assert_absent "${case_dir}/${bare_target}"
 assert_not_called "gh attestation"
 finish_case

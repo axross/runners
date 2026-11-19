@@ -187,6 +187,8 @@ expect_fail "sign-macos calling security by name" "calls security by name, not b
   "$release" "$create_keychain" 'security create-keychain'
 expect_fail "sign-macos calling codesign through a literal path" "runs /usr/bin/codesign" \
   "$release" '"$SYSTEM_BIN/codesign" --force' '/usr/bin/codesign --force'
+expect_fail "sign-macos decoding a secret through PATH" "runs base64" \
+  "$release" "$import_echo" $'          printf \'%s\' "$MACOS_APPLICATION_P12_BASE64" | base64 --decode >/dev/null\n'"$import_echo"
 expect_fail "sign-macos calling a tool after a pipe by name" "calls openssl by name" \
   "$release" '"$SYSTEM_BIN/openssl" rand -hex 24)"' $'"$SYSTEM_BIN/openssl" rand -hex 24 | openssl base64)"'
 expect_fail "sign-macos calling a tool in a command substitution by name" "calls shasum by name" \
