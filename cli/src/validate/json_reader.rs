@@ -134,6 +134,7 @@ pub(crate) fn key_name(key: Key) -> &'static str {
         Key::MountPath => "mountPath",
         Key::SchemaVersion => "schemaVersion",
         Key::RoutingLabel => "routingLabel",
+        Key::ScaleSet => "scaleSet",
         Key::Lifecycle => "lifecycle",
         Key::StartAtLogin => "startAtLogin",
         Key::StartRunnersOnLaunch => "startRunnersOnLaunch",

@@ -953,7 +953,7 @@ later host:
 - Multiple execution pools for one repository MUST use the same token file;
   entries for different repositories MUST NOT share it. Extra pools do not expand
   the token's repository authority.
-- A registration is made with the entry's own token and carries `self-hosted`, the
+- An always-on registration is made with the entry's own token and carries `self-hosted`, the
   host's platform labels, and the entry's `labels`, so a job's runner is
   identifiable. An axpc pool carries `self-hosted`, `linux`, and `x64`, and its
   `labels` default to `axpc` when absent or empty. An axmc pool carries
@@ -984,7 +984,7 @@ later host:
   environment variable, set only in the process that starts the container and
   passed to `docker run` by name. It MUST NOT be placed on a command line, in a log
   line, or in an image layer.
-- The CLI's registration request (see [CLI](../operations/cli.md#registration)) is
+- The CLI's always-on registration request (see [CLI](../operations/cli.md#registration)) is
   one HTTPS `POST` to `https://api.github.com`, and the agent's GitHub status reads
   (see [CLI](../operations/cli.md#github-status)) are `GET`s there through the same
   client; neither follows a redirect, so a redirect cannot carry the token to
@@ -999,8 +999,9 @@ later host:
   `start` and `build` run, and a release build always runs `docker`. The JIT
   variable is removed from the environment of every `docker` client but the one
   that starts the container.
-- Volume and container names start with the entry's `name`, which the operator
-  sets. An entry's volumes are mounted only into its own containers. Two entries
+- Volume names and always-on container names start with the entry's `name`, which
+  the operator sets. On-demand names follow the scale-set rules below; volume
+  ownership still follows the logical pool. An entry's volumes are mounted only into its own containers. Two entries
   whose names are equal, or where one is the other followed by a hyphen, are
   rejected, because one would claim the other's containers and volumes.
   Stale-container cleanup removes only containers matching the entry's own name
@@ -1014,6 +1015,80 @@ later host:
   step.
 - `docker run` uses `--pull never`, so a missing local image fails instead of
   pulling a same-named public image.
+
+### On-Demand Scale Sets Keep Repository and Host Boundaries
+
+The Windows resident agent uses repository-level runner scale sets, with a
+hand-written client on the library's existing HTTP, TLS and JSON dependencies, not
+a third-party scale-set crate or a credential-holding helper process. Mac
+on-demand pools remain rejected; the existing Linux and native macOS always-on
+runtime and VM ownership rules do not change. The on-demand section of
+[CLI](../operations/cli.md) owns the configuration, listener and recovery procedure.
+
+- An on-demand pool MUST use only its repository's fine-grained token with
+  Administration: Read and write; Actions: read remains optional under the token
+  permission rule below. No classic token, GitHub App or organization token is
+  used. The scale set uses runner group 1. Finding or creating it, opening its session, obtaining JIT
+  configurations, and listing, reconciling and deleting runner registrations MUST
+  stay within that pool's repository. Cleanup authority does
+  not extend to all runners that the token could delete.
+- The scale-set name MUST be the set's only label. Marshal MUST check the sole
+  label on both lookup and creation, ignoring case, before opening any session,
+  including a recreated session. An empty, extra or different label rejects
+  startup without changing or deleting the set. Adding `self-hosted`, the host
+  routing label, platform labels or a pool's aliases would let generic workflows
+  reach a scale set they did not name; it is not a routing fallback.
+- The scale-set name starts with the host's `routing_label` and a hyphen. The
+  conservative character, length and collision rules in the CLI schema keep
+  ownership unambiguous across the host, even when logical pool names and
+  scale-set aliases differ. The runner and job container use
+  `<scale-set>-<slot>-<yyyyMMddHHmmssfff>`, with exactly 17 ASCII UTC timestamp
+  digits. The runtime MUST bind that identity to the configured logical pool and
+  slot for prepare, launch, status, stop and release; an alias MUST NOT become a
+  different pool's identity or volume namespace.
+- Startup runner cleanup MUST remove only offline runners whose whole name
+  matches that pool's scale-set runner-name format. It MUST NOT delete online
+  runners or claim another set by prefix alone. Job-container cleanup uses the
+  same whole-name rule and retains the configured logical pool's older always-on
+  container cleanup under the existing diagnostics rules. Registration cleanup
+  after a job, failed launch, abnormal exit or stop MUST use the exact owned
+  runner ID and name. An uncertain JIT result is reconciled by that attempt's
+  exact name before another registration. Unconfirmed deletion MUST stay visible
+  as incomplete cleanup with its non-secret pending identity, not as proof of
+  zero registrations. The existing stop deadline MUST NOT be extended.
+- Tart job VMs retain `marshal-job-<logical-pool>-<slot>-<yyyyMMddHHmmssfff>` and
+  their configured-logical-pool cleanup boundary. Scale-set names MUST NOT replace
+  logical pool names in VM lookup or cleanup, and golden, build and unrelated VMs
+  MUST NOT be admitted by a broader match. Runner and VM timestamps need not be
+  equal. This constraint does not enable Mac on-demand operation.
+- The repository token and registration-token exchange MUST go only to
+  `api.github.com`. Admin and queue credentials MUST go only to the URLs GitHub returns, using HTTPS and a
+  host equal to `actions.githubusercontent.com` or ending in
+  `.actions.githubusercontent.com`. The suffix MUST match a DNS label boundary:
+  `xactions.githubusercontent.com` is not allowed. This admits the service host
+  and `broker.actions.githubusercontent.com`, not arbitrary GitHub-related hosts.
+  Redirects MUST stay off. Responses retain the 1 MiB limit and the connection
+  limit; the broker poll has a separate timeout longer than its 50 s hold. Only a
+  debug build may use a loopback fake; a release build MUST ignore that override.
+- The registration token, admin token, queue token and JIT configuration MUST be
+  held only in the agent's in-memory secret type, never persisted as service
+  credentials, returned on the control channel, logged, shown, passed on a command
+  line or written to a file or image. The JIT configuration reaches the runner
+  through the existing runtime handoff, not a new storage path; the documented
+  Docker environment exposure still applies. Only the repository token belongs
+  in the operating system's token store. Non-secret exact runner names and IDs
+  may be tracked for cleanup; a service URL, session credential or response body
+  MUST NOT appear in a view or error.
+- Before every scale-set JIT registration the agent MUST reread the token store
+  and bind cached service credentials to the token that produced them. Replacement
+  invalidates old credentials even before expiry; removal or any store failure
+  MUST prevent registration through a cache hit. Already running jobs retain
+  their original JIT configuration and lifecycle rules.
+- Stop and update drain MUST admit no new work. Session close runs best-effort
+  beside the existing stop sequence, within 5 s, and MUST NOT delay its steps.
+  Removing or renaming a pool MUST NOT delete its scale set automatically; queued
+  workflows and other operators may still refer to it. The operator deletes an
+  unwanted set manually after stopping its workflows and listener.
 
 ## A Token Carries Only Its Pool Kind's Permissions
 

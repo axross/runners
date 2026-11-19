@@ -11,18 +11,66 @@ mod support;
 use std::time::Duration;
 
 use marshal_cli::runtime::backend::{
-    BackendError, ContainerSpec, DiagnosticRecord, ExportOutcome, Mount,
+    BackendError, ContainerSpec, DiagnosticRecord, ExportOutcome, JobHost, Mount,
 };
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::clock::SystemClock;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, FakeRegistrar, MemoryLog};
 use marshal_cli::runtime::log::Log;
 use marshal_cli::runtime::registration::RegistrationError;
-use marshal_cli::runtime::worker::{run_slot, stop_channel};
+use marshal_cli::runtime::worker::{Services, run_one_job_with, run_slot, stop_channel};
 use support::{TempDir, slot_spec, write_token_file};
 
 const TOKEN: &str = "ghp_slottoken";
 const START: u64 = 1_709_618_828_009;
+
+#[tokio::test(flavor = "current_thread")]
+async fn one_admitted_job_uses_the_alias_but_keeps_its_logical_host_and_never_replaces_it() {
+    let rig = Rig::new();
+    let mut slot = slot_spec(rig.scratch.path().join("token"));
+    slot.scale_set = Some("axpc-work".to_string());
+    let (stop, receiver) = stop_channel();
+    let services = Services {
+        backend: &rig.backend,
+        clock: &rig.clock,
+        registrar: &rig.registrar,
+        tokens: &marshal_cli::runtime::token::TokenFiles,
+        log: &rig.log,
+        board: &rig.board,
+        drain: None,
+        stop_times: marshal_cli::instance::lifecycle::StopTimes::default(),
+    };
+    run_one_job_with(&slot, &services, receiver).await.unwrap();
+    assert!(!*stop.borrow());
+    let registrations = rig.registrar.seen.borrow();
+    assert_eq!(registrations.len(), 1);
+    assert_eq!(registrations[0].name, "axpc-work-2-20240305060708009");
+    let runs: Vec<_> = rig
+        .backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| {
+            if let Call::RunContainer(spec) = call {
+                Some(spec)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].name, registrations[0].name);
+    assert_eq!(runs[0].mounts, slot.mounts);
+    let hosts = &rig.backend.state.borrow().host_calls;
+    let logical = JobHost {
+        pool: slot.pool.clone(),
+        slot: slot.number,
+    };
+    assert!(hosts.iter().any(|call| matches!(call,
+        marshal_cli::runtime::fake::HostCall::Prepare(request) if request.host == logical)));
+    assert!(hosts.iter().any(|call| matches!(call,
+        marshal_cli::runtime::fake::HostCall::Release(host, _) if *host == logical)));
+    assert!(rig.backend.state.borrow().hosts.is_empty());
+}
 
 struct Rig {
     scratch: TempDir,

@@ -743,7 +743,7 @@ While the main window is shown and not minimized, the session opens a second
 connection to the agent and holds the `github` subscription on it, renewing it every
 30 s and subscribing again when the agent answers `not_subscribed`. Hiding or
 minimizing the window closes that connection, which ends the subscription, so the
-agent asks GitHub only while someone can see the answer; [CLI](./cli.md#github-status)
+agent collects GitHub display status only while someone can see the answer; [CLI](./cli.md#github-status)
 owns the topic and what the agent does with it. The app tells the session when the
 window is shown, hidden, minimized or restored, from the window's events and from
 every place it shows or hides it.
@@ -790,6 +790,39 @@ column, the link's Tab stop, name and focus move, and `tests/ipc.rs` that showin
 hiding the window opens and ends the subscription and that the opener plugin's own
 commands are refused.
 
+## On-Demand Pools in the Windows Window
+
+A pool with `scale_set` adds a text line to its existing card:
+"On demand · `<scale set>` · `<listener state>`". While listening with the window
+subscribed to `github`, it adds "`<n>` assigned" from that pool's `scale_sets`
+entry. The assigned, running and registered-idle counts come from the listener's
+existing session statistics; showing them makes no extra display request. The
+entry can exist without a repository display entry, and an unanswered initial
+session is not a measured zero. The `repositories` and `budget` scopes keep their
+existing meanings.
+
+The listener states are listening, another listener, rejected, store error,
+backing off and stopped. The card shows the applicable non-secret reason, HTTP
+status, refused host, or token-store error kind and code. A label mismatch says
+"scale-set label mismatch", without inventing an HTTP status. Incomplete cleanup
+keeps the exact pending non-secret runner identities visible; a stopped container
+is not evidence that GitHub has removed the registration. Listener-state changes
+use the existing status announcements without moving focus. There is no new
+layout, control or view.
+
+The listener belongs to the resident agent, not the window's display connection.
+Hiding or minimizing the window ends display collection but jobs still start.
+**Stop All**, **Start All**, **Quit** and update drain retain their existing
+lifecycle behavior. The on-demand section of [CLI](./cli.md) owns admission,
+failures, token refresh, cleanup and manual scale-set deletion;
+[Windows Runner Host](./windows-runner-host.md) gives the operator setup.
+
+This section describes the Windows implementation contract, not a live product
+verification result. Native-Windows rendering of every listener state, its status
+announcement and hidden-window job delivery remain unverified here. It does not
+add Mac on-demand support or change Mac always-on pools. The Mac follow-up waits
+for both the Windows pull request to merge and M2 (#84) to close as completed.
+
 ## Sections Other Children Add
 
 Each child below adds its own section to this document, with the contract it owns,
@@ -801,6 +834,7 @@ and does not edit another's:
 | K1    | The TOML configuration, the file's status in the footer, and running on the last valid configuration          |
 | W4    | Automatic updates, the drain, its `ending` reason and its checksum of the `tauri-cli` crate archive           |
 | M2    | The Mac app: its disk image, its Keychain store behind the token store's interface and the Mac's stop reasons |
+| X1    | The on-demand pool's scale-set name, listener state and assigned count on its existing card                   |
 
 A new message under protocol version 2 follows the version rules in
 [CLI](./cli.md#protocol-version-2) and is added there, not here.

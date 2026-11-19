@@ -45,6 +45,9 @@ pub struct Entry {
     pub owner: String,
     pub repository: String,
     pub name: String,
+    /// the routing and runner identity of an on-demand pool, distinct from its
+    /// logical name; absent pools keep the always-on registration labels.
+    pub scale_set: Option<String>,
     pub slots: u32,
     /// the token file's path, for a format that has one.
     pub token_path: Option<String>,

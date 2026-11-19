@@ -13,6 +13,7 @@ use serde::Deserialize;
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
 
+use crate::agent::on_demand::View as ListenerView;
 use crate::agent::snapshot::Snapshot;
 use crate::runtime::log::Log;
 use crate::runtime::secret::Secret;
@@ -22,7 +23,7 @@ use super::answer::{Answer, Cause, Endpoint, Next, Outcome, Wait, classify};
 use super::budget::{Level, Tracker};
 use super::clean;
 use super::http::{Fetch, Get, next_page, repository_id};
-use super::{GithubStatus, Job, RepositoryStatus, RunnerStatus};
+use super::{GithubStatus, Job, RepositoryStatus, RunnerStatus, ScaleSetStatus};
 use crate::runtime::scrub::replace_secret;
 
 /// runners per page of the runner list.
@@ -270,6 +271,8 @@ pub struct Collector<'a, F: Fetch> {
     published: watch::Sender<Arc<GithubStatus>>,
     shown: BTreeSet<TokenKey>,
     active: watch::Receiver<bool>,
+    listeners: Option<watch::Receiver<BTreeMap<String, ListenerView>>>,
+    scale_sets: Vec<ScaleSetStatus>,
 }
 
 impl<'a, F: Fetch> Collector<'a, F> {
@@ -295,7 +298,17 @@ impl<'a, F: Fetch> Collector<'a, F> {
             published,
             shown: BTreeSet::new(),
             active,
+            listeners: None,
+            scale_sets: Vec::new(),
         }
+    }
+
+    pub(crate) fn with_listeners(
+        mut self,
+        listeners: watch::Receiver<BTreeMap<String, ListenerView>>,
+    ) -> Self {
+        self.listeners = Some(listeners);
+        self
     }
 
     fn is_active(&self) -> bool {
@@ -308,6 +321,36 @@ impl<'a, F: Fetch> Collector<'a, F> {
         loop {
             let snapshot = Arc::clone(&snapshots.borrow_and_update());
             let wanted = wanted(&snapshot);
+            if self.is_active() {
+                self.scale_sets = snapshot
+                    .pools
+                    .iter()
+                    .filter_map(|pool| {
+                        let info = pool.on_demand.as_ref()?;
+                        let statistics = self.listeners.as_ref().and_then(|listeners| {
+                            listeners
+                                .borrow()
+                                .get(&pool.name)
+                                .filter(|view| {
+                                    view.scale_set == info.name
+                                        && TokenKey::of(&view.owner, &view.repository).as_str()
+                                            == pool.repository
+                                })
+                                .and_then(|view| view.statistics)
+                        });
+                        Some(ScaleSetStatus {
+                            pool: pool.name.clone(),
+                            repository: pool.repository.clone(),
+                            name: info.name.clone(),
+                            assigned: statistics.map(|statistics| statistics.total_assigned_jobs),
+                            running: statistics.map(|statistics| statistics.total_running_jobs),
+                            registered_idle: statistics
+                                .map(|statistics| statistics.total_idle_runners),
+                        })
+                    })
+                    .collect();
+                self.publish();
+            }
             self.show(&wanted);
             let next = if self.is_active() {
                 self.next(&wanted)
@@ -328,6 +371,12 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 () = async { match at { Some(at) => sleep_until(at).await, None => pending().await } } => {}
                 changed = snapshots.changed() => if changed.is_err() { return },
                 changed = active.changed() => if changed.is_err() { return },
+                changed = async {
+                    match self.listeners.as_mut() {
+                        Some(listeners) => listeners.changed().await,
+                        None => pending().await,
+                    }
+                } => if changed.is_err() { self.listeners = None; },
             }
         }
     }
@@ -392,6 +441,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 .map(Repository::status)
                 .collect(),
             omitted_runners: 0,
+            scale_sets: self.scale_sets.clone(),
+            omitted_scale_sets: 0,
         };
         status.fit(MAX_STATUS_BYTES);
         self.published.send_if_modified(|current| {

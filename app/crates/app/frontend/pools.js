@@ -259,6 +259,19 @@ function card(poolCard, ctx) {
         poolCard.line,
       ),
     ),
+    poolCard.on_demand
+      ? h(
+          "div",
+          { class: "card-note" },
+          h("p", { class: "description wrap", text: poolCard.on_demand.line }),
+          poolCard.on_demand.detail
+            ? h("p", {
+                class: "caption low wrap",
+                text: poolCard.on_demand.detail,
+              })
+            : null,
+        )
+      : null,
     note,
     poolCard.github_notes.map((githubNote) =>
       h(

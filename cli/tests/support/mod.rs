@@ -160,6 +160,7 @@ impl Drop for TempDir {
 pub fn slot_spec(token: PathBuf) -> marshal_cli::runtime::pool::SlotSpec {
     marshal_cli::runtime::pool::SlotSpec {
         pool: "example-repo-one".to_string(),
+        scale_set: None,
         owner: "example-owner".to_string(),
         repository: "example-repo-one".to_string(),
         number: 2,

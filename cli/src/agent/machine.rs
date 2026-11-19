@@ -5,6 +5,7 @@
 //! that would start another transition is `busy`.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::future::{Future, pending};
 use std::pin::{Pin, pin};
 use std::sync::Arc;
@@ -35,7 +36,7 @@ use crate::runtime::clock::Clock;
 use crate::runtime::image::check_image;
 use crate::runtime::log::Log;
 use crate::runtime::pool::image_name;
-use crate::runtime::registration::Registrar;
+use crate::runtime::registration::{HttpLimits, Registrar};
 use crate::runtime::scrub::scrub_error_text;
 use crate::runtime::worker::sleep_or_stop;
 use crate::token_store::TokenKey;
@@ -45,6 +46,7 @@ use crate::windows_host::run_key::{SignIn, SignInItem};
 use super::api::{ApiError, ApiResult, Call, Method};
 use super::builder::ImageBuilder;
 use super::core::{AgentCore, ApplyOrder};
+use super::on_demand::{SessionRecovery, View as ListenerView};
 use super::snapshot::{BuildInfo, MAX_SNAPSHOT_BYTES, Snapshot};
 use super::state::{Action, Drain, Inner, Phase, Reason};
 use super::tokens::StoreTokens;
@@ -181,6 +183,9 @@ pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     /// `lifecycle_set` refuses a file changed since.
     read_revision: RefCell<Option<String>>,
     board: Board,
+    scale_set_client: Result<crate::scaleset::Client, crate::scaleset::Error>,
+    listeners: watch::Sender<BTreeMap<String, ListenerView>>,
+    session_recovery: RefCell<SessionRecovery>,
     inner: RefCell<Inner>,
     /// the containers a stop could not remove.
     left: RefCell<Vec<String>>,
@@ -302,6 +307,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             resume_note: Cell::new(None),
             read_revision: RefCell::new(None),
             board: Board::default(),
+            scale_set_client: crate::scaleset::Client::new(
+                seams.registrar.base_override(),
+                HttpLimits::default(),
+            ),
+            listeners: watch::Sender::new(BTreeMap::new()),
+            session_recovery: RefCell::new(BTreeMap::new()),
             inner: RefCell::new(Inner::new(phase)),
             left: RefCell::new(Vec::new()),
             snapshots: seams.snapshots,
@@ -321,6 +332,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
         };
         agent.publish();
         agent
+    }
+
+    pub(crate) fn listeners(&self) -> watch::Receiver<BTreeMap<String, ListenerView>> {
+        self.listeners.subscribe()
     }
 
     /// runs the agent until it is asked to end, answering every call that reaches
@@ -402,6 +417,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             board: &self.board,
             retained: self.backend.retained(),
             tokens: self.tokens,
+            listeners: &self.listeners.borrow(),
             left: &left,
             now: self.clock.now(),
         }
@@ -635,6 +651,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             .entries
             .iter()
             .map(|entry| TokenKey::of(&entry.owner, &entry.repository))
+            .chain(
+                self.listeners
+                    .borrow()
+                    .values()
+                    .map(|view| TokenKey::of(&view.owner, &view.repository)),
+            )
             .collect();
         self.tokens.refresh(&keys);
     }
@@ -652,6 +674,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             times: self.settings.times,
             steps: self.steps(),
             applied: &self.applied,
+            client: &self.scale_set_client,
+            listeners: &self.listeners,
+            session_recovery: &self.session_recovery,
+            host: self.settings.profile.name(),
         }
     }
 

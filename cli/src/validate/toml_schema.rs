@@ -56,10 +56,11 @@ const ROOT: [Member; 6] = [
     member(Key::Repositories, Child::Tables(Table::Pool)),
 ];
 
-const POOL: [Member; 12] = [
+const POOL: [Member; 13] = [
     member(Key::Name, Child::Leaf),
     member(Key::Repository, Child::Leaf),
     member(Key::Slots, Child::Leaf),
+    member(Key::ScaleSet, Child::Leaf),
     member(Key::Labels, Child::Leaf),
     member(Key::Os, Child::Leaf),
     member(Key::Cpus, Child::Leaf),
@@ -172,6 +173,7 @@ pub(crate) fn key_name(key: Key) -> &'static str {
         Key::MountPath => "mount_path",
         Key::SchemaVersion => "schema_version",
         Key::RoutingLabel => "routing_label",
+        Key::ScaleSet => "scale_set",
         Key::Lifecycle => "lifecycle",
         Key::StartAtLogin => "start_at_login",
         Key::StartRunnersOnLaunch => "start_runners_on_launch",

@@ -43,6 +43,10 @@ and each place below that depends on one says which. Verified on axpc:
 
 Not yet verified on axpc, each for the reason given:
 
+- the resident agent's on-demand pools, including live job delivery, the cap,
+  stop/restart, crash cleanup and the window's added listener states; the earlier
+  scale-set probe establishes protocol feasibility, not product validation, and
+  WSL checks do not establish native-Windows behavior;
 - the MSI install, the migration block, the optional check block with its
   extraction, the uninstall block, and the prompts an unsigned MSI from a browser
   download raises, which have not run on axpc. CI runs the blocks against the release
@@ -312,6 +316,64 @@ can read it:
 ```powershell
 marshal validate --config C:\path\to\runner-host.json --profile axpc
 ```
+
+### On-Demand Pools in the Resident Agent
+
+On-demand pools use the Windows app's resident agent and its TOML configuration,
+not `marshal start`'s JSON/token-file path. The app is still run from a build,
+not an installed release; [App](./app.md) owns that route. Build the runner image
+and meet the same Docker Desktop prerequisites before starting these pools.
+
+In `%LOCALAPPDATA%\marshal\config.toml`, add `scale_set` to the intended pool and
+leave `labels` absent or empty. For example, with `routing_label = "axpc"`, a pool
+without cache volumes can be written as:
+
+```toml
+[[pool]]
+name = "linux-jobs"
+repository = "<owner>/<repo>"
+runners = 1
+scale_set = "axpc-linux"
+```
+
+Replace the repository placeholder. Keep the file's required `schema_version`,
+`routing_label` and `image_name`; this pool is not a complete configuration. The
+schema chapter of [CLI](./cli.md) gives name, collision and editor rules.
+`runners` is the concurrency cap, not an idle runner count, and a distinct `name`
+remains the pool's logical identity. Other pool settings, including each
+container's resource limits and the cache boundaries, keep their meanings.
+
+1. Enter the repository-scoped fine-grained token in the window's **Tokens** tab.
+   Use Administration: Read and write; Actions: read is optional for job names.
+   The agent does not import the token file used by `marshal start`.
+2. Arrange a quiet window, use **Stop All** before editing a running agent's file,
+   and save the configuration. These controls stop every pool. A client using
+   `config_edit` or `config_reload` can instead apply the change to only the
+   affected pool, as the configuration-editing section of [CLI](./cli.md)
+   describes; changing `scale_set` stops that pool's jobs.
+3. Use **Start All** to reread the file. Invalid settings leave the last valid
+   configuration in use. Check the pool card for its scale-set name and
+   listener state. A listening pool with no demand has no registered runner or
+   job container after successful cleanup; an incomplete-cleanup report is not
+   a healthy zero-runner result.
+4. In the target repository's workflow, use `runs-on: axpc-linux` for this example,
+   not `[self-hosted, linux, x64, axpc]`. The scale-set name is the only label.
+   Workflows in this public runners repository still use GitHub-hosted runners.
+
+The on-demand section of [CLI](./cli.md) explains listener errors and recovery.
+**Stop All** closes the listener and stops its runners without deleting the scale
+set. A job queued while the pool is stopped can wait for **Start All**. Hiding the
+window stops display collection, not job listening. Token replacement applies to
+the next registration even before cached service credentials expire; removal or a
+store failure prevents it, while an already running job keeps its current JIT
+configuration.
+
+For `another_listener`, leave Marshal to retry with back-off; a crashed session
+can take time to expire. For `scale-set label mismatch`, choose an unused valid
+name or stop workflows that use the incompatible set before deleting it manually
+and using **Start All** to recreate it. Marshal does not repair or delete that set
+automatically. The manual deletion procedure is in the on-demand section of
+[CLI](./cli.md).
 
 ### Split a repository into general and Android pools
 
@@ -890,9 +952,15 @@ containers stay until removed by hand with `docker volume rm` and `docker rm`. T
 isolation rules the host enforces between repositories are in
 [Security](../conventions/security.md).
 
+For a resident on-demand pool, use **Stop All**, remove the entry from `config.toml`
+and use **Start All**, or use a client's `config_edit` or `config_reload` method.
+Its scale set remains on GitHub, also after a rename.
+Stop workflows targeting an unwanted set and delete that exact scale set manually
+in the repository settings, following the on-demand section of [CLI](./cli.md).
+
 ## Health Checks
 
-- **GitHub:** a healthy host shows, under each repository's **Settings, Actions,
+- **Always-on pools on GitHub:** a healthy host shows, under each repository's **Settings, Actions,
   Runners**, the sum of its entries' `slots` runners, **Idle** when no job is queued and **Active** when
   one is running, because each slot registers a runner before it starts a
   container. Each registration carries exactly `self-hosted`, `linux`, `x64`, and
@@ -905,7 +973,7 @@ isolation rules the host enforces between repositories are in
   than a mismatch or `missing`. A `pool: <name>: skipped: <reason>` line names a
   pool that did not start. A `warning:` line is a freshness warning; see
   [Rebuilding the Image](#rebuilding-the-image-for-operating-system-updates).
-- **Machine:** `docker ps` shows `slots` running containers per entry, named
+- **Always-on pools on the machine:** `docker ps` shows `slots` running containers per entry, named
   `<name>-<index>-<timestamp>`, whether idle or busy, since an idle container is
   a runner waiting for a job. None means the same as above.
   `docker inspect` on a container shows its limits under `HostConfig`: `NanoCpus`
@@ -915,6 +983,13 @@ isolation rules the host enforces between repositories are in
   `start` log has the guard's bounded `CPU affinity verified` line, which reports
   the kernel-granted set; the authorized real-host check also resolves the actual
   cgroup cpuset/quota layout.
+- **On-demand pools:** check the window's listener state, not a fixed idle runner
+  count. With no demand and successful cleanup, both the repository runner list
+  and `docker ps` have no runner/container for the pool. During a job, compare its
+  whole scale-set-based runner/container name with the logical pool and slot
+  shown in the window. Assigned, running and registered-idle counts come from
+  the existing session statistics; they add no display request. Pending exact
+  cleanup identities require recovery even when no container remains.
 - **Token files:** `icacls <token file>` lists only the host user, with `(R)`; see
   [Restricting a Token File](#restricting-a-token-file). The step's effect is not
   yet verified on axpc ([#56](https://github.com/axross/runners/issues/56)): its
@@ -982,7 +1057,7 @@ workflows with; [Security](../conventions/security.md) states the accepted risk
 behind that.
 
 The machine needs outbound HTTPS to `github.com` and `api.github.com`,
-`*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
+`actions.githubusercontent.com` and `*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
 pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
 image build, whenever `marshal build` runs, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
@@ -995,6 +1070,11 @@ provisioning also needs HTTPS to
 `services.gradle.org` for the Gradle distribution, including its redirects to
 GitHub release-asset storage. The Dockerfile itself needs no access to Docker
 Hub. No inbound port is needed.
+
+The resident on-demand listener also uses the returned Actions service host and
+`broker.actions.githubusercontent.com` for its long poll. This is outbound-only;
+it needs no inbound listener on the network. The on-demand outbound allowlist and
+credential rules are in [Security](../conventions/security.md).
 
 ## Recovery
 

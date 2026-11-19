@@ -368,10 +368,10 @@ mod tests {
                 ]
             )
         );
-        assert_eq!(
-            field_names::<entry::EntryFields>(),
-            union(Profile::Axpc.entry_fields(), Profile::Axmc.entry_fields())
-        );
+        let mut entry = union(Profile::Axpc.entry_fields(), Profile::Axmc.entry_fields());
+        entry.push("scaleSet".to_string());
+        entry.sort();
+        assert_eq!(field_names::<entry::EntryFields>(), entry);
         assert_eq!(
             field_names::<budget::BudgetFields>(),
             union(&budget::BUDGET_FIELDS, &[])

@@ -68,6 +68,27 @@ fn status<'a>(context: &Context<'a>) -> Option<(u64, Option<&'a GithubStatus>)> 
     }
 }
 
+/// session statistics are not a last-known count after contact or subscription ends.
+pub(crate) fn assigned(context: &Context<'_>, pool: &PoolInfo) -> Option<u64> {
+    if context.is_stale() {
+        return None;
+    }
+    let listener = pool.on_demand.as_ref()?;
+    if listener.state != "listening" {
+        return None;
+    }
+    let (_, status) = status(context)?;
+    status?
+        .scale_sets
+        .iter()
+        .find(|entry| {
+            entry.pool == pool.name
+                && key_of(&entry.repository) == key_of(&pool.repository)
+                && entry.name.eq_ignore_ascii_case(&listener.name)
+        })?
+        .assigned
+}
+
 fn key_of(repository: &str) -> String {
     TokenKey::parse(repository)
         .map(|key| key.as_str().to_string())

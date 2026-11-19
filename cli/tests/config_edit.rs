@@ -59,6 +59,46 @@ const LF: &str = "\n";
 const CRLF: &str = "\r\n";
 const MARK: &str = "\u{feff}";
 
+#[test]
+fn scale_set_is_an_optional_editable_text_key_and_keeps_its_comment() {
+    let source = SAMPLE.replace(
+        "labels = [\"gpu\", \"fast\"] # picked by the workflows",
+        "scale_set = \"axpc-linux\" # picked by the workflows",
+    );
+    let changed = rewrite(
+        source.as_bytes(),
+        Profile::Axpc,
+        None,
+        &[set(pool(0, Key::ScaleSet), text("axpc-jobs"))],
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(changed.clone()).unwrap(),
+        source.replace("axpc-linux", "axpc-jobs")
+    );
+    let removed = rewrite(
+        &changed,
+        Profile::Axpc,
+        None,
+        &[Edit::Remove {
+            path: pool(0, Key::ScaleSet),
+        }],
+    )
+    .unwrap();
+    let restored = rewrite(
+        &removed,
+        Profile::Axpc,
+        None,
+        &[set(pool(0, Key::ScaleSet), text("axpc-linux"))],
+    )
+    .unwrap();
+    let plan = validate_toml(&restored, Profile::Axpc, None)
+        .outcome
+        .unwrap();
+    assert_eq!(plan.entries[0].scale_set.as_deref(), Some("axpc-linux"));
+    assert_eq!(plan.entries[1].scale_set, None);
+}
+
 fn with_ending(text: &str, ending: &str) -> String {
     text.replace('\n', ending)
 }

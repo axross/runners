@@ -120,6 +120,8 @@ pub struct PacedClock {
     /// the real pause in each sleep; a test that must see the state during a wait
     /// lengthens it.
     pub pause: Cell<Duration>,
+    /// real timers keep a losing long-lived refresh timer from advancing fake time.
+    pub real: Cell<bool>,
 }
 
 impl std::ops::Deref for PacedClock {
@@ -132,12 +134,20 @@ impl std::ops::Deref for PacedClock {
 
 impl marshal_cli::runtime::clock::Clock for PacedClock {
     fn now(&self) -> std::time::SystemTime {
-        self.fake.now()
+        if self.real.get() {
+            std::time::SystemTime::now()
+        } else {
+            self.fake.now()
+        }
     }
 
     async fn sleep(&self, duration: Duration) {
-        self.fake.sleep(duration).await;
-        tokio::time::sleep(self.pause.get()).await;
+        if self.real.get() {
+            tokio::time::sleep(duration).await;
+        } else {
+            self.fake.sleep(duration).await;
+            tokio::time::sleep(self.pause.get()).await;
+        }
     }
 }
 
@@ -195,6 +205,7 @@ impl Rig {
             clock: Rc::new(PacedClock {
                 fake: FakeClock::at(START),
                 pause: Cell::new(Duration::from_millis(60)),
+                real: Cell::new(false),
             }),
             registrar,
             github_api: RefCell::new("http://127.0.0.1:9".to_string()),

@@ -58,6 +58,33 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
         let path = KeyPath::root().key(Key::Repositories).index(b.entry.index);
         for a in keys.iter().take(later) {
             let other = a.entry.index;
+            for (own, peer) in [(b, a), (a, b)] {
+                if let Some(scale_set) = &own.entry.scale_set {
+                    let name = scale_set.to_ascii_lowercase();
+                    let collision =
+                        names_collide(&name, &peer.entry.name.to_ascii_lowercase())
+                            || peer.entry.scale_set.as_ref().is_some_and(|other| {
+                                names_collide(&name, &other.to_ascii_lowercase())
+                            })
+                            || (own.repository == peer.repository
+                                && peer
+                                    .entry
+                                    .labels
+                                    .iter()
+                                    .any(|label| fold::eq_ascii(scale_set, label)));
+                    if collision {
+                        errors.add(
+                            KeyPath::root()
+                                .key(Key::Repositories)
+                                .index(own.entry.index)
+                                .key(Key::ScaleSet),
+                            Kind::ScaleSetCollision {
+                                other: peer.entry.index,
+                            },
+                        );
+                    }
+                }
+            }
             if names_collide(&a.entry.name, &b.entry.name) {
                 errors.add(
                     path.key(Key::Name),
@@ -72,7 +99,10 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
                 if a.token_path != b.token_path {
                     errors.add(path.key(Key::TokenPath), Kind::TokenFileDiffers { other });
                 }
-                let overlap: Vec<&str> = if a.entry.os == b.entry.os {
+                let overlap: Vec<&str> = if a.entry.os == b.entry.os
+                    && a.entry.scale_set.is_none()
+                    && b.entry.scale_set.is_none()
+                {
                     b.routing_labels
                         .iter()
                         .filter(|(_, label)| {

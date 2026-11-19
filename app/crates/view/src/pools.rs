@@ -1,7 +1,8 @@
 //! each pool as a card: its state, its runners, its diagnostics, and what its
 //! repository's token needs.
 
-use marshal_cli::agent::snapshot::{PoolInfo, RunnerInfo, RunnerState};
+use marshal_cli::agent::snapshot::{OnDemandInfo, PoolInfo, RunnerInfo, RunnerState};
+use marshal_cli::github_status::clean;
 use serde::Serialize;
 
 use crate::control::Control;
@@ -10,6 +11,7 @@ use crate::github::{self, GithubNote, OpenRun};
 use crate::state::{Context, Resident};
 use crate::text::{humanised, plain};
 use crate::tokens::{Repository, pool_note, repositories};
+use crate::view::Attention;
 
 /// the mark that goes with a state's words; the state is always written out too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -54,6 +56,15 @@ pub struct RunnerRow {
     pub label: String,
 }
 
+/// listener health stays visible without the subscribed demand statistics.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OnDemand {
+    pub line: String,
+    pub detail: Option<String>,
+    #[serde(skip)]
+    pub attention: Option<Attention>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PoolCard {
     pub name: String,
@@ -69,6 +80,7 @@ pub struct PoolCard {
     pub from: Option<String>,
     /// the whole line as the boards write it: "Running · 1 of 2 up · diagnostics on".
     pub line: String,
+    pub on_demand: Option<OnDemand>,
     /// why the pool is skipped, or what its repository's token needs.
     pub note: Option<String>,
     /// Set Token or Replace Token, which opens the Tokens tab on the repository's row.
@@ -78,6 +90,78 @@ pub struct PoolCard {
     pub github_notes: Vec<GithubNote>,
     pub runners: Vec<RunnerRow>,
     pub diagnostics: Option<Diagnostics>,
+}
+
+/// refusal and cleanup details are plain text, never a service response or credential.
+fn listener_detail(info: &OnDemandInfo) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(reason) = &info.reason {
+        parts.push(clean::cut(&plain(reason), clean::MESSAGE_CHARS));
+    }
+    if let Some(status) = info.status {
+        parts.push(format!("HTTP {status}"));
+    }
+    if let Some(host) = &info.refused_host {
+        parts.push(format!("Refused host: {}", clean::name(&plain(host))));
+    }
+    if let Some(kind) = &info.store_error_kind {
+        parts.push(format!("Token store: {}", clean::name(&plain(kind))));
+    }
+    if let Some(code) = info.store_error_code {
+        parts.push(format!("code {code}"));
+    }
+    if info.cleanup_incomplete {
+        parts.push("Cleanup incomplete".to_string());
+        parts.extend(info.registrations.iter().map(|registration| {
+            let name = clean::name(&plain(&registration.name));
+            let runner = format!("Runner {}: {name}", registration.slot);
+            match registration.runner_id {
+                Some(id) => format!("{runner} (GitHub ID {id})"),
+                None => runner,
+            }
+        }));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+/// listener announcements exclude demand so a statistics update does not repeat them.
+fn on_demand(context: &Context<'_>, pool: &PoolInfo) -> Option<OnDemand> {
+    let info = pool.on_demand.as_ref()?;
+    let state = match info.state.as_str() {
+        "listening" => "Listening".to_string(),
+        "another_listener" => "Another listener".to_string(),
+        "rejected" => "Rejected by GitHub".to_string(),
+        "store_error" => "Token store error".to_string(),
+        "backing_off" => "Backing off".to_string(),
+        "stopped" => "Stopped".to_string(),
+        other => format!(
+            "Unknown listener state: {}",
+            humanised(&clean::name(&plain(other)))
+        ),
+    };
+    let name = clean::name(&plain(&info.name));
+    let mut line = format!("On demand · {name} · {state}");
+    let detail = listener_detail(info);
+    let announcement = match &detail {
+        Some(detail) => format!("Pool {}: {line} · {detail}", plain(&pool.name)),
+        None => format!("Pool {}: {line}", plain(&pool.name)),
+    };
+    if let Some(assigned) = github::assigned(context, pool) {
+        line.push_str(&format!(" · {assigned} assigned"));
+    }
+    Some(OnDemand {
+        line,
+        attention: (!context.is_stale()).then(|| Attention {
+            key: format!(
+                "listener:{}:{}:{name}:{state}:{}",
+                plain(&pool.name),
+                plain(&pool.repository),
+                detail.as_deref().unwrap_or_default()
+            ),
+            text: announcement,
+        }),
+        detail,
+    })
 }
 
 fn pool_state(pool: &PoolInfo) -> (String, Option<Mark>) {
@@ -184,6 +268,7 @@ fn card(context: &Context<'_>, repositories: &[Repository], pool: &PoolInfo) -> 
         tags,
         from,
         line: line.join(" · "),
+        on_demand: on_demand(context, pool),
         note,
         pill,
         github_notes,

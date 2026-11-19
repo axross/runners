@@ -374,7 +374,7 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
             );
         };
 
-        let name = job_container_name(&slot.pool, slot.number, self.clock.now());
+        let name = job_container_name(slot.runner_prefix(), slot.number, self.clock.now());
         let registration = async {
             let token =
                 self.tokens
@@ -391,11 +391,19 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
                 .await
                 .map_err(|error| error.to_string())
         };
-        // a stop or a drain is seen before the request starts, so neither lets one begin
-        let registered = tokio::select! {
-            biased;
-            () = halt.wait() => return Attempt::Halted,
-            result = registration => result,
+        // on-demand ownership must receive a late JIT identity before cleanup; the
+        // core's existing stop deadline still bounds this wait.
+        let registered = if slot.scale_set.is_some() {
+            if halt.halted() {
+                return Attempt::Halted;
+            }
+            registration.await
+        } else {
+            tokio::select! {
+                biased;
+                () = halt.wait() => return Attempt::Halted,
+                result = registration => result,
+            }
         };
         let jit = match registered {
             Ok(jit) => jit,
@@ -552,6 +560,59 @@ impl<B, K, R> Clone for Services<'_, B, K, R> {
 }
 
 impl<B, K, R> Copy for Services<'_, B, K, R> {}
+
+/// runs one admitted job, retaining the slot's normal preparation, drain and release
+/// rules; true means its process ended, false means it halted. Registration ownership
+/// and retry admission belong to the caller.
+pub async fn run_one_job_with<B: Backend, K: Clock, R: Registrar>(
+    slot: &SlotSpec,
+    services: &Services<'_, B, K, R>,
+    stop: watch::Receiver<bool>,
+) -> Result<bool, String> {
+    let report = Report {
+        log: services.log,
+        board: services.board,
+        label: slot.label(),
+    };
+    let mut halt = Halt {
+        stop,
+        drain: services.drain.map(watch::Sender::subscribe),
+    };
+    if halt.halted() {
+        return Ok(false);
+    }
+    report.state(SlotState::Registering);
+    let checked = tokio::select! {
+        biased;
+        () = halt.wait() => return Ok(false),
+        checked = check_image(services.backend, services.board, &slot.image) => checked,
+    };
+    match checked {
+        ImageCheck::Unavailable(reason) => {
+            return Err(format!(
+                "the image check failed ({reason}); no registration"
+            ));
+        }
+        other => {
+            if let Some(refusal) = other.refusal(&slot.image) {
+                return Err(format!("{refusal}; no registration"));
+            }
+        }
+    }
+    let context = Context {
+        backend: services.backend,
+        clock: services.clock,
+        registrar: services.registrar,
+        tokens: services.tokens,
+        report: &report,
+        times: services.stop_times,
+    };
+    match context.attempt(slot, &mut halt).await {
+        Attempt::Ended => Ok(true),
+        Attempt::Halted => Ok(false),
+        Attempt::Failed(reason) | Attempt::Held(reason) => Err(reason),
+    }
+}
 
 /// [`run_slot`] with its token source among its services.
 pub async fn run_slot_with<B: Backend, K: Clock, R: Registrar>(

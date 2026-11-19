@@ -553,3 +553,258 @@ fn a_cause_this_reader_does_not_know_gives_no_notice() {
         ["Job names could not be read: GitHub answered with an error. | Last checked 03:51."]
     );
 }
+
+/// a subscribed scale-set scope deliberately has no repository display entry.
+fn demand_status(change: impl FnOnce(&mut Value)) -> GithubStatus {
+    let mut value = load_json("github/on_demand");
+    change(&mut value);
+    serde_json::from_value(value).expect("a scale-set status")
+}
+
+#[test]
+fn on_demand_cards_show_all_six_listener_states_and_keep_always_on_controls() {
+    let snapshot = load("on_demand");
+    let status = demand_status(|_| {});
+    let view =
+        build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+    let cards = &list(&view).pools;
+    let lines: Vec<&str> = cards
+        .iter()
+        .filter_map(|card| {
+            card.on_demand
+                .as_ref()
+                .map(|listener| listener.line.as_str())
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "On demand · axpc-linux · Listening · 0 assigned",
+            "On demand · axpc-shared · Another listener",
+            "On demand · axpc-labels · Rejected by GitHub",
+            "On demand · axpc-store · Token store error",
+            "On demand · axpc-retry · Backing off",
+            "On demand · axpc-stopped · Stopped",
+        ]
+    );
+    assert_eq!(
+        cards[2].on_demand.as_ref().unwrap().detail.as_deref(),
+        Some("scale-set label mismatch"),
+        "a label mismatch invents no HTTP status"
+    );
+    assert_eq!(
+        cards[3].on_demand.as_ref().unwrap().detail.as_deref(),
+        Some("Token store: needs_user · code 1312")
+    );
+    assert_eq!(
+        cards[4].on_demand.as_ref().unwrap().detail.as_deref(),
+        Some("service could not be reached")
+    );
+    assert_eq!(
+        cards[5].on_demand.as_ref().unwrap().detail.as_deref(),
+        Some(
+            "runner removal not confirmed · Cleanup incomplete · Runner 1: axpc-stopped-1-20261104031522114 (GitHub ID 42)"
+        )
+    );
+    let without = crate::support::patched("on_demand", |value| {
+        for pool in value["pools"].as_array_mut().unwrap() {
+            pool.as_object_mut().unwrap().remove("on_demand");
+        }
+    });
+    let baseline =
+        build(&Input::new(Connection::Connected, Some(&without), now()).github(live(&status)));
+    assert_eq!(cards[6], list(&baseline).pools[6]);
+    assert!(cards[6].on_demand.is_none());
+    assert_eq!(list(&view).header.controls, list(&baseline).header.controls);
+    assert_eq!(view.menu, baseline.menu);
+    assert_eq!(view.tooltip, baseline.tooltip);
+}
+
+#[test]
+fn assigned_demand_distinguishes_unknown_zero_and_nonzero_statistics() {
+    let snapshot = load("on_demand");
+    for (assigned, suffix) in [
+        (Value::Null, ""),
+        (0.into(), " · 0 assigned"),
+        (3.into(), " · 3 assigned"),
+    ] {
+        let status = demand_status(|value| value["scale_sets"][0]["assigned"] = assigned);
+        let view =
+            build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+        assert_eq!(
+            list(&view).pools[0].on_demand.as_ref().unwrap().line,
+            format!("On demand · axpc-linux · Listening{suffix}")
+        );
+    }
+}
+
+#[test]
+fn assigned_count_requires_subscription_contact_and_all_three_identity_fields() {
+    let snapshot = load("on_demand");
+    let status = demand_status(|_| {});
+    for feed in [
+        GithubFeed::Off,
+        GithubFeed::Unavailable,
+        GithubFeed::UnavailableForNow,
+        GithubFeed::Live {
+            opened_ms: at(3, 50, 0),
+            status: None,
+        },
+    ] {
+        let view = build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(feed));
+        assert_eq!(
+            list(&view).pools[0].on_demand.as_ref().unwrap().line,
+            "On demand · axpc-linux · Listening"
+        );
+    }
+    let stale = build(
+        &Input::new(
+            Connection::LostContact {
+                last_heard_ms: at(3, 51, 50),
+                cause: marshal_view::Cause::Dropped,
+            },
+            Some(&snapshot),
+            now(),
+        )
+        .github(live(&status)),
+    );
+    assert!(list(&stale).stale);
+    assert_eq!(
+        list(&stale).pools[0].on_demand.as_ref().unwrap().line,
+        "On demand · axpc-linux · Listening"
+    );
+    assert!(
+        !stale
+            .attention
+            .iter()
+            .any(|item| item.key.starts_with("listener:"))
+    );
+    for (field, wrong) in [
+        ("pool", "axpc-linux"),
+        ("repository", "owner/other"),
+        ("name", "axpc-linux-other"),
+    ] {
+        let status = demand_status(|value| value["scale_sets"][0][field] = wrong.into());
+        let view =
+            build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+        assert_eq!(
+            list(&view).pools[0].on_demand.as_ref().unwrap().line,
+            "On demand · axpc-linux · Listening",
+            "mismatched {field}"
+        );
+    }
+    let empty = demand_status(|value| value["scale_sets"] = serde_json::json!([]));
+    let view =
+        build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&empty)));
+    assert_eq!(
+        list(&view).pools[0].on_demand.as_ref().unwrap().line,
+        "On demand · axpc-linux · Listening"
+    );
+    let case_only = demand_status(|value| {
+        value["scale_sets"][0]["repository"] = "OWNER/APP".into();
+        value["scale_sets"][0]["name"] = "AXPC-LINUX".into();
+    });
+    let view =
+        build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&case_only)));
+    assert!(
+        list(&view).pools[0]
+            .on_demand
+            .as_ref()
+            .unwrap()
+            .line
+            .ends_with(" · 0 assigned")
+    );
+}
+
+#[test]
+fn refusal_store_and_cleanup_details_are_sanitized_and_unknown_states_are_not_success() {
+    let snapshot = crate::support::patched("on_demand", |value| {
+        let listener = &mut value["pools"][2]["on_demand"];
+        listener["reason"] = format!("refused {}{}\u{202e}\u{7}", "ghp_", "x".repeat(24)).into();
+        listener["status"] = 403.into();
+        listener["refused_host"] = "lookalike.example.invalid\u{202e}".into();
+        listener["cleanup_incomplete"] = true.into();
+        value["pools"][0]["on_demand"]["state"] = "ready_in_a_future_version".into();
+    });
+    let view = crate::support::view_of(&snapshot);
+    assert_eq!(
+        list(&view).pools[2]
+            .on_demand
+            .as_ref()
+            .unwrap()
+            .detail
+            .as_deref(),
+        Some(
+            "refused <token> · HTTP 403 · Refused host: lookalike.example.invalid · Cleanup incomplete"
+        )
+    );
+    assert_eq!(
+        list(&view).pools[0].on_demand.as_ref().unwrap().line,
+        "On demand · axpc-linux · Unknown listener state: Ready in a future version"
+    );
+    for kind in ["needs_user", "access_refused", "other"] {
+        let snapshot = crate::support::patched("on_demand", |value| {
+            value["pools"][3]["on_demand"]["store_error_kind"] = kind.into();
+        });
+        let view = crate::support::view_of(&snapshot);
+        assert_eq!(
+            list(&view).pools[3].on_demand.as_ref().unwrap().detail,
+            Some(format!("Token store: {kind} · code 1312"))
+        );
+    }
+}
+
+#[test]
+fn listener_changes_are_announced_once_and_assigned_count_changes_are_silent() {
+    let mut snapshot = load("on_demand");
+    let mut status = demand_status(|_| {});
+    let mut tracker = Tracker::new();
+    let baseline = tracker.update(
+        Input::new(Connection::Connected, Some(&snapshot), clock_at(3, 52, 0))
+            .github(live(&status)),
+    );
+    assert!(baseline.announced.messages.is_empty());
+    for (index, (state, text)) in [
+        ("another_listener", "Another listener"),
+        ("rejected", "Rejected by GitHub"),
+        ("store_error", "Token store error"),
+        ("backing_off", "Backing off"),
+        ("stopped", "Stopped"),
+        ("listening", "Listening"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        snapshot.pools[0].on_demand.as_mut().unwrap().state = state.to_string();
+        let seconds = u64::try_from(index).unwrap() * 2 + 1;
+        let changed = tracker.update(
+            Input::new(
+                Connection::Connected,
+                Some(&snapshot),
+                clock_at(3, 52, seconds),
+            )
+            .github(live(&status)),
+        );
+        assert_eq!(
+            changed.announced.messages,
+            [format!("Pool app: On demand · axpc-linux · {text}")]
+        );
+        let repeated = tracker.update(
+            Input::new(
+                Connection::Connected,
+                Some(&snapshot),
+                clock_at(3, 52, seconds + 1),
+            )
+            .github(live(&status)),
+        );
+        assert!(repeated.announced.messages.is_empty());
+    }
+    for assigned in [None, Some(0), Some(9)] {
+        status.scale_sets[0].assigned = assigned;
+        let count_only = tracker.update(
+            Input::new(Connection::Connected, Some(&snapshot), clock_at(3, 53, 0))
+                .github(live(&status)),
+        );
+        assert!(count_only.announced.messages.is_empty());
+    }
+}

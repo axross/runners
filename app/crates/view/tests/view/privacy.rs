@@ -159,7 +159,7 @@ fn tainted(value: &mut Value, word: &str) {
     }
 }
 
-const FIXTURES: [&str; 39] = [
+const FIXTURES: [&str; 40] = [
     "all_up",
     "build_cancelled",
     "build_failed",
@@ -179,6 +179,7 @@ const FIXTURES: [&str; 39] = [
     "markup_invalid_configuration",
     "newer_agent",
     "newer_agent_stopped",
+    "on_demand",
     "packages_old",
     "quitting",
     "restarting",

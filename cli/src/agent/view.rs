@@ -18,10 +18,11 @@ use crate::validate::Entry;
 
 use super::config::Change;
 use super::core::LEAVING;
+use super::on_demand::{ListenerState, View as ListenerView};
 use super::snapshot::{
     AgentInfo, ConfigurationInfo, DiagnosticContainer, DiagnosticFinding, DiagnosticsInfo,
-    ImageInfo, ImageLine, ImageWarning, InUseInfo, Leftover, MigrationInfo, PoolInfo,
-    RepositoryInfo, RunnerInfo, Snapshot, UpdateInfo,
+    ImageInfo, ImageLine, ImageWarning, InUseInfo, Leftover, MigrationInfo, OnDemandInfo,
+    PendingRegistration, PoolInfo, RepositoryInfo, RunnerInfo, Snapshot, UpdateInfo,
 };
 use super::state::{Inner, Phase};
 use super::tokens::StoreTokens;
@@ -43,6 +44,7 @@ pub struct View<'a> {
     pub board: &'a Board,
     pub retained: &'a Retained,
     pub tokens: &'a StoreTokens,
+    pub listeners: &'a BTreeMap<String, ListenerView>,
     /// the containers a stop could not remove.
     pub left: &'a [String],
     pub now: SystemTime,
@@ -223,7 +225,12 @@ impl View<'_> {
                     let mut pool = self.pool(entry, &pools, &slots);
                     pool.runners
                         .retain(|runner| runner.reason.as_deref() == Some(LEAVING));
-                    if !pool.runners.is_empty() {
+                    if !pool.runners.is_empty()
+                        || pool
+                            .on_demand
+                            .as_ref()
+                            .is_some_and(|info| info.cleanup_incomplete)
+                    {
                         pool.state = "stopped".to_string();
                         pool.reason = Some(LEAVING.to_string());
                         pool.slots = 0;
@@ -231,6 +238,29 @@ impl View<'_> {
                     }
                 }
             }
+        }
+        for listener in self
+            .listeners
+            .values()
+            .filter(|view| view.has_pending_cleanup())
+        {
+            if snapshot
+                .pools
+                .iter()
+                .any(|pool| pool.name == listener.logical_name)
+            {
+                continue;
+            }
+            let key = TokenKey::of(&listener.owner, &listener.repository);
+            snapshot.pools.push(PoolInfo {
+                name: listener.logical_name.clone(),
+                repository: key.to_string(),
+                state: "stopped".to_string(),
+                reason: Some(LEAVING.to_string()),
+                has_token: self.tokens.has_token(&key),
+                on_demand: self.on_demand(&listener.logical_name, None, &key),
+                ..PoolInfo::default()
+            });
         }
         snapshot.runners_up = snapshot.pools.iter().map(|pool| pool.runners_up).sum();
         snapshot.runners_wanted = snapshot.pools.iter().map(|pool| pool.slots).sum();
@@ -261,7 +291,10 @@ impl View<'_> {
         pools: &RowsByName<'_, PoolState>,
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
-        let key = TokenKey::of(&entry.owner, &entry.repository);
+        let key = self.listeners.get(&entry.name).map_or_else(
+            || TokenKey::of(&entry.owner, &entry.repository),
+            |listener| TokenKey::of(&listener.owner, &listener.repository),
+        );
         let restarting = self.inner.applying.as_ref().is_some_and(|applying| {
             applying
                 .effects
@@ -352,7 +385,57 @@ impl View<'_> {
             slots: entry.slots,
             runners,
             diagnostics: self.diagnostics(entry),
+            on_demand: self.on_demand(&entry.name, entry.scale_set.as_ref(), &key),
         }
+    }
+
+    /// the live listener remains authoritative while an edit waits for its cleanup.
+    fn on_demand(
+        &self,
+        pool: &str,
+        scale_set: Option<&String>,
+        key: &TokenKey,
+    ) -> Option<OnDemandInfo> {
+        let listener = self.listeners.get(pool);
+        let name = listener.map(|listener| &listener.scale_set).or(scale_set)?;
+        let error = self.tokens.error(key);
+        let mut info = OnDemandInfo {
+            name: name.clone(),
+            state: if error.is_some() {
+                "store_error"
+            } else {
+                "stopped"
+            }
+            .to_string(),
+            store_error_kind: error.as_ref().map(|error| error.kind().word().to_string()),
+            store_error_code: error.as_ref().and_then(|error| error.code()),
+            ..OnDemandInfo::default()
+        };
+        if let Some(listener) = listener {
+            info.state = match listener.state {
+                ListenerState::Listening => "listening",
+                ListenerState::AnotherListener => "another_listener",
+                ListenerState::Rejected => "rejected",
+                ListenerState::StoreError => "store_error",
+                ListenerState::BackingOff => "backing_off",
+                ListenerState::Stopped => "stopped",
+            }
+            .to_string();
+            info.status = listener.status;
+            info.refused_host.clone_from(&listener.refused_host);
+            info.reason.clone_from(&listener.reason);
+            info.cleanup_incomplete = listener.has_pending_cleanup();
+            info.registrations = listener
+                .incomplete_registrations
+                .iter()
+                .map(|pending| PendingRegistration {
+                    slot: pending.slot,
+                    runner_id: pending.runner_id,
+                    name: pending.name.clone(),
+                })
+                .collect();
+        }
+        Some(info)
     }
 
     fn diagnostics(&self, entry: &Entry) -> Option<DiagnosticsInfo> {
@@ -482,6 +565,7 @@ mod tests {
             owner: "owner".to_string(),
             repository: "repository".to_string(),
             name: "pool".to_string(),
+            scale_set: None,
             slots: 2,
             token_path: None,
             labels: Vec::new(),
@@ -533,6 +617,7 @@ mod tests {
             board,
             retained: &retained,
             tokens: &tokens,
+            listeners: &BTreeMap::new(),
             left: &[],
             now: SystemTime::now(),
         }

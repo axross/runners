@@ -571,3 +571,146 @@ fn each_hosts_example_toml_is_valid_and_matches_its_json_example() {
         );
     }
 }
+
+#[test]
+fn on_demand_configuration_preserves_logical_identity_and_has_one_routing_label() {
+    let header = "schema_version = 1\nrouting_label = \"axpc\"\nimage_name = \"runner:1\"\n";
+    for (name, scale_set) in [("axpc-linux", "axpc-linux"), ("logical", "AXPC-Linux_1.2")] {
+        let source = format!(
+            "{header}[[pool]]\nname = \"{name}\"\nrepository = \"o/r\"\nrunners = 3\nscale_set = \"{scale_set}\"\nlabels = []\n"
+        );
+        let plan = validate_toml(source.as_bytes(), Profile::Axpc, None)
+            .outcome
+            .unwrap();
+        assert_eq!(plan.entries[0].name, name);
+        assert_eq!(plan.entries[0].scale_set.as_deref(), Some(scale_set));
+        assert_eq!(plan.entries[0].labels, [scale_set]);
+        assert_eq!(plan.entries[0].slots, 3);
+    }
+    let base = format!("{header}[[pool]]\nname = \"logical\"\nrepository = \"o/r\"\nrunners = 1\n");
+    let longest = format!("axpc-{}", "x".repeat(40));
+    assert!(
+        validate_toml(
+            format!("{base}scale_set = \"{longest}\"\n").as_bytes(),
+            Profile::Axpc,
+            None
+        )
+        .outcome
+        .is_ok()
+    );
+    for value in [
+        "\"\"".to_string(),
+        "\"axpc-\"".into(),
+        "\"other-linux\"".into(),
+        "\"axpc-a/b\"".into(),
+        "\"axpc-λ\"".into(),
+        format!("\"{longest}x\""),
+        "9".into(),
+    ] {
+        let found = problems(
+            format!("{base}scale_set = {value}\n").as_bytes(),
+            Profile::Axpc,
+        );
+        assert!(
+            found
+                .iter()
+                .any(|problem| problem.contains("pool[0].scale_set:")),
+            "{found:?}"
+        );
+    }
+    let found = problems(
+        format!("{base}scale_set = \"axpc-linux\"\nlabels = [\"dedicated\"]\n").as_bytes(),
+        Profile::Axpc,
+    );
+    assert!(
+        found
+            .iter()
+            .any(|problem| problem.contains("pool[0].labels:"))
+    );
+    let found = problems(
+        format!("{base}scale_set = \"axpc-linux\"\n")
+            .replace("routing_label = \"axpc\"", "routing_label = \"host λ\"")
+            .as_bytes(),
+        Profile::Axpc,
+    );
+    assert!(
+        found
+            .iter()
+            .any(|problem| problem.contains("routing_label:"))
+    );
+}
+
+#[test]
+fn scale_set_aliases_cannot_claim_another_pools_runtime_or_routing_identity() {
+    let header = "schema_version = 1\nrouting_label = \"axpc\"\nimage_name = \"runner:1\"\n";
+    let first = "[[pool]]\nname = \"axpc-app\"\nrepository = \"o/r\"\nrunners = 1\nscale_set = \"axpc-linux\"\n";
+    for other in [
+        "axpc-app",
+        "AXPC-App",
+        "axpc-app-extra",
+        "axpc-linux",
+        "axpc-linux-extra",
+    ] {
+        let second = format!(
+            "[[pool]]\nname = \"other\"\nrepository = \"o/elsewhere\"\nrunners = 1\nscale_set = \"{other}\"\n"
+        );
+        for pools in [format!("{first}{second}"), format!("{second}{first}")] {
+            let found = problems(format!("{header}{pools}").as_bytes(), Profile::Axpc);
+            assert!(
+                found.iter().any(|problem| problem
+                    .contains(".scale_set: scale-set routing or cleanup identity collides")),
+                "{found:?}"
+            );
+        }
+    }
+    let second = "[[pool]]\nname = \"other\"\nrepository = \"O/R\"\nrunners = 1\nlabels = [\"AXPC-LINUX\"]\n";
+    let found = problems(format!("{header}{first}{second}").as_bytes(), Profile::Axpc);
+    assert!(
+        found
+            .iter()
+            .any(|problem| problem.contains("pool[0].scale_set:"))
+    );
+    let separate = second.replace("O/R", "o/elsewhere");
+    assert!(
+        validate_toml(
+            format!("{header}{first}{separate}").as_bytes(),
+            Profile::Axpc,
+            None
+        )
+        .outcome
+        .is_ok()
+    );
+    let safe = second.replace("AXPC-LINUX", "axpc-linuxish");
+    assert!(
+        validate_toml(
+            format!("{header}{first}{safe}").as_bytes(),
+            Profile::Axpc,
+            None
+        )
+        .outcome
+        .is_ok()
+    );
+}
+
+#[test]
+fn the_windows_slice_rejects_mac_on_demand_but_keeps_native_always_on() {
+    let source = "schema_version = 1\nrouting_label = \"axmc\"\n[budget]\ncpus = 8\nmemory_gb = 16\ndisk_gb = 256\n[[pool]]\nname = \"native\"\nrepository = \"o/r\"\nos = \"macos\"\n";
+    assert!(
+        validate_toml(source.as_bytes(), Profile::Axmc, None)
+            .outcome
+            .is_ok()
+    );
+    for os in ["macos", "linux"] {
+        let source = source.replace(
+            "os = \"macos\"",
+            &format!("os = \"{os}\"\ndisk_gb = 64\nscale_set = \"axmc-linux\""),
+        );
+        let found = problems(source.as_bytes(), Profile::Axmc);
+        assert!(
+            found
+                .iter()
+                .any(|problem| problem.contains("pool[0].scale_set: must be absent on macOS")),
+            "{found:?}"
+        );
+    }
+}

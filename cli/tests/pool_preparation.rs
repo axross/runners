@@ -69,6 +69,41 @@ fn names(prepared: &[PoolSpec]) -> Vec<&str> {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn on_demand_preparation_cleans_its_alias_and_legacy_names_but_not_prefix_lookalikes() {
+    let scratch = TempDir::new();
+    let mut all = pools(&scratch, &[("alpha", "fake-token")]);
+    let mut pool = all.remove(0);
+    pool.scale_set = Some("axpc-work".to_string());
+    let backend = FakeBackend::default();
+    let legacy = format!("alpha-1-{STAMP}");
+    let alias = format!("axpc-work-2-{STAMP}");
+    let unrelated = format!("axpc-work-other-1-{STAMP}");
+    let another = format!("charlie-1-{STAMP}");
+    backend.state.borrow_mut().containers = vec![
+        container(&legacy, false),
+        container(&alias, false),
+        container(&unrelated, false),
+        container(&another, false),
+    ];
+    prepare_pools(
+        &backend,
+        vec![pool],
+        &MemoryLog::default(),
+        &Board::default(),
+    )
+    .await
+    .unwrap();
+    let remaining: Vec<_> = backend
+        .state
+        .borrow()
+        .containers
+        .iter()
+        .map(|item| item.name.clone())
+        .collect();
+    assert_eq!(remaining, [unrelated, another]);
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_missing_or_blank_token_is_skipped_and_the_rest_run_a_diagnostics_pool_included() {
     let scratch = TempDir::new();
     let all = pools(

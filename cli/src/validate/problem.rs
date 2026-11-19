@@ -32,6 +32,7 @@ pub enum Key {
     /// the keys below exist only in a format whose file carries settings of its own.
     SchemaVersion,
     RoutingLabel,
+    ScaleSet,
     Lifecycle,
     StartAtLogin,
     StartRunnersOnLaunch,
@@ -41,7 +42,7 @@ pub enum Key {
 }
 
 impl Key {
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 28] = [
         Self::ImageName,
         Self::Repositories,
         Self::Budget,
@@ -63,6 +64,7 @@ impl Key {
         Self::MountPath,
         Self::SchemaVersion,
         Self::RoutingLabel,
+        Self::ScaleSet,
         Self::Lifecycle,
         Self::StartAtLogin,
         Self::StartRunnersOnLaunch,
@@ -78,6 +80,7 @@ impl Key {
             self,
             Self::SchemaVersion
                 | Self::RoutingLabel
+                | Self::ScaleSet
                 | Self::Lifecycle
                 | Self::StartAtLogin
                 | Self::StartRunnersOnLaunch
@@ -180,6 +183,9 @@ pub enum Kind {
         os: Option<Os>,
     },
     DuplicateLabel(String),
+    ScaleSetCollision {
+        other: usize,
+    },
     VolumesUnsupported,
     /// a pool whose operating system the host cannot run.
     OsUnsupported(Os),
@@ -324,6 +330,10 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
             "'{label}' is a platform label that a {os} pool on {host} cannot provide, so list only non-platform labels"
         ),
         Kind::DuplicateLabel(label) => format!("duplicate label '{label}'"),
+        Kind::ScaleSetCollision { other } => format!(
+            "scale-set routing or cleanup identity collides with {}; use a distinct scale-set name",
+            entry_path(*other)
+        ),
         Kind::VolumesUnsupported => {
             format!("not supported on {host}, because VM pools keep no volumes")
         }

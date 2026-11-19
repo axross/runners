@@ -135,7 +135,10 @@ where
     );
     let collecting = async {
         if let Some(collector) = collector {
-            collector.run(followed).await;
+            collector
+                .with_listeners(agent.listeners())
+                .run(followed)
+                .await;
         }
         std::future::pending::<()>().await;
     };

@@ -323,6 +323,39 @@ pub struct PoolInfo {
     /// present for a pool with diagnostics on.
     #[serde(default)]
     pub diagnostics: Option<DiagnosticsInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_demand: Option<OnDemandInfo>,
+}
+
+/// listener health; GitHub demand counts belong only to the subscribed `github` topic.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OnDemandInfo {
+    pub name: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_error_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_error_code: Option<i64>,
+    #[serde(default)]
+    pub cleanup_incomplete: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub registrations: Vec<PendingRegistration>,
+}
+
+/// an exact registration whose absence has not yet been confirmed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct PendingRegistration {
+    pub slot: u32,
+    pub runner_id: Option<u64>,
+    pub name: String,
 }
 
 /// one line of what an image check found, such as `image-contract`.
