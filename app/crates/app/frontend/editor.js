@@ -169,8 +169,7 @@ function field(model, row, spec, prefix) {
 
 /** replaces only the edited card's runner rows; no field changes the running pool. */
 function form(model, pool) {
-  const index = model.pools.filter((p) => !p.removed).indexOf(pool);
-  const prefix = `pool[${model.problemsInResult ? index : (pool.source ?? index)}]`;
+  const prefix = model.problemPrefix(pool);
   return h(
     "div",
     { class: "config-form" },
@@ -323,24 +322,11 @@ export function editorPools(model, list, ctx, liveCard) {
       head
         .querySelector("h2")
         .setAttribute("data-key", `edit-heading:${pool.id}`);
-      const index = model.pools.filter((p) => !p.removed).indexOf(pool);
-      const prefix = `pool[${model.problemsInResult ? index : (pool.source ?? index)}]`;
+      const prefix = model.problemPrefix(pool);
       const hasProblems = problems(model).some(
         (p) => p.path === prefix || p.path?.startsWith(`${prefix}.`),
       );
-      const changed =
-        pool.source === null ||
-        Object.keys(pool.fields).some(
-          (key) => pool.fields[key] !== pool.original[key],
-        ) ||
-        pool.volumes.some(
-          (v) =>
-            v.removed ||
-            v.source === null ||
-            Object.keys(v.fields).some(
-              (key) => v.fields[key] !== v.original[key],
-            ),
-        );
+      const changed = model.poolChanged(pool);
       if (hasProblems || changed)
         head.append(
           h("span", {

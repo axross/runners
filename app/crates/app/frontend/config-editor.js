@@ -180,17 +180,38 @@ export class ConfigEditor {
 
   /** whether discarding the draft would lose any input or entry operation. */
   get dirty() {
-    if (!this.host) return false;
-    const changed = (row) =>
+    return (
+      Boolean(this.host) &&
+      (this.rowChanged(this.host) ||
+        this.pools.some((p) => this.poolChanged(p)))
+    );
+  }
+
+  /** whether a row is new, removed or has a field that differs from the file's. */
+  rowChanged(row) {
+    return (
       row.removed ||
       row.source === null ||
       Object.keys(row.fields).some(
         (key) => row.fields[key] !== row.original[key],
-      );
-    return (
-      changed(this.host) ||
-      this.pools.some((pool) => changed(pool) || pool.volumes.some(changed))
+      )
     );
+  }
+
+  /** whether a pool or any of its volumes changed. */
+  poolChanged(pool) {
+    return (
+      this.rowChanged(pool) || pool.volumes.some((v) => this.rowChanged(v))
+    );
+  }
+
+  /**
+   * the path prefix a pool's problems carry: the pool's place among those kept after a
+   * check, and its place in the file before one.
+   */
+  problemPrefix(pool) {
+    const index = this.pools.filter((p) => !p.removed).indexOf(pool);
+    return `pool[${this.problemsInResult ? index : (pool.source ?? index)}]`;
   }
 
   notify(message, focus = null) {
