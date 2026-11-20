@@ -260,6 +260,9 @@ fn cause(word: &str) -> Option<&'static str> {
     })
 }
 
+/// the notice for a failed organisation status read: organisation wording for the
+/// token and lookup causes, and [`cause`]'s wording for any other, or `None` for a
+/// cause that shows no notice.
 fn organization_cause(word: &str) -> Option<&'static str> {
     match word {
         "token_rejected" => {

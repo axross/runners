@@ -17,6 +17,8 @@ fn flag(value: bool) -> &'static str {
     if value { "True" } else { "False" }
 }
 
+/// the summary's heading line for a pool: its repository, or its organisation and
+/// runner group.
 fn target_summary(target: &PoolTarget) -> String {
     match target {
         PoolTarget::Repository { owner, repository } => format!("Repository {owner}/{repository}"),

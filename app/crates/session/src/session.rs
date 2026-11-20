@@ -238,6 +238,8 @@ impl Handle {
         .await
     }
 
+    /// saves an organisation's token through the organisation token method and key,
+    /// not a repository's, with the same limits and feedback as a repository save.
     pub async fn set_organization_token(
         &self,
         organization: String,
