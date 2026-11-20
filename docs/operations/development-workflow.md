@@ -497,9 +497,9 @@ round's independent review:
 The last item follows from one definition serving both uses: every `reviewer`
 instance carries the conditional posting permission in its prose, and the host
 does not enforce that the condition holds. The definition leaves GitHub write
-tools and session-starting and messaging tools undenied. A reader needs the
-shell and the tracker to read, and the names of session-starting and messaging
-tools are host- and connector-specific, so a deny-list naming one host's tools would not travel.
+tools and session-starting and messaging tools undenied, for the reasons the
+register deviation in [Agent Skills](./agent-skills.md#deviation---the-claude-code-review-subagents-limits-and-closure)
+records as its counterexample.
 
 An Amp review child thread's or a Claude Code review subagent's review supplies
 no GitHub approval and no APPROVE verdict; a shared operator account is not a
