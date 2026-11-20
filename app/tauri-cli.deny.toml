@@ -6,10 +6,11 @@
 # docs/operations/app.md.
 [advisories]
 ignore = [
-  # brought in by tauri-bundler's RPM packaging, through rpm and pgp
+  # brought in by tauri-bundler's RPM packaging and macOS signing, through rpm, pgp and
+  # tauri-macos-sign
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5, through rpm and pgp; the job runs only signer sign" },
   { id = "RUSTSEC-2025-0144", reason = "ml-dsa 0.0.4, through rpm and pgp; the job runs only signer sign" },
-  { id = "RUSTSEC-2023-0071", reason = "rsa 0.9.10, through rpm and pgp; the job runs only signer sign" },
+  { id = "RUSTSEC-2023-0071", reason = "rsa 0.9.10, through rpm and pgp and through tauri-macos-sign; the job runs only signer sign" },
   # brought in by the icon and image commands, through image and resvg
   { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 is unmaintained, through image; the job runs only signer sign" },
   { id = "RUSTSEC-2026-0206", reason = "rustybuzz 0.20.1 is unmaintained, through resvg; the job runs only signer sign" },
