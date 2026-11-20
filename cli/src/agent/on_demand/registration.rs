@@ -12,6 +12,7 @@ use super::listener::Failure;
 use super::{Coordinator, Reservation, View};
 
 const MAX_CREDENTIAL_ROTATIONS: u32 = 3;
+const HALTED: &str = "on-demand registration halted";
 
 impl View {
     /// recovery uses the originating repository even after its configuration entry is gone.
@@ -88,6 +89,24 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
     }
 }
 
+impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
+    /// ends `work` when a stop arrives, however long its requests would retry or wait. Only the
+    /// steps before the JIT request go through it: they record no ownership, so none is lost.
+    async fn unless_stopped<R>(
+        &self,
+        work: impl Future<Output = Result<R, String>>,
+    ) -> Result<R, String> {
+        let mut pool_stop = self.coordinator.controls.stop.clone();
+        let mut slot_stop = self.stop.clone();
+        tokio::select! {
+            biased;
+            _ = pool_stop.wait_for(|stopped| *stopped) => Err(HALTED.to_owned()),
+            _ = slot_stop.wait_for(|stopped| *stopped) => Err(HALTED.to_owned()),
+            result = work => result,
+        }
+    }
+}
+
 impl<T: TokenSource, K: Clock> Registrar for Reservation<'_, '_, T, K> {
     /// ignores the runtime's token copy: the store is authoritative at every JIT attempt.
     async fn request_jit(&self, request: &JitRequest<'_>) -> Result<Secret, RegistrationError> {
@@ -100,7 +119,7 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
     async fn register(&self, request: &JitRequest<'_>) -> Result<Secret, String> {
         let pool = self.coordinator;
         if self.halted() {
-            return Err("on-demand registration halted".to_owned());
+            return Err(HALTED.to_owned());
         }
         if request.owner != pool.pool.owner
             || request.repository != pool.pool.repository
@@ -112,9 +131,11 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
         let epoch = pool.admission_epoch();
         let mut slot_epoch = self.stop.clone();
         slot_epoch.borrow_and_update();
-        let _renewal = pool.renewal.lock().await;
+        let _renewal = self
+            .unless_stopped(async { Ok(pool.renewal.lock().await) })
+            .await?;
         if self.halted() || epoch.changed() || slot_epoch.has_changed().unwrap_or(true) {
-            return Err("on-demand registration halted".to_owned());
+            return Err(HALTED.to_owned());
         }
         let Some(mut current) = pool.credentials() else {
             return Err("on-demand listener has no session".to_owned());
@@ -127,22 +148,29 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
             <= Duration::from_secs(120);
         let mut pat = pool.token(refreshing)?;
         if current.connection.needs_renewal(&pat, pool.clock.now()) {
-            current = pool
-                .renew_for_pat(current, &pat)
-                .await
-                .map_err(|failure| pool.registration_failed(failure))?;
+            current = self
+                .unless_stopped(async {
+                    pool.renew_for_pat(current, &pat)
+                        .await
+                        .map_err(|failure| pool.registration_failed(failure))
+                })
+                .await?;
         }
         // a previous response may have been lost or cancelled; absence must be confirmed before retrying.
-        pool.cleanup_with_pat(self.id, &pat).await?;
+        self.unless_stopped(pool.cleanup_with_pat(self.id, &pat))
+            .await?;
         for _ in 0..MAX_CREDENTIAL_ROTATIONS {
             pat = pool.token(refreshing)?;
             if !current.connection.needs_renewal(&pat, pool.clock.now()) {
                 break;
             }
-            current = pool
-                .renew_for_pat(current, &pat)
-                .await
-                .map_err(|failure| pool.registration_failed(failure))?;
+            current = self
+                .unless_stopped(async {
+                    pool.renew_for_pat(current, &pat)
+                        .await
+                        .map_err(|failure| pool.registration_failed(failure))
+                })
+                .await?;
         }
         pat = pool.token(refreshing)?;
         if current.connection.needs_renewal(&pat, pool.clock.now()) {
@@ -151,7 +179,7 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
             );
         }
         if self.halted() || epoch.changed() || slot_epoch.has_changed().unwrap_or(true) {
-            return Err("on-demand registration halted".to_owned());
+            return Err(HALTED.to_owned());
         }
         {
             let mut state = pool.state.borrow_mut();
@@ -205,7 +233,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                 error.to_string()
             }
             Failure::Store(reason) => reason,
-            Failure::Halted => "on-demand registration halted".to_owned(),
+            Failure::Halted => HALTED.to_owned(),
         }
     }
 

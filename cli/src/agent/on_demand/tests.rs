@@ -433,6 +433,11 @@ mod http {
             )
             .unwrap()
         }
+
+        /// a client that waits `delay` between the attempts of a refused registration exchange.
+        fn client_retrying(&self, delay: Duration) -> Client {
+            self.client().with_exchange_retry_delay(delay)
+        }
     }
 
     fn connect() -> Vec<Reply> {
@@ -773,6 +778,112 @@ mod http {
             channels.stop.send_replace(true);
         });
         assert!(coordinator.state.borrow().fatal);
+    }
+
+    /// a registration exchange the service refuses, with `seen` told when the first attempt arrives.
+    fn refused_exchange(seen: &watch::Sender<bool>) -> Vec<Reply> {
+        let mut refused = Reply::json("POST", "runner-registration", 401, Value::Null);
+        refused.signal = Some(seen.clone());
+        vec![
+            Reply::json(
+                "POST",
+                "registration-token",
+                201,
+                json!({"token": "<registration-placeholder>"}),
+            ),
+            refused,
+        ]
+    }
+
+    /// waits until the refused exchange is in its pause between attempts, then asks for the stop.
+    async fn stop_during_the_exchange_pause(
+        seen: &watch::Sender<bool>,
+        stop: &watch::Sender<bool>,
+    ) -> Instant {
+        seen.subscribe().wait_for(|seen| *seen).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        stop.send_replace(true);
+        Instant::now()
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_stop_ends_the_listener_while_its_exchange_waits_to_retry() {
+        let fake = Fake::new().await;
+        let client = fake.client_retrying(Duration::from_secs(1));
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator = Coordinator::new(
+            pool(),
+            &client,
+            &tokens,
+            &SystemClock,
+            &log,
+            channels.controls(),
+        );
+        let seen = watch::Sender::new(false);
+        let (_, ended, stopped) = tokio::join!(
+            fake.serve(refused_exchange(&seen)),
+            async {
+                coordinator.run().await;
+                Instant::now()
+            },
+            stop_during_the_exchange_pause(&seen, &channels.stop)
+        );
+        assert!(
+            ended.duration_since(stopped) < Duration::from_millis(500),
+            "the stop waited {:?} for the connection",
+            ended.duration_since(stopped)
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_stop_ends_a_registration_while_its_exchange_waits_to_retry() {
+        let fake = Fake::new().await;
+        let client = fake.client_retrying(Duration::from_secs(1));
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator = Coordinator::new(
+            pool(),
+            &client,
+            &tokens,
+            &SystemClock,
+            &log,
+            channels.controls(),
+        );
+        let seen = watch::Sender::new(false);
+        let mut replies = connect();
+        replies.push(session());
+        replies.extend(refused_exchange(&seen));
+        let (_, (outcome, ended), stopped) = tokio::join!(
+            fake.serve(replies),
+            async {
+                seed(&coordinator).await;
+                let mut lease = coordinator
+                    .reserve(1, channels.stop.subscribe())
+                    .await
+                    .unwrap();
+                // the replaced token makes the registration renew the credentials first
+                *tokens.0.borrow_mut() = Ok("<replacement-pat-placeholder>".to_owned());
+                let token = Secret::new("<unused-runtime-token>".to_owned());
+                let outcome = lease.request_jit(&request(&token)).await;
+                let ended = Instant::now();
+                lease
+                    .finish(false, Instant::now() + Duration::from_secs(1))
+                    .await
+                    .unwrap();
+                (outcome, ended)
+            },
+            stop_during_the_exchange_pause(&seen, &channels.stop)
+        );
+        assert!(outcome.unwrap_err().to_string().contains("halted"));
+        assert!(
+            ended.duration_since(stopped) < Duration::from_millis(500),
+            "the stop waited {:?} for the connection",
+            ended.duration_since(stopped)
+        );
+        assert_eq!(fake.count("POST", "generatejitconfig"), 0);
     }
 
     /// what an idle pool did to the service, and where it stood, after `horizon` of the clock.
