@@ -409,16 +409,20 @@ changes:
 - **One `repository` key.** The owner is part of it, so a missing owner is a problem
   on `repository`.
 - **Organisation pools.** `organization` and `runner_group` select an organisation
-  runner group instead of one repository. Such a pool rejects `volumes`, including
-  an empty list, with `not allowed with organization`. `scale_set` is not a known
-  key of this configuration, so it is reported as an undefined key, except on an
-  organisation pool, where it is reported as `not allowed with organization`. JSON
-  gains no organisation keys. With the same OS, an organisation pool must not share a
-  non-platform label with another pool of that organisation or any of its
-  repositories, comparing logins and labels without case. This includes the default `routing_label`, so overlapping pools
-  need distinct explicit labels. Repository-only files retain their validation
-  rules; a pool naming neither target reports
-  `pool[i]: names neither repository nor organization`.
+  runner group instead of one repository. Such a pool rejects `volumes`, including an
+  empty list, with `not allowed with organization`. `scale_set` is not a known key of
+  this configuration, so it is reported as an undefined key, except on an organisation
+  pool, where it is reported as `not allowed with organization`. JSON gains no
+  organisation keys. With the same OS, an organisation pool must not share a
+  non-platform label with another pool of that organisation or any of its repositories,
+  comparing logins and labels without case. This includes the default `routing_label`,
+  so overlapping pools need distinct explicit labels. Repository-only files retain their
+  validation rules. A pool naming neither target reports
+  `pool[i]: names neither repository nor organization`, and one naming both reports
+  `pool[i]: names both repository and organization`. An organisation pool without
+  `runner_group` reports `pool[i].runner_group: required with organization`, and a pool
+  with `runner_group` and no `organization` reports
+  `pool[i].runner_group: only with organization`.
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
