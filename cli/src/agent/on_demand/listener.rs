@@ -230,7 +230,12 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             }
             other => other?,
         };
-        self.state.borrow_mut().queue_refreshed = false;
+        {
+            let mut state = self.state.borrow_mut();
+            state.queue_refreshed = false;
+            // a later, independent 404 may recreate the set once more; only a consecutive one is a rejection
+            state.recreated = false;
+        }
         if let Some(message) = message {
             if last_processed.is_some_and(|id| message.id <= id) {
                 self.clock.sleep(REDELIVERY_WAIT).await;

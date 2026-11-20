@@ -415,6 +415,14 @@ mod http {
             }
         }
 
+        fn count(&self, method: &str, part: &str) -> usize {
+            self.requests
+                .borrow()
+                .iter()
+                .filter(|(m, path)| m == method && path.contains(part))
+                .count()
+        }
+
         fn client(&self) -> Client {
             Client::new(
                 Some(&self.base),
@@ -673,6 +681,98 @@ mod http {
                 }
             }
         }
+    }
+
+    /// the opening exchange, the crash-cleanup listing and the first session of a pool.
+    fn opening() -> Vec<Reply> {
+        let mut replies = connect();
+        replies.push(Reply::json(
+            "GET",
+            "actions/runners?",
+            200,
+            json!({"total_count": 0, "runners": []}),
+        ));
+        replies.push(session());
+        replies
+    }
+
+    /// the replies of a listener that closes its session, finds the set again and opens another.
+    fn recreation() -> Vec<Reply> {
+        let mut replies = vec![Reply::empty("DELETE", "sessions/")];
+        replies.extend(connect());
+        replies.push(session());
+        replies
+    }
+
+    fn gone() -> Reply {
+        Reply::json("GET", "queue", 404, json!({"message": "gone"}))
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_404_after_a_recovered_one_recreates_the_scale_set_again() {
+        let fake = Fake::new().await;
+        let client = fake.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator = Coordinator::new(
+            pool(),
+            &client,
+            &tokens,
+            &SystemClock,
+            &log,
+            channels.controls(),
+        );
+        let mut replies = opening();
+        replies.push(gone());
+        replies.extend(recreation());
+        replies.push(Reply::json("GET", "queue", 202, Value::Null));
+        replies.push(gone());
+        replies.extend(recreation());
+        let mut polled = Reply::json("GET", "queue", 202, Value::Null);
+        polled.signal = Some(channels.stop.clone());
+        replies.push(polled);
+        replies.push(Reply::empty("DELETE", "sessions/"));
+        tokio::join!(fake.serve(replies), coordinator.run());
+        assert_eq!(coordinator.view().state, ListenerState::Stopped);
+        assert_eq!(fake.count("POST", "sessions"), 3);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_404_right_after_a_recreation_is_a_rejection() {
+        let fake = Fake::new().await;
+        let client = fake.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator = Coordinator::new(
+            pool(),
+            &client,
+            &tokens,
+            &SystemClock,
+            &log,
+            channels.controls(),
+        );
+        let mut replies = opening();
+        replies.push(gone());
+        replies.extend(recreation());
+        replies.push(gone());
+        replies.push(Reply::empty("DELETE", "sessions/"));
+        tokio::join!(fake.serve(replies), coordinator.run(), async {
+            let mut changed = coordinator.changes();
+            timeout(Duration::from_secs(2), async {
+                while coordinator.view().state != ListenerState::Rejected {
+                    changed.changed().await.unwrap();
+                }
+            })
+            .await
+            .unwrap();
+            let view = coordinator.view();
+            assert_eq!(view.status, Some(404));
+            assert_eq!(fake.count("POST", "sessions"), 2);
+            channels.stop.send_replace(true);
+        });
+        assert!(coordinator.state.borrow().fatal);
     }
 
     /// what an idle pool did to the service, and where it stood, after `horizon` of the clock.
