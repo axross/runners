@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # runs check-release-shape.mjs against copies of the workflows, first unchanged
-# (it must pass) and then with one change at a time (each must fail, and name the
-# cause). every change is one the release record forbids: an Environment on any
-# job or step but sign-update, in a `.yml` workflow, or in a workflow a pull
+# (it must pass) and then with one change at a time (each must fail, and name
+# the cause). every change is one the release record forbids: an Environment on
+# any job or step but sign-update, in a `.yml` workflow, or in a workflow a pull
 # request calls; a secret read in the release workflows outside sign-update's
 # sign step, or a signing secret read in any other workflow; release.yaml
 # triggered by anything but a dispatch; a job without its guard, its runner, its
 # permissions or its place in the chain; in sign-update, a checkout, another
 # action, a package manager, a fetcher, a tool called by name, an unmarked
 # script or a `${{ }}` in one, or a signer run another way; a feed checked
-# against another key, by a checker whose SHA-256 is not compared with
-# update-tool's before it runs, or without unsigned/SHA256SUMS; a step condition that could skip a check; a write to
-# SHA256SUMS in the build's assemble job; PATH, BASH_ENV, ENV or SYSTEM_BIN set
-# in release.yaml; and a way past a failed job, whatever the case of its status
-# function. a change the test cannot find in the files fails the test, so it
-# cannot go stale and pass.
+# against another key, by a checker that is used in any way before its SHA-256
+# is compared with update-tool's, or whose SHA-256 is compared with another
+# value than update-tool's output, or without unsigned/SHA256SUMS; a step
+# condition that could skip a check; a write to SHA256SUMS in the build's
+# assemble job; PATH, BASH_ENV, ENV or SYSTEM_BIN set in release.yaml; and a way
+# past a failed job, whatever the case of its status function. a change the test
+# cannot find in the files fails the test, so it cannot go stale and pass.
 # shellcheck disable=SC2016 # the texts the changes find and replace are literal, not expansions.
 set -euo pipefail
 
@@ -230,9 +231,18 @@ expect_fail "assemble-signed that compares the feed check's SHA-256 with another
   "$release" '!= "$FEED_CHECK_SHA256" ]]' '!= "$VERSION" ]]'
 expect_fail "assemble-signed that goes on after a feed check with another SHA-256" "a feed check whose SHA-256 is not FEED_CHECK_SHA256 does not exit 1" \
   "$release" 'update-tool built" >&2'$'\n            exit 1' 'update-tool built" >&2'$'\n            exit 0'
-expect_fail "assemble-signed that makes the feed check executable before comparing its SHA-256" "makes the feed check executable or runs it before comparing its SHA-256" \
+expect_fail "assemble-signed that makes the feed check executable before comparing its SHA-256" "uses the feed check before comparing its SHA-256" \
   "$release" "$feed_check_hash" "" \
   "$release" 'chmod 0755 "$check"'$'\n' 'chmod 0755 "$check"'$'\n'"$feed_check_hash"
+hash_line=$'          line="$(sha256sum "$check")"\n'
+expect_fail "assemble-signed that does not hash the feed check" "does not compare the feed check's SHA-256 with FEED_CHECK_SHA256" \
+  "$release" "$hash_line" ""
+expect_fail "assemble-signed that compares with another update-tool output" "FEED_CHECK_SHA256 is not \`\${{ needs.update-tool.outputs.feed_check_sha256 }}\`" \
+  "$release" 'FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.feed_check_sha256 }}' 'FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.tauri_cli_sha256 }}'
+expect_fail "assemble-signed that runs the feed check as braced check before comparing its SHA-256" "uses the feed check before comparing its SHA-256" \
+  "$release" "$hash_line" $'          "${check}" --help >/dev/null || true\n'"$hash_line"
+expect_fail "assemble-signed that runs the feed check as plain check before comparing its SHA-256" "uses the feed check before comparing its SHA-256" \
+  "$release" "$hash_line" $'          "$check" --help >/dev/null || true\n'"$hash_line"
 expect_fail "assemble-signed that runs the feed check without unsigned/SHA256SUMS" "does not run the feed check with unsigned/SHA256SUMS among its arguments" \
   "$release" '"$VERSION" unsigned/SHA256SUMS "windows-x86_64=dist/${windows_msi}" || exit 1' '"$VERSION" "windows-x86_64=dist/${windows_msi}" || exit 1'
 expect_fail "assemble-signed in unsigned mode" "does not run assemble-release.sh in signed mode" \

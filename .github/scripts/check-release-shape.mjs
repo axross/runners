@@ -48,6 +48,8 @@ const SIGNING_SECRETS = {
 };
 const SIGNER_CALL =
   '"$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION"';
+// what assemble-signed compares the feed checker's SHA-256 with.
+const FEED_CHECK_OUTPUT = "${{ needs.update-tool.outputs.feed_check_sha256 }}";
 const SIGNING_ACTIONS = [
   "actions/download-artifact",
   "actions/upload-artifact",
@@ -857,12 +859,14 @@ function checkPlainJob(id, script) {
 }
 
 /**
- * records a feed checker that is made executable or run before its SHA-256 is
- * compared with the one update-tool built, or whose mismatch does not exit 1.
+ * records a feed checker that is referenced, whether made executable, run or
+ * read, before its SHA-256 is compared with FEED_CHECK_SHA256, or whose
+ * mismatch does not exit 1. only the line that hashes it may come before.
  */
 function checkFeedCheckHash(scripts, where) {
   const lines = scripts.split("\n").map((line) => line.trim());
-  const hashed = lines.findIndex((line) => line.includes('sha256sum "$check"'));
+  const hashLine = 'line="$(sha256sum "$check")"';
+  const hashed = lines.indexOf(hashLine);
   const compared = lines.findIndex(
     (line, index) =>
       index > hashed &&
@@ -880,12 +884,11 @@ function checkFeedCheckHash(scripts, where) {
       `${where}: a feed check whose SHA-256 is not FEED_CHECK_SHA256 does not exit 1`,
     );
   const used = lines.findIndex(
-    (line) => /^chmod\b.*"\$check"/.test(line) || line.startsWith('"$check" '),
+    (line, index) =>
+      index !== hashed && !line.startsWith("#") && /\$\{?check\b/.test(line),
   );
   if (used !== -1 && used < closing)
-    problem(
-      `${where} makes the feed check executable or runs it before comparing its SHA-256`,
-    );
+    problem(`${where} uses the feed check before comparing its SHA-256`);
 }
 
 /**
@@ -902,6 +905,16 @@ function checkFeed() {
   if (!scripts.includes(".github/scripts/write-update-feed.sh"))
     problem(`${where} does not write the feed with write-update-feed.sh`);
   checkFeedCheckHash(scripts, where);
+  const hashStep = scriptsOf(assemble).find((step) =>
+    step.run.includes('"$FEED_CHECK_SHA256"'),
+  );
+  if (
+    hashStep &&
+    text(hashStep.env?.FEED_CHECK_SHA256).trim() !== FEED_CHECK_OUTPUT
+  )
+    problem(
+      `${where}: FEED_CHECK_SHA256 is not \`${FEED_CHECK_OUTPUT}\`, update-tool's output`,
+    );
   const feedCheck = scripts.match(
     /^[\t ]*"\$check" dist\/latest\.json ([^|;&\n]+) \|\| exit 1[\t ]*$/m,
   );
