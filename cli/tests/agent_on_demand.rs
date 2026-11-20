@@ -8,7 +8,7 @@
 )]
 mod support;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -44,6 +44,8 @@ struct ServiceState {
     assigned: u64,
     sent: Option<u64>,
     registrations: BTreeMap<u64, String>,
+    /// the registrations GitHub lists as offline; every other one is online.
+    offline: BTreeSet<u64>,
     jit_names: Vec<String>,
     owners: Vec<String>,
     closed: usize,
@@ -109,6 +111,14 @@ impl Drop for Service {
 
 fn statistics(assigned: u64) -> Value {
     json!({"totalAssignedJobs": assigned, "totalRunningJobs": 0, "totalIdleRunners": 0})
+}
+
+fn status_of(state: &ServiceState, id: u64) -> &'static str {
+    if state.offline.contains(&id) {
+        "offline"
+    } else {
+        "online"
+    }
 }
 
 /// models registrations independently of the runtime, so stopping a container cannot erase one.
@@ -213,7 +223,7 @@ fn answer(
         let runners: Vec<_> = state
             .registrations
             .iter()
-            .map(|(id, name)| json!({"id": id, "name": name, "status": "online", "busy": false}))
+            .map(|(id, name)| json!({"id": id, "name": name, "status": status_of(state, *id), "busy": false}))
             .collect();
         return (
             200,
@@ -240,7 +250,7 @@ fn answer(
             .map_or((404, Value::Null), |name| {
                 (
                     200,
-                    json!({"id": id, "name": name, "status": "online", "busy": false}),
+                    json!({"id": id, "name": name, "status": status_of(state, id), "busy": false}),
                 )
             });
     }
@@ -1752,4 +1762,187 @@ async fn a_stop_during_a_cleanup_retry_is_prompt_and_leaves_the_cleanup_open() {
         })
         .await;
     assert!(took < Duration::from_secs(3), "the stop took {took:?}");
+}
+
+/// the runners a crashed agent could have left, among others that are not its to remove.
+const LEFTOVER: (u64, &str) = (101, "axpc-jobs-1-20261117000000000");
+const UNTOUCHED: [(u64, &str, bool); 5] = [
+    // online, though its name is the pool's own
+    (102, "axpc-jobs-2-20261117000000001", false),
+    // another scale set, whose name extends this one
+    (103, "axpc-jobs-x-1-20261117000000000", true),
+    // a name that merely starts with the scale set's
+    (104, "axpc-jobs-other", true),
+    // an always-on runner of the logical pool
+    (105, "logical-1-20261117000000000", true),
+    (106, "unrelated-runner", true),
+];
+
+/// a service that lists the leftover and the runners that must stay, among them.
+async fn service_with_leftovers() -> Service {
+    let service = Service::start(0).await;
+    {
+        let mut state = service.state.lock().unwrap();
+        state
+            .registrations
+            .insert(LEFTOVER.0, LEFTOVER.1.to_string());
+        state.offline.insert(LEFTOVER.0);
+        for (id, name, offline) in UNTOUCHED {
+            state.registrations.insert(id, name.to_string());
+            if offline {
+                state.offline.insert(id);
+            }
+        }
+    }
+    service
+}
+
+fn deletions(service: &Service) -> Vec<String> {
+    service
+        .state
+        .lock()
+        .unwrap()
+        .requests
+        .iter()
+        .filter(|(method, path, _)| method == "DELETE" && path.starts_with("/repos/"))
+        .map(|(_, path, _)| path.clone())
+        .collect()
+}
+
+fn leftover_path() -> String {
+    format!("/repos/o/r/actions/runners/{}", LEFTOVER.0)
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_start_removes_only_its_own_offline_runners() {
+    let service = service_with_leftovers().await;
+    let rig = rig(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the idle listener", |snapshot| {
+                snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .is_some_and(|listener| {
+                        listener.state == "listening" && !listener.cleanup_incomplete
+                    })
+            })
+            .await;
+            assert_eq!(deletions(service), [leftover_path()]);
+            {
+                let state = service.state.lock().unwrap();
+                let kept: Vec<u64> = state.registrations.keys().copied().collect();
+                assert_eq!(kept, UNTOUCHED.map(|(id, ..)| id));
+                // the exact identity is read back before the delete
+                let reads: Vec<_> = state
+                    .requests
+                    .iter()
+                    .filter(|(_, path, _)| *path == leftover_path())
+                    .map(|(method, ..)| method.as_str())
+                    .collect();
+                assert_eq!(reads, ["GET", "DELETE"]);
+                assert!(state.jit_names.is_empty());
+            }
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failing_listing_at_start_backs_off_with_no_session_and_then_cleans() {
+    let service = service_with_leftovers().await;
+    service.state.lock().unwrap().fail_listing = true;
+    let rig = rig(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn
+                .until("the listing failure backing off", |snapshot| {
+                    snapshot.pools[0]
+                        .on_demand
+                        .as_ref()
+                        .is_some_and(|listener| listener.state == "backing_off")
+                })
+                .await;
+            assert_eq!(
+                snapshot.pools[0].on_demand.as_ref().unwrap().status,
+                Some(500)
+            );
+            {
+                let state = service.state.lock().unwrap();
+                assert!(
+                    state.owners.is_empty(),
+                    "a session opened before the cleanup"
+                );
+                assert!(state.registrations.contains_key(&LEFTOVER.0));
+            }
+            assert!(deletions(service).is_empty());
+            service.state.lock().unwrap().fail_listing = false;
+            conn.until("the retry cleaning and listening", |snapshot| {
+                snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .is_some_and(|listener| listener.state == "listening")
+            })
+            .await;
+            assert_eq!(deletions(service), [leftover_path()]);
+            assert_eq!(
+                service.state.lock().unwrap().registrations.len(),
+                UNTOUCHED.len()
+            );
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failing_deletion_at_start_shows_the_leftover_as_incomplete_and_retries() {
+    let service = service_with_leftovers().await;
+    service.state.lock().unwrap().fail_deletion = true;
+    let rig = rig(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn
+                .until("the deletion failure backing off", |snapshot| {
+                    snapshot.pools[0]
+                        .on_demand
+                        .as_ref()
+                        .is_some_and(|listener| listener.state == "backing_off")
+                })
+                .await;
+            let listener = snapshot.pools[0].on_demand.as_ref().unwrap();
+            assert!(listener.cleanup_incomplete);
+            assert_eq!(listener.registrations.len(), 1);
+            assert_eq!(listener.registrations[0].name, LEFTOVER.1);
+            assert_eq!(listener.registrations[0].runner_id, Some(LEFTOVER.0));
+            assert!(service.state.lock().unwrap().owners.is_empty());
+            service.state.lock().unwrap().fail_deletion = false;
+            let snapshot = conn
+                .until("the retry deleting and listening", |snapshot| {
+                    snapshot.pools[0]
+                        .on_demand
+                        .as_ref()
+                        .is_some_and(|listener| {
+                            listener.state == "listening" && !listener.cleanup_incomplete
+                        })
+                })
+                .await;
+            assert!(
+                snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .unwrap()
+                    .registrations
+                    .is_empty()
+            );
+            {
+                let state = service.state.lock().unwrap();
+                assert_eq!(state.registrations.len(), UNTOUCHED.len());
+                assert!(!state.registrations.contains_key(&LEFTOVER.0));
+            }
+            conn.ok("quit").await;
+        })
+        .await;
 }
