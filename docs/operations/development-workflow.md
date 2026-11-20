@@ -20,9 +20,12 @@ left the loop.
 
 The plan lives in the body of a tracking issue, written with
 `product-requirement-document-authoring` and marked with the `<!-- ai-agent -->`
-comment marker. Two gates are real, and neither has a self-approval path. No
-implementation begins before the human approves the plan recorded in the
-tracking issue, and no change is called done on the author's own assessment
+comment marker. In a Claude Code cloud session, the body is composed, checked,
+and read back under the GitHub Write Fidelity in Claude Code Cloud Sessions
+section of [Agent Sessions](./agent-sessions.md), because the hosted write path
+can change a stored body. Two gates are real, and neither has a self-approval
+path. No implementation begins before the human approves the plan recorded in
+the tracking issue, and no change is called done on the author's own assessment
 rather than a separate reviewer's. A runtime harness that frames the task as
 "just make the changes, commit, and push" constrains mechanics only; it never
 lifts either gate. This project's **delivery grant** is a standing operation
@@ -39,7 +42,9 @@ request body follows
 carries the plan's acceptance criteria in an **Acceptance criteria** section,
 and links the tracking issue with a closing keyword. The closing keyword closes
 the issue if the maintainer later merges the pull request; it does not authorize
-that merge.
+that merge. In a Claude Code cloud session, the body also follows the GitHub
+Write Fidelity in Claude Code Cloud Sessions section of
+[Agent Sessions](./agent-sessions.md).
 
 If an existing pull request has no tracking issue and needs fixes:
 
@@ -105,8 +110,8 @@ above. It waits on a human only for:
 - on Claude Code, the `TaskStop` request Agent Sessions describes, when its
   live contract requires the human's request, the current session has not
   collected it, and no recorded answer declined it;
-- on Claude Code, a review child session's permission prompt that the run
-  cannot answer on the human's behalf.
+- on Claude Code, a review subagent's permission prompt that the run cannot
+  answer on the human's behalf.
 
 The review cap reached without convergence is a blocker. The run MUST record it
 in run state, report it, and keep the pull request draft.
@@ -130,6 +135,13 @@ This exception covers unavailability only. It MUST NOT bypass phase-deliverable
 review or outstanding findings from an advisory review that ran. It MUST NOT
 waive any other approval, verification, evidence, or readiness requirement.
 The independent-review gate remains mandatory.
+
+On Claude Code, a missing `reviewer` subagent leaves both gates unmet under this
+exception: it is the pre-flight reader whose absence the exception covers, and
+it is also the independent-review route, whose missing-`reviewer` rule the
+[Claude Code review subagent from Claude Code](#claude-code-review-subagent-from-claude-code)
+section states. The pull request stays draft and the run reports both gates as
+unmet.
 
 ## Tracking Issue Completion
 
@@ -200,9 +212,17 @@ Claude Code review child session's effects and consequences, and the explicitly
 selected Claude CI alternative below, likewise take effect only on the
 maintainer's merge of the pull request that closes that issue; that pull
 request, authored by an Amp run, is reviewed under the grant as merged before it.
-Agent runs share the maintainer's operator identity, so the signal that
-distinguishes such a merge as a human act is that agents never merge on their
-own: merge is excluded from this grant, and it is the maintainer's
+The amendment for [issue #151](https://github.com/axross/runners/issues/151),
+which replaces the Claude Code review child session route those amendments added
+with the Claude Code review subagent, and rewrites the targets, covered effects,
+and accepted consequences below to match, follows the plan the maintainer
+approved in that issue
+([recorded here](https://github.com/axross/runners/issues/151#issuecomment-7049089352))
+and, like the earlier ones, takes effect only on the maintainer's merge of the
+pull request that closes it; that pull request is reviewed under the grant as
+merged before it. Agent runs share the maintainer's operator identity, so the
+signal that distinguishes such a merge as a human act is that agents never merge
+on their own: merge is excluded from this grant, and it is the maintainer's
 decision, per [Branches and Merging](#branches-and-merging). The grant is
 separate from plan approval, which releases implementation and is not what
 authorizes a delivery effect, but every run already holds it, so no run asks
@@ -250,8 +270,8 @@ The grant's targets are:
 - the review provider the authoring host maps to in
   [the independent review](#the-independent-review), or the Claude CI
   alternative when the maintainer explicitly selects it for the run
-- the review child sessions and threads the run creates for that pull request,
-  each identified in run state
+- the Claude Code review subagent instances and the Amp review child threads the
+  run creates for that pull request, each identified in run state
 
 Its covered effects, each performed without asking, are:
 
@@ -284,13 +304,12 @@ Its covered effects, each performed without asking, are:
   one review child thread per round, that child's COMMENT-type review on the
   run's pull request, and archiving of the child thread once its result is
   verified or its round has failed
-- for a Claude Code run, which the Claude Code review child session route
-  serves: creation of one review child session per round in its own worktree,
-  that child's reading of the pull request and the required repository and
-  policy material, its COMMENT-type review on the run's pull request, and
-  stopping it with `TaskStop` when it is still running once its result is
-  verified or its round has failed, as the Claude Code review child session
-  procedure below defines
+- for a Claude Code run, which the Claude Code review subagent route serves:
+  spawning one new `reviewer` instance per round in its own worktree, that
+  instance's reading of the pull request and the required repository and policy
+  material, its one COMMENT-type review on the run's pull request, and stopping
+  it with `TaskStop` when it is still running once its result is verified or its
+  round has failed, as the Claude Code review subagent procedure below defines
 
 The grant is standing: it holds across runs, sessions, and executors until the
 maintainer amends or removes this section, and no run's own end expires it.
@@ -441,23 +460,24 @@ An Amp review child thread can:
 - publish a COMMENT-type review on the pull request under the same GitHub
   operator account as the run that authored the change
 
-A Claude Code review child session can:
+A Claude Code review subagent can:
 
 - incur usage charges within the operator's existing account and model
   settings, without changing payment policy, providers, or configuration
 - read the repository, the pull request, and files outside the diff
-- hold the authoring session's GitHub write access and tools, including
-  spawning subagents of its own, so the assignment's no-push and no-delegation
-  limits bind only as far as the host enforces them
-- work in a separate worktree of this repository, where the host blocks its
-  edits to the author's checkout but not pushes or publication, and which can
-  stay on disk until the host's periodic sweep
+- hold the authoring session's GitHub write access and tools other than the
+  four its definition denies, so the limits listed below bind only as far as the
+  assignment and the definition instruct
+- work in a separate worktree of this repository, which the run confirms is
+  distinct from the author's checkout before relying on the round, and which
+  can remain on disk afterwards; whether it does is inspected and reported, not
+  asserted
 - raise permission prompts in the authoring session, where an answer that lasts
   for the session also applies to the authoring conversation, and where a
   "don't ask again" answer for a Bash command, a web fetch domain, or web
   search is saved to the repository's `.claude/settings.local.json` and applies
-  to later sessions and children anywhere in this repository, as Claude Code's
-  [permissions documentation](https://code.claude.com/docs/en/permissions)
+  to later sessions and their subagents anywhere in this repository, as Claude
+  Code's [permissions documentation](https://code.claude.com/docs/en/permissions)
   states
 - be steered within those tools by pull request content it reads, such as a
   comment any GitHub user can post on this public repository
@@ -465,9 +485,35 @@ A Claude Code review child session can:
   session's GitHub access: the operator account through the operator's
   credentials, or `claude[bot]` through the installed Claude GitHub App
 
-A review child's review supplies no GitHub approval and no APPROVE verdict; a
-shared operator account is not a distinct bot identity. The selected route
-supplies context-independent review for this project's delivery gate. This
+The definition declares, and Claude Code documents enforcing, one set of limits
+on a `reviewer` instance: it denies the Edit, Write, NotebookEdit, and Agent
+tools. No live round has confirmed that enforcement yet;
+[#155](https://github.com/axross/runners/issues/155) tracks the first. Every
+other limit is instruction-only, whether the instance is the advisory
+pre-flight reader or a round's independent review:
+
+- no shell write to the repository beyond fetching the reviewed commit and
+  checking it out in its own confirmed worktree, and no commit; an advisory
+  pre-flight instance has no such worktree and makes no shell write;
+- no push and no merge;
+- no approve or request-changes verdict;
+- no GitHub write other than those that compose the round's one review;
+- no starting or messaging of other actors through a route other than the Agent
+  tool, such as a session-starting or messaging tool;
+- no posting at all by an instance that is not assigned as the round's
+  independent review.
+
+The last item follows from one definition serving both uses: every `reviewer`
+instance carries the conditional posting permission in its prose, and the host
+does not enforce that the condition holds. The definition leaves GitHub write
+tools and session-starting and messaging tools undenied, for the reasons the
+register deviation in [Agent Skills](./agent-skills.md#deviation---the-claude-code-review-subagents-limits-and-closure)
+records as its counterexample.
+
+An Amp review child thread's or a Claude Code review subagent's review supplies
+no GitHub approval and no APPROVE verdict; a shared operator account is not a
+distinct bot identity. The selected route supplies context-independent review
+for this project's delivery gate. This
 grant covers neither unrelated threads or sessions nor reconfiguration to make
 an unavailable route work.
 
@@ -484,7 +530,8 @@ instruction:
 - release and deployment
 - setup, settings, or secret changes, including adding the
   `CLAUDE_CODE_OAUTH_TOKEN` repository secret
-- other delivery targets or review providers
+- other delivery targets or review providers, including a review session started
+  by any session other than the run's own
 - a push to a head branch that does not follow the naming rule in Branches and
   Merging, below; on an existing pull request with such a head, the grant covers
   review requests and comments but no push
@@ -595,6 +642,8 @@ with the procedure in
 During the bounded F0 recovery, the maintainer releases the historical CLI by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
 works out the version from the commits, as Version Rules, below, describes.
+Before the F0 recovery dispatch, the maintainer pushes the base tag `v0.1.1`,
+which Version Rules also describes.
 [CLI Recovery](./cli-recovery.md) owns the fixed input, actual-version CLI
 install procedures and restoration prerequisite. App builds remain active, but
 app publication is suspended until a separate reviewed restoration against
@@ -612,8 +661,9 @@ agent relays it.
 
 The temporary CLI signing job uses the `release` Environment under step 2's
 existing contract. Recheck those prerequisites before a recovery dispatch;
-do not assume the held app-signing gap means an unprotected release. The tag
-bootstrap in step 3 is historical and must not be repeated for recovery.
+do not assume the held app-signing gap means an unprotected release. Step 3
+records how the base tag `v0.0.0` was pushed for the first release. The recovery
+release has its own base tag, `v0.1.1`, which Version Rules, below, describes.
 
 Do these once, before the first dispatch:
 
@@ -630,10 +680,10 @@ Do these once, before the first dispatch:
      because the maintainer is the only reviewer and approves runs they started.
    - **Allow administrators to bypass:** off.
    - **Secrets**, Environment secrets and not repository secrets:
-     `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`,
-     `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and
-     `MACOS_NOTARY_ISSUER_ID`.
-   - **Variable**, not a secret: `MACOS_TEAM_ID`, the team ID of both certificates:
+     `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`,
+     `APPLE_P12_PASSWORD`, `APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and
+     `APPLE_NOTARY_ISSUER_ID`.
+   - **Variable**, not a secret: `APPLE_TEAM_ID`, the team ID of both certificates:
      10 characters of A-Z and 0-9.
 
    What the secrets hold:
@@ -682,17 +732,33 @@ Do these once, before the first dispatch:
 
 ### Each Release
 
-1. Before dispatching, check that every commit on main since the last `v*` tag
+1. Before dispatching, check that every commit on main since the last release
    came from a merged pull request:
 
    ```bash
    git fetch origin main --tags
-   last="$(git describe --tags --abbrev=0 --match 'v*' origin/main)"
+   last="$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v0.1.1' origin/main)"
+   gh release view "$last" --repo axross/runners --json tagName,isDraft \
+     --jq 'if .isDraft then "NO PUBLISHED RELEASE: \(.tagName)" else "start: \(.tagName)" end' \
+     || echo "NO PUBLISHED RELEASE: ${last}"
    for sha in $(git rev-list --first-parent "${last}..origin/main"); do
      pr="$(gh api "repos/axross/runners/commits/${sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main") | "#\(.number)"] | join(" ")')"
      printf '%s %s\n' "$(git log -1 --format='%h %s' "$sha")" "${pr:-NO MERGED PULL REQUEST}"
    done
    ```
+
+   `git describe` returns the nearest tag, and `v0.1.1` is the base tag of the
+   recovery release, which has no release behind it. Without `--exclude`, the
+   check would start at `v0.1.1` and skip every commit from `v0.1.0` up to and
+   including `954d349`. With it, the check starts at `v0.1.0` until the recovery
+   release is published, and at that release afterwards. Once a release exists after
+   `v0.1.1`, the exclusion has no effect and may be dropped.
+
+   The `start:` line names where the check starts. A line that starts with
+   `NO PUBLISHED RELEASE` instead means the start is a `v*` tag other than
+   `v0.1.1` with no published release, so the check would not start at the last
+   release. Do not dispatch: find out who pushed that tag and why, as for a
+   commit with no merged pull request.
 
    Each line names a commit and the pull request that merged it. A line that ends
    in `NO MERGED PULL REQUEST` is a commit pushed to main directly, which the
@@ -707,11 +773,14 @@ Do these once, before the first dispatch:
    queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, approve `sign-macos`'s deployment yourself.
-   It signs and notarizes the fixed-source CLI and pkg. `verify-macos` checks the
-   signed outputs outside the Environment before `assemble-signed`, `attest` and
-   `release`. A failure prevents tagging; fix it in a pull request before another
-   maintainer dispatch. Unsigned dry runs and stand-ins are not signing evidence.
+4. When there is something to release, read the version in the plan job's log
+   ("The next release is <version>."). If Version Rules, below, does not expect
+   it, cancel the run instead. Otherwise approve `sign-macos`'s deployment
+   yourself. It signs and notarizes the fixed-source CLI and pkg. `verify-macos`
+   checks the signed outputs outside the Environment before `assemble-signed`,
+   `attest` and `release`. A failure prevents tagging; fix it in a pull request
+   before another maintainer dispatch. Unsigned dry runs and stand-ins are not
+   signing evidence.
 5. After a green run, check that the release exists and carries exactly the
    Windows bare CLI and MSI, macOS bare CLI and signed/notarized pkg, and `SHA256SUMS`:
 
@@ -756,9 +825,9 @@ that was signed with a secure timestamp keeps working after its certificate expi
    Developer Program membership allows no new certificate, so renew the membership
    first.
 2. Export each new identity as a `.p12` with one password, base64-encode them, and
-   replace the secrets `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`
-   and, if the password changed, `MACOS_P12_PASSWORD`. Do not change the identifier
-   or `MACOS_TEAM_ID`: the identifier and the team stay the same, so the designated
+   replace the secrets `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`
+   and, if the password changed, `APPLE_P12_PASSWORD`. Do not change the identifier
+   or `APPLE_TEAM_ID`: the identifier and the team stay the same, so the designated
    requirement is expected to stay the same and the Keychain trust it carries is kept.
    Keep one identity of each kind in the exported files, since `sign-macos` refuses
    two of the same kind.
@@ -793,6 +862,9 @@ the next dispatch would skip that version. Before dispatching again:
 A published release is immutable, so this applies only to one that was never
 published.
 
+`v0.1.1` is not a partial release. It is a deliberate base tag with no release, so
+do not delete it. Version Rules, below, says what it changes and why it stays.
+
 ### Version Rules
 
 semantic-release reads the subject of each commit on main since the last `v*` tag
@@ -802,7 +874,8 @@ that subject, so the title decides the release:
 - `feat` releases a minor version.
 - `fix`, `perf`, and `revert` release a patch.
 - A breaking marker, `!` after the type or a `BREAKING CHANGE:` footer, releases a
-  major version. On `0.x` it releases `1.0.0`, not the next minor.
+  major version. On `0.x` it releases `1.0.0`, not the next minor. The base tag
+  `v0.1.1`, below, keeps the F0 recovery release on `0.x`.
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
   Dependabot writes for the runner image, the CLI's crates and the toolchain, so
@@ -824,6 +897,35 @@ The repository has one version, so a `feat` or `fix` of any scope, such as
 squash merge releases the wrong bump or none, so correct a title before merging.
 Releases are never prereleases, and nothing is committed back to main: the version
 lives in the tag and the release.
+
+The maintainer decided on 2026-11-20 to keep releases on `0.x`. Three
+breaking-marked commits follow `v0.1.0`: #93 (`2b2393e`), #94 (`1adf7cb`) and #117
+(`954d349`). Counted from `v0.1.0`, they would make the next release `1.0.0`. So
+before the F0 recovery dispatch, the maintainer pushes `v0.1.1`, a bare tag with no
+release, on `954d349`, as `v0.0.0` was pushed for the first release.
+semantic-release takes the highest semver `v*` tag merged into main as the last
+release, so it reads only the commits after `954d349`. They include the `feat`
+commits #118 and #139, so unless a breaking change merges first, the F0 recovery
+release is `0.2.0` from `0.1.1`. Nothing is released as `0.1.1`; the tag only
+marks where counting starts. Deleting it before the recovery release is published
+puts the three breaking commits back in the count. Afterwards it no longer affects
+the version, and it stays as the record of where counting started.
+
+The recovery release's notes list only commits after `954d349`. None of them is in
+the historical tree that release ships, `dc8e1eb`, and #93 and #94, which are in
+that tree, do not appear. The notes describe app and later work, not the contents
+of the command-line files.
+
+The breaking-marker rule is unchanged. A breaking change merged after `v0.1.1` makes
+a later plan job print `1.0.0`, and until the recovery release is published, so can
+a `v0.1.1` that is missing or on another commit. When a plan job prints a version
+the maintainer did not expect, the maintainer cancels the run before approving
+`sign-macos`, which is before any job pushes a tag, and decides then how to proceed.
+A release rule that maps a breaking change to a minor, and a version input on the
+dispatch, are not in place: the base tag changes no release configuration or
+workflow, and the release configuration keeps the default mapping. How a later
+release stays on `0.x` after another breaking change is the maintainer's decision
+when a plan job prints `1.0.0`, not made now.
 
 `release/package.json` pins `conventional-changelog-conventionalcommits` to the
 `9.x` line. `@semantic-release/release-notes-generator` renders notes with
@@ -895,15 +997,17 @@ draft or request an already completed review, preserving the earlier entries.
 Checkpoint publications on both surfaces MUST follow GitHub Operation's
 [Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
 and [Publication and Recovery](../../.claude/skills/github-operation/references/publication-and-recovery.md)
-contracts. A pull-request-description append is a whole-body replacement, so the
-exception path depends on full-body fidelity before and after publication.
-Retain verified status-comment URLs in the next checkpoint or handoff. If the
-required route or fidelity is unavailable, retain the current permitted handoff
-instead of publishing through an unverified path. The run MUST name that handoff
-in its report. When it is retained in the current conversation or returned to
-the assigning parent, identify its executor-local scope: it is not published
-issue history, and a fresh executor cannot recover it from the issue alone.
-Transfer that handoff explicitly to the next executor; this fallback creates no
+contracts and, in a Claude Code cloud session, the GitHub Write Fidelity in
+Claude Code Cloud Sessions section of [Agent Sessions](./agent-sessions.md). A
+pull-request-description append is a whole-body replacement, so the exception
+path depends on full-body fidelity before and after publication. Retain verified
+status-comment URLs in the next checkpoint or handoff. If the required route or
+fidelity is unavailable, retain the current permitted handoff instead of
+publishing through an unverified path. The run MUST name that handoff in its
+report. When it is retained in the current conversation or returned to the
+assigning parent, identify its executor-local scope: it is not published issue
+history, and a fresh executor cannot recover it from the issue alone. Transfer
+that handoff explicitly to the next executor; this fallback creates no
 alternative public destination or raw write route.
 
 ### Retrieve state on resume
@@ -963,34 +1067,43 @@ separate reviewer identity, and so does the explicitly selected Claude CI
 alternative, except when a run posts its request through the Claude GitHub App,
 whose `claude[bot]` identity the reviewer shares (see
 [Security](../conventions/security.md)). The Amp and Claude Code routes do not:
-their review child may post under the same GitHub operator account and runs on
+their reviewer, an Amp review child thread or a Claude Code review subagent,
+may post under the same GitHub operator account and runs on
 the same infrastructure as its author. The maintainer accepts context
-independence for those routes, a fresh child that carries none of the author's
-conversation, as
+independence for those routes, a fresh Amp thread or Claude Code review
+subagent that carries none of the author's conversation, as
 [Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#default-independent-review-arrangement)
-allows. A fresh, non-fork review child that the run starts after the draft pull
-request exists, and that posts its own review, is the independent review for
-its route. A run MUST NOT count any other subagent review as satisfying or
-standing in for it: not the advisory pre-flight reviewer, not a
-phase-deliverable reviewer, and not the author's own checks. The review is
-reachable only through the run's draft pull request, so a run that has not
-opened it has not reached this gate and is not complete.
+allows. A fresh Amp review child thread, or on Claude Code a new, non-fork
+`reviewer` instance assigned as that round's independent review, that the run
+starts after the draft pull request exists and that posts its own review, is
+the independent review for its route. Qualification is judged per instance and
+per assignment: sharing the `reviewer` definition with advisory or
+phase-deliverable instances does not disqualify an instance, and sharing their
+context does. A run MUST NOT count any other review as satisfying or
+substituting for it: not a fork, not a resumed or reused instance of any use,
+not an instance that is not so assigned or whose assignment carries pre-flight
+findings, not a phase-deliverable reviewer, not a review session started by
+another session unless the maintainer instructs it for the run, and not the
+author's own checks. The review is reachable only
+through the run's draft pull request, so a run that has not opened it has not
+reached this gate and is not complete.
 
 The authoring host determines the provider and request route:
 
-| Authoring host         | Review provider                  | Request                                                                       |
-| ---------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
-| Claude Code            | Claude Code review child session | Start a fresh review child session that posts its review on the pull request. |
-| Codex                  | Codex review                     | Post `@codex review` as a top-level pull request comment.                     |
-| Amp                    | Amp review child thread          | Start a fresh Amp thread that posts its review on the pull request.           |
-| Manual (no agent host) | Codex review                     | Post `@codex review` as a top-level pull request comment.                     |
+| Authoring host         | Review provider             | Request                                                                                  |
+| ---------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
+| Claude Code            | Claude Code review subagent | Spawn a new `reviewer` instance in a worktree that posts its review on the pull request. |
+| Codex                  | Codex review                | Post `@codex review` as a top-level pull request comment.                                |
+| Amp                    | Amp review child thread     | Start a fresh Amp thread that posts its review on the pull request.                      |
+| Manual (no agent host) | Codex review                | Post `@codex review` as a top-level pull request comment.                                |
 
 The Claude workflow is an alternative a Claude Code run uses only when the
 maintainer explicitly selects it for that run, not the default for every change
 just because it exists here. Codex uses the external Codex App. Amp and Claude
-Code use a review child, described below, and request no comment-triggered
-review; a Claude Code run requests the Claude CI review only when the
-maintainer selects that alternative. Manual changes
+Code use a fresh reviewer, an Amp review child thread and a Claude Code review
+subagent, described below, and request no comment-triggered review; a Claude
+Code run requests the Claude CI review only when the maintainer selects that
+alternative. Manual changes
 have no agent host, so they use Codex rather than claiming a Claude Code
 route.
 
@@ -1182,77 +1295,125 @@ with its thread ID. Report the remaining thread. On
 resume, check what each recorded child posted and whether it is archived before
 starting another child or counting another round.
 
-### Claude Code review child session from Claude Code
+### Claude Code review subagent from Claude Code
 
 The Claude Code route follows
 [Loop Engineering's review workflow](../../.claude/skills/loop-engineering/references/review-workflow.md)
 with this project's choices and the deviation registered in
 [Agent Skills](./agent-skills.md). It has not yet been exercised in this
-repository. Each round runs in a new subagent that the run starts and owns; no
-child is reused or resumed across rounds, and the child is never a fork of the
-authoring conversation.
+repository; [#155](https://github.com/axross/runners/issues/155) tracks the host
+facts only its first live round can confirm. Each round runs in a new instance
+of the project's `reviewer` subagent that the run spawns and owns; no instance
+is reused or resumed across rounds or from any other use, and an instance is
+never a fork of the authoring conversation.
 
-1. Before spawning, confirm that the session exposes a GitHub publication route
-   the child can use, `gh` through `Bash` or a GitHub MCP tool; otherwise the
-   route is unavailable and the review gate stays blocked. When the live
-   `TaskStop` contract requires the human's request, use the answer this
-   session collected as Agent Sessions' plan-gate confirmation section
-   describes.
-2. Start the child with the general-purpose subagent type and
-   `isolation: worktree` on the call, never as a fork. Give it a neutral
-   assignment that names the repository, the pull request, the reviewed head
-   commit, [`REVIEW.md`](../../REVIEW.md), the pull request body's acceptance
-   criteria, and the round token: the tracking issue number, or the pull
-   request number when there is no issue, plus the round number. Beyond what
-   Loop Engineering's review workflow excludes, carry none of the author's
-   claimed verdicts. Tell the child to check out the reviewed commit inside its
-   worktree, since the worktree branches from the default branch; to read the
-   actual change and surrounding code; not to edit, push, or delegate; to post
-   its review itself; and to report the review's URL, the commit it read, which
-   of those limits its host enforced, which GitHub identity it posted under,
-   and any limitations.
+1. Before spawning, confirm that the session can discover and spawn the
+   `reviewer` subagent and exposes a GitHub publication route the instance can
+   use, `gh` through `Bash` or a GitHub MCP tool; otherwise the route is
+   unavailable and the review gate stays blocked. When the live `TaskStop`
+   contract requires the human's request, use the answer this session collected
+   as Agent Sessions' plan-gate confirmation section describes.
+2. Spawn the instance with `isolation: worktree` on the call, never as a fork
+   and never by resuming an earlier instance, and without overriding the
+   definition's pinned model or effort. Give it a neutral assignment that names
+   the repository, the pull request, the reviewed head commit, the author's
+   checkout path, [`REVIEW.md`](../../REVIEW.md), the pull request body's
+   acceptance criteria, and the round token: the tracking issue number, or the pull request number
+   when there is no issue, plus the round number. The assignment names the
+   instance as that round's independent review. Beyond what Loop Engineering's
+   review workflow excludes, which includes the author's conversation, the
+   implementation receipt, and the pre-flight ledger and findings, carry none of
+   the author's claimed verdicts. Tell the instance to stop and post nothing if
+   its working directory is the author's checkout; otherwise to fetch the
+   reviewed commit and check it out inside its confirmed worktree, since the
+   worktree branches from the default branch; to read the actual change and
+   surrounding code; not to edit, push, or delegate, and to make no write other
+   than that fetch and checkout and the writes that compose its review; to post
+   one COMMENT-type review itself; and to report the review's URL, the commit it
+   read, which of those limits its host enforced and which it followed by
+   instruction, which GitHub identity it posted under, and any limitations.
 3. Right after the spawn, checkpoint the round token, the agent ID the spawn
-   returned, and the child's worktree in run state, through Save and resume run
-   state, above. The round token, the posted review, and the worktree are the
-   child's durable identity; Claude Code's subagent documentation says
+   returned, and the instance's worktree in run state, through Save and resume
+   run state, above. The round token, the posted review, and the worktree are
+   the instance's durable identity; Claude Code's subagent documentation says
    subagents work within a single session, so the agent ID is a handle only the
    spawning session can use.
-4. The child posts its review on the pull request in the form REVIEW.md's
-   Claude Code child arrangement sets.
-5. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
+4. Before relying on the round, confirm from the spawn result that the
+   instance's worktree path differs from the author's checkout. When the spawn
+   result does not report the worktree path, confirm it from the instance's
+   returned report, which is not yet exercised
+   ([#155](https://github.com/axross/runners/issues/155)); the round counts only
+   once the path is confirmed. A spawn result or report that gives the author's
+   checkout, and an instance that reports its working directory is the author's
+   checkout, each fail the isolation check: record the failure, stop the
+   instance if it is still running, and keep the gate unmet. A review that an
+   instance posted despite failing the check does not count; report it.
+5. The instance posts its review on the pull request in the form REVIEW.md's
+   Claude Code review subagent arrangement sets.
+6. Wait for the instance as Agent Sessions' Waiting on CI and Review describes,
    within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round token and the reviewed commit.
-   Record the child's report of the commit it read, the limits its host
-   enforced, and its posting identity in run state. Review coverage evidence,
-   above, applies to the result.
-6. After each round, and before any next commit or the ready transition,
+   Record the instance's report of the commit it read, the limits its host
+   enforced and the limits it followed by instruction, and its posting identity
+   in run state. Review coverage evidence, above, applies to the result.
+7. After each round, and before any next commit or the ready transition,
    confirm that the author's checkout is unchanged and that the pull request
-   head is still the reviewed commit, and check whether the host removed the
-   child's worktree; record a worktree left
-   for the host's periodic sweep and report it.
-7. Record a completed child as completed, with the review's URL, in run state.
-   Never resume or message a completed or stopped child. The documented host
-   operations offer no way to close a completed or stopped child, so that
-   record ends the round without a handoff, as the deviation in Agent Skills
-   registers.
+   head is still the reviewed commit, and inspect whether the instance's
+   worktree remains. Claude Code's documentation says a worktree is removed
+   automatically only when the subagent made no changes, which this repository
+   has not verified, so record what the inspection found and report a remaining
+   worktree; never assert that it was cleaned up.
+8. Record a completed instance as completed, with the review's URL, in run
+   state. Never resume or message a completed or stopped instance. The
+   documented host operations offer no way to close a completed or stopped
+   instance, so that record ends the round without a handoff, as the deviation
+   in Agent Skills registers.
+9. Report the reviewer's pinned model and effort as declared, not measured,
+   under
+   [Loop Engineering's Model and Effort Certainty contract](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
 
-A child that cannot post, a review that does not appear, and a review that does
-not correlate are failures of the selected route, which block the review gate as
-The Independent Review, above, states. Record the incomplete evidence. Stop
-any round's child that is still running after its result is verified or its
-round has failed with `TaskStop`, and record it as stopped.
+An instance that cannot post, a review that does not appear, a review that does
+not correlate, and a failed isolation check are failures of the selected route,
+which block the review gate as The Independent Review, above, states. A missing
+or refused `reviewer` is one too, and no other subagent, provider, or session
+the run chooses substitutes for it; the Claude CI alternative, or a review
+session the maintainer instructs, applies only when the maintainer selects it
+for the run. Record the incomplete evidence. Stop any round's instance
+that is still running after its result is verified or its round has failed with
+`TaskStop`, and record it as stopped.
 
-When the run cannot stop a running child, give the maintainer the agent ID, the
-reason it remains, and the step: in a local interactive session, press `x` on
-its row in `/tasks`. In a cloud session, where `/tasks` is not documented, say
-that no human step is verified there. Report the remaining child. On resume,
-check what each recorded child posted, by its round token, and its worktree. A
-session other than the one that spawned the child cannot see its state: record
-whether it completed or was stopped as unknown and hand it over with its agent
-ID as a child the run cannot stop, before starting another child or counting
-another round.
+When the run cannot stop a running instance, give the maintainer the agent ID,
+the reason it remains, and the step: in a local interactive session, press `x`
+on its row in `/tasks`. In a cloud session, where `/tasks` is not documented,
+say that no human step is verified there. Report the remaining instance. On
+resume, check what each recorded instance posted, by its round token, and its
+worktree. A session other than the one that spawned the instance cannot see its
+state: record whether it completed or was stopped as unknown and hand it over
+with its agent ID as an instance the run cannot stop, before starting another
+instance or counting another round.
+
+One `reviewer.md` serves both the advisory pre-flight and this route, with an
+assignment-keyed posting exception, and its `sonnet` and `high` pin is kept and
+not overridden at spawn time. Both are the maintainer's decisions of 2026-11-20,
+[recorded in issue #151](https://github.com/axross/runners/issues/151#issuecomment-7047417917),
+and no further rationale was given for them. The cost of the shared definition
+is the accepted instruction-only exposure listed with the grant, above.
+
+A review session that another session starts for a run is not a route. Earlier
+runs used one on a decision relayed for a single run, but no document described
+it and the grant's targets cover only the actors the run itself creates, so it
+adds a second actor outside the grant between the author and the review.
+Reviews already completed that way are unaffected. A review session the
+maintainer instructs for a run counts as that run's independent review only
+when it meets the qualification in The Independent Review, above: a fresh
+context without the author's conversation, given a neutral assignment that
+carries no implementation receipt, pre-flight findings, or claimed verdicts,
+started after the draft pull request exists, and posting its own COMMENT-type
+review that the run correlates with a round token and the reviewed commit. The
+run records the maintainer's instruction, with its locator, in run state. A
+decision another session relays without that instruction is not one.
 
 ## Acceptance Criteria Verified Out of Tree
 

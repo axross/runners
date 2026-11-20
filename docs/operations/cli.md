@@ -2362,7 +2362,13 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   kind, a repository's and an organization's, checks its name with `cmdkey`, reads
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
-  the Credential Manager to a registration; only the Windows CI job runs it.
+  the Credential Manager to a registration; only the Windows CI job runs it. Its tests
+  take turns at the Credential Manager, as a precaution, because the crate's upstream
+  reports it losing updates under concurrent use; the cause of the CI misses is not
+  established, and [#148](https://github.com/axross/runners/issues/148) holds the
+  investigation and the probe's result. The tests neither retry a read nor warm the
+  Credential Manager up first, since either would hide a miss rather than remove
+  its cause.
 - **macOS.** The user's login keychain, through `security-framework`, as one generic
   password per key with the service `app.axross.marshal`. A repository's item has the
   account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
@@ -4906,7 +4912,7 @@ The contracts F0 owns are these:
   team ID, the form that matched, and the exact requirement printed for the bare
   binary here, as the text that M2 consumes.
 
-- **The team** is pinned by the Environment variable `MACOS_TEAM_ID`. `sign-macos`
+- **The team** is pinned by the Environment variable `APPLE_TEAM_ID`. `sign-macos`
   refuses a certificate of another team, and `verify-macos` refuses a designated
   requirement that is neither form A nor form B above, each built from the identifier
   and the team ID that `sign-macos` output after checking it.
@@ -4921,14 +4927,14 @@ The contracts F0 owns are these:
 
   | Secret                         | Holds                                                             |
   | ------------------------------ | ----------------------------------------------------------------- |
-  | `MACOS_APPLICATION_P12_BASE64` | The Developer ID Application identity as a `.p12`, base64-encoded |
-  | `MACOS_INSTALLER_P12_BASE64`   | The Developer ID Installer identity as a `.p12`, base64-encoded   |
-  | `MACOS_P12_PASSWORD`           | The password of both `.p12` files                                 |
-  | `MACOS_NOTARY_KEY_P8`          | The App Store Connect team API key's `.p8` text                   |
-  | `MACOS_NOTARY_KEY_ID`          | The key's ID                                                      |
-  | `MACOS_NOTARY_ISSUER_ID`       | The issuer ID                                                     |
+  | `APPLE_APPLICATION_P12_BASE64` | The Developer ID Application identity as a `.p12`, base64-encoded |
+  | `APPLE_INSTALLER_P12_BASE64`   | The Developer ID Installer identity as a `.p12`, base64-encoded   |
+  | `APPLE_P12_PASSWORD`           | The password of both `.p12` files                                 |
+  | `APPLE_NOTARY_KEY_P8`          | The App Store Connect team API key's `.p8` text                   |
+  | `APPLE_NOTARY_TEAM_KEY_ID`     | The key's ID                                                      |
+  | `APPLE_NOTARY_ISSUER_ID`       | The issuer ID                                                     |
 
-  The team ID is the Environment variable `MACOS_TEAM_ID`, not a secret.
+  The team ID is the Environment variable `APPLE_TEAM_ID`, not a secret.
 
 - **A missing Environment.** A dispatch that finds no `release` Environment makes
   GitHub create one with no protection rules and no secrets. `sign-macos` then
@@ -5143,7 +5149,7 @@ shape-check rules and test cases from the restoration point. It leaves out the
 command-line signing and package steps, the Installer identity's check, import
 and exported name, the `pkgbuild` argument and `build-pkg.sh` existence rules,
 and package-only tools such as `pkgbuild`, `pkgutil`, `lsbom` and `installer`.
-The restored job MUST NOT read `MACOS_INSTALLER_P12_BASE64`.
+The restored job MUST NOT read `APPLE_INSTALLER_P12_BASE64`.
 
 Its app job in `release-build.yaml` MUST run on `macos-latest` with a 45-minute
 timeout, install `tauri-cli` by the Windows leg's route, build the unsigned app,
@@ -5254,12 +5260,15 @@ replaced one.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that risk.
 
-The first release expected to carry the app is `2.0.0`: the last command-line
-release is expected to be `1.0.0`, and W1's installer pull request is a breaking
-change after it. The check block below names `2.0.0`. To check another release,
-change the block's `version` and `file` assignment lines. If the first release of the
-app gets another version, a later change corrects the lines. A host that runs the
-command line moves to the app as
+The last command-line release is the F0 recovery release, expected to be `0.2.0`,
+and every release after #132's restoration carries the app. The maintainer decided
+to keep releases on `0.x`, as
+[Version Rules](./development-workflow.md#version-rules) describes, so no major
+version marks the change. The check block below names `0.3.0` as an example. To
+check another release, change the block's `version` and `file` assignment lines. If
+the recovery release or the first release of the app gets another version, a later
+change corrects this paragraph and those lines. A host that runs the command line
+moves to the app as
 The Last Command-Line Release section says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
@@ -5283,7 +5292,7 @@ adds the configuration and the image around this one.
 
 ### Installing
 
-`<version>` is the release's version without the `v`, such as `2.0.0`.
+`<version>` is the release's version without the `v`, such as `0.3.0`.
 
 1. Download `marshal-<version>-windows-x64.msi` from the
    [release page](https://github.com/axross/runners/releases). If the browser warns
@@ -5342,8 +5351,8 @@ In PowerShell 5.1 or 7:
 
 ```powershell
 & {
-  $version = '2.0.0'
-  $file = "$env:USERPROFILE\Downloads\marshal-2.0.0-windows-x64.msi"
+  $version = '0.3.0'
+  $file = "$env:USERPROFILE\Downloads\marshal-0.3.0-windows-x64.msi"
   $ErrorActionPreference = 'Stop'
   function Refuse([string]$Why) { throw "refused: $Why" }
   $name = "marshal-$version-windows-x64.msi"
