@@ -5239,20 +5239,29 @@ fails it too.
   `write-update-feed.sh`, runs the feed check on `dist/latest.json` with
   `unsigned/SHA256SUMS` among its arguments, and runs `assemble-release.sh signed`;
   nothing in `release.yaml` passes `--public-key`, so the feed is checked against the
-  committed release-verification key. The job sets `check` once, with the line
-  `check="${RUNNER_TEMP}/update-tools/marshal-feed-check"`, before it hashes the checker
-  with `line="$(sha256sum "$check")"`; both lines are matched exactly as written, and
-  neither the checker's path nor its `update-tools` directory appears in any other
-  script line. The job compares the hash with `FEED_CHECK_SHA256`, the hash
-  `update-tool` built, and exits 1 on a mismatch. Nothing but the hash line refers to
-  `$check` or `${check}` before that comparison, and nothing assigns `line` between the
-  hash and the comparison. `FEED_CHECK_SHA256` is set on the step that compares it, from
-  exactly `${{ needs.update-tool.outputs.feed_check_sha256 }}`, and no script assigns
-  it, including by writing `"FEED_CHECK_SHA256=..."` to `GITHUB_ENV`. An assignment is
-  `name=`, `name+=`, `${name=}`, `${name:=}`, `read`, `mapfile`, `readarray` or
-  `getopts` at the start of a command, `printf -v` or `for`; the check ignores words
-  inside quotes and an unquoted trailing comment, and does not follow `eval`, a sourced
-  file or an indirect variable name.
+  committed release-verification key. The job's scripts hold these seven lines once,
+  together and in this order, as exact text with each line trimmed:
+
+  ```bash
+  check="${RUNNER_TEMP}/update-tools/marshal-feed-check"
+  line="$(sha256sum "$check")"
+  if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then
+    echo "error: marshal-feed-check has SHA-256 ${line%% *}, not the ${FEED_CHECK_SHA256} update-tool built" >&2
+    exit 1
+  fi
+  chmod 0755 "$check"
+  ```
+
+  The checker is hashed and compared with `FEED_CHECK_SHA256`, the hash `update-tool`
+  built, a mismatch exits 1, and only then is it made executable. The feed check runs
+  once, after that block, as `"$check" dist/latest.json` with `unsigned/SHA256SUMS`
+  among its arguments and `|| exit 1`. On every other line of those scripts the whole
+  word `check` and the text `FEED_CHECK_SHA256`, `update-tools` and `marshal-feed-check`
+  are refused, in a command, a quoted message or a comment, so harmless text that holds
+  one is refused too. `FEED_CHECK_SHA256` is set on the step that holds the comparison,
+  from exactly `${{ needs.update-tool.outputs.feed_check_sha256 }}`. The check compares
+  text: it does not follow `eval`, a sourced file or an indirect variable name.
+
 - **No step condition.** No step of `update-tool`, `sign-update` or `assemble-signed`
   carries an `if`.
 - **`attest` and `release`.** `attest` holds exactly `id-token: write` and
