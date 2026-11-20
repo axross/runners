@@ -442,13 +442,14 @@ read-back below still apply to those surfaces.
 
 A probe on a scratch issue, run on 2026-11-19 (PST) with the maintainer's
 approval, wrote URLs of known lengths and read back what GitHub stored. Each
-cell lists the lengths tested.
+cell lists the lengths tested, how many URLs were written at them, and in how
+many probe writes. The counts cover issue bodies only.
 
-| Form                              | Stored intact                                                                       | Stored wrapped in a code span                                                        |
-| --------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Inline link destination           | 59, 65, 91, 104, 107, 115, 130, 139, and each of 140 to 149 characters (18 lengths) | 150, 151, and 160 characters in the probe; 151 characters in the two incident writes |
-| Titled link, reference definition | Not tested below 150 characters                                                     | 150 characters                                                                       |
-| Bare URL, autolink                | 149 and 150 characters                                                              | 200 characters                                                                       |
+| Form                              | Stored intact                                                                                                                                       | Stored wrapped in a code span                                                                                             |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Inline link destination           | 59, 65, 91, 104, 107, 115, 130, 139, and each of 140 to 149 characters (18 lengths; 21 URLs in 3 writes, with 107, 130, and 149 each written twice) | 150 (1 URL), 151 (5), and 160 (1) characters in the probe (7 URLs in 6 writes); 151 characters in the two incident writes |
+| Titled link, reference definition | Not tested below 150 characters (no samples)                                                                                                        | 150 characters (1 titled link and 1 reference definition, in 1 write)                                                     |
+| Bare URL, autolink                | 25 characters (1 autolink); 149 and 150 characters (1 bare URL and 1 autolink at each); 5 URLs in 2 writes in all                                   | 200 characters (1 bare URL and 1 autolink, in 1 write)                                                                    |
 
 The threshold for a bare URL or an autolink lies above 150 and at or below 200
 characters. The rewrite was deterministic, did not depend on the URL's content
