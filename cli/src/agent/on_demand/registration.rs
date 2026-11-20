@@ -7,7 +7,7 @@ use crate::runtime::secret::Secret;
 use crate::runtime::token::TokenSource;
 use crate::runtime::worker::INITIAL_BACKOFF;
 
-use crate::scaleset::Error;
+use crate::scaleset::{Client, Error};
 
 use super::listener::Failure;
 use super::{Coordinator, REFRESH_BEFORE, Reservation, View, is_permanent};
@@ -41,6 +41,33 @@ impl From<Error> for CleanupFailure {
     }
 }
 
+/// deletes one owned runner, finding its id by exact name when `known` has none. `remember`
+/// gets the id before the delete, so a delete that fails leaves the id for the retry.
+pub(super) async fn settle_runner(
+    client: &Client,
+    owner: &str,
+    repository: &str,
+    name: &str,
+    known: Option<u64>,
+    pat: &Secret,
+    remember: impl FnOnce(u64),
+) -> Result<(), Error> {
+    let id = match known {
+        Some(id) => Some(id),
+        None => client
+            .find_runner(owner, repository, name, pat)
+            .await?
+            .map(|runner| runner.id),
+    };
+    if let Some(id) = id {
+        remember(id);
+        client
+            .delete_runner(owner, repository, id, name, pat)
+            .await?;
+    }
+    Ok(())
+}
+
 impl View {
     /// recovery uses the originating repository even after its configuration entry is gone.
     pub async fn retry_registration_cleanup<T: TokenSource>(
@@ -51,19 +78,17 @@ impl View {
         let target = self.target();
         while let Some(pending) = self.incomplete_registrations.first_mut() {
             let pat = tokens.token(&target, None)?;
-            if pending.runner_id.is_none() {
-                pending.runner_id = client
-                    .find_runner(&self.owner, &self.repository, &pending.name, &pat)
-                    .await
-                    .map_err(|error| error.to_string())?
-                    .map(|runner| runner.id);
-            }
-            if let Some(id) = pending.runner_id {
-                client
-                    .delete_runner(&self.owner, &self.repository, id, &pending.name, &pat)
-                    .await
-                    .map_err(|error| error.to_string())?;
-            }
+            settle_runner(
+                client,
+                &self.owner,
+                &self.repository,
+                &pending.name,
+                pending.runner_id,
+                &pat,
+                |id| pending.runner_id = Some(id),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
             self.incomplete_registrations.remove(0);
         }
         Ok(())
@@ -289,29 +314,20 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             .map(|owned| owned.names.clone())
             .unwrap_or_default();
         for (name, runner_id) in names {
-            let runner_id = if let Some(runner_id) = runner_id {
-                Some(runner_id)
-            } else {
-                let runner = self
-                    .client
-                    .find_runner(&self.pool.owner, &self.pool.repository, &name, pat)
-                    .await?;
-                runner.map(|runner| runner.id)
-            };
-            if let Some(runner_id) = runner_id {
-                if let Some(owned) = self.state.borrow_mut().owned.get_mut(&id) {
-                    owned.names.insert(name.clone(), Some(runner_id));
-                }
-                self.client
-                    .delete_runner(
-                        &self.pool.owner,
-                        &self.pool.repository,
-                        runner_id,
-                        &name,
-                        pat,
-                    )
-                    .await?;
-            }
+            settle_runner(
+                self.client,
+                &self.pool.owner,
+                &self.pool.repository,
+                &name,
+                runner_id,
+                pat,
+                |runner_id| {
+                    if let Some(owned) = self.state.borrow_mut().owned.get_mut(&id) {
+                        owned.names.insert(name.clone(), Some(runner_id));
+                    }
+                },
+            )
+            .await?;
             if let Some(owned) = self.state.borrow_mut().owned.get_mut(&id) {
                 owned.names.remove(&name);
             }

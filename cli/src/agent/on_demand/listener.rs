@@ -11,6 +11,7 @@ use crate::runtime::token::TokenSource;
 use crate::runtime::worker::Backoff;
 use crate::scaleset::{Error, ErrorKind, Message};
 
+use super::registration::settle_runner;
 use super::{
     Coordinator, Credentials, MIN_RECREATION_WAIT, MIN_REFRESH_WAIT, PendingSession,
     REDELIVERY_WAIT, REFRESH_BEFORE,
@@ -361,9 +362,16 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             let Some(id) = id else {
                 return Err(Failure::Api(Error::new(ErrorKind::Protocol)));
             };
-            self.client
-                .delete_runner(&self.pool.owner, &self.pool.repository, id, &name, &pat)
-                .await?;
+            settle_runner(
+                self.client,
+                &self.pool.owner,
+                &self.pool.repository,
+                &name,
+                Some(id),
+                &pat,
+                |_| {},
+            )
+            .await?;
             if let Some(owned) = self.state.borrow_mut().owned.get_mut(&0) {
                 owned.names.remove(&name);
             }
