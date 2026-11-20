@@ -32,8 +32,10 @@ Release section.
 
 During the bounded F0 recovery, the release workflow temporarily builds a fixed
 historical CLI instead of the app, not a command-line target for this current
-library. [CLI Recovery](./cli-recovery.md) owns that route and its actual-version
-installation and runtime procedures; the recovery is not a supported parallel CLI
+library. The Temporary CLI Recovery section of
+[Security](../conventions/security.md) governs that route, and
+[CLI Recovery](./cli-recovery.md) owns its operator procedure and actual-version
+installation and runtime procedures. The recovery is not a supported parallel CLI
 product. [Windows Runner Host](./windows-runner-host.md) describes axpc with the app.
 Outside that recovery, axmc has no supported release route until M2's Mac app, as
 [macOS Runner Host](./macos-runner-host.md) says.
@@ -4445,12 +4447,14 @@ build tool has.
 ## Releases
 
 The active dispatch route is temporarily the fixed historical CLI, not the app.
-[CLI Recovery](./cli-recovery.md) owns its seven-stage release, both source
-identities, actual-version CLI procedures and the successful native-evidence
-prerequisite for a separate app-path restoration. App source and normal builds
-remain. The app release descriptions below are the suspended baseline to
-reconcile on restoration, not a second active release graph. No recovery-code
-PR, dry run or app merge completes F0 or changes its dependency gates.
+The Temporary CLI Recovery section of [Security](../conventions/security.md)
+governs that release route. [CLI Recovery](./cli-recovery.md) owns its operator
+procedure, both source identities, actual-version CLI procedures and the
+successful native-evidence prerequisite for a separate app-path restoration.
+App source and normal builds remain. The app release descriptions below are the
+suspended baseline to reconcile on restoration, not a second active release
+graph. No recovery-code PR, dry run or app merge completes F0 or changes its
+dependency gates.
 
 A release is a `v<version>` tag on the default branch and the GitHub release that
 carries its files, such as `v0.1.0`. The maintainer starts one by dispatching

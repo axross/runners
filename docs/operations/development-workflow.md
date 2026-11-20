@@ -577,7 +577,9 @@ together, and raises the golden VM version and the contract version.
 
 During temporary CLI recovery, runner bumps on main do not enter the fixed
 historical program input. Dispatching a recovery release does not deliver those
-bumps to a CLI host; [CLI Recovery](./cli-recovery.md) owns that bounded route.
+bumps to a CLI host. The Temporary CLI Recovery section of
+[Security](../conventions/security.md) governs that bounded route, and
+[CLI Recovery](./cli-recovery.md) owns its operator procedure.
 Keep the pull request's `build(deps)` title when merging: it releases a patch,
 as Version Rules, under Cutting a Release, below, describes. After app publication
 is restored, the maintainer dispatches a release and each host updates the app
