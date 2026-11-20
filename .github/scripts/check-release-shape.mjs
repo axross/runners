@@ -858,15 +858,60 @@ function checkPlainJob(id, script) {
   }
 }
 
+const FEED_CHECK_NAME = "marshal-feed-check";
+const CHECK_LINE = `check="\${RUNNER_TEMP}/update-tools/${FEED_CHECK_NAME}"`;
+const HASH_LINE = 'line="$(sha256sum "$check")"';
+
 /**
- * records a feed checker that is referenced, whether made executable, run or
- * read, before its SHA-256 is compared with FEED_CHECK_SHA256, or whose
- * mismatch does not exit 1. only the line that hashes it may come before.
+ * whether a shell line gives the variable a value: `name=` and `name+=` (with
+ * or without an export, declare, local or readonly prefix), a `${name=}` or
+ * `${name:=}` expansion, and read, mapfile, readarray, `printf -v` and `for`
+ * that name it. it does not follow eval, a sourced file or an indirect name.
+ */
+function assignsVariable(line, name) {
+  return [
+    new RegExp(`(^|[\\s;&|({"'])${name}\\+?=`),
+    new RegExp(`\\$\\{${name}:?=`),
+    new RegExp(`\\b(read|mapfile|readarray)\\b[^;&|]*\\b${name}\\b`),
+    new RegExp(`\\bprintf\\s+-v\\s+${name}\\b`),
+    new RegExp(`\\bfor\\s+${name}\\s+in\\b`),
+  ].some((pattern) => pattern.test(line));
+}
+
+/**
+ * records a feed checker whose guard can be undone from inside the script:
+ * `check` assigned anywhere but once, as the pinned `check=` line before the
+ * hash; the checker's path written anywhere else; FEED_CHECK_SHA256 assigned;
+ * `line` reassigned between the hash and the comparison; the checker referred
+ * to before the comparison, whether made executable, run or read; or a
+ * mismatch that does not exit 1.
  */
 function checkFeedCheckHash(scripts, where) {
   const lines = scripts.split("\n").map((line) => line.trim());
-  const hashLine = 'line="$(sha256sum "$check")"';
-  const hashed = lines.indexOf(hashLine);
+  const code = [...lines.keys()].filter(
+    (index) => !lines[index].startsWith("#"),
+  );
+  const checkAt = lines.indexOf(CHECK_LINE);
+  if (
+    code.some(
+      (index) => index !== checkAt && assignsVariable(lines[index], "check"),
+    )
+  )
+    problem(
+      `${where} assigns check other than once, to the feed checker's path`,
+    );
+  if (code.some((index) => assignsVariable(lines[index], "FEED_CHECK_SHA256")))
+    problem(
+      `${where} assigns FEED_CHECK_SHA256 in a script; only update-tool's output may set it`,
+    );
+  if (
+    code.some(
+      (index) =>
+        index !== checkAt && lines[index].includes(`/${FEED_CHECK_NAME}`),
+    )
+  )
+    problem(`${where} names the feed checker's path outside the check= line`);
+  const hashed = lines.indexOf(HASH_LINE);
   const compared = lines.findIndex(
     (line, index) =>
       index > hashed &&
@@ -879,6 +924,21 @@ function checkFeedCheckHash(scripts, where) {
     );
     return;
   }
+  if (checkAt === -1 || checkAt > hashed)
+    problem(
+      `${where} does not set check to the feed checker's path before hashing it`,
+    );
+  if (
+    code.some(
+      (index) =>
+        index > hashed &&
+        index <= closing &&
+        assignsVariable(lines[index], "line"),
+    )
+  )
+    problem(
+      `${where} reassigns line between hashing the feed check and comparing its SHA-256`,
+    );
   if (!lines.slice(compared + 1, closing).includes("exit 1"))
     problem(
       `${where}: a feed check whose SHA-256 is not FEED_CHECK_SHA256 does not exit 1`,
@@ -905,6 +965,7 @@ function checkFeed() {
   if (!scripts.includes(".github/scripts/write-update-feed.sh"))
     problem(`${where} does not write the feed with write-update-feed.sh`);
   checkFeedCheckHash(scripts, where);
+  // the value must be written exactly, on the step that holds the comparison.
   const hashStep = scriptsOf(assemble).find((step) =>
     step.run.includes('"$FEED_CHECK_SHA256"'),
   );
