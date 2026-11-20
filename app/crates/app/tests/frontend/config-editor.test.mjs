@@ -613,7 +613,7 @@ test("host settings explain an uneditable document without losing the initial re
     );
   for (const value of [
     { ...doc, status: "missing" },
-    { ...doc, status: "unparseable" },
+    { ...doc, status: "unreadable" },
     { ...doc, too_large: true },
   ]) {
     model.loaded(value);

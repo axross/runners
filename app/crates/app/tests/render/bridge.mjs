@@ -51,7 +51,7 @@ export function bridge({ views, scenario }) {
         ? "valid"
         : scenario === "missing"
           ? "missing"
-          : "unparseable";
+          : "unreadable";
     document.too_large = scenario === "too-large";
     document.pools = [];
     document.problems = [
