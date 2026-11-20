@@ -492,10 +492,11 @@ body an agent writes from the session. The 149-character cap rests on the
 threshold measured for this endpoint, not on the 104 characters the open report
 gives. If that lower threshold ever applies here, the read-back catches it.
 
-The probe measured ASCII URLs only. The cap and the URL check count characters,
-and the check counts UTF-16 code units. For a URL with non-ASCII or
-percent-encoded characters no threshold was measured, so keep it well under the
-cap, or rely on the mandatory read-back.
+The probe measured ASCII URLs only, so the cap counts ASCII characters. The URL
+check counts UTF-16 code units, which equal characters for ASCII; a
+percent-encoded URL is ASCII and is counted as written. For a URL with other
+non-ASCII characters no threshold was measured, so keep it well under the cap;
+the mandatory read-back catches a rewrite.
 
 **Guidelines:**
 
@@ -504,7 +505,8 @@ cap, or rely on the mandatory read-back.
   the sent text must agree; every stored probe body kept its trailing newline.
   A comment ends with the host footer and no newline after it. Keep the
   composed file out of the commit: run every command in this section from the
-  session's scratch directory, so that `body.md`, `footer.txt`, and
+  session's scratch directory, or from a directory made with `mktemp -d` when the
+  session has none, so that `body.md`, `footer.txt`, and
   `stored.json` never land in the repository.
 - MUST keep every URL at 149 characters or fewer, in any form.
 - MUST NOT write U+200B, U+200C, U+200D, U+2060, or U+FEFF.
@@ -607,6 +609,8 @@ difference of one trailing newline.
 
 **Guidelines:**
 
+- MUST read back each issue or pull request body after writing it and compare
+  it with the sent file by command, as above.
 - MUST treat an item missing from search, or an update time older than the one
   noted, as a read that is not current yet, not as a mismatch. Retry up to three
   times over about five minutes, using only a wait the session itself provides,
@@ -619,19 +623,12 @@ A session that reads comments only through MCP has no mechanical comparison
 route for them. The agent checks the comment as MCP's comments read returns it:
 each URL is unwrapped, and the footer appears exactly once, at the end. This
 check is not byte-exact, because MCP reads drop U+200B. A review or reply is
-checked the same way, through whatever MCP read returns it. Where no read
-returns it, the write is reported as unverified.
+checked the same way, through whatever MCP read returns it.
 
-Where the session may use the direct REST read of a comment, under
-[GitHub Operation](../../.claude/skills/github-operation/references/channel-selection.md)'s
-channel qualification, compare the comment by command, as a body is. Here
-`body.md` is the composed comment, footer included.
+**Guidelines:**
 
-```sh
-gh api repos/axross/runners/issues/comments/<comment id> > stored.json
-jq -r .updated_at stored.json
-jq -j .body stored.json | cmp - body.md && echo "ok: stored comment is identical"
-```
+- MUST check each comment, review, and reply after writing it, as described
+  above, and report the write as unverified when no read returns it.
 
 ### Recovering from a Difference
 
@@ -650,9 +647,15 @@ diff body.md <(jq -j .body stored.json)
 
 Each known pattern looks like this in the output:
 
-- **A wrapped URL** appears inside a run of backticks with a space on each side.
+- **A wrapped URL** appears inside a run of backticks with a space on each
+  side; a wrapped autolink also shows its angle brackets as `&lt;` and `&gt;`.
 - **An appended footer** appears as added lines at the end.
 - **A removed invisible character** makes a line differ with no visible change.
+  It can appear only if the file held one despite the check before writing.
+
+For a comment read only through MCP there is no `stored.json`. Compare the text
+the read returns with `body.md` by eye, against the same patterns, and record
+that the comparison was not byte-exact.
 
 Any other change stops the operation.
 

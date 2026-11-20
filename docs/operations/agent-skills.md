@@ -204,8 +204,7 @@ This project handles the case in the GitHub Write Fidelity in Claude Code Cloud
 Sessions section of [Agent Sessions](./agent-sessions.md). An agent composes the
 text in a local file, checks it by command before writing, and compares a stored
 issue or pull request body with that file by command. It checks a comment as MCP
-returns it, or by command where the session may use the direct REST read of a
-comment, and it corrects a difference only within the recovery limits that
+returns it, and it corrects a difference only within the recovery limits that
 section states. The installed skill is left as it is.
 
 **Upstream status:** not filed. The maintainer has not yet given the go-ahead
