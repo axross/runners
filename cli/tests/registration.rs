@@ -109,7 +109,7 @@ async fn registration_sends_the_request_and_reads_the_response() {
 /// token files isolate the HTTP contract from native credential stores; store-key
 /// selection belongs to the agent-token tests.
 #[tokio::test(flavor = "current_thread")]
-async fn organisation_owned_repositories_register_separately_with_their_own_tokens() {
+async fn organization_owned_repositories_register_separately_with_their_own_tokens() {
     let config = br#"schema_version = 1
 routing_label = "axpc"
 image_name = "actions-runner:local"

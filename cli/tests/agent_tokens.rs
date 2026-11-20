@@ -352,14 +352,14 @@ async fn after_token_remove_the_next_registration_fails_and_the_runner_backs_off
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn an_organisation_owned_repository_starts_only_with_its_own_token() {
+async fn an_organization_owned_repository_starts_only_with_its_own_token() {
     let config = TWO_POOLS.replace(r#""owner":"o""#, r#""owner":"Example-Org""#);
     let rig = Rig::new(&config);
-    let organisation_token = "fake-organisation-token-not-for-a-repository";
+    let organization_token = "fake-organisation-token-not-for-a-repository";
     rig.store
         .set(
             &TokenKey::parse_organization("Example-Org").unwrap(),
-            &Secret::new(organisation_token.to_string()),
+            &Secret::new(organization_token.to_string()),
         )
         .unwrap();
     rig.store_token("Example-Org", "r", TOKEN);
@@ -379,7 +379,7 @@ async fn an_organisation_owned_repository_starts_only_with_its_own_token() {
             assert!(
                 rig.registered_with()
                     .iter()
-                    .all(|token| token != organisation_token)
+                    .all(|token| token != organization_token)
             );
             rig.mark_running();
             conn.ok("quit").await;
