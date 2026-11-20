@@ -769,20 +769,16 @@ mod http {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn a_404_after_a_recovered_one_recreates_the_scale_set_again() {
+    async fn a_404_after_a_recovered_one_recreates_the_scale_set_again_but_never_within_the_floor()
+    {
         let fake = Fake::new().await;
         let client = fake.client();
         let tokens = Tokens::new();
         let channels = Channels::new(1);
         let log = MemoryLog::default();
-        let coordinator = Coordinator::new(
-            pool(),
-            &client,
-            &tokens,
-            &SystemClock,
-            &log,
-            channels.controls(),
-        );
+        let clock = ControlledClock::new();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
         let mut replies = opening();
         replies.push(gone());
         replies.extend(recreation());
@@ -793,7 +789,30 @@ mod http {
         polled.signal = Some(channels.stop.clone());
         replies.push(polled);
         replies.push(Reply::empty("DELETE", "sessions/"));
-        tokio::join!(fake.serve(replies), coordinator.run());
+        let drive = async {
+            // the second 404 is the third poll; its recreation waits out the floor
+            timeout(Duration::from_secs(2), async {
+                while fake.count("GET", "queue") < 3 {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+            clock.advance(MIN_RECREATION_WAIT - Duration::from_secs(1));
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            assert_eq!(
+                fake.count("POST", "sessions"),
+                2,
+                "recreated within the floor"
+            );
+            assert_eq!(fake.count("DELETE", "sessions/"), 1);
+            assert!(
+                !coordinator.admitting(),
+                "admitting while it waits to recreate"
+            );
+            clock.advance(Duration::from_secs(1));
+        };
+        tokio::join!(fake.serve(replies), coordinator.run(), drive);
         assert_eq!(coordinator.view().state, ListenerState::Stopped);
         assert_eq!(fake.count("POST", "sessions"), 3);
     }

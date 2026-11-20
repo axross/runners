@@ -12,8 +12,8 @@ use crate::runtime::worker::Backoff;
 use crate::scaleset::{Error, ErrorKind, Message};
 
 use super::{
-    Coordinator, Credentials, ListenerState, MIN_REFRESH_WAIT, PendingSession, REDELIVERY_WAIT,
-    REFRESH_BEFORE,
+    Coordinator, Credentials, ListenerState, MIN_RECREATION_WAIT, MIN_REFRESH_WAIT, PendingSession,
+    REDELIVERY_WAIT, REFRESH_BEFORE,
 };
 
 pub(crate) const CLOSE_WITHIN: Duration = Duration::from_secs(5);
@@ -48,8 +48,22 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             }
             let recreate = self.state.borrow().recreate_requested;
             if recreate {
-                self.state.borrow_mut().recreated = true;
-                self.state.borrow_mut().recreate_requested = false;
+                let wait = self.recreation_wait();
+                if !wait.is_zero() {
+                    tokio::select! {
+                        () = self.clock.sleep(wait) => {},
+                        _ = stop.changed() => {},
+                        _ = drain.changed() => {},
+                        _ = capacity.changed() => {},
+                        () = self.wake.notified() => {},
+                    }
+                    continue;
+                }
+                let mut state = self.state.borrow_mut();
+                state.recreated = true;
+                state.recreate_requested = false;
+                state.last_recreation = Some(self.clock.now());
+                drop(state);
                 self.close().await;
                 self.credentials.borrow_mut().take();
                 pending = None;
@@ -112,6 +126,16 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
         self.close().await;
         self.state.borrow_mut().view.state = ListenerState::Stopped;
         self.publish();
+    }
+
+    /// how much of the minimum interval since the last recreation remains.
+    fn recreation_wait(&self) -> Duration {
+        self.state
+            .borrow()
+            .last_recreation
+            .and_then(|at| at.checked_add(MIN_RECREATION_WAIT))
+            .and_then(|next| next.duration_since(self.clock.now()).ok())
+            .unwrap_or_default()
     }
 
     /// neither session refresh nor 202 creates a synthetic zero-demand update.

@@ -33,6 +33,10 @@ pub(super) const REFRESH_BEFORE: Duration = Duration::from_secs(120);
 /// two renewals are never closer than this, whatever lifetime or clock the credential shows.
 pub(super) const MIN_REFRESH_WAIT: Duration = Duration::from_secs(30);
 
+/// two recreations of the scale set's session are never closer than this: each costs a
+/// registration token and exchange, and a service that keeps answering 404 must not drive them.
+pub(super) const MIN_RECREATION_WAIT: Duration = Duration::from_secs(30);
+
 /// how long the listener leaves an unresolved message alone before asking the service again; the
 /// service redelivers it at once, and the wait ends early when a seat frees.
 pub(super) const REDELIVERY_WAIT: Duration = Duration::from_secs(10);
@@ -141,6 +145,7 @@ struct State {
     closing: bool,
     recreated: bool,
     recreate_requested: bool,
+    last_recreation: Option<SystemTime>,
     queue_refreshed: bool,
     stop_deadline: Option<Instant>,
 }
@@ -227,6 +232,7 @@ impl<'a, T: TokenSource, K: Clock> Coordinator<'a, T, K> {
                 closing: false,
                 recreated: false,
                 recreate_requested: false,
+                last_recreation: None,
                 queue_refreshed: false,
                 stop_deadline: None,
             }),
