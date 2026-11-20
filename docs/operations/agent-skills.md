@@ -194,12 +194,13 @@ The upstream hash was not recomputed.
 
 The skill requires reading back each write, comparing the exact stored fields
 with the intended text, and reporting an unverified result when they cannot be
-shown to match. The only write-side rewrite it names is `--attach`'s intended
-rewrite of relative references, under Body Integrity; it names none made by the
-hosted write path. In Claude Code cloud sessions, the hosted write path was
-observed wrapping long URLs in code spans, appending the comment footer,
-replacing a pull request's attribution with that footer, and removing U+200B, so
-a write can be stored differently from the text sent.
+shown to match. The only write-side changes it names are `--attach`'s intended
+ones, the rewrite of relative references and the appended attachments, which
+Body Integrity accepts after such a write; it names none made by the hosted
+write path. In Claude Code cloud sessions, the hosted write path was observed
+wrapping long URLs in code spans, appending the comment footer, replacing a pull
+request's attribution with that footer, and removing U+200B, so a write can be
+stored differently from the text sent.
 
 This project handles the case in the GitHub Write Fidelity in Claude Code Cloud
 Sessions section of [Agent Sessions](./agent-sessions.md). An agent composes the

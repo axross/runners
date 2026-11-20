@@ -557,8 +557,9 @@ result when it finds nothing, and none reports a pass for a file it cannot read.
 The checks need `node`, GNU `grep`, `tail`, `wc`, and `cmp`. The read-back
 commands below need `gh`, `jq`, `cmp`, and `diff`, plus `node` for the
 attribution-aware comparison, run from `bash`, whose process substitution the
-diff command uses. `node` and `jq` are pinned in
-[`mise.toml`](../../mise.toml).
+diff command uses. Run outside the checkout, `node` and `jq` are the ones on the
+session's `PATH`; mise applies the versions pinned in
+[`mise.toml`](../../mise.toml) only inside the checkout.
 
 The URL check lists every `http` or `https` URL of 150 or more characters with
 its line number and length. It does not count a closing `)` that belongs to the
@@ -615,11 +616,8 @@ qualified under
   time, newest first, 100 per page, with the item selected by number. No title
   goes in the query, so quotes or apostrophes in a title cannot break it.
 
-Whether a session may use either route is a fact about that session, not about
-Claude Code cloud sessions in general. Establish it for the operation and target
-in hand, and report the limit observed, not a limit of the host. MCP reads are
-a quick check only: they drop U+200B, and their result reaches the agent's
-context but not a command, so they cannot supply a byte comparison.
+MCP reads are a quick check only: they drop U+200B, and their result reaches the
+agent's context but not a command, so they cannot supply a byte comparison.
 
 The direct read writes the item to a file, prints its update time, and compares
 the body. Use `pulls/<number>` in place of `issues/<number>` for a pull request.
@@ -708,8 +706,7 @@ establish the stored content, for the reason given under Reading Back a Body.
 - MUST report a comment checked only through MCP as checked through MCP only,
   with its exact stored content unverified, as GitHub Operation requires.
 - MUST check each review and review reply as MCP returns it, and report it as
-  unverified unless the session has an exact read for it.
-- MUST report any write that no read returns as unverified.
+  unverified, unless the session compares it by command through an exact read.
 
 ### Recovering from a Difference
 
