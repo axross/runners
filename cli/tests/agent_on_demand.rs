@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use marshal_cli::agent::machine::Launch;
-use marshal_cli::runtime::fake::Call;
+use marshal_cli::instance::lifecycle::StopTimes;
+use marshal_cli::runtime::fake::{Call, HostCall};
 use marshal_cli::token_store::{StoreError, StoreErrorKind};
 use serde_json::{Value, json};
 use support::agent::{JIT, ONE_POOL, OTHER_TOKEN, Rig, TOKEN};
@@ -30,6 +31,12 @@ repository = "o/r"
 scale_set = "axpc-jobs"
 runners = 2
 "#;
+
+/// the exit deadline of a stop that the slow scale-set cleanup outlasts.
+const EXIT_DEADLINE: Duration = Duration::from_millis(300);
+
+/// the budget the fake backend reserves for releasing a job host.
+const RELEASE_BUDGET: Duration = Duration::from_millis(100);
 
 #[derive(Default)]
 struct ServiceState {
@@ -1092,6 +1099,99 @@ async fn stopping_recovery_does_not_delay_another_pool_or_extend_stop() {
             conn.ok("quit").await;
         })
         .await;
+}
+
+/// what one stop-all asked of the backend, and how long it took.
+struct StopAsks {
+    /// the grace and the budget of each container stop request.
+    container_stops: Vec<(Duration, Duration)>,
+    releases: Vec<HostCall>,
+    took: Duration,
+}
+
+/// runs two held runners under a backend that reserves a release budget, with every
+/// piece of scale-set cleanup slower than the exit deadline, and stops them.
+async fn stop_with_a_reserved_release(config: &str) -> StopAsks {
+    let service = Service::start(2).await;
+    {
+        let mut state = service.state.lock().unwrap();
+        state.delete_delay = Duration::from_secs(30);
+        state.close_delay = Duration::from_secs(30);
+    }
+    let mut rig = rig(&service);
+    rig.write_toml(config);
+    rig.backend.release_budget = RELEASE_BUDGET;
+    rig.times.set(StopTimes {
+        exit_deadline: EXIT_DEADLINE,
+        ..StopTimes::reserving(RELEASE_BUDGET)
+    });
+    let rig = &rig;
+    let (_, took) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("two runners", |snapshot| snapshot.runners_up == 2)
+                .await;
+            rig.mark_running();
+            let began = tokio::time::Instant::now();
+            conn.ok("stop_all").await;
+            let took = began.elapsed();
+            conn.ok("quit").await;
+            took
+        })
+        .await;
+    let state = rig.backend.state.borrow();
+    let releases = state
+        .host_calls
+        .iter()
+        .filter(|call| matches!(call, HostCall::Release(..)))
+        .cloned()
+        .collect();
+    let container_stops = rig
+        .backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            Call::StopContainers(request) => Some((request.grace, request.budget)),
+            _ => None,
+        })
+        .collect();
+    StopAsks {
+        container_stops,
+        releases,
+        took,
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_on_demand_stop_keeps_the_release_budget_and_the_exit_deadline_of_an_always_on_one() {
+    let always_on =
+        stop_with_a_reserved_release(&CONFIG.replace("scale_set = \"axpc-jobs\"\n", "")).await;
+    let on_demand = stop_with_a_reserved_release(CONFIG).await;
+    let reserved = StopTimes::reserving(RELEASE_BUDGET);
+    assert_eq!(
+        on_demand.container_stops,
+        [(reserved.grace, reserved.stop_budget)]
+    );
+    assert_eq!(on_demand.container_stops, always_on.container_stops);
+    assert!(!on_demand.releases.is_empty(), "no host was released");
+    assert!(
+        on_demand
+            .releases
+            .iter()
+            .all(|call| matches!(call, HostCall::Release(_, budget) if *budget == RELEASE_BUDGET)),
+        "{:?}",
+        on_demand.releases
+    );
+    assert_eq!(on_demand.releases.len(), always_on.releases.len());
+    assert!(
+        on_demand.took >= EXIT_DEADLINE,
+        "the slow cleanup did not hold the stop: {:?}",
+        on_demand.took
+    );
+    assert!(
+        on_demand.took < EXIT_DEADLINE + Duration::from_millis(400),
+        "the stop took {:?}",
+        on_demand.took
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
