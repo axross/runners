@@ -21,9 +21,9 @@ left the loop.
 The plan lives in the body of a tracking issue, written with
 `product-requirement-document-authoring` and marked with the `<!-- ai-agent -->`
 comment marker. In a Claude Code cloud session, the body is composed, checked,
-and read back under
-[GitHub Write Fidelity in Claude Code Cloud Sessions](./agent-sessions.md#github-write-fidelity-in-claude-code-cloud-sessions),
-because the hosted write path can change a stored body. Two gates are real, and
+and read back under the GitHub Write Fidelity in Claude Code Cloud Sessions
+section of [Agent Sessions](./agent-sessions.md), because the hosted write path
+can change a stored body. Two gates are real, and
 neither has a self-approval path. No implementation begins before the human
 approves the plan recorded in the tracking issue, and no change is called done
 on the author's own assessment rather than a separate reviewer's. A runtime
@@ -42,9 +42,8 @@ request body follows
 [`.github/pull_request_template.md`](../../.github/pull_request_template.md),
 carries the plan's acceptance criteria in an **Acceptance criteria** section,
 and links the tracking issue with a closing keyword. In a Claude Code cloud
-session, the body also follows the same
-[write-fidelity section](./agent-sessions.md#github-write-fidelity-in-claude-code-cloud-sessions).
-The closing keyword closes the issue if the maintainer later merges the pull
+session, the body also follows the same GitHub Write Fidelity in Claude Code
+Cloud Sessions section of [Agent Sessions](./agent-sessions.md). The closing keyword closes the issue if the maintainer later merges the pull
 request; it does not authorize that merge.
 
 If an existing pull request has no tracking issue and needs fixes:
@@ -898,9 +897,8 @@ Checkpoint publications on both surfaces MUST follow GitHub Operation's
 [Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
 and [Publication and Recovery](../../.claude/skills/github-operation/references/publication-and-recovery.md)
 contracts and, in a Claude Code cloud session, the checks before writing and the
-read-back in the
-[write-fidelity section](./agent-sessions.md#github-write-fidelity-in-claude-code-cloud-sessions)
-of Agent Sessions. A pull-request-description append is a whole-body
+read-back in the GitHub Write Fidelity in Claude Code Cloud Sessions section of
+[Agent Sessions](./agent-sessions.md). A pull-request-description append is a whole-body
 replacement, so the exception path depends on full-body fidelity before and
 after publication. Retain verified status-comment URLs in the next checkpoint or
 handoff. If the required route or fidelity is unavailable, retain the current
