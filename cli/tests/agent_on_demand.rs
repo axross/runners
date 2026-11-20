@@ -2107,6 +2107,91 @@ async fn an_update_drain_does_not_wait_for_a_failing_cleanup() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn an_update_drain_does_not_wait_for_a_failed_jobs_back_off() {
+    let service = Service::start(1).await;
+    let rig = rig(&service);
+    rig.write_toml(&CONFIG.replace("runners = 2", "runners = 1"));
+    {
+        let mut engine = rig.backend.state.borrow_mut();
+        engine.hold_runs = false;
+        engine
+            .exits
+            .push_back(Err(BackendError::new("the engine refused the container")));
+    }
+    let (rig, service) = (&rig, &service);
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.until("the slot backing off after the failed job", |snapshot| {
+                snapshot.pools[0].runners.iter().any(|runner| {
+                    runner.state == "backing_off"
+                        && runner
+                            .reason
+                            .as_deref()
+                            .is_some_and(|reason| !reason.contains("cleanup"))
+                })
+            })
+            .await;
+            let began = tokio::time::Instant::now();
+            conn.call("drain_for_update", json!({ "version": "1.4.0" }))
+                .await
+                .unwrap();
+            loop {
+                if let Push::Ending { .. } = conn.push().await {
+                    break;
+                }
+            }
+            // the first back-off is 5 s
+            assert!(
+                began.elapsed() < Duration::from_secs(3),
+                "the drain took {:?}",
+                began.elapsed()
+            );
+            assert_eq!(containers(rig).len(), 1);
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    assert!(service.state.lock().unwrap().registrations.is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_settled_cleanup_restores_the_failed_jobs_reason_for_the_rest_of_the_back_off() {
+    let service = Service::start(1).await;
+    let rig = rig_with_failing_deletion(&service);
+    rig.backend
+        .state
+        .borrow_mut()
+        .exits
+        .push_back(Err(BackendError::new("the engine refused the container")));
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the slot retrying its cleanup", cleanup_backing_off)
+                .await;
+            service.state.lock().unwrap().fail_deletion = false;
+            let snapshot = conn
+                .until("the failed job's reason shown again", |snapshot| {
+                    snapshot.pools[0].runners.iter().any(|runner| {
+                        runner.state == "backing_off"
+                            && runner
+                                .reason
+                                .as_deref()
+                                .is_some_and(|reason| !reason.contains("cleanup"))
+                    })
+                })
+                .await;
+            assert!(
+                !snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .unwrap()
+                    .cleanup_incomplete
+            );
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_stop_during_the_cleanup_back_off_gets_one_more_attempt() {
     let service = Service::start(1).await;
     let rig = rig_with_failing_deletion(&service);

@@ -9,7 +9,7 @@ use crate::runtime::board::SlotState;
 use crate::runtime::clock::Clock;
 use crate::runtime::pool::SlotSpec;
 use crate::runtime::token::TokenSource;
-use crate::runtime::worker::{Backoff, Services, run_one_job_with, sleep_or_stop, wait_for_stop};
+use crate::runtime::worker::{Backoff, Services, run_one_job_with, wait_for_stop};
 
 use super::{Coordinator, Reservation};
 
@@ -35,12 +35,7 @@ pub(crate) async fn run_on_demand_slot<B: Backend, K: Clock, R, T: TokenSource>(
         }
         let reservation = tokio::select! {
             reservation = listener.reserve(slot.number, slot_stop.clone()) => reservation,
-            _ = async {
-                match &mut draining {
-                    Some(drain) => { let _ = drain.wait_for(|draining| *draining).await; },
-                    None => std::future::pending::<()>().await,
-                }
-            } => continue,
+            () = drain_begins(&mut draining) => continue,
         };
         let Some(mut reservation) = reservation else {
             break;
@@ -81,9 +76,16 @@ pub(crate) async fn run_on_demand_slot<B: Backend, K: Clock, R, T: TokenSource>(
                 break;
             }
         }
-        if result.is_err() {
-            if sleep_or_stop(services.clock, &mut stopping, backoff.fail()).await {
-                break;
+        if let Err(reason) = result {
+            // settling may have replaced the job's reason with cleanup text that no longer holds
+            services
+                .board
+                .set_slot(&slot.label(), SlotState::BackingOff(reason));
+            // a drain ends the back-off too: the loop top reports the slot drained
+            tokio::select! {
+                () = services.clock.sleep(backoff.fail()) => {},
+                () = wait_for_stop(&mut stopping) => break,
+                () = drain_begins(&mut draining) => {},
             }
         } else {
             backoff.reset();
@@ -110,6 +112,18 @@ async fn drain_begins(draining: &mut Option<watch::Receiver<bool>>) {
     match draining {
         Some(drain) => {
             if drain.wait_for(|draining| *draining).await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
+        None => std::future::pending::<()>().await,
+    }
+}
+
+/// returns when the drain starts or ends, or never when there is none.
+async fn drain_changes(draining: &mut Option<watch::Receiver<bool>>) {
+    match draining {
+        Some(drain) => {
+            if drain.changed().await.is_err() {
                 std::future::pending::<()>().await;
             }
         }
@@ -194,16 +208,7 @@ async fn park<B, K: Clock, R>(
         services.board.set_slot(&slot.label(), state);
         tokio::select! {
             () = wait_for_stop(stopping) => return,
-            () = async {
-                match draining {
-                    Some(drain) => {
-                        if drain.changed().await.is_err() {
-                            std::future::pending::<()>().await;
-                        }
-                    }
-                    None => std::future::pending::<()>().await,
-                }
-            } => {},
+            () = drain_changes(draining) => {},
         }
     }
 }
