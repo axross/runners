@@ -85,6 +85,7 @@ fn the_macs_view_adds_no_windows_or_docker_words() {
         "diagnostics",
         "token_rejected",
         "running",
+        "on_demand",
     ] {
         let fixture = {
             let mut out = Vec::new();
@@ -117,6 +118,38 @@ fn the_macs_view_adds_no_windows_or_docker_words() {
             }
         }
     }
+}
+
+#[test]
+fn the_macs_window_shows_no_on_demand_line() {
+    let mut views: Vec<(String, View)> = [
+        "waiting_for_docker",
+        "building",
+        "leftover",
+        "diagnostics",
+        "token_rejected",
+        "running",
+    ]
+    .into_iter()
+    .map(|name| (name.to_string(), mac_view(name)))
+    .collect();
+    views.push(("with_m3_items".to_string(), mac_view_of(&with_m3_items())));
+    for (name, view) in &views {
+        assert!(
+            view.list()
+                .is_none_or(|window| window.pools.iter().all(|card| card.on_demand.is_none())),
+            "{name} has an on-demand line"
+        );
+        assert!(
+            !joined(view).to_lowercase().contains("on demand"),
+            "{name}: {}",
+            joined(view)
+        );
+    }
+    assert!(
+        views.iter().any(|(_, view)| view.list().is_some()),
+        "no fixture drew a pool card"
+    );
 }
 
 #[test]
