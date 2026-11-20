@@ -405,6 +405,9 @@ fn a_token_in_a_syntax_error_or_a_wrong_type_value_is_in_no_problem() {
 
 /// the words of `text` shaped like a credential: a GitHub token, a JWT, or a long
 /// base64 run with digits and both cases of letters.
+///
+/// `other_credential_words` in `app/crates/view/tests/view/privacy.rs` repeats the non-GitHub
+/// shapes: the two workspaces share no crate, so a change to a shape belongs in both.
 fn credential_words(text: &str) -> Vec<&str> {
     const PREFIXES: [&str; 6] = ["github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_"];
     let words = |extra: &'static str| {

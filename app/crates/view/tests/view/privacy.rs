@@ -332,6 +332,9 @@ fn no_recorded_state_shows_anything_token_shaped() {
 
 /// the words of `text` shaped like a credential that is not a GitHub token: a JWT, or a
 /// long base64 run with digits and both cases of letters.
+///
+/// `credential_words` in `cli/tests/toml_fixtures.rs` repeats these shapes: the two workspaces
+/// share no crate, so a change to a shape belongs in both.
 fn other_credential_words(text: &str) -> Vec<&str> {
     let words = |extra: &'static str| {
         text.split(move |c: char| !(c.is_ascii_alphanumeric() || extra.contains(c)))
