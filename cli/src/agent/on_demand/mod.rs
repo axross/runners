@@ -44,6 +44,9 @@ pub(super) const MIN_REFRESH_WAIT: Duration = Duration::from_secs(30);
 /// registration token and exchange, and a service that keeps answering 404 must not drive them.
 pub(super) const MIN_RECREATION_WAIT: Duration = Duration::from_secs(30);
 
+/// what the view says while the listener waits for the next allowed recreation.
+const RECREATION_WAIT_REASON: &str = "scale set not found; recreating";
+
 /// how long the listener leaves an unresolved message alone before asking the service again; the
 /// service redelivers it at once, and the wait ends early when a seat frees.
 pub(super) const REDELIVERY_WAIT: Duration = Duration::from_secs(10);
@@ -394,6 +397,21 @@ impl<'a, T: TokenSource, K: Clock> Coordinator<'a, T, K> {
         drop(state);
         self.log
             .warn(&format!("pool {}: {error}", self.pool.logical_name));
+        self.publish();
+    }
+
+    /// the wait for the next allowed recreation admits nothing, so the view says why instead of
+    /// reading `listening`; the next `listening` restores it.
+    fn awaiting_recreation(&self) {
+        let mut state = self.state.borrow_mut();
+        if state.fatal || state.view.reason.as_deref() == Some(RECREATION_WAIT_REASON) {
+            return;
+        }
+        state.view.state = ListenerState::BackingOff;
+        state.view.status = Some(404);
+        state.view.refused_host = None;
+        state.view.reason = Some(RECREATION_WAIT_REASON.to_owned());
+        drop(state);
         self.publish();
     }
 

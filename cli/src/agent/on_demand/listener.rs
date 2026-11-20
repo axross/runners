@@ -50,6 +50,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             if recreate {
                 let wait = self.recreation_wait();
                 if !wait.is_zero() {
+                    self.awaiting_recreation();
                     tokio::select! {
                         () = self.clock.sleep(wait) => {},
                         _ = stop.changed() => {},

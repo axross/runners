@@ -810,7 +810,24 @@ mod http {
                 !coordinator.admitting(),
                 "admitting while it waits to recreate"
             );
+            let view = coordinator.view();
+            assert_eq!(view.state, ListenerState::BackingOff);
+            assert_eq!(view.status, Some(404));
+            assert_eq!(
+                view.reason.as_deref(),
+                Some("scale set not found; recreating")
+            );
+            let mut changed = coordinator.changes();
             clock.advance(Duration::from_secs(1));
+            timeout(Duration::from_secs(2), async {
+                while coordinator.view().state != ListenerState::Listening {
+                    changed.changed().await.unwrap();
+                }
+            })
+            .await
+            .unwrap();
+            let view = coordinator.view();
+            assert_eq!((view.status, view.reason), (None, None));
         };
         tokio::join!(fake.serve(replies), coordinator.run(), drive);
         assert_eq!(coordinator.view().state, ListenerState::Stopped);
