@@ -338,6 +338,9 @@ takes.
 - MUST say in the prompt that maintainer decisions are asked directly with the
   launched session's own question tool and reported back, and MUST NOT present
   the launcher as the launched session's only channel.
+- MUST NOT start the launched session in a permission mode that denies its
+  question tool, such as Claude Code's `dontAsk`, which denies `AskUserQuestion`
+  even when an allow rule matches it.
 - MUST pass on maintainer answers that affect the launched session's work,
   quoting the answer and saying where and when the maintainer gave it, and MUST
   NOT present one as settling an answer the maintainer must give in the launched
