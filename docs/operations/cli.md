@@ -5253,14 +5253,18 @@ fails it too.
   ```
 
   The checker is hashed and compared with `FEED_CHECK_SHA256`, the hash `update-tool`
-  built, a mismatch exits 1, and only then is it made executable. The feed check runs
-  once, after that block, as `"$check" dist/latest.json` with `unsigned/SHA256SUMS`
-  among its arguments and `|| exit 1`. On every other line of those scripts the whole
-  word `check` and the text `FEED_CHECK_SHA256`, `update-tools` and `marshal-feed-check`
-  are refused, in a command, a quoted message or a comment, so harmless text that holds
-  one is refused too. `FEED_CHECK_SHA256` is set on the step that holds the comparison,
-  from exactly `${{ needs.update-tool.outputs.feed_check_sha256 }}`. The check compares
-  text: it does not follow `eval`, a sourced file or an indirect variable name.
+  built, a mismatch exits 1, and only then is it made executable. The feed check run
+  line appears once, after that block, as `"$check" dist/latest.json` with
+  `unsigned/SHA256SUMS` among its arguments and `|| exit 1`. On every other line of
+  those scripts the whole words `check` and `FEED_CHECK_SHA256`, and the text
+  `update-tools` and `marshal-feed-check` anywhere in a line, are refused, in a command,
+  a quoted message or a comment, so harmless text that holds one is refused too, while
+  `FEED_CHECK_SHA256_X` and `checksum` are not. `FEED_CHECK_SHA256` is set on the step
+  that holds the comparison, from exactly
+  `${{ needs.update-tool.outputs.feed_check_sha256 }}`. The check compares text: it does
+  not follow `eval`, a sourced file or an indirect variable name, and it does not see
+  control flow that skips the run line, such as an earlier `exit` or an enclosing
+  condition, so it finds the run line but does not check that it executes.
 
 - **No step condition.** No step of `update-tool`, `sign-update` or `assemble-signed`
   carries an `if`.

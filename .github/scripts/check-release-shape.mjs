@@ -21,7 +21,11 @@
 //   - an option or variable name built at run time, such as `find "$option"` or
 //     `read -r "$name"` and `printf -v "$name"`;
 //   - an assignment through `${PATH:=...}`, and any environment variable other
-//     than PATH, BASH_ENV and ENV.
+//     than PATH, BASH_ENV and ENV;
+//   - in assemble-signed, `eval`, a sourced file, an indirect variable name, and
+//     control flow that skips the feed check run, such as an earlier `exit` or an
+//     enclosing condition: it finds the run line once, after the hashing block,
+//     and does not check that it executes.
 // it also does not see a write to SHA256SUMS in release-build.yaml's assemble
 // job other than by a redirection, tee, cp or mv, or a step condition in attest
 // or release that skips a step, such as `if: false`. M2's signing job is added
@@ -871,7 +875,8 @@ const FEED_CHECK_BLOCK = [
 ];
 const FEED_CHECK_RUN = /^"\$check" dist\/latest\.json ([^|;&]+) \|\| exit 1$/;
 // no other script line of assemble-signed holds any of these, in a command, a
-// quoted message or a comment.
+// quoted message or a comment: `check` and FEED_CHECK_SHA256 as whole words,
+// the other two as text anywhere in the line.
 const FEED_CHECK_WORDS = {
   check: /\bcheck\b/,
   FEED_CHECK_SHA256: /\bFEED_CHECK_SHA256\b/,
@@ -881,10 +886,12 @@ const FEED_CHECK_WORDS = {
 
 /**
  * records an assemble-signed that does not hold the hashing block exactly once,
- * does not run the feed check once, after it, with unsigned/SHA256SUMS among
- * its arguments, or names the checker, its hash or its directory on any other
- * line. it compares text, so harmless text that holds one of those words is
- * refused too.
+ * does not have the feed check run line once, after it, with
+ * unsigned/SHA256SUMS among its arguments, or holds on any other line the whole
+ * word check, the whole word FEED_CHECK_SHA256, or the text update-tools or
+ * marshal-feed-check anywhere in the line. it compares text, so harmless text
+ * that holds one of those is refused too, and it does not see whether the run
+ * line executes.
  */
 function checkFeedCheckBlock(scripts, where) {
   const lines = scripts.split("\n").map((line) => line.trim());
