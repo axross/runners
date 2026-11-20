@@ -393,7 +393,7 @@ test("token removal is opt-in, a store failure leaves the configuration saved an
       if (request.kind === "read") return { kind: "read", value: doc };
       if (request.kind === "remove_released_token") {
         if (refuseRemoval)
-          throw { message: "Access refused (kind access_refused, code 5)" };
+          throw { message: "Access refused (kind access_refused, code 5)." };
         return { kind: "token_removed" };
       }
       return {
@@ -430,6 +430,13 @@ test("token removal is opt-in, a store failure leaves the configuration saved an
       /not removed:.*access_refused/.test(message),
     ),
   );
+  const failure = [...editorNotice(model).descendants()].find(
+    (node) => node.getAttribute("class") === "config-token-failure",
+  );
+  assert.equal(
+    failure.children[0].textContent,
+    "The token for owner/released was not removed. Access refused (kind access_refused, code 5). The configuration stays saved.",
+  );
   const writes = calls.filter((call) => call.request.check === false).length;
   refuseRemoval = false;
   await model.retryToken("owner/released");
@@ -457,11 +464,11 @@ test("a repository's return invalidates its old token-removal offer after read o
     let failRead = false;
     const { model, calls } = editor((_command, { request }) => {
       if (request.kind === "read") {
-        if (failRead) throw { message: "Lost contact" };
+        if (failRead) throw { message: "Lost contact." };
         return { kind: "read", value: current };
       }
       if (request.kind === "remove_released_token")
-        throw { message: "Access refused" };
+        throw { message: "Access refused." };
       return {
         kind: "change",
         value: {
@@ -526,7 +533,7 @@ test("a repository's return invalidates its old token-removal offer after read o
 
 test("a successful write followed by a failed read is saved, not an unapplied draft", async () => {
   const { model, calls } = editor((_command, { request }) => {
-    if (request.kind === "read") throw { message: "Lost contact" };
+    if (request.kind === "read") throw { message: "Lost contact." };
     return {
       kind: "change",
       value: { effects: [], repositories_released: [], applies: true },
@@ -535,7 +542,10 @@ test("a successful write followed by a failed read is saved, not an unapplied dr
   model.set(model.pools[0], "runners", "5");
   await model.check();
   await model.apply();
-  assert.match(model.message, /Saved, but.*Lost contact/);
+  assert.equal(
+    model.message,
+    "Saved, but config.toml could not be read again. Lost contact. Read Configuration to continue.",
+  );
   assert.doesNotMatch(model.message, /unapplied changes are kept/);
   assert.equal(model.dirty, false);
   await model.check();

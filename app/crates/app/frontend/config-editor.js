@@ -600,7 +600,7 @@ export class ConfigEditor {
       if (saved) {
         this.error = null;
         this.notify(
-          `Saved, but config.toml could not be read again: ${error?.message ?? String(error)}. Read Configuration to continue.`,
+          `Saved, but config.toml could not be read again. ${error?.message ?? String(error)} Read Configuration to continue.`,
         );
       } else if (sent && UNANSWERED.has(error?.code)) {
         this.unconfirmed();

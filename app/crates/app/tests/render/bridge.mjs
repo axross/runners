@@ -96,7 +96,7 @@ export function bridge({ views, scenario }) {
             state.failReadAfterWrite &&
             document.revision === "written-fixture"
           )
-            throw { message: "Lost contact" };
+            throw { message: "Lost contact." };
           return { kind: "read", value: structuredClone(document) };
         }
         if (
@@ -108,7 +108,7 @@ export function bridge({ views, scenario }) {
             state.release = resolve;
           });
         if (request.kind === "remove_released_token") {
-          if (state.refuseRemoval) throw { message: "Access refused" };
+          if (state.refuseRemoval) throw { message: "Access refused." };
           return { kind: "token_removed" };
         }
         const failures = {

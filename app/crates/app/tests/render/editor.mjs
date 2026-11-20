@@ -409,6 +409,10 @@ try {
       await page.waitForFunction(() =>
         document.querySelector(".config-notice")?.textContent.includes("Saved"),
       );
+      assert.equal(
+        await page.locator(".config-token-failure p").innerText(),
+        "The token for owner/site was not removed. Access refused. The configuration stays saved.",
+      );
       await page.evaluate(() => {
         window.__fixture.refuseRemoval = false;
         window.__fixture.holdRemoval = true;
@@ -662,7 +666,7 @@ try {
           await enter(page, "applied");
           assert.match(
             await page.locator(".config-notice").innerText(),
-            /Saved, but.*Lost contact/,
+            /Saved, but config\.toml could not be read again\. Lost contact\. Read/,
           );
         } else {
           await enter(page, "review-tokens");
