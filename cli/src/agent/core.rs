@@ -752,8 +752,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         };
         let _turn = running.turn.lock().await;
         running.wanted.borrow_mut().clone_from(&pools);
-        self.board
-            .expect_image(plan.image_name.as_deref().unwrap_or_default());
+        self.board.expect_image(image_name(plan));
         let spec = |name: &str| pools.iter().find(|pool| pool.name == name).cloned();
         let steps: Vec<(&str, Step)> = effects
             .iter()

@@ -10,6 +10,7 @@
 mod support;
 
 use marshal_cli::agent::CallError;
+use std::rc::Rc;
 use std::time::Duration;
 
 use marshal_cli::agent::machine::Launch;
@@ -19,6 +20,7 @@ use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
 use support::agent::{Conn, ONE_POOL, Rig, TOKEN, TWO_POOLS};
+use tokio::sync::Notify;
 
 const TWO_POOLS_TOML: &str = r#"# the host's pools
 schema_version = 1
@@ -203,6 +205,64 @@ async fn raising_runners_starts_the_new_slot_alone_and_keeps_the_comments() {
                 applied["revision"].as_str().unwrap()
             );
             assert!(stopped(rig).is_empty(), "an added slot stopped a runner");
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+/// the image the board expects, as the snapshot names it.
+fn image_names(snapshot: &marshal_cli::agent::snapshot::Snapshot) -> Vec<&str> {
+    snapshot
+        .images
+        .iter()
+        .map(|image| image.name.as_str())
+        .collect()
+}
+
+/// the image checks wait after the first run, so the image the board names is the one
+/// the edit set, not one a slot's own check named again.
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_on_the_mac_keeps_the_default_image_of_a_configuration_without_one() {
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.profile.set(marshal_cli::profile::Profile::Axmc);
+    rig.write_toml(
+        "schema_version = 1\nrouting_label = \"axmc\"\n\n[budget]\ncpus = 8\nmemory_gb = 32\n\
+         disk_gb = 180\n\n[[pool]]\nname = \"r\"\nrepository = \"o/r\"\nrunners = 2\n\
+         os = \"linux\"\ndisk_gb = 40\n",
+    );
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let before = conn
+                .until("two runners", |snapshot| snapshot.runners_up == 2)
+                .await;
+            assert_eq!(image_names(&before), ["actions-runner:local"]);
+            rig.backend.state.borrow_mut().image_gate = Some(Rc::new(Notify::new()));
+            rig.mark_running();
+            let revision = read_revision(&conn).await;
+            conn.call(
+                "config_edit",
+                json!({
+                    "revision": revision,
+                    "edits": [{"op": "set", "path": "pool[0].runners", "value": 1}],
+                }),
+            )
+            .await
+            .unwrap();
+            let after = conn
+                .until("the apply done", |snapshot| {
+                    snapshot
+                        .configuration
+                        .last_apply
+                        .as_ref()
+                        .is_some_and(|apply| apply.outcome == "applied")
+                })
+                .await;
+            assert_eq!(image_names(&after), ["actions-runner:local"]);
             rig.mark_running();
             conn.ok("quit").await;
         })
