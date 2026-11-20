@@ -5254,8 +5254,9 @@ to keep releases on `0.x`, as
 [Version Rules](./development-workflow.md#version-rules) describes, so no major
 version marks the change. The check block below names `0.3.0` as an example. To
 check another release, change the block's `version` and `file` assignment lines. If
-the recovery release gets another version, a later change corrects the lines. A host that runs the command line moves
-to the app as
+the recovery release or the first release of the app gets another version, a later
+change corrects this paragraph and those lines. A host that runs the command line
+moves to the app as
 The Last Command-Line Release section says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the

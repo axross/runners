@@ -33,11 +33,21 @@ For this bounded release, follow this order:
 1. Verify the existing release prerequisites as Development Workflow describes.
    Identify the native Windows11 host, actual Smart App Control state and safe
    baseline separately; WSL is not that host.
-2. Push or confirm the base tag `v0.1.1` on `954d349`
-   (`954d349d8c31c30d7b4439aadfea6f75ee210a0f`) yourself, as
-   [Version Rules](./development-workflow.md#version-rules) describes. Read it back
-   with `git ls-remote --tags origin v0.1.1`. A tag on any other commit stops the
+2. Push or confirm the base tag `v0.1.1` on `954d349` yourself, as
+   [Version Rules](./development-workflow.md#version-rules) describes. Push it as a
+   lightweight tag, as `v0.0.0` was, and read it back. If the tag already exists,
+   skip the first two lines:
+
+   ```bash
+   git tag v0.1.1 954d349d8c31c30d7b4439aadfea6f75ee210a0f
+   git push origin refs/tags/v0.1.1
+   git ls-remote --tags origin v0.1.1 'v0.1.1^{}'
+   ```
+
+   The last line's SHA is the tag's commit and must be
+   `954d349d8c31c30d7b4439aadfea6f75ee210a0f`. A tag on any other commit stops the
    release until you decide.
+
 3. Verify main's merged-PR history as Development Workflow's
    [Each Release](./development-workflow.md#each-release) step 1 describes. Do it
    immediately before the dispatch.

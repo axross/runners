@@ -754,7 +754,10 @@ Residual risks, accepted:
   `v0.1.1` included, and that changes the version semantic-release works out next.
   Until the recovery release is published, moving `v0.1.1` to another commit, or
   deleting it, can make the next plan print `1.0.0`; once a later release exists,
-  `v0.1.1` no longer affects the version. Immutable releases lock only the tags of published releases.
+  `v0.1.1` no longer affects the version. The check in
+  [Each Release](../operations/development-workflow.md#each-release) names such a
+  tag before a dispatch. Immutable releases lock only the tags of published
+  releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
   check still tie the file to one commit on main, but no longer to a version. The
