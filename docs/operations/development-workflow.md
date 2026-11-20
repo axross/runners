@@ -800,8 +800,10 @@ A published release is immutable, so this applies only to one that was never
 published.
 
 `v0.1.1` is not a partial release. It is a deliberate base tag with no release,
-which Version Rules, below, describes, so do not delete it. Deleting it puts the
-three breaking commits up to `954d349` back in the count.
+which Version Rules, below, describes, so do not delete it. Deleting it before the
+recovery release is published puts the three breaking commits up to `954d349` back
+in the count. Afterwards the tag no longer affects the version, and it stays as the
+record of where counting started.
 
 ### Version Rules
 
@@ -836,15 +838,15 @@ squash merge releases the wrong bump or none, so correct a title before merging.
 Releases are never prereleases, and nothing is committed back to main: the version
 lives in the tag and the release.
 
-Releases stay on `0.x`, by the maintainer's decision of 2026-11-20. Three
+The maintainer decided on 2026-11-20 to keep releases on `0.x`. Three
 breaking-marked commits follow `v0.1.0`: #93 (`2b2393e`), #94 (`1adf7cb`) and #117
 (`954d349`). Counted from `v0.1.0`, they would make the next release `1.0.0`. So
 before the F0 recovery dispatch, the maintainer pushes `v0.1.1`, a bare tag with no
 release, on `954d349`, as `v0.0.0` was pushed for the first release.
 semantic-release takes the highest semver `v*` tag merged into main as the last
-release, so it reads only the commits after `954d349`. Among them are `feat`
-commits and no breaking one, which makes a minor bump, so the F0 recovery release
-is `0.2.0` from `0.1.1`. Nothing is released as `0.1.1`; the tag only marks where
+release, so it reads only the commits after `954d349`. They include the `feat`
+commits #118 and #139, so unless a breaking change merges first, the F0 recovery
+release is `0.2.0` from `0.1.1`. Nothing is released as `0.1.1`; the tag only marks where
 counting starts, and it stays.
 
 The recovery release's notes list only commits after `954d349`. None of them is in
@@ -853,12 +855,14 @@ that tree, do not appear. The notes describe app and later work, not the content
 of the command-line files.
 
 The breaking-marker rule is unchanged. A breaking change merged after `v0.1.1`
-makes a later plan job print `1.0.0`, and so does a `v0.1.1` that is missing or on
-another commit. When a plan job prints a version the maintainer did not expect, the
+makes a later plan job print `1.0.0`, and until the recovery release is published,
+so does a `v0.1.1` that is missing or on another commit. When a plan job prints a version the maintainer did not expect, the
 maintainer cancels the run before approving `sign-macos` and decides then how to
 proceed. A release rule that maps a breaking change to a minor, and a version input
-on the dispatch, are not in place: the release configuration keeps the default
-mapping, and the base tag is what keeps this release on `0.x`.
+on the dispatch, are not in place: the base tag changes no release configuration or
+workflow, and the release configuration keeps the default mapping. How a later
+release stays on `0.x` after another breaking change is the maintainer's decision
+when a plan job prints `1.0.0`, not made now.
 
 `release/package.json` pins `conventional-changelog-conventionalcommits` to the
 `9.x` line. `@semantic-release/release-notes-generator` renders notes with

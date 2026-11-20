@@ -752,8 +752,9 @@ Residual risks, accepted:
 - **Unprotected tags change the next version.** Any account with write access can
   push, move, or delete a `v*` tag that has no published release, `v0.0.0` and
   `v0.1.1` included, and that changes the version semantic-release works out next.
-  Moving `v0.1.1` to another commit, or deleting it, can make the next plan print
-  `1.0.0`. Immutable releases lock only the tags of published releases.
+  Until the recovery release is published, moving `v0.1.1` to another commit, or
+  deleting it, can make the next plan print `1.0.0`; once a later release exists,
+  `v0.1.1` no longer affects the version. Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
   check still tie the file to one commit on main, but no longer to a version. The

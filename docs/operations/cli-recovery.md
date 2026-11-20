@@ -34,15 +34,17 @@ For this bounded release, follow this order:
    Identify the native Windows11 host, actual Smart App Control state and safe
    baseline separately; WSL is not that host.
 2. Push or confirm the base tag `v0.1.1` on `954d349`
-   (`954d349d8c31c30d7b4439aadfea6f75ee210a0f`), yourself, as
-   [Version Rules](./development-workflow.md#version-rules) describes. It makes the
-   plan's version `0.2.0` from `0.1.1`; counted from `v0.1.0`, the plan would print
-   `1.0.0`.
+   (`954d349d8c31c30d7b4439aadfea6f75ee210a0f`) yourself, as
+   [Version Rules](./development-workflow.md#version-rules) describes. Read it back
+   with `git ls-remote --tags origin v0.1.1`. A tag on any other commit stops the
+   release until you decide.
 3. Verify main's merged-PR history as Development Workflow's
    [Each Release](./development-workflow.md#each-release) step 1 describes. Do it
    immediately before the dispatch.
 4. Dispatch `release.yaml` on main yourself and use the exact version produced
-   by its plan. Do not guess the next version from the historical commit.
+   by its plan. Do not guess the next version from the historical commit. If the
+   plan prints a version Version Rules does not expect, cancel the run before
+   approving `sign-macos`.
 5. Approve the signing deployment yourself. A failed build, signature,
    notarization or signed-package check prevents publication.
 6. Check that the published release has exactly the Windows CLI `.exe`, CLI

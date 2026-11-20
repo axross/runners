@@ -5249,11 +5249,12 @@ replaced one.
 records that risk.
 
 The last command-line release is the F0 recovery release, expected to be `0.2.0`,
-and every release after #132's restoration carries the app. Releases stay on
-`0.x`, so no major version marks the change. The check block below names `0.3.0`
-as an example. To check another release, change the block's `version` and `file`
-assignment lines. If the recovery release gets another
-version, a later change corrects the lines. A host that runs the command line moves
+and every release after #132's restoration carries the app. The maintainer decided
+to keep releases on `0.x`, as
+[Version Rules](./development-workflow.md#version-rules) describes, so no major
+version marks the change. The check block below names `0.3.0` as an example. To
+check another release, change the block's `version` and `file` assignment lines. If
+the recovery release gets another version, a later change corrects the lines. A host that runs the command line moves
 to the app as
 The Last Command-Line Release section says.
 
