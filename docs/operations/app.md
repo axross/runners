@@ -842,7 +842,7 @@ layout, control or view.
 
 The listener belongs to the resident agent, not the window's display connection.
 Hiding or minimizing the window ends display collection but jobs still start.
-**Stop All**, **Start All**, **Quit** and update drain retain their existing
+**Stop all runners**, **Start all runners**, **Quit Marshal** and update drain retain their existing
 lifecycle behavior. The on-demand section of [CLI](./cli.md) owns admission,
 failures, token refresh, cleanup and manual scale-set deletion;
 [Windows Runner Host](./windows-runner-host.md) gives the operator setup.

@@ -329,12 +329,12 @@ container's resource limits and the cache boundaries, keep their meanings.
    Use Administration: Read and write; Actions: read is optional for job names.
    The agent imports no token file; [Token Files of the Command Line](#token-files-of-the-command-line)
    says why.
-2. Arrange a quiet window, use **Stop All** before editing a running agent's file,
+2. Arrange a quiet window, use **Stop all runners** before editing a running agent's file,
    and save the configuration. These controls stop every pool. A client using
    `config_edit` or `config_reload` can instead apply the change to only the
    affected pool, as the configuration-editing section of [CLI](./cli.md)
    describes; changing `scale_set` stops that pool's jobs.
-3. Use **Start All** to reread the file. Invalid settings leave the last valid
+3. Use **Start all runners** to reread the file. Invalid settings leave the last valid
    configuration in use. Check the pool card for its scale-set name and
    listener state. A listening pool with no demand has no registered runner or
    job container after successful cleanup; an incomplete-cleanup report is not
@@ -344,8 +344,8 @@ container's resource limits and the cache boundaries, keep their meanings.
    Workflows in this public runners repository still use GitHub-hosted runners.
 
 The on-demand section of [CLI](./cli.md) explains listener errors and recovery.
-**Stop All** closes the listener and stops its runners without deleting the scale
-set. A job queued while the pool is stopped can wait for **Start All**. Hiding the
+**Stop all runners** closes the listener and stops its runners without deleting the scale
+set. A job queued while the pool is stopped can wait for **Start all runners**. Hiding the
 window stops display collection, not job listening. Token replacement applies to
 the next registration even before cached service credentials expire; removal or a
 store failure prevents it, while an already running job keeps its current JIT
@@ -354,7 +354,7 @@ configuration.
 For `another_listener`, leave Marshal to retry with back-off; a crashed session
 can take time to expire. For `scale-set label mismatch`, choose an unused valid
 name or stop workflows that use the incompatible set before deleting it manually
-and using **Start All** to recreate it. Marshal does not repair or delete that set
+and using **Start all runners** to recreate it. Marshal does not repair or delete that set
 automatically. The manual deletion procedure is in the on-demand section of
 [CLI](./cli.md).
 
@@ -913,8 +913,8 @@ containers stay until removed by hand with `docker volume rm` and `docker rm`. T
 isolation rules the host enforces between repositories are in
 [Security](../conventions/security.md).
 
-For a resident on-demand pool, use **Stop All**, remove the entry from `config.toml`
-and use **Start All**, or use a client's `config_edit` or `config_reload` method.
+For a resident on-demand pool, use **Stop all runners**, remove the entry from `config.toml`
+and use **Start all runners**, or use a client's `config_edit` or `config_reload` method.
 Its scale set remains on GitHub, also after a rename.
 Stop workflows targeting an unwanted set and delete that exact scale set manually
 in the repository settings, following the on-demand section of [CLI](./cli.md).
