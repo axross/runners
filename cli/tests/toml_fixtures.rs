@@ -403,6 +403,79 @@ fn a_token_in_a_syntax_error_or_a_wrong_type_value_is_in_no_problem() {
     assert!(tested >= 8, "only {tested} token fixtures were tested");
 }
 
+/// the words of `text` shaped like a credential: a GitHub token, a JWT, or a long
+/// base64 run with digits and both cases of letters.
+fn credential_words(text: &str) -> Vec<&str> {
+    const PREFIXES: [&str; 6] = ["github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_"];
+    let words = |extra: &'static str| {
+        text.split(move |c: char| !(c.is_ascii_alphanumeric() || extra.contains(c)))
+    };
+    let mut found: Vec<&str> = words("_")
+        .filter(|word| {
+            PREFIXES.iter().any(|prefix| {
+                word.strip_prefix(prefix)
+                    .is_some_and(|rest| rest.len() >= 16)
+            })
+        })
+        .collect();
+    found.extend(words("_-").filter(|word| word.starts_with("eyJ") && word.len() >= 19));
+    found.extend(words("_-+/=").filter(|word| {
+        word.len() >= 40
+            && word.chars().any(|c| c.is_ascii_digit())
+            && word.chars().any(|c| c.is_ascii_uppercase())
+            && word.chars().any(|c| c.is_ascii_lowercase())
+    }));
+    found
+}
+
+#[test]
+fn no_host_configuration_fixture_holds_a_credential_but_the_one_fake_token() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/host-configuration");
+    let mut scanned = 0;
+    let mut fakes = 0;
+    let mut pending = vec![root];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let bytes = fs::read(&path).unwrap();
+            let text = String::from_utf8_lossy(&bytes);
+            scanned += 1;
+            for word in credential_words(&text) {
+                assert_eq!(word, TOKEN, "{path:?}");
+                fakes += 1;
+            }
+        }
+    }
+    assert!(scanned > 200, "only {scanned} fixture files were scanned");
+    assert!(fakes >= 8, "only {fakes} fake tokens were found");
+}
+
+#[test]
+fn the_credential_scan_sees_each_shape_and_only_those() {
+    let jwt = format!("eyJ{}", "a1".repeat(12));
+    let base64 = "aB3+".repeat(10);
+    for shaped in [
+        format!("x = \"ghp_{}\"", "Q".repeat(16)),
+        format!("x = \"github_pat_{}\"", "q1".repeat(8)),
+        format!("Bearer {jwt}"),
+        format!("config: {base64}"),
+    ] {
+        assert_eq!(credential_words(&shaped).len(), 1, "{shaped}");
+    }
+    for plain in [
+        "ghp_short".to_owned(),
+        format!("xghp_{}", "Q".repeat(16)),
+        "n".repeat(60),
+        "C:\\Users\\runner\\diagnostics\\build-hosts".to_owned(),
+    ] {
+        assert!(credential_words(&plain).is_empty(), "{plain}");
+    }
+}
+
 /// a document that is valid for Windows, with every kind of key and value in it.
 const WELL_FORMED: &str = r#"schema_version = 1
 routing_label = "build-hosts"
@@ -425,7 +498,33 @@ diagnostic_directory = "C:\\diagnostics\\alpha"
 [[pool.volumes]]
 suffix = "cache"
 mount_path = "/home/runner/.cache"
+
+[[pool]]
+name = "beta"
+repository = "octo/world"
+runners = 1
+scale_set = "build-hosts-beta"
 "#;
+
+#[test]
+fn the_well_formed_document_is_valid_for_windows_and_has_an_on_demand_pool() {
+    assert!(WELL_FORMED.contains("\nscale_set = "));
+    let plan = validate_toml(WELL_FORMED.as_bytes(), Profile::Axpc, None)
+        .outcome
+        .unwrap_or_else(|failure| panic!("{}", failure_text(&failure)));
+    assert!(
+        plan.entries
+            .iter()
+            .any(|entry| entry.scale_set.as_deref() == Some("build-hosts-beta"))
+    );
+}
+
+fn failure_text(failure: &Failure) -> String {
+    match failure {
+        Failure::Unreadable(problem) => problem.clone(),
+        Failure::Invalid(problems) => problems.join("\n"),
+    }
+}
 
 #[test]
 fn a_token_pasted_anywhere_in_a_document_is_echoed_only_as_an_unknown_key() {
@@ -456,6 +555,7 @@ fn a_token_pasted_anywhere_in_a_document_is_echoed_only_as_an_unknown_key() {
 fn a_token_as_the_value_of_every_key_is_in_no_problem() {
     for profile in [Profile::Axpc, Profile::Axmc] {
         let mut changed = 0;
+        let mut keys_rejected = BTreeSet::new();
         for (index, line) in WELL_FORMED.lines().enumerate() {
             let Some((key, _)) = line.split_once(" = ") else {
                 continue;
@@ -483,10 +583,15 @@ fn a_token_as_the_value_of_every_key_is_in_no_problem() {
                         Err(Failure::Invalid(problems)) => problems,
                     };
                 changed += 1;
+                keys_rejected.insert(key);
                 assert!(echoed(&found).is_empty(), "{key}: {found:?}");
             }
         }
         assert!(changed > 20, "only {changed} documents were rejected");
+        assert!(
+            keys_rejected.contains("scale_set"),
+            "no scale_set value was rejected for {profile:?}"
+        );
     }
 }
 
