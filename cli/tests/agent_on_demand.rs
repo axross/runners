@@ -12,8 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use marshal_cli::agent::CallError;
-use marshal_cli::agent::machine::Launch;
+use marshal_cli::agent::machine::{Launch, UPDATE};
+use marshal_cli::agent::{CallError, Push};
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::fake::{Call, HostCall};
 use marshal_cli::token_store::{StoreError, StoreErrorKind};
@@ -65,6 +65,8 @@ struct ServiceState {
     polls: usize,
     reject_labels: bool,
     fail_deletion: bool,
+    /// answers every registration deletion with this status, as a token that lost its permission.
+    deletion_status: Option<u16>,
     fail_listing: bool,
     jit_delay: Duration,
     jit_in_flight: bool,
@@ -242,6 +244,9 @@ fn answer(
         .and_then(|id| id.parse::<u64>().ok())
     {
         if method == "DELETE" {
+            if let Some(status) = state.deletion_status {
+                return (status, Value::Null);
+            }
             if state.fail_deletion {
                 return (500, Value::Null);
             }
@@ -1863,6 +1868,140 @@ async fn a_second_job_starts_in_a_free_seat_while_the_first_jobs_cleanup_is_open
             conn.ok("quit").await;
         })
         .await;
+}
+
+fn deletions_attempted(service: &Service) -> usize {
+    service
+        .state
+        .lock()
+        .unwrap()
+        .requests
+        .iter()
+        .filter(|(method, path, _)| method == "DELETE" && path.contains("/actions/runners/"))
+        .count()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_refused_cleanup_is_not_retried_and_start_all_retries_it() {
+    let service = Service::start(1).await;
+    let rig = rig_with_failing_deletion(&service);
+    service.state.lock().unwrap().deletion_status = Some(403);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn
+                .until("the slot holding its refused cleanup", |snapshot| {
+                    snapshot.pools[0].runners.iter().any(|runner| {
+                        runner.state == "held"
+                            && runner
+                                .reason
+                                .as_deref()
+                                .is_some_and(|reason| reason.contains("cleanup incomplete"))
+                    })
+                })
+                .await;
+            let listener = snapshot.pools[0].on_demand.as_ref().unwrap();
+            assert!(listener.cleanup_incomplete);
+            assert_eq!(listener.registrations.len(), 1);
+            assert_eq!(deletions_attempted(service), 1);
+            // the token regains its permission, and only Start all retries
+            {
+                let mut state = service.state.lock().unwrap();
+                state.deletion_status = None;
+                state.fail_deletion = false;
+                state.assigned = 0;
+            }
+            conn.ok("stop_all").await;
+            assert_eq!(service.state.lock().unwrap().registrations.len(), 1);
+            conn.ok("start_all").await;
+            conn.eventually("the cleanup retried at Start all", || {
+                service.state.lock().unwrap().registrations.is_empty()
+            })
+            .await;
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_update_drain_does_not_wait_for_a_failing_cleanup() {
+    let service = Service::start(1).await;
+    let rig = rig_with_failing_deletion(&service);
+    let (rig, service) = (&rig, &service);
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.until("the slot retrying its cleanup", cleanup_backing_off)
+                .await;
+            let began = tokio::time::Instant::now();
+            conn.call("drain_for_update", json!({ "version": "1.4.0" }))
+                .await
+                .unwrap();
+            loop {
+                if let Push::Ending { .. } = conn.push().await {
+                    break;
+                }
+            }
+            // the first retry would come after 5 s
+            assert!(
+                began.elapsed() < NOT_WAITING_ON_SERVICE,
+                "the drain took {:?}",
+                began.elapsed()
+            );
+        })
+        .await;
+    assert_eq!(ended.reason, UPDATE);
+    assert_eq!(service.state.lock().unwrap().registrations.len(), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stop_during_the_cleanup_back_off_gets_one_more_attempt() {
+    let service = Service::start(1).await;
+    let rig = rig_with_failing_deletion(&service);
+    rig.backend.state.borrow_mut().exits.push_back(Ok(3));
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the slot retrying its cleanup", cleanup_backing_off)
+                .await;
+            service.state.lock().unwrap().fail_deletion = false;
+            conn.ok("stop_all").await;
+            let snapshot = conn.status().await;
+            assert!(
+                !snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .unwrap()
+                    .cleanup_incomplete
+            );
+            assert!(service.state.lock().unwrap().registrations.is_empty());
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_jobs_reason_is_logged_though_a_stop_leaves_its_cleanup_open() {
+    let service = Service::start(1).await;
+    let rig = rig_with_failing_deletion(&service);
+    rig.backend.state.borrow_mut().exits.push_back(Ok(3));
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the slot retrying its cleanup", cleanup_backing_off)
+                .await;
+            conn.ok("stop_all").await;
+            assert_eq!(service.state.lock().unwrap().registrations.len(), 1);
+            conn.ok("quit").await;
+        })
+        .await;
+    assert!(
+        rig.log
+            .lines()
+            .iter()
+            .any(|line| line.contains("container exited with code 3")),
+        "{:#?}",
+        rig.log.lines()
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

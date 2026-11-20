@@ -104,15 +104,7 @@ impl View {
     }
 
     pub(crate) fn failed(&mut self, error: &Error, recreated: bool) -> bool {
-        let fatal = matches!(
-            error.kind,
-            ErrorKind::Rejected
-                | ErrorKind::RefusedHost
-                | ErrorKind::LabelMismatch
-                | ErrorKind::InvalidInput
-                | ErrorKind::Setup
-                | ErrorKind::OwnershipMismatch
-        ) || (error.kind == ErrorKind::NotFound && recreated);
+        let fatal = is_permanent(&error.kind) || (error.kind == ErrorKind::NotFound && recreated);
         self.state = if fatal {
             ListenerState::Rejected
         } else if error.kind == ErrorKind::Conflict {
@@ -404,6 +396,19 @@ impl<'a, T: TokenSource, K: Clock> Coordinator<'a, T, K> {
         drop(state);
         self.publish();
     }
+}
+
+/// a retry cannot change these: the token lacks the permission, or the identity is not ours.
+pub(crate) fn is_permanent(kind: &ErrorKind) -> bool {
+    matches!(
+        kind,
+        ErrorKind::Rejected
+            | ErrorKind::RefusedHost
+            | ErrorKind::LabelMismatch
+            | ErrorKind::InvalidInput
+            | ErrorKind::Setup
+            | ErrorKind::OwnershipMismatch
+    )
 }
 
 pub(crate) fn retry_delay(error: &Error, delay: Duration, now: SystemTime) -> Duration {

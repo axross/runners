@@ -7,11 +7,39 @@ use crate::runtime::secret::Secret;
 use crate::runtime::token::TokenSource;
 use crate::runtime::worker::INITIAL_BACKOFF;
 
+use crate::scaleset::Error;
+
 use super::listener::Failure;
-use super::{Coordinator, REFRESH_BEFORE, Reservation, View};
+use super::{Coordinator, REFRESH_BEFORE, Reservation, View, is_permanent};
 
 const MAX_CREDENTIAL_ROTATIONS: u32 = 3;
 const HALTED: &str = "on-demand registration halted";
+
+/// why one cleanup attempt failed, and whether another could change that.
+#[derive(Debug)]
+pub(crate) struct CleanupFailure {
+    pub reason: String,
+    pub permanent: bool,
+}
+
+impl From<String> for CleanupFailure {
+    /// store errors and deadlines: a later attempt reads the store and the clock again.
+    fn from(reason: String) -> Self {
+        Self {
+            reason,
+            permanent: false,
+        }
+    }
+}
+
+impl From<Error> for CleanupFailure {
+    fn from(error: Error) -> Self {
+        Self {
+            permanent: is_permanent(&error.kind),
+            reason: error.to_string(),
+        }
+    }
+}
 
 impl View {
     /// recovery uses the originating repository even after its configuration entry is gone.
@@ -51,7 +79,11 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
     }
 
     /// call after runtime release, even on cancellation; failed cleanup retains its capacity lease.
-    pub async fn finish(&mut self, completed_job: bool, deadline: Instant) -> Result<(), String> {
+    pub(crate) async fn finish(
+        &mut self,
+        completed_job: bool,
+        deadline: Instant,
+    ) -> Result<(), CleanupFailure> {
         if self.finished {
             return Ok(());
         }
@@ -74,15 +106,15 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
                 Ok(())
             }
             result => {
-                let reason = match result {
-                    Ok(Err(reason)) => reason,
-                    Err(_) => {
-                        "registration cleanup deadline reached; outcome unconfirmed".to_owned()
-                    }
+                let failure = match result {
+                    Ok(Err(failure)) => failure,
+                    Err(_) => CleanupFailure::from(
+                        "registration cleanup deadline reached; outcome unconfirmed".to_owned(),
+                    ),
                     Ok(Ok(())) => return Ok(()),
                 };
-                pool.cleanup_failed(self.id, &reason);
-                Err(reason)
+                pool.cleanup_failed(self.id, &failure.reason);
+                Err(failure)
             }
         }
     }
@@ -146,7 +178,12 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
             .unwrap_or_default()
             <= REFRESH_BEFORE;
         // a previous response may have been lost or cancelled; absence must be confirmed before retrying.
-        self.unless_stopped(pool.cleanup(self.id)).await?;
+        self.unless_stopped(async {
+            pool.cleanup(self.id)
+                .await
+                .map_err(|failure| failure.reason)
+        })
+        .await?;
         let mut pat = pool.token(refreshing)?;
         let mut renewals = 0;
         while current.connection.needs_renewal(&pat, pool.clock.now()) {
@@ -226,7 +263,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
     }
 
     /// the current token is required for cleanup too; unreadable stores do not become a cache bypass.
-    async fn cleanup(&self, id: u64) -> Result<(), String> {
+    async fn cleanup(&self, id: u64) -> Result<(), CleanupFailure> {
         let empty = self
             .state
             .borrow()
@@ -241,7 +278,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
     }
 
     /// response-unknown deletion keeps the exact name and ID until a later read settles it.
-    async fn cleanup_with_pat(&self, id: u64, pat: &Secret) -> Result<(), String> {
+    async fn cleanup_with_pat(&self, id: u64, pat: &Secret) -> Result<(), CleanupFailure> {
         let names = self
             .state
             .borrow()
@@ -256,8 +293,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                 let runner = self
                     .client
                     .find_runner(&self.pool.owner, &self.pool.repository, &name, pat)
-                    .await
-                    .map_err(|error| error.to_string())?;
+                    .await?;
                 runner.map(|runner| runner.id)
             };
             if let Some(runner_id) = runner_id {
@@ -272,8 +308,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                         &name,
                         pat,
                     )
-                    .await
-                    .map_err(|error| error.to_string())?;
+                    .await?;
             }
             if let Some(owned) = self.state.borrow_mut().owned.get_mut(&id) {
                 owned.names.remove(&name);
