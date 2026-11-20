@@ -1,4 +1,5 @@
-//! the repository-scoped scale-set protocol, without retry, admission or replay policy.
+//! the repository-scoped scale-set protocol, without admission or replay policy; the only
+//! retry is the registration exchange's, whose fresh token is not always usable at once.
 
 mod transport;
 mod types;
@@ -22,11 +23,14 @@ const MAX_SCALE_SET_NAME_BYTES: usize = 45;
 const RUNNER_LIST_MAX_PAGES: u32 = 100;
 const RUNNER_LIST_PAGE_SIZE: &str = "100";
 const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+const EXCHANGE_ATTEMPTS: u32 = 3;
+const EXCHANGE_RETRY_DELAY: Duration = Duration::from_secs(5);
 
 /// lifecycle requests independent of the window's display queue and budget.
 pub struct Client {
     transport: transport::Transport,
     base: Url,
+    exchange_retry_delay: Duration,
 }
 
 impl Client {
@@ -36,7 +40,15 @@ impl Client {
         Ok(Self {
             transport: transport::Transport::new(&base, limits)?,
             base: Url::parse(&base).map_err(|_| Error::new(ErrorKind::Setup))?,
+            exchange_retry_delay: EXCHANGE_RETRY_DELAY,
         })
+    }
+
+    /// shortens the wait between registration exchange attempts, so a test need not wait seconds.
+    #[must_use]
+    pub fn with_exchange_retry_delay(mut self, delay: Duration) -> Self {
+        self.exchange_retry_delay = delay;
+        self
     }
 
     #[must_use]
@@ -70,14 +82,7 @@ impl Client {
         }
         let registration: Registration = transport::decode(&registration)?;
         let registration = nonempty_secret(registration.token)?;
-        let response = self.transport.send(
-            Method::POST,
-            self.base.join("actions/runner-registration").map_err(|_| Error::protocol())?,
-            ("RemoteAuth", &registration),
-            Some(json!({"url": format!("https://github.com/{owner}/{repository}"), "runner_event": "register"})),
-            &[200, 201],
-            None,
-        ).await?;
+        let response = self.exchange(owner, repository, &registration).await?;
         #[derive(Deserialize)]
         struct Exchange {
             url: String,
@@ -95,6 +100,35 @@ impl Client {
             service_url,
             expires_at,
         })
+    }
+
+    /// retries a 401 or 403 only here, because GitHub does not always accept a fresh
+    /// registration token at once.
+    async fn exchange(
+        &self,
+        owner: &str,
+        repository: &str,
+        registration: &Secret,
+    ) -> Result<Vec<u8>, Error> {
+        let url = self
+            .base
+            .join("actions/runner-registration")
+            .map_err(|_| Error::protocol())?;
+        let mut attempt = 1;
+        loop {
+            let body = json!({"url": format!("https://github.com/{owner}/{repository}"), "runner_event": "register"});
+            match self
+                .transport
+                .exchange(url.clone(), registration, body)
+                .await
+            {
+                Err(error) if error.kind == ErrorKind::Rejected && attempt < EXCHANGE_ATTEMPTS => {
+                    attempt += 1;
+                    tokio::time::sleep(self.exchange_retry_delay).await;
+                }
+                result => return result,
+            }
+        }
     }
 
     /// reuses or creates group 1's set, refusing incompatible labels without modifying the set.
@@ -183,7 +217,8 @@ impl Client {
                 Some(json!({"ownerName": owner})),
                 &[200],
             )
-            .await?;
+            .await
+            .map_err(session_conflict)?;
         self.session(connection, scale_set.id(), &response)
     }
 
@@ -242,13 +277,12 @@ impl Client {
         session: &Session,
     ) -> Result<(), Error> {
         self.transport
-            .send(
+            .service_within(
                 Method::DELETE,
                 connection.service_url(&session.route())?,
-                ("Bearer", &connection.admin),
-                None,
+                &connection.admin,
                 &[204, 404],
-                Some(SESSION_CLOSE_TIMEOUT),
+                SESSION_CLOSE_TIMEOUT,
             )
             .await
             .map(|_| ())
@@ -334,8 +368,9 @@ impl Client {
         scale_set: &ScaleSet,
         name: &str,
         pat: &Secret,
+        now: SystemTime,
     ) -> Result<JitRunner, Error> {
-        if connection.needs_renewal(pat, SystemTime::now()) {
+        if connection.needs_renewal(pat, now) {
             return Err(Error::new(ErrorKind::ConnectionRenewalRequired));
         }
         let response = self
@@ -486,6 +521,18 @@ impl Client {
 
     fn actions_url(&self, text: &str, secrets: &[&Secret]) -> Result<Url, Error> {
         transport::actions_url(text, &self.base, secrets)
+    }
+}
+
+/// a 409 names another listener only when opening a session; elsewhere it is a service failure.
+fn session_conflict(error: Error) -> Error {
+    if error.status == Some(409) {
+        Error {
+            kind: ErrorKind::Conflict,
+            ..error
+        }
+    } else {
+        error
     }
 }
 

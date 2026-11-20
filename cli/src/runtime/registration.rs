@@ -278,7 +278,7 @@ fn too_large(cap: usize) -> String {
 }
 
 /// the error's own text and every cause's, in order.
-fn error_chain(error: &dyn std::error::Error) -> String {
+pub(crate) fn error_chain(error: &dyn std::error::Error) -> String {
     let mut text = error.to_string();
     let mut source = error.source();
     while let Some(cause) = source {

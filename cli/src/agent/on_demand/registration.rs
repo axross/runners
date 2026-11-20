@@ -168,7 +168,13 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
         }
         let jit = pool
             .client
-            .request_jit(&current.connection, &current.scale_set, request.name, &pat)
+            .request_jit(
+                &current.connection,
+                &current.scale_set,
+                request.name,
+                &pat,
+                pool.clock.now(),
+            )
             .await
             .map_err(|error| pool.registration_failed(Failure::Api(error)))?;
         {

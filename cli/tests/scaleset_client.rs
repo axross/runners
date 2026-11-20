@@ -134,6 +134,20 @@ mod contract {
         fn json(&self) -> Value {
             serde_json::from_slice(&self.body).unwrap()
         }
+        fn count(&self, name: &str) -> usize {
+            self.headers.iter().filter(|(key, _)| key == name).count()
+        }
+        /// the sorted header names, without the framing the HTTP client adds on its own.
+        fn names(&self) -> Vec<&str> {
+            let mut names: Vec<_> = self
+                .headers
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .filter(|key| !["host", "content-length"].contains(key))
+                .collect();
+            names.sort_unstable();
+            names
+        }
     }
 
     struct Fake {
@@ -225,7 +239,9 @@ mod contract {
         }
 
         fn client(&self) -> Client {
-            Client::new(Some(&self.base), HttpLimits::default()).unwrap()
+            Client::new(Some(&self.base), HttpLimits::default())
+                .unwrap()
+                .with_exchange_retry_delay(Duration::from_millis(1))
         }
         fn requests(&self) -> Vec<Request> {
             self.requests.lock().unwrap().clone()
@@ -326,7 +342,13 @@ mod contract {
         );
         client.acknowledge(&session, message.id).await.unwrap();
         let jit = client
-            .request_jit(&connection, &set, RUNNER, &Secret::new(PAT.to_owned()))
+            .request_jit(
+                &connection,
+                &set,
+                RUNNER,
+                &Secret::new(PAT.to_owned()),
+                SystemTime::now(),
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -601,7 +623,7 @@ mod contract {
             (401, vec![], "permission", ErrorKind::Rejected),
             (403, vec![], "permission", ErrorKind::Rejected),
             (404, vec![], "missing", ErrorKind::NotFound),
-            (409, vec![], "conflict", ErrorKind::Conflict),
+            (409, vec![], "conflict", ErrorKind::Service),
             (429, vec![], "wait", ErrorKind::RateLimited),
             (
                 403,
@@ -703,7 +725,7 @@ mod contract {
         assert!(connection.needs_renewal(&Secret::new(PAT.to_owned()), connection.expires_at()));
         assert_eq!(
             client
-                .request_jit(&connection, &set, RUNNER, &replacement)
+                .request_jit(&connection, &set, RUNNER, &replacement, SystemTime::now())
                 .await
                 .unwrap_err()
                 .kind,
@@ -716,7 +738,7 @@ mod contract {
             .unwrap();
         assert_eq!(
             client
-                .request_jit(&renewed, &set, RUNNER, &replacement)
+                .request_jit(&renewed, &set, RUNNER, &replacement, SystemTime::now())
                 .await
                 .unwrap()
                 .id,
@@ -802,7 +824,13 @@ mod contract {
             let set = client.find_or_create(&connection, NAME).await.unwrap();
             assert_eq!(
                 client
-                    .request_jit(&connection, &set, RUNNER, &Secret::new(PAT.to_owned()))
+                    .request_jit(
+                        &connection,
+                        &set,
+                        RUNNER,
+                        &Secret::new(PAT.to_owned()),
+                        SystemTime::now(),
+                    )
                     .await
                     .unwrap_err()
                     .kind,
@@ -934,18 +962,15 @@ mod contract {
             },
         )
         .unwrap();
-        assert_eq!(
-            client
-                .connect(
-                    "example-owner",
-                    "example-repo",
-                    &Secret::new(PAT.to_owned())
-                )
-                .await
-                .unwrap_err()
-                .kind,
-            ErrorKind::Unreachable
-        );
+        let error = client
+            .connect(
+                "example-owner",
+                "example-repo",
+                &Secret::new(PAT.to_owned()),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error.kind, ErrorKind::Unreachable(_)));
     }
 
     #[tokio::test]
@@ -1034,5 +1059,364 @@ mod contract {
             ErrorKind::Service
         );
         assert_eq!(fake.requests().len(), 6);
+    }
+
+    /// reply headers are `'static`, so a computed value is leaked for the life of the test run.
+    fn leaked(text: String) -> &'static str {
+        Box::leak(text.into_boxed_str())
+    }
+
+    fn pat() -> Secret {
+        Secret::new(PAT.to_owned())
+    }
+
+    async fn connect_error(fake: &Fake) -> marshal_cli::scaleset::Error {
+        fake.client()
+            .connect("example-owner", "example-repo", &pat())
+            .await
+            .unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn the_registration_exchange_alone_retries_a_401_or_403_then_succeeds() {
+        for status in [401, 403] {
+            let fake = Fake::start(vec![
+                Reply::status(201, json!({"token": REGISTRATION})),
+                Reply::empty(status),
+                Reply::empty(status),
+                Reply::json(json!({"url": "{{base}}/tenant/", "token": admin()})),
+            ])
+            .await;
+            fake.connection(&fake.client()).await;
+            let requests = fake.requests();
+            assert_eq!(requests.len(), 4);
+            for request in &requests[1..] {
+                assert_eq!(request.path, "/actions/runner-registration");
+                assert_eq!(
+                    request.header("authorization"),
+                    Some(format!("RemoteAuth {REGISTRATION}").as_str())
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_persistent_exchange_rejection_stays_rejected_after_bounded_waits() {
+        let fake = Fake::start(vec![
+            Reply::status(201, json!({"token": REGISTRATION})),
+            Reply::empty(401),
+            Reply::empty(401),
+            Reply::empty(401),
+            Reply::empty(200),
+        ])
+        .await;
+        let client = Client::new(Some(&fake.base), HttpLimits::default())
+            .unwrap()
+            .with_exchange_retry_delay(Duration::from_millis(60));
+        let started = std::time::Instant::now();
+        let error = client
+            .connect("example-owner", "example-repo", &pat())
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Rejected);
+        assert_eq!(error.status, Some(401));
+        assert!(started.elapsed() >= Duration::from_millis(120));
+        assert_eq!(fake.requests().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn no_other_call_and_no_rate_limit_answer_is_retried_as_a_rejection() {
+        let fake = Fake::start(vec![Reply::empty(401), Reply::empty(201)]).await;
+        assert_eq!(connect_error(&fake).await.kind, ErrorKind::Rejected);
+        assert_eq!(fake.requests().len(), 1);
+        let fake = Fake::start(vec![
+            Reply::status(201, json!({"token": REGISTRATION})),
+            Reply::empty(429),
+            Reply::empty(200),
+        ])
+        .await;
+        assert_eq!(connect_error(&fake).await.kind, ErrorKind::RateLimited);
+        assert_eq!(fake.requests().len(), 2);
+        let mut replies = connection_replies();
+        replies.extend([found(), Reply::empty(403), Reply::empty(403)]);
+        let fake = Fake::start(replies).await;
+        let client = fake.client();
+        let connection = fake.connection(&client).await;
+        let set = client.find_or_create(&connection, NAME).await.unwrap();
+        let error = client
+            .create_session(&connection, &set, "example-host")
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Rejected);
+        assert_eq!(fake.requests().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn a_409_names_another_listener_only_for_session_creation() {
+        let mut replies = connection_replies();
+        replies.extend([
+            Reply::json(json!({"count": 0, "value": []})),
+            Reply::empty(409),
+            found(),
+            Reply::empty(409),
+            Reply::empty(409),
+        ]);
+        let fake = Fake::start(replies).await;
+        let client = fake.client();
+        let connection = fake.connection(&client).await;
+        let error = client.find_or_create(&connection, NAME).await.unwrap_err();
+        assert_eq!((error.kind, error.status), (ErrorKind::Service, Some(409)));
+        let set = client.find_or_create(&connection, NAME).await.unwrap();
+        let error = client
+            .request_jit(&connection, &set, RUNNER, &pat(), SystemTime::now())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            (&error.kind, error.status),
+            (&ErrorKind::Service, Some(409))
+        );
+        assert!(!error.to_string().contains("another listener"));
+        let error = client
+            .create_session(&connection, &set, "example-host")
+            .await
+            .unwrap_err();
+        assert_eq!(
+            (&error.kind, error.status),
+            (&ErrorKind::Conflict, Some(409))
+        );
+        assert_eq!(error.to_string(), "another listener (409)");
+    }
+
+    #[tokio::test]
+    async fn each_request_sends_one_accept_and_a_content_type_only_with_a_body() {
+        let (fake, client, connection, session) = listening(vec![Reply::empty(202)]).await;
+        client.poll(&session, None, 1).await.unwrap();
+        let requests = fake.requests();
+        let rest = &requests[0];
+        assert_eq!(
+            rest.names(),
+            [
+                "accept",
+                "authorization",
+                "user-agent",
+                "x-github-api-version"
+            ]
+        );
+        assert_eq!(rest.header("accept"), Some("application/vnd.github+json"));
+        let exchange = &requests[1];
+        assert_eq!(
+            exchange.names(),
+            ["accept", "authorization", "content-type", "user-agent"]
+        );
+        assert_eq!(exchange.header("accept"), Some("*/*"));
+        let lookup = &requests[2];
+        assert_eq!(lookup.names(), ["accept", "authorization", "user-agent"]);
+        assert_eq!(
+            lookup.header("accept"),
+            Some("application/json; api-version=6.0-preview")
+        );
+        let created = &requests[3];
+        assert_eq!(
+            created.names(),
+            ["accept", "authorization", "content-type", "user-agent"]
+        );
+        assert_eq!(created.header("content-type"), Some("application/json"));
+        let poll = &requests[4];
+        assert_eq!(
+            poll.names(),
+            [
+                "accept",
+                "authorization",
+                "user-agent",
+                "x-scalesetmaxcapacity"
+            ]
+        );
+        for request in &requests {
+            assert_eq!(request.count("accept"), 1, "{}", request.path);
+        }
+        drop((connection, session));
+    }
+
+    #[tokio::test]
+    async fn a_rate_reset_far_in_the_future_is_held_to_one_window_and_retry_after_to_an_hour() {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let soon = leaked((now + 60).to_string());
+        for (reset, expected) in [("4102444800", now + 3600), (soon, now + 60)] {
+            let fake = Fake::start(vec![Reply {
+                headers: vec![("x-ratelimit-remaining", "0"), ("x-ratelimit-reset", reset)],
+                ..Reply::empty(403)
+            }])
+            .await;
+            let error = connect_error(&fake).await;
+            assert_eq!(error.kind, ErrorKind::RateLimited);
+            let held = error.rate_reset.unwrap();
+            assert!(held.abs_diff(expected) <= 5, "{held} vs {expected}");
+        }
+        let fake = Fake::start(vec![Reply {
+            headers: vec![("retry-after", "99999")],
+            ..Reply::empty(429)
+        }])
+        .await;
+        assert_eq!(
+            connect_error(&fake).await.retry_after,
+            Some(Duration::from_secs(3600))
+        );
+    }
+
+    #[tokio::test]
+    async fn an_oversized_error_body_is_discarded_and_the_status_still_decides_the_kind() {
+        for chunked in [false, true] {
+            for (status, headers, kind) in [
+                (401, vec![], ErrorKind::Rejected),
+                (403, vec![], ErrorKind::Rejected),
+                (403, vec![("retry-after", "7")], ErrorKind::RateLimited),
+                (429, vec![], ErrorKind::RateLimited),
+                (500, vec![], ErrorKind::Service),
+            ] {
+                let fake = Fake::start(vec![Reply {
+                    body: "x".repeat(1025),
+                    headers,
+                    chunked,
+                    ..Reply::empty(status)
+                }])
+                .await;
+                let client = Client::new(
+                    Some(&fake.base),
+                    HttpLimits {
+                        max_response_bytes: 1024,
+                        ..HttpLimits::default()
+                    },
+                )
+                .unwrap();
+                let error = client
+                    .connect("example-owner", "example-repo", &pat())
+                    .await
+                    .unwrap_err();
+                assert_eq!((error.kind, error.status), (kind, Some(status)));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refused_connection_reports_a_cause_without_the_url() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let client = Client::new(Some(&base), HttpLimits::default()).unwrap();
+        let error = client
+            .connect("example-owner", "example-repo", &pat())
+            .await
+            .unwrap_err();
+        let ErrorKind::Unreachable(cause) = &error.kind else {
+            panic!("expected an unreachable error, got {error:?}");
+        };
+        assert!(!cause.is_empty());
+        let shown = error.to_string();
+        assert!(shown.starts_with("scale-set request failed or timed out"));
+        assert!(shown.ends_with(cause.as_str()));
+        for hidden in [base.as_str(), "http://", "actions/runners", PAT] {
+            assert!(!shown.contains(hidden), "{shown}");
+        }
+    }
+
+    #[tokio::test]
+    async fn runner_listing_refuses_an_empty_page_before_the_total_and_stops_at_100_pages() {
+        let fake = Fake::start(vec![
+            Reply::json(
+                json!({"total_count": 3, "runners": [{"id": 1, "name": "a", "status": "online", "busy": false}]}),
+            ),
+            Reply::json(json!({"total_count": 3, "runners": []})),
+        ])
+        .await;
+        let error = fake
+            .client()
+            .list_runners("example-owner", "example-repo", &pat())
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Protocol);
+        assert_eq!(fake.requests().len(), 2);
+        let page = || {
+            Reply::json(
+                json!({"total_count": 1000, "runners": [{"id": 1, "name": "a", "status": "online", "busy": false}]}),
+            )
+        };
+        let fake = Fake::start((0..101).map(|_| page()).collect()).await;
+        let error = fake
+            .client()
+            .list_runners("example-owner", "example-repo", &pat())
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Protocol);
+        let requests = fake.requests();
+        assert_eq!(requests.len(), 100);
+        assert!(requests[99].path.ends_with("per_page=100&page=100"));
+    }
+
+    #[tokio::test]
+    async fn two_runners_with_the_exact_name_are_an_ownership_mismatch() {
+        let runner = |id: u64, name: &str| json!({"id": id, "name": name, "status": "online", "busy": false});
+        for (runners, expected) in [
+            (vec![runner(1, RUNNER), runner(2, RUNNER)], Err(())),
+            (vec![runner(1, RUNNER), runner(2, "other")], Ok(Some(1))),
+            (vec![runner(2, "other")], Ok(None)),
+        ] {
+            let fake = Fake::start(vec![Reply::json(
+                json!({"total_count": runners.len(), "runners": runners}),
+            )])
+            .await;
+            let found = fake
+                .client()
+                .find_runner("example-owner", "example-repo", RUNNER, &pat())
+                .await;
+            match expected {
+                Err(()) => assert_eq!(found.unwrap_err().kind, ErrorKind::OwnershipMismatch),
+                Ok(id) => assert_eq!(found.unwrap().map(|runner| runner.id), id),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn scale_set_lookup_refuses_inconsistent_counts_and_invalid_names_before_any_request() {
+        for body in [
+            json!({"count": 2, "value": [scale(json!([{"name": NAME}]))]}),
+            json!({"count": 2, "value": [scale(json!([{"name": NAME}])), scale(json!([{"name": NAME}]))]}),
+            json!({"count": 0, "value": [scale(json!([{"name": NAME}]))]}),
+        ] {
+            let mut replies = connection_replies();
+            replies.push(Reply::json(body));
+            let fake = Fake::start(replies).await;
+            let client = fake.client();
+            let connection = fake.connection(&client).await;
+            let error = client.find_or_create(&connection, NAME).await.unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Protocol);
+            assert_eq!(fake.requests().len(), 3);
+        }
+        let fake = Fake::start(connection_replies()).await;
+        let client = fake.client();
+        let connection = fake.connection(&client).await;
+        for name in ["", "has space", "slash/name", &"x".repeat(46)] {
+            let error = client.find_or_create(&connection, name).await.unwrap_err();
+            assert_eq!(error.kind, ErrorKind::InvalidInput, "{name:?}");
+        }
+        assert_eq!(fake.requests().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn an_acquire_answer_naming_an_unrequested_job_or_miscounting_is_a_protocol_error() {
+        let (_fake, client, connection, session) = listening(vec![
+            Reply::json(json!({"count": 1, "value": [999]})),
+            Reply::json(json!({"count": 2, "value": [501]})),
+        ])
+        .await;
+        for _ in 0..2 {
+            let error = client
+                .acquire_jobs(&connection, &session, &[501])
+                .await
+                .unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Protocol);
+        }
     }
 }
