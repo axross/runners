@@ -4,6 +4,7 @@ mod demand;
 mod listener;
 mod recovery;
 mod registration;
+mod slot;
 
 #[cfg(test)]
 mod tests;
@@ -24,6 +25,7 @@ use crate::scaleset::{Client, Connection, Error, ErrorKind, ScaleSet, Session, S
 use demand::Demand;
 pub(crate) use listener::{CLOSE_WITHIN, Failure};
 pub(crate) use recovery::{PendingSession, PendingSessionCell, SessionRecovery};
+pub(crate) use slot::run_on_demand_slot;
 
 /// the admin credential is renewed once this little of its lifetime remains.
 pub(super) const REFRESH_BEFORE: Duration = Duration::from_secs(120);

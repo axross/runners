@@ -27,15 +27,13 @@ use crate::runtime::pool::{
     NoPoolStartable, PoolSpec, SlotSpec, admit_pool, image_name, pools_from_plan, prepare_admitted,
 };
 use crate::runtime::registration::Registrar;
-use crate::runtime::worker::{
-    Backoff, Services, run_one_job_with, run_slot_with, sleep_or_stop, wait_for_stop,
-};
+use crate::runtime::worker::{Backoff, Services, run_slot_with, wait_for_stop};
 use crate::validate::Plan;
 
 use super::config::{Change, Effect};
 use super::on_demand::{
     Controls, Coordinator, Failure as ListenerFailure, ListenerState, PendingSession, Pool,
-    SessionRecovery, View as ListenerView, retry_delay,
+    SessionRecovery, View as ListenerView, retry_delay, run_on_demand_slot,
 };
 use super::tokens::StoreTokens;
 
@@ -236,67 +234,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             );
             running.workers.borrow_mut().push(Box::pin(async move {
                 if let Some(listener) = listener {
-                    let mut backoff = Backoff::default();
-                    let mut stopping = slot_stop_receiver.clone();
-                    let mut draining = services.drain.map(watch::Sender::subscribe);
-                    loop {
-                        if let Some(drain) = &mut draining
-                            && *drain.borrow()
-                        {
-                            services.board.set_slot(&slot.label(), SlotState::Drained);
-                            tokio::select! {
-                                () = wait_for_stop(&mut stopping) => break,
-                                result = drain.wait_for(|draining| !*draining) => if result.is_err() { break; },
-                            }
-                        }
-                        let reservation = tokio::select! {
-                            reservation = listener.reserve(slot.number, slot_stop_receiver.clone()) => reservation,
-                            _ = async {
-                                match &mut draining {
-                                    Some(drain) => { let _ = drain.wait_for(|draining| *draining).await; },
-                                    None => std::future::pending::<()>().await,
-                                }
-                            } => continue,
-                        };
-                        let Some(mut reservation) = reservation else { break; };
-                        let admitted = Services {
-                            registrar: &reservation,
-                            backend: services.backend,
-                            clock: services.clock,
-                            tokens: services.tokens,
-                            log: services.log,
-                            board: services.board,
-                            drain: services.drain,
-                            stop_times: services.stop_times,
-                        };
-                        let result =
-                            run_one_job_with(&slot, &admitted, slot_stop_receiver.clone()).await;
-                        let completed = result.as_ref().copied().unwrap_or(false);
-                        let cleaned = reservation
-                            .finish(
-                                completed,
-                                Instant::now() + services.stop_times.exit_deadline,
-                            )
-                            .await;
-                        if let Err(reason) = &result {
-                            services.log.warn(&format!("{}: {reason}", slot.label()));
-                            services
-                                .board
-                                .set_slot(&slot.label(), SlotState::BackingOff(reason.clone()));
-                        }
-                        if let Err(reason) = cleaned {
-                            services.log.warn(&format!("{}: {reason}", slot.label()));
-                            break;
-                        }
-                        if result.is_err() {
-                            if sleep_or_stop(services.clock, &mut stopping, backoff.fail()).await {
-                                break;
-                            }
-                        } else {
-                            backoff.reset();
-                            services.board.remove_slot(&slot.label());
-                        }
-                    }
+                    run_on_demand_slot(&slot, &listener, services, slot_stop_receiver).await;
                 } else {
                     run_slot_with(&slot, &services, slot_stop_receiver).await;
                 }

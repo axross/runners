@@ -293,7 +293,12 @@ async fn serve(mut stream: TcpStream, base: &str, state: &Mutex<ServiceState>) {
         serde_json::from_slice(&bytes[end..end + size]).unwrap()
     };
     if path.starts_with("/queue") && method == "GET" {
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        // a poll its client dropped meanwhile must not take the message the next one is owed
+        let mut byte = [0; 1];
+        tokio::select! {
+            () = tokio::time::sleep(Duration::from_millis(30)) => {}
+            _ = stream.read(&mut byte) => return,
+        }
     }
     if path.ends_with("generatejitconfig") {
         let delay = {
@@ -1643,4 +1648,108 @@ async fn session_recovery_cannot_erase_registration_ownership_after_a_repository
             conn.ok("quit").await;
         })
         .await;
+}
+
+/// a rig whose single slot runs each job to its end at once, under a service that fails
+/// every registration deletion until a test says otherwise.
+fn rig_with_failing_deletion(service: &Service) -> Rig {
+    service.state.lock().unwrap().fail_deletion = true;
+    let rig = rig(service);
+    rig.write_toml(&CONFIG.replace("runners = 2", "runners = 1"));
+    rig.backend.state.borrow_mut().hold_runs = false;
+    rig
+}
+
+fn cleanup_backing_off(snapshot: &marshal_cli::agent::snapshot::Snapshot) -> bool {
+    snapshot.pools[0].runners.iter().any(|runner| {
+        runner.state == "backing_off"
+            && runner
+                .reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("registration cleanup incomplete"))
+    })
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_cleanup_after_a_job_is_retried_and_the_slot_serves_the_next_job() {
+    let service = Service::start(1).await;
+    let rig = rig_with_failing_deletion(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn
+                .until("the slot retrying its cleanup", cleanup_backing_off)
+                .await;
+            assert!(
+                snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .unwrap()
+                    .cleanup_incomplete
+            );
+            assert_eq!(
+                snapshot.pools[0].on_demand.as_ref().unwrap().state,
+                "listening"
+            );
+            assert_eq!(containers(rig).len(), 1);
+            assert_eq!(service.state.lock().unwrap().registrations.len(), 1);
+            service.state.lock().unwrap().fail_deletion = false;
+            // no Stop or Start: the slot's own retry settles it, and its row stops saying so
+            let snapshot = conn
+                .until("the cleanup settled", |snapshot| {
+                    snapshot.pools[0]
+                        .runners
+                        .iter()
+                        .all(|runner| runner.state != "backing_off")
+                        && !snapshot.pools[0]
+                            .on_demand
+                            .as_ref()
+                            .unwrap()
+                            .cleanup_incomplete
+                })
+                .await;
+            assert!(service.state.lock().unwrap().registrations.is_empty());
+            assert_eq!(
+                snapshot.pools[0].on_demand.as_ref().unwrap().state,
+                "listening"
+            );
+            // the one slot is free again for the next jobs: the fake's count never falls, so
+            // statistics of 2 on top of the one job done owe two more
+            service.state.lock().unwrap().assigned = 2;
+            conn.eventually(
+                "the next jobs run and their registrations are deleted",
+                || {
+                    let state = service.state.lock().unwrap();
+                    state.jit_names.len() == 3 && state.registrations.is_empty()
+                },
+            )
+            .await;
+            assert_eq!(containers(rig).len(), 3);
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stop_during_a_cleanup_retry_is_prompt_and_leaves_the_cleanup_open() {
+    let service = Service::start(1).await;
+    let rig = rig_with_failing_deletion(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, took) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the slot retrying its cleanup", cleanup_backing_off)
+                .await;
+            let began = tokio::time::Instant::now();
+            conn.ok("stop_all").await;
+            let took = began.elapsed();
+            let snapshot = conn.status().await;
+            let listener = snapshot.pools[0].on_demand.as_ref().unwrap();
+            assert!(listener.cleanup_incomplete);
+            assert_eq!(listener.registrations.len(), 1);
+            assert_eq!(service.state.lock().unwrap().registrations.len(), 1);
+            conn.ok("quit").await;
+            took
+        })
+        .await;
+    assert!(took < Duration::from_secs(3), "the stop took {took:?}");
 }
