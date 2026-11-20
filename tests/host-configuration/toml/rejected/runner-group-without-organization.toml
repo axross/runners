@@ -5,6 +5,5 @@ image_name = "example-image:tag"
 [[pool]]
 name = "alpha"
 repository = "octo/hello"
+runner_group = "builders"
 runners = 1
-scale_set = "axpc-linux"
-organization = "octo"

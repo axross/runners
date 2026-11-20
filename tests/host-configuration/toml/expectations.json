@@ -106,6 +106,16 @@
     ],
     "lacks": []
   },
+  "accepted/windows-organization.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "pool[0]: name=alpha repository=Octo (runner group builders) runners=2",
+      "pool[1]: name=beta repository=other/hello runners=1"
+    ],
+    "lacks": []
+  },
   "accepted/windows-other-toml-forms.toml": {
     "profile": "axpc",
     "outcome": "accept",
@@ -324,7 +334,7 @@
     "problems": [
       "line 5: pool[0].runners: required key is missing",
       "line 5: pool[0].name: required key is missing",
-      "line 8: pool[1].repository: required key is missing",
+      "line 8: pool[1]: names neither repository nor organization",
       "line 17: pool[2].volumes[0].mount_path: required key is missing"
     ],
     "contains": [],
@@ -384,10 +394,47 @@
     "contains": [],
     "lacks": []
   },
-  "rejected/organization-without-scale-set.toml": {
+  "rejected/organization-and-repository.toml": {
     "profile": "axpc",
     "outcome": "reject",
-    "problems": ["line 9: pool[0].organization: unknown key"],
+    "problems": ["line 5: pool[0]: names both repository and organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-label-clash.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 12: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels 'GPU' also appear at pool[0]; give each pool its own labels"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-no-target.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 5: pool[0]: names neither repository nor organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-runner-group-missing.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 5: pool[0].runner_group: required with organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].scale_set: not allowed with organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-volumes.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 11: pool[0].volumes: not allowed with organization"],
     "contains": [],
     "lacks": []
   },
@@ -600,6 +647,13 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/runner-group-without-organization.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 8: pool[0].runner_group: only with organization"],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/scale-set-before-labels-in-one-pool.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -670,13 +724,6 @@
     "problems": [
       "line 10: pool[0].labels: must be absent or an empty array for an on-demand pool"
     ],
-    "contains": [],
-    "lacks": []
-  },
-  "rejected/scale-set-with-organization.toml": {
-    "profile": "axpc",
-    "outcome": "reject",
-    "problems": ["line 10: pool[0].organization: unknown key"],
     "contains": [],
     "lacks": []
   },

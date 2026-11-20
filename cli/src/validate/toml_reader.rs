@@ -88,16 +88,18 @@ impl Reader for TomlReader<'_> {
             .collect()
     }
 
+    /// missing keys and cross-pool conflicts belong to the containing table header.
     fn locate(&self, path: &KeyPath, kind: &Kind) -> Option<Location> {
         let segments = path.segments();
         let (target, member) = match kind {
-            Kind::Missing => (
+            Kind::Missing | Kind::RunnerGroupRequired => (
                 segments.split_last().map_or(segments, |(_, parent)| parent),
                 None,
             ),
             // a clash between pools is about the pool, not the key it names
             Kind::NameCollision { .. }
             | Kind::AmbiguousRouting { .. }
+            | Kind::OrganizationRoutingOverlap { .. }
             | Kind::TokenFileDiffers { .. }
             | Kind::TokenFileReused { .. } => (segments.get(..2).unwrap_or(segments), None),
             Kind::UnknownField(name) => (segments, Some(name)),
@@ -108,6 +110,7 @@ impl Reader for TomlReader<'_> {
         Some(Location { line: spot.line })
     }
 
+    /// keeps TOML diagnostics in file vocabulary rather than the shared JSON names.
     fn render(&self, problem: &Problem) -> String {
         let line = problem.location.map_or(1, |location| location.line);
         let path = match &problem.kind {

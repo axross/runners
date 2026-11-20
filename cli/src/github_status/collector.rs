@@ -1,7 +1,7 @@
 //! the collector: while a client holds a renewed `github` subscription, it checks
-//! each repository whose pools have a registered runner, one display request at a
+//! each scope whose pools have a registered runner, one display request at a
 //! time across the host, at most once per interval of the budget's level; it reads
-//! the runner list in full, looks up the job of a busy runner whose job is not known,
+//! the runner list in full, looks up jobs for repository runners only,
 //! and publishes the `github` topic's value after every answer.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -22,8 +22,11 @@ use crate::token_store::{TokenKey, TokenStore};
 use super::answer::{Answer, Cause, Endpoint, Next, Outcome, Wait, classify};
 use super::budget::{Level, Tracker};
 use super::clean;
-use super::http::{Fetch, Get, next_page, repository_id};
-use super::{GithubStatus, Job, RepositoryStatus, RunnerStatus, ScaleSetStatus};
+use super::http::{Fetch, Get, next_page, page_id};
+use super::{
+    GithubStatus, Job, OrganizationRunnerStatus, OrganizationStatus, RepositoryStatus,
+    RunnerStatus, ScaleSetStatus,
+};
 use crate::runtime::scrub::replace_secret;
 
 /// runners per page of the runner list.
@@ -115,8 +118,8 @@ enum Names {
     Unreadable(Cause),
 }
 
-/// what the collector keeps for a repository, across subscriptions.
-struct Repository {
+/// conditional pages and retry state shared by each token scope.
+struct Scope {
     key: TokenKey,
     pages: BTreeMap<String, Page>,
     /// when its last check started.
@@ -127,7 +130,7 @@ struct Repository {
     backoff: Duration,
     retry: Option<Instant>,
     retry_at: Option<u64>,
-    /// GitHub's latest `x-poll-interval` for the repository.
+    /// GitHub's latest `x-poll-interval` for the scope.
     poll: Duration,
     runners: Vec<RunnerStatus>,
     names: Names,
@@ -146,7 +149,7 @@ struct Repository {
     lookup_retry_at: Option<u64>,
 }
 
-impl Repository {
+impl Scope {
     fn new(key: TokenKey) -> Self {
         Self {
             key,
@@ -214,8 +217,7 @@ impl Repository {
     }
 }
 
-/// the repositories to check now: each whose pools have a registered runner and
-/// whose token the store had at the last look, with those runners' names.
+/// scopes with a registered runner and a token at the last store check.
 #[must_use]
 pub fn wanted(snapshot: &Snapshot) -> BTreeMap<TokenKey, BTreeSet<String>> {
     let with_token: BTreeSet<&str> = snapshot
@@ -223,13 +225,25 @@ pub fn wanted(snapshot: &Snapshot) -> BTreeMap<TokenKey, BTreeSet<String>> {
         .iter()
         .filter(|repository| repository.has_token)
         .map(|repository| repository.repository.as_str())
+        .chain(
+            snapshot
+                .organizations
+                .iter()
+                .filter(|organization| organization.has_token)
+                .map(|organization| organization.organization.as_str()),
+        )
         .collect();
     let mut wanted: BTreeMap<TokenKey, BTreeSet<String>> = BTreeMap::new();
     for pool in &snapshot.pools {
-        if !pool.has_token && !with_token.contains(pool.repository.as_str()) {
+        let scope = pool.organization.as_deref().unwrap_or(&pool.repository);
+        if !pool.has_token && !with_token.contains(scope) {
             continue;
         }
-        let Ok(key) = TokenKey::parse(&pool.repository) else {
+        let key = match &pool.organization {
+            Some(organization) => TokenKey::parse_organization(organization).ok(),
+            None => TokenKey::parse(&pool.repository).ok(),
+        };
+        let Some(key) = key else {
             continue;
         };
         let names: BTreeSet<String> = pool
@@ -260,7 +274,7 @@ fn scale_set_statuses(
                 .and_then(|listeners| listeners.get(&pool.name))
                 .filter(|view| {
                     view.scale_set == info.name
-                        && TokenKey::of(&view.owner, &view.repository).as_str() == pool.repository
+                        && TokenKey::for_pool(&view.target()).as_str() == pool.repository
                 })
                 .and_then(|view| view.statistics);
             Some(ScaleSetStatus {
@@ -273,6 +287,36 @@ fn scale_set_statuses(
             })
         })
         .collect()
+}
+
+type OrganizationGroups = BTreeMap<TokenKey, BTreeMap<String, BTreeSet<String>>>;
+
+/// projects a shared organisation read onto configured groups; group membership
+/// here comes from this host's snapshot, not GitHub's mutable group settings.
+fn organization_groups(snapshot: &Snapshot) -> OrganizationGroups {
+    let mut groups: OrganizationGroups = BTreeMap::new();
+    for pool in &snapshot.pools {
+        let (Some(organization), Some(group)) = (&pool.organization, &pool.runner_group) else {
+            continue;
+        };
+        let Ok(key) = TokenKey::parse_organization(organization) else {
+            continue;
+        };
+        let names: BTreeSet<String> = pool
+            .runners
+            .iter()
+            .filter_map(|runner| runner.workload.clone())
+            .collect();
+        if !names.is_empty() {
+            groups
+                .entry(key)
+                .or_default()
+                .entry(group.clone())
+                .or_default()
+                .extend(names);
+        }
+    }
+    groups
 }
 
 /// what one paged read ended with.
@@ -295,12 +339,13 @@ pub struct Collector<'a, F: Fetch> {
     now: Box<dyn Fn() -> u64 + 'a>,
     tracker: Tracker,
     level: Level,
-    repositories: BTreeMap<TokenKey, Repository>,
+    scopes: BTreeMap<TokenKey, Scope>,
     /// no display request starts before this, after a rate limit.
     host_wait: Option<Instant>,
     secondary: Duration,
     published: watch::Sender<Arc<GithubStatus>>,
     shown: BTreeSet<TokenKey>,
+    shown_organizations: OrganizationGroups,
     active: watch::Receiver<bool>,
     listeners: Option<watch::Receiver<BTreeMap<String, ListenerView>>>,
     scale_sets: Vec<ScaleSetStatus>,
@@ -323,11 +368,12 @@ impl<'a, F: Fetch> Collector<'a, F> {
             now,
             tracker: Tracker::default(),
             level: Level::Normal,
-            repositories: BTreeMap::new(),
+            scopes: BTreeMap::new(),
             host_wait: None,
             secondary: SECONDARY_BACKOFF,
             published,
             shown: BTreeSet::new(),
+            shown_organizations: BTreeMap::new(),
             active,
             listeners: None,
             scale_sets: Vec::new(),
@@ -364,7 +410,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 self.scale_sets.clear();
                 self.publish();
             }
-            self.show(&wanted);
+            self.show(&wanted, organization_groups(&snapshot));
             let next = if self.is_active() {
                 self.next(&wanted)
             } else {
@@ -394,7 +440,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         }
     }
 
-    /// the repository due first, and when.
+    /// the scope due first, and when.
     fn next(
         &mut self,
         wanted: &BTreeMap<TokenKey, BTreeSet<String>>,
@@ -412,9 +458,9 @@ impl<'a, F: Fetch> Collector<'a, F> {
             .keys()
             .map(|key| {
                 let repository = self
-                    .repositories
+                    .scopes
                     .entry(key.clone())
-                    .or_insert_with(|| Repository::new(key.clone()));
+                    .or_insert_with(|| Scope::new(key.clone()));
                 let due = repository.due(level).unwrap_or_else(Instant::now);
                 (key.clone(), floor.map_or(due, |floor| due.max(floor)))
             })
@@ -433,15 +479,22 @@ impl<'a, F: Fetch> Collector<'a, F> {
         }
     }
 
-    /// publishes the value for the repositories wanted now.
-    fn show(&mut self, wanted: &BTreeMap<TokenKey, BTreeSet<String>>) {
+    /// publishes the value for the scopes wanted now.
+    fn show(
+        &mut self,
+        wanted: &BTreeMap<TokenKey, BTreeSet<String>>,
+        mut groups: OrganizationGroups,
+    ) {
         let shown: BTreeSet<TokenKey> = wanted.keys().cloned().collect();
-        if shown != self.shown {
+        groups.retain(|key, _| shown.contains(key));
+        if shown != self.shown || groups != self.shown_organizations {
             self.shown = shown;
+            self.shown_organizations = groups;
             self.publish();
         }
     }
 
+    /// configured group membership is a display projection, not a fresh policy check.
     fn publish(&mut self) {
         let now_ms = (self.now)();
         self.note_level(now_ms);
@@ -450,9 +503,35 @@ impl<'a, F: Fetch> Collector<'a, F> {
             repositories: self
                 .shown
                 .iter()
-                .filter_map(|key| self.repositories.get(key))
-                .map(Repository::status)
+                .filter(|key| !key.is_organization())
+                .filter_map(|key| self.scopes.get(key))
+                .map(Scope::status)
                 .collect(),
+            organizations: self
+                .shown_organizations
+                .iter()
+                .flat_map(|(key, groups)| {
+                    groups.iter().filter_map(|(group, names)| {
+                        let scope = self.scopes.get(key)?;
+                        Some(OrganizationStatus {
+                            organization: key.as_str().to_string(),
+                            runner_group: group.clone(),
+                            checked_at: scope.checked_at,
+                            status: scope.failure.map_or("ok", Cause::word).to_string(),
+                            runners: scope
+                                .runners
+                                .iter()
+                                .filter(|runner| names.contains(&runner.name))
+                                .map(|runner| OrganizationRunnerStatus {
+                                    name: runner.name.clone(),
+                                    github: runner.github.clone(),
+                                })
+                                .collect(),
+                        })
+                    })
+                })
+                .collect(),
+            omitted_organizations: 0,
             omitted_runners: 0,
             scale_sets: self.scale_sets.clone(),
             omitted_scale_sets: 0,
@@ -468,7 +547,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         });
     }
 
-    /// one repository's turn: the runner list, then the job lookup.
+    /// one scope's turn; only repository scopes look up jobs.
     async fn turn(&mut self, key: &TokenKey, names: &BTreeSet<String>) {
         let token = match self.store.as_ref().map(|store| store.get(key)) {
             Some(Ok(Some(token))) => {
@@ -476,7 +555,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 token
             }
             Some(Ok(None)) | None => {
-                if let Some(repository) = self.repositories.get_mut(key) {
+                if let Some(repository) = self.scopes.get_mut(key) {
                     repository.checked = Some(Instant::now());
                 }
                 return;
@@ -487,11 +566,13 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 return;
             }
         };
-        if let Some(repository) = self.repositories.get_mut(key) {
+        if let Some(repository) = self.scopes.get_mut(key) {
             repository.checked = Some(Instant::now());
         }
+        let organization = key.is_organization();
+        let prefix = if organization { "orgs" } else { "repos" };
         let path = format!(
-            "/repos/{}/actions/runners?per_page={RUNNERS_PER_PAGE}",
+            "/{prefix}/{}/actions/runners?per_page={RUNNERS_PER_PAGE}",
             key.as_str()
         );
         let pages = match self.read(key, &token, &path, Endpoint::Runners, true).await {
@@ -518,15 +599,17 @@ impl<'a, F: Fetch> Collector<'a, F> {
         };
         let became_busy = self.take_runners(key, names, parsed);
         self.publish();
-        self.lookup(key, &token, became_busy).await;
-        self.publish();
+        if !organization {
+            self.lookup(key, &token, became_busy).await;
+            self.publish();
+        }
     }
 
     /// records a failure of the runner list and when it is tried again.
     fn fail(&mut self, key: &TokenKey, cause: Cause) {
         let now_ms = (self.now)();
         let level = self.tracker.level(now_ms);
-        let Some(repository) = self.repositories.get_mut(key) else {
+        let Some(repository) = self.scopes.get_mut(key) else {
             return;
         };
         let (wait, retry, retry_at) = next_try(&mut repository.backoff, level, now_ms);
@@ -534,7 +617,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             self.log.warn(&format!(
                 "GitHub status: {} failed: {}; trying again in {} s.",
                 key.as_str(),
-                describe(cause),
+                describe(key, cause),
                 wait.as_secs()
             ));
         }
@@ -555,14 +638,15 @@ impl<'a, F: Fetch> Collector<'a, F> {
     ) -> Read {
         let mut bodies = Vec::new();
         let mut path = first.to_string();
-        // the `/repositories/<id>` id of the read, held from the first page that names one
+        // the `/repositories/<id>` or `/organizations/<id>` id of the read, held from the first
+        // page that names one
         let mut held_id: Option<String> = None;
         for _ in 0..MAX_PAGES {
             if !self.is_active() || self.waiting() {
                 return Read::Stop;
             }
             let etag = self
-                .repositories
+                .scopes
                 .get(key)
                 .and_then(|repository| repository.pages.get(&path))
                 .and_then(|page| page.etag.clone());
@@ -579,7 +663,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 Err(cause) => {
                     self.log.info(&format!(
                         "GitHub status: GET {path} got no usable answer: {}.",
-                        describe(cause)
+                        describe(key, cause)
                     ));
                     return Read::Failed(cause);
                 }
@@ -588,7 +672,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             self.tracker.observe(&answer.rate, now_ms);
             self.log_answer(&path, endpoint, &answer, token);
             if let Some(poll) = answer.poll_interval
-                && let Some(repository) = self.repositories.get_mut(key)
+                && let Some(repository) = self.scopes.get_mut(key)
             {
                 repository.poll = poll;
             }
@@ -601,7 +685,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                         body: answer.body.clone(),
                         link: answer.link.clone(),
                     };
-                    if let Some(repository) = self.repositories.get_mut(key) {
+                    if let Some(repository) = self.scopes.get_mut(key) {
                         repository.pages.insert(path.clone(), page.clone());
                     }
                     page
@@ -609,7 +693,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 Outcome::Unchanged => {
                     self.secondary = SECONDARY_BACKOFF;
                     let kept = self
-                        .repositories
+                        .scopes
                         .get(key)
                         .and_then(|repository| repository.pages.get(&path).cloned());
                     match kept {
@@ -626,7 +710,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             };
             bodies.push(page.body);
             if held_id.is_none() {
-                held_id = repository_id(&path).map(str::to_string);
+                held_id = page_id(&path).map(str::to_string);
             }
             let next = page.link.as_deref().map_or(Next::None, |link| {
                 next_page(link, self.fetch.base_url(), first, held_id.as_deref())
@@ -705,7 +789,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         pages: Vec<RunnersPage>,
     ) -> bool {
         let now_ms = (self.now)();
-        let Some(repository) = self.repositories.get_mut(key) else {
+        let Some(repository) = self.scopes.get_mut(key) else {
             return false;
         };
         let listed: Vec<RunnerItem> = pages
@@ -763,7 +847,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     /// the job lookup of a repository's turn: at most two requests while a busy
     /// runner's job is not known, or one to try hidden names again.
     async fn lookup(&mut self, key: &TokenKey, token: &Secret, became_busy: bool) {
-        let Some(repository) = self.repositories.get(key) else {
+        let Some(repository) = self.scopes.get(key) else {
             return;
         };
         let waiting = repository.busy_without_job();
@@ -775,7 +859,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 .hidden_tried
                 .is_none_or(|tried| tried + HIDDEN_RETRY <= Instant::now());
             let pending = repository.hidden_pending || became_busy;
-            if let Some(repository) = self.repositories.get_mut(key) {
+            if let Some(repository) = self.scopes.get_mut(key) {
                 repository.hidden_pending = pending && !due;
                 if pending && due {
                     repository.hidden_tried = Some(Instant::now());
@@ -792,7 +876,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         {
             return;
         }
-        if let Some(repository) = self.repositories.get_mut(key) {
+        if let Some(repository) = self.scopes.get_mut(key) {
             for name in &waiting {
                 *repository.turns.entry(name.clone()).or_insert(0) += 1;
             }
@@ -801,7 +885,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             return;
         }
         let page = {
-            let Some(repository) = self.repositories.get_mut(key) else {
+            let Some(repository) = self.scopes.get_mut(key) else {
                 return;
             };
             if repository.queue.is_empty() {
@@ -830,7 +914,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 };
                 self.lookup_answered(key);
                 self.take_jobs(key, &waiting, parsed);
-                if let (Some(next), Some(repository)) = (next, self.repositories.get_mut(key)) {
+                if let (Some(next), Some(repository)) = (next, self.scopes.get_mut(key)) {
                     repository.queue.push_front(next);
                 }
             }
@@ -846,7 +930,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         let now_ms = (self.now)();
         let level = self.tracker.level(now_ms);
         self.names(key, Names::Unreadable(cause));
-        if let Some(repository) = self.repositories.get_mut(key) {
+        if let Some(repository) = self.scopes.get_mut(key) {
             let (_, retry, retry_at) = next_try(&mut repository.lookup_backoff, level, now_ms);
             repository.lookup_retry = Some(retry);
             repository.lookup_retry_at = Some(retry_at);
@@ -855,7 +939,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
 
     /// records a lookup GitHub answered.
     fn lookup_answered(&mut self, key: &TokenKey) {
-        if let Some(repository) = self.repositories.get_mut(key) {
+        if let Some(repository) = self.scopes.get_mut(key) {
             repository.lookup_backoff = FAILURE_BACKOFF;
             repository.lookup_retry = None;
             repository.lookup_retry_at = None;
@@ -880,7 +964,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 let runs: Vec<u64> = page.workflow_runs.iter().map(|run| run.id).collect();
                 self.lookup_answered(key);
                 self.names(key, Names::Shown);
-                if let Some(repository) = self.repositories.get_mut(key) {
+                if let Some(repository) = self.scopes.get_mut(key) {
                     if repository.runs != runs {
                         repository.queue.clear();
                         // a run no longer in progress needs its jobs pages no more
@@ -907,15 +991,16 @@ impl<'a, F: Fetch> Collector<'a, F> {
         }
     }
 
+    /// job-name visibility is independent of runner-list access for a repository.
     fn names(&mut self, key: &TokenKey, names: Names) {
-        if let Some(repository) = self.repositories.get_mut(key)
+        if let Some(repository) = self.scopes.get_mut(key)
             && repository.names != names
         {
             let word = match names {
                 Names::Unknown => "unknown".to_string(),
                 Names::Shown => "shown".to_string(),
                 Names::Hidden => "hidden: the token has no Actions: read".to_string(),
-                Names::Unreadable(cause) => format!("unreadable: {}", describe(cause)),
+                Names::Unreadable(cause) => format!("unreadable: {}", describe(key, cause)),
             };
             self.log.info(&format!(
                 "GitHub status: job names for {} are {word}.",
@@ -929,7 +1014,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
     }
 
     fn take_jobs(&mut self, key: &TokenKey, waiting: &[String], pages: Vec<JobsPage>) {
-        let Some(repository) = self.repositories.get_mut(key) else {
+        let Some(repository) = self.scopes.get_mut(key) else {
             return;
         };
         for job in pages
@@ -973,10 +1058,14 @@ fn next_try(backoff: &mut Duration, level: Level, now_ms: u64) -> (Duration, Ins
 }
 
 /// a cause in words, for the log.
-fn describe(cause: Cause) -> &'static str {
+fn describe(key: &TokenKey, cause: Cause) -> &'static str {
     match cause {
         Cause::TokenRejected => "GitHub rejected the token",
+        Cause::NotFound if key.is_organization() => {
+            "GitHub cannot find the organisation with its token"
+        }
         Cause::NotFound => "GitHub cannot find the repository with its token",
+        Cause::Moved if key.is_organization() => "the organisation has moved on GitHub",
         Cause::Moved => "the repository has moved on GitHub",
         Cause::Unreachable => "GitHub could not be reached",
         Cause::Error => "GitHub answered with an error",

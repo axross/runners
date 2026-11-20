@@ -48,8 +48,9 @@ impl View {
         client: &crate::scaleset::Client,
         tokens: &T,
     ) -> Result<(), String> {
+        let target = self.target();
         while let Some(pending) = self.incomplete_registrations.first_mut() {
-            let pat = tokens.token(&self.owner, &self.repository, None)?;
+            let pat = tokens.token(&target, None)?;
             if pending.runner_id.is_none() {
                 pending.runner_id = client
                     .find_runner(&self.owner, &self.repository, &pending.name, &pat)
@@ -152,8 +153,7 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
         if self.halted() {
             return Err(HALTED.to_owned());
         }
-        if request.owner != pool.pool.owner
-            || request.repository != pool.pool.repository
+        if *request.target != pool.pool.target()
             || !is_own_container_name(&pool.pool.scale_set, request.name)
             || slot_of_container_name(request.name).is_none_or(|(_, slot)| slot != self.slot)
         {

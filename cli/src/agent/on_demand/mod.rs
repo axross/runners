@@ -23,6 +23,7 @@ use crate::runtime::token::TokenSource;
 use crate::scaleset::{
     ADMIN_RENEWAL_MARGIN, Client, Connection, Error, ErrorKind, ScaleSet, Session, Statistics,
 };
+use crate::validate::PoolTarget;
 
 use demand::Demand;
 pub(crate) use listener::{CLOSE_WITHIN, Failure};
@@ -58,6 +59,15 @@ pub struct Pool {
     pub logical_name: String,
     pub scale_set: String,
     pub session_owner: String,
+}
+
+impl Pool {
+    fn target(&self) -> PoolTarget {
+        PoolTarget::Repository {
+            owner: self.owner.clone(),
+            repository: self.repository.clone(),
+        }
+    }
 }
 
 /// changes take effect at admission boundaries, not at the next broker response.
@@ -105,6 +115,15 @@ pub struct View {
 }
 
 impl View {
+    /// the repository the listener serves, as a token and registration target.
+    #[must_use]
+    pub fn target(&self) -> PoolTarget {
+        PoolTarget::Repository {
+            owner: self.owner.clone(),
+            repository: self.repository.clone(),
+        }
+    }
+
     pub fn has_pending_cleanup(&self) -> bool {
         self.session_cleanup_incomplete || !self.incomplete_registrations.is_empty()
     }
@@ -385,7 +404,7 @@ impl<'a, T: TokenSource, K: Clock> Coordinator<'a, T, K> {
     /// the source already limits store errors to its public kind/code description.
     fn token(&self, fatal: bool) -> Result<crate::runtime::secret::Secret, String> {
         self.tokens
-            .token(&self.pool.owner, &self.pool.repository, None)
+            .token(&self.pool.target(), None)
             .inspect_err(|reason| {
                 let mut state = self.state.borrow_mut();
                 state.view.store_error(reason.clone());

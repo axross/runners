@@ -1,6 +1,6 @@
 //! GitHub status: what GitHub says about this host's runners, for the window only.
 //! While a client holds a renewed `github` subscription the agent reads each
-//! repository's runner list, looks up the job a busy runner runs, and keeps the
+//! scope's runner list, looks up jobs for repository runners only, and keeps the
 //! request budget, with conditional requests sent one at a time; the value it
 //! publishes never carries a token, a URL from GitHub or a raw response body.
 //! `docs/operations/cli.md` describes the contract.
@@ -24,12 +24,18 @@ pub struct GithubStatus {
     /// name, each with what the agent last learned of it.
     #[serde(default)]
     pub repositories: Vec<RepositoryStatus>,
+    #[serde(default)]
+    pub organizations: Vec<OrganizationStatus>,
+    /// group entries left out, after runners and scale sets, to keep the message bounded.
+    #[serde(default)]
+    pub omitted_organizations: u32,
     /// runner entries left out from the end to keep the value within the agent's
     /// message limit.
     #[serde(default)]
     pub omitted_runners: u32,
     #[serde(default)]
     pub scale_sets: Vec<ScaleSetStatus>,
+    /// scale-set entries left out, after runners, to keep the message bounded.
     #[serde(default)]
     pub omitted_scale_sets: u32,
 }
@@ -44,6 +50,33 @@ pub struct ScaleSetStatus {
     pub assigned: Option<u64>,
     pub running: Option<u64>,
     pub registered_idle: Option<u64>,
+}
+
+/// an organization group's last check, without repository job information.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OrganizationStatus {
+    #[serde(default)]
+    pub organization: String,
+    #[serde(default)]
+    pub runner_group: String,
+    /// milliseconds since the Unix epoch.
+    #[serde(default)]
+    pub checked_at: Option<u64>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub runners: Vec<OrganizationRunnerStatus>,
+}
+
+/// an organization runner; its token cannot read repository jobs.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OrganizationRunnerStatus {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub github: String,
 }
 
 /// the hourly request budget as display responses report it.
@@ -123,11 +156,24 @@ pub struct Job {
 }
 
 impl GithubStatus {
-    /// leaves out runners, then scale sets, from the end to fit the message bound;
-    /// each omitted scope keeps its own count.
+    /// leaves entries out from the end until the value's JSON is at most `max_bytes`, in
+    /// this order: organization runner entries, then repository runner entries, both
+    /// counted in `omitted_runners`; then scale sets, in `omitted_scale_sets`; then
+    /// organization group entries, in `omitted_organizations`. A scale set holds only
+    /// counts, while a group entry says whether its organization's token and runner list
+    /// work.
     pub fn fit(&mut self, max_bytes: usize) {
         while serde_json::to_vec(self).map_or(usize::MAX, |json| json.len()) > max_bytes {
             if let Some(runners) = self
+                .organizations
+                .iter_mut()
+                .rev()
+                .map(|organization| &mut organization.runners)
+                .find(|runners| !runners.is_empty())
+            {
+                runners.pop();
+                self.omitted_runners += 1;
+            } else if let Some(runners) = self
                 .repositories
                 .iter_mut()
                 .rev()
@@ -138,6 +184,8 @@ impl GithubStatus {
                 self.omitted_runners += 1;
             } else if self.scale_sets.pop().is_some() {
                 self.omitted_scale_sets += 1;
+            } else if self.organizations.pop().is_some() {
+                self.omitted_organizations += 1;
             } else {
                 return;
             }

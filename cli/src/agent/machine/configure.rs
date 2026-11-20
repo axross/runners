@@ -19,7 +19,7 @@ use crate::runtime::backend::Backend;
 use crate::runtime::clock::Clock;
 use crate::runtime::registration::Registrar;
 use crate::token_store::TokenKey;
-use crate::validate::{CheckoutRule, Failure, Plan, parse_toml_path, toml_key_line};
+use crate::validate::{CheckoutRule, Failure, Plan, PoolTarget, parse_toml_path, toml_key_line};
 
 use super::super::api::{ApiError, ApiResult, Method};
 use super::super::builder::ImageBuilder;
@@ -347,7 +347,8 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         let named = |plan: &Plan| -> BTreeSet<TokenKey> {
             plan.entries
                 .iter()
-                .map(|entry| TokenKey::of(&entry.owner, &entry.repository))
+                .filter(|entry| matches!(entry.target, PoolTarget::Repository { .. }))
+                .map(|entry| TokenKey::for_pool(&entry.target))
                 .collect()
         };
         let released = in_use.map_or_else(Vec::new, |in_use| {

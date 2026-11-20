@@ -175,6 +175,18 @@ pub struct RepositoryInfo {
     pub pools: Vec<String>,
 }
 
+/// an organisation credential shared by its configured organisation pools.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OrganizationInfo {
+    #[serde(default)]
+    pub organization: String,
+    #[serde(default)]
+    pub has_token: bool,
+    #[serde(default)]
+    pub pools: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RunnerInfo {
@@ -302,9 +314,13 @@ pub struct DiagnosticsInfo {
 pub struct PoolInfo {
     #[serde(default)]
     pub name: String,
-    /// `owner/name` in lower case.
-    #[serde(default)]
+    /// `owner/name` in lower case; absent on the wire for an organisation pool.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub repository: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub organization: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_group: Option<String>,
     /// `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`.
     #[serde(default)]
     pub state: String,
@@ -464,6 +480,8 @@ pub struct Omitted {
     /// repositories, from the end, once no pool was left to drop.
     #[serde(default)]
     pub repositories: u32,
+    #[serde(default)]
+    pub organizations: u32,
     /// leftovers, from the end, once no pool was left to drop.
     #[serde(default)]
     pub leftovers: u32,
@@ -487,6 +505,8 @@ pub struct Snapshot {
     pub runners_wanted: u32,
     #[serde(default)]
     pub repositories: Vec<RepositoryInfo>,
+    #[serde(default)]
+    pub organizations: Vec<OrganizationInfo>,
     #[serde(default)]
     pub pools: Vec<PoolInfo>,
     /// what a stop could not remove, until the next start removes it.
@@ -602,6 +622,14 @@ impl Snapshot {
             |s, n, cut| {
                 s.repositories.truncate(n);
                 s.omitted.repositories += cut;
+            },
+        );
+        self.keep_most(
+            limit,
+            |s| s.organizations.len(),
+            |s, n, cut| {
+                s.organizations.truncate(n);
+                s.omitted.organizations += cut;
             },
         );
         self.keep_most(
@@ -904,6 +932,35 @@ mod tests {
             |s| s.repositories.truncate(100),
             300,
             |s| s.repositories.len() + s.omitted.repositories as usize,
+        );
+    }
+
+    /// organisation rows follow repository rows in the cut order; omitted counts
+    /// must still fit when their decimal width changes the encoded size.
+    #[test]
+    fn an_organization_cut_carries_its_count_after_repository_rows() {
+        let whole = Snapshot {
+            repositories: vec![RepositoryInfo {
+                repository: "owner/repository".to_string(),
+                ..RepositoryInfo::default()
+            }],
+            organizations: (0..300)
+                .map(|index| OrganizationInfo {
+                    organization: format!("organization-{index:04}"),
+                    has_token: true,
+                    pools: vec![format!("pool-{index}")],
+                })
+                .collect(),
+            ..Snapshot::default()
+        };
+        fit_to_a_cut_written_without_its_count(
+            &whole,
+            |s| {
+                s.repositories.clear();
+                s.organizations.truncate(100);
+            },
+            300,
+            |s| s.organizations.len() + s.omitted.organizations as usize,
         );
     }
 

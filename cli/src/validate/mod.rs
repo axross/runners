@@ -35,7 +35,7 @@ pub use json_reader::JsonReader;
 pub(crate) use json_reader::key_name as json_key_name;
 pub use limits::{format_cpu_count, format_nanos};
 pub use paths::is_inside_checkout;
-pub use plan::{Budget, Entry, Lifecycle, Plan, PlannedVolume, Settings};
+pub use plan::{Budget, Entry, Lifecycle, Plan, PlannedVolume, PoolTarget, Settings};
 pub use problem::{Key, KeyPath, Kind, Location, Problem, Segment};
 pub use reader::{Format, Reader};
 pub use settings::SCHEMA_VERSION;
@@ -295,7 +295,7 @@ fn read_repositories(
         }
     }
     if entries.len() > 1 {
-        uniqueness::check_entries(&entries, cx.profile, &mut cx.errors);
+        uniqueness::check_entries(&entries, cx.profile, routing_label, &mut cx.errors);
     }
     entries
 }
@@ -373,7 +373,7 @@ mod tests {
             )
         );
         let mut entry = union(Profile::Axpc.entry_fields(), Profile::Axmc.entry_fields());
-        entry.push("scaleSet".to_string());
+        entry.extend(["organization", "runnerGroup", "scaleSet"].map(String::from));
         entry.sort();
         assert_eq!(field_names::<entry::EntryFields>(), entry);
         assert_eq!(

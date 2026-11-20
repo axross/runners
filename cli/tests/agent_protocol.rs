@@ -74,6 +74,8 @@ async fn welcome_lists_the_version_the_methods_and_the_topics() {
                     "config_reload",
                     "launch",
                     "lifecycle_set",
+                    "organization_token_set",
+                    "organization_token_remove",
                 ])
             );
             assert_eq!(welcome["topics"], json!(["state", "github"]));

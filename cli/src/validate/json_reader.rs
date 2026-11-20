@@ -118,6 +118,8 @@ pub(crate) fn key_name(key: Key) -> &'static str {
         Key::Budget => "budget",
         Key::Owner => "owner",
         Key::Repository => "repository",
+        Key::Organization => "organization",
+        Key::RunnerGroup => "runnerGroup",
         Key::Name => "name",
         Key::Slots => "slots",
         Key::TokenPath => "tokenPath",

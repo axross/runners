@@ -147,6 +147,19 @@ impl Link for Agent {
                 .token_remove(&repository)
                 .await
                 .map(|()| serde_json::Value::Null),
+            Method::OrganizationTokenSet {
+                organization,
+                token,
+            } => self
+                .client
+                .organization_token_set(&organization, token.expose())
+                .await
+                .map(|()| serde_json::Value::Null),
+            Method::OrganizationTokenRemove { organization } => self
+                .client
+                .organization_token_remove(&organization)
+                .await
+                .map(|()| serde_json::Value::Null),
         };
         called.map(|_| ()).map_err(failure)
     }

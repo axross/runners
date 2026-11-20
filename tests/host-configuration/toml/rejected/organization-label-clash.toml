@@ -1,0 +1,16 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "alpha"
+organization = "Octo"
+runner_group = "builders"
+labels = ["gpu"]
+runners = 1
+
+[[pool]]
+name = "beta"
+repository = "octo/hello"
+labels = ["GPU"]
+runners = 1

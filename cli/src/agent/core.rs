@@ -28,7 +28,7 @@ use crate::runtime::pool::{
 };
 use crate::runtime::registration::Registrar;
 use crate::runtime::worker::{Backoff, Services, run_slot_with, wait_for_stop};
-use crate::validate::Plan;
+use crate::validate::{Plan, PoolTarget};
 
 use super::config::{Change, Effect};
 use super::on_demand::{
@@ -151,6 +151,25 @@ fn is_slot_container(name: &str, pool: &str, slot: u32) -> bool {
         .is_some_and(|stamp| parse_stamp(stamp).is_some())
 }
 
+/// whether both targets are repositories with the same owner and name, in any case.
+fn same_repository(a: &PoolTarget, b: &PoolTarget) -> bool {
+    match (a, b) {
+        (
+            PoolTarget::Repository {
+                owner: a_owner,
+                repository: a_repository,
+            },
+            PoolTarget::Repository {
+                owner: b_owner,
+                repository: b_repository,
+            },
+        ) => {
+            a_owner.eq_ignore_ascii_case(b_owner) && a_repository.eq_ignore_ascii_case(b_repository)
+        }
+        _ => false,
+    }
+}
+
 impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
     fn services(&self) -> Services<'a, B, K, R> {
         Services {
@@ -170,8 +189,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         if self.listeners.borrow().values().any(|listener| {
             listener.has_pending_cleanup()
                 && (listener.logical_name == pool.name
-                    || (listener.owner.eq_ignore_ascii_case(&pool.owner)
-                        && listener.repository.eq_ignore_ascii_case(&pool.repository)
+                    || (same_repository(&listener.target(), &pool.target)
                         && pool
                             .scale_set
                             .as_ref()
@@ -264,6 +282,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                 return None;
             }
         };
+        let PoolTarget::Repository { owner, repository } = &slot.target else {
+            return None;
+        };
         let slots = running
             .wanted
             .borrow()
@@ -279,8 +300,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         let coordinator = Rc::new(
             Coordinator::new(
                 Pool {
-                    owner: slot.owner.clone(),
-                    repository: slot.repository.clone(),
+                    owner: owner.clone(),
+                    repository: repository.clone(),
                     logical_name: slot.pool.clone(),
                     scale_set: slot.scale_set.clone()?,
                     session_owner: self.host.to_string(),
@@ -472,8 +493,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         };
         if !matches!(result, Some(Ok(Ok(())))) {
             self.log.warn(&format!(
-                "pool {}: incomplete registration cleanup remains in {}/{}",
-                view.logical_name, view.owner, view.repository
+                "pool {}: incomplete registration cleanup remains in {}",
+                view.logical_name,
+                view.target()
             ));
         }
         self.publish_cleanup(&view);

@@ -9,8 +9,10 @@ use std::time::Duration;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 
 use crate::json::{self, Value};
+use crate::validate::PoolTarget;
 use crate::validate::patterns::{is_owner, is_repository};
 
+use super::runner_groups::GroupCheck;
 use super::scrub::scrub_error_text;
 use super::secret::Secret;
 
@@ -51,8 +53,7 @@ impl Default for HttpLimits {
 
 /// what a registration asks for.
 pub struct JitRequest<'a> {
-    pub owner: &'a str,
-    pub repository: &'a str,
+    pub target: &'a PoolTarget,
     /// the runner's name, which is also its container's name.
     pub name: &'a str,
     pub labels: &'a [String],
@@ -181,6 +182,7 @@ pub struct GitHubRegistrar {
     client: reqwest::Client,
     base_url: String,
     limits: HttpLimits,
+    groups: GroupCheck,
 }
 
 impl GitHubRegistrar {
@@ -194,6 +196,7 @@ impl GitHubRegistrar {
             client,
             base_url,
             limits,
+            groups: GroupCheck::new(base_override, limits)?,
         })
     }
 
@@ -203,20 +206,46 @@ impl GitHubRegistrar {
         &self.base_url
     }
 
-    async fn send(&self, request: &JitRequest<'_>) -> Result<Secret, String> {
-        // the configuration's own patterns, which also refuse the `.` and `..`
-        // components that would climb out of `/repos/`.
-        if !is_owner(request.owner) || !is_repository(request.repository) {
-            return Err("the repository owner or name is not usable in a URL".to_string());
+    /// resolves the registration endpoint only after its target passes the URL and
+    /// group checks; no caller can supply an unchecked organisation group id.
+    async fn destination(&self, request: &JitRequest<'_>) -> Result<(String, u64), String> {
+        match request.target {
+            PoolTarget::Repository { owner, repository } => {
+                if !is_owner(owner) || !is_repository(repository) {
+                    return Err("the repository owner or name is not usable in a URL".to_string());
+                }
+                Ok((
+                    format!("/repos/{owner}/{repository}/actions/runners/generate-jitconfig"),
+                    RUNNER_GROUP_ID,
+                ))
+            }
+            PoolTarget::Organization {
+                organization,
+                runner_group,
+            } => {
+                if !is_owner(organization) {
+                    return Err("the organization is not usable in a URL".to_string());
+                }
+                let id = self
+                    .groups
+                    .checked_id(organization, runner_group, request.token)
+                    .await?;
+                Ok((
+                    format!("/orgs/{organization}/actions/runners/generate-jitconfig"),
+                    id,
+                ))
+            }
         }
+    }
+
+    /// all registration targets share the same request and response limits.
+    async fn send(&self, request: &JitRequest<'_>) -> Result<Secret, String> {
+        let (path, group_id) = self.destination(request).await?;
         let mut authorization =
             HeaderValue::from_str(&format!("Bearer {}", request.token.expose()))
                 .map_err(|_| "the token is not valid in an HTTP header".to_string())?;
         authorization.set_sensitive(true);
-        let url = format!(
-            "{}/repos/{}/{}/actions/runners/generate-jitconfig",
-            self.base_url, request.owner, request.repository
-        );
+        let url = format!("{}{path}", self.base_url);
         let mut response = self
             .client
             .post(url)
@@ -224,7 +253,7 @@ impl GitHubRegistrar {
             .header(ACCEPT, ACCEPT_VALUE)
             .header("X-GitHub-Api-Version", API_VERSION)
             .header(CONTENT_TYPE, "application/json")
-            .body(jit_request_body(request.name, request.labels))
+            .body(jit_body(request.name, request.labels, group_id))
             .send()
             .await
             .map_err(|error| error_chain(&error.without_url()))?;
@@ -305,11 +334,14 @@ fn encoded_jit_config(body: &[u8]) -> Option<String> {
 /// the request body: the runner's name, the group, and the labels, as compact JSON.
 #[must_use]
 pub fn jit_request_body(name: &str, labels: &[String]) -> String {
+    jit_body(name, labels, RUNNER_GROUP_ID)
+}
+
+/// both endpoints send the same fields; only the source of the group id differs.
+fn jit_body(name: &str, labels: &[String], group_id: u64) -> String {
     let mut body = String::from("{\"name\":");
     write_json_string(&mut body, name);
-    body.push_str(&format!(
-        ",\"runner_group_id\":{RUNNER_GROUP_ID},\"labels\":["
-    ));
+    body.push_str(&format!(",\"runner_group_id\":{group_id},\"labels\":["));
     for (index, label) in labels.iter().enumerate() {
         if index > 0 {
             body.push(',');

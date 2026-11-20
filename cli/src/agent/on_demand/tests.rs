@@ -8,6 +8,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
@@ -239,7 +240,7 @@ impl Tokens {
 }
 
 impl TokenSource for Tokens {
-    fn token(&self, _: &str, _: &str, _: Option<&Path>) -> Result<Secret, String> {
+    fn token(&self, _: &PoolTarget, _: Option<&Path>) -> Result<Secret, String> {
         self.1.set(self.1.get() + 1);
         self.0.borrow().clone().map(Secret::new)
     }
@@ -1272,7 +1273,10 @@ mod http {
     }
 
     async fn seed<K: Clock>(coordinator: &Coordinator<'_, Tokens, K>) {
-        let pat = coordinator.tokens.token("", "", None).unwrap();
+        let pat = coordinator
+            .tokens
+            .token(&coordinator.pool.target(), None)
+            .unwrap();
         let connection = Rc::new(
             coordinator
                 .client
@@ -1305,10 +1309,14 @@ mod http {
         coordinator.listening();
     }
 
+    static REQUEST_TARGET: LazyLock<PoolTarget> = LazyLock::new(|| PoolTarget::Repository {
+        owner: "example-owner".to_owned(),
+        repository: "example-repository".to_owned(),
+    });
+
     fn request<'a>(token: &'a Secret) -> JitRequest<'a> {
         JitRequest {
-            owner: "example-owner",
-            repository: "example-repository",
+            target: &REQUEST_TARGET,
             name: RUNNER,
             labels: &[],
             token,

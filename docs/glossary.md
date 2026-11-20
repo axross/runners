@@ -21,7 +21,7 @@ so nothing a job leaves behind carries into the next. The opposite is a
 persistent runner, which this project does not use.
 
 **JIT Config** - the just-in-time runner configuration GitHub returns when a
-runner is registered through the API for a single repository. It is an encoded
+runner is registered through the API for a repository or an organisation's runner group. It is an encoded
 credential: it is passed to the runner at start, never stored in the repository,
 and is usable once.
 
@@ -60,6 +60,16 @@ name and a message session that supplies job demand to an **On-Demand Pool**.
 **On-Demand Pool** - an **Execution Pool** with the optional TOML `scale_set`
 setting, whose **Resident Agent** starts **Ephemeral Runners** in response to
 demand from a **Runner Scale Set**.
+
+**Organisation Pool** - an **Execution Pool** whose TOML `organization` and
+`runner_group` select one named group in a GitHub organisation instead of one
+repository. Its slots share one organisation token and have no persistent
+volumes.
+
+**Runner Group** - GitHub's admission boundary for organisation-level runners.
+Every repository admitted by one group can send jobs to its runners, so the
+group's repositories form one trust domain. Marshal accepts only a non-default,
+non-inherited group with selected repositories and public access disabled.
 
 **Routing Label** - the label a workflow uses in `runs-on` to select an
 **Execution Pool**. For an always-on pool, missing or empty host `labels` default to the host's own

@@ -158,6 +158,67 @@ tokn = "ghp_undefined00000000000000000000000"
         .await;
 }
 
+/// removing an organisation pool leaves a repository pool and its token in place,
+/// and does not report the organisation key as a released repository.
+#[tokio::test(flavor = "current_thread")]
+async fn removing_an_organization_pool_reports_no_released_repository() {
+    let rig = Rig::new(ONE_POOL);
+    rig.write_toml(
+        r#"schema_version = 1
+routing_label = "axpc"
+image_name = "actions-runner:local"
+[[pool]]
+name = "r"
+repository = "o/r"
+runners = 1
+[[pool]]
+name = "org"
+organization = "O"
+runner_group = "private-workers"
+labels = ["org-route"]
+runners = 1
+"#,
+    );
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_runner_runs().await;
+        conn.client
+            .organization_token_set("o", TOKEN)
+            .await
+            .unwrap();
+        conn.until("both pools running", |snapshot| snapshot.runners_up == 2)
+            .await;
+        rig.mark_running();
+        let read = conn.ok("config_read").await;
+        assert_eq!(read["pools"][1]["organization"], "O");
+        assert_eq!(read["pools"][1]["runner_group"], "private-workers");
+        assert!(read["pools"][1].get("repository").is_none());
+        let applied = conn
+            .call(
+                "config_edit",
+                json!({
+                    "revision": read["revision"],
+                    "edits": [{"op":"remove_entry", "path":"pool[1]"}],
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(applied["repositories_released"], json!([]));
+        let snapshot = conn
+            .until("only the repository pool remains", |snapshot| {
+                snapshot.pools.len() == 1 && snapshot.pools[0].name == "r"
+            })
+            .await;
+        assert!(snapshot.organizations.is_empty());
+        assert_eq!(snapshot.repositories[0].repository, "o/r");
+        assert!(snapshot.repositories[0].has_token);
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn raising_runners_starts_the_new_slot_alone_and_keeps_the_comments() {
     let rig = rig();

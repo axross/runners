@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 use crate::runtime::token::TokenSource;
 use crate::scaleset::{Client, Connection, Error, ErrorKind, ScaleSet, Session};
+use crate::validate::PoolTarget;
 
 use super::listener::Failure;
 
@@ -54,7 +55,13 @@ impl PendingSession {
             return Ok(());
         };
         let pat = tokens
-            .token(old.connection.owner(), old.connection.repository(), None)
+            .token(
+                &PoolTarget::Repository {
+                    owner: old.connection.owner().to_owned(),
+                    repository: old.connection.repository().to_owned(),
+                },
+                None,
+            )
             .map_err(Failure::Store)?;
         let connection = if old.connection.needs_renewal(&pat, now) {
             Rc::new(

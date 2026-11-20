@@ -29,9 +29,11 @@ const BUDGET: [(&str, Type); 3] = [
     ("disk_gb", Type::Integer),
 ];
 
-const POOL: [(&str, Type); 12] = [
+const POOL: [(&str, Type); 14] = [
     ("name", Type::Text),
     ("repository", Type::Text),
+    ("organization", Type::Text),
+    ("runner_group", Type::Text),
     ("runners", Type::Integer),
     ("scale_set", Type::Text),
     ("labels", Type::Texts),
