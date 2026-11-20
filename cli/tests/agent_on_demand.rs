@@ -1821,6 +1821,51 @@ async fn a_failed_cleanup_after_a_job_is_retried_and_the_slot_serves_the_next_jo
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_second_job_starts_in_a_free_seat_while_the_first_jobs_cleanup_is_open() {
+    let service = Service::start(1).await;
+    service.state.lock().unwrap().fail_deletion = true;
+    let rig = rig(&service);
+    rig.backend.state.borrow_mut().hold_runs = false;
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("a slot retrying its cleanup", cleanup_backing_off)
+                .await;
+            assert_eq!(containers(rig).len(), 1);
+            // GitHub counts the first job done while its registration is still there
+            service.state.lock().unwrap().assigned = 0;
+            conn.eventually("the drop delivered", || {
+                service.state.lock().unwrap().sent == Some(0)
+            })
+            .await;
+            let polls = service.state.lock().unwrap().polls;
+            conn.eventually("the drop processed and acknowledged", || {
+                service.state.lock().unwrap().polls > polls
+            })
+            .await;
+            service.state.lock().unwrap().assigned = 1;
+            conn.eventually("the second job running in the free seat", || {
+                containers(rig).len() == 2
+            })
+            .await;
+            let snapshot = conn.status().await;
+            let listener = snapshot.pools[0].on_demand.as_ref().unwrap();
+            assert!(listener.cleanup_incomplete);
+            assert_eq!(service.state.lock().unwrap().jit_names.len(), 2);
+            // the stuck cleanup still holds its seat: no third runner
+            service.state.lock().unwrap().assigned = 2;
+            conn.eventually("the third job delivered", || {
+                service.state.lock().unwrap().sent == Some(2)
+            })
+            .await;
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            assert_eq!(containers(rig).len(), 2);
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_stop_during_a_cleanup_retry_is_prompt_and_leaves_the_cleanup_open() {
     let service = Service::start(1).await;
     let rig = rig_with_failing_deletion(&service);

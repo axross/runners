@@ -128,6 +128,12 @@ impl Demand {
         self.leases.len() + self.uncertain() + self.acquired_unleased()
     }
 
+    /// leases whose job GitHub no longer counts are left out: they hold a seat until their
+    /// cleanup settles, but the assigned statistics they would be compared with already dropped.
+    fn counted_leases(&self) -> u64 {
+        (self.leases.len() as u64).saturating_sub(self.completed_before_finish)
+    }
+
     fn desired(&self) -> u64 {
         let unreflected = self
             .offers
@@ -161,7 +167,7 @@ impl Demand {
         }
         let assigned_waiting = self
             .desired()
-            .saturating_sub(self.leases.len() as u64 + self.acquired_unleased() as u64);
+            .saturating_sub(self.counted_leases() + self.acquired_unleased() as u64);
         let free = u64::from(capacity)
             .saturating_sub(self.occupied() as u64)
             .saturating_sub(assigned_waiting);
@@ -215,7 +221,7 @@ impl Demand {
         if slot == 0
             || slot > capacity
             || self.leases.values().any(|lease| lease.slot == slot)
-            || self.leases.len() as u64 >= u64::from(capacity).min(self.desired())
+            || self.counted_leases() >= u64::from(capacity).min(self.desired())
             || self.leases.len() + self.uncertain() >= capacity as usize
         {
             return None;

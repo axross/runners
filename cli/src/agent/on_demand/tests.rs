@@ -97,6 +97,52 @@ fn cleanup_before_statistics_does_not_credit_the_next_completion() {
 }
 
 #[test]
+fn a_finished_job_whose_cleanup_is_open_does_not_block_a_new_assignment() {
+    let mut demand = Demand::default();
+    demand.initial(statistics(1));
+    let stuck = demand.reserve(1, 2).unwrap();
+    demand.update_statistics(statistics(0));
+    demand.update_statistics(statistics(1));
+    let next = demand.reserve(2, 2).unwrap();
+    // the stuck cleanup still holds its seat, so the pool never exceeds its capacity
+    assert!(demand.reserve(1, 2).is_none());
+    assert_eq!(demand.occupied(), 2);
+    demand.finish(next, true);
+    demand.finish(stuck, true);
+}
+
+#[test]
+fn an_offer_is_acquired_beside_a_finished_job_whose_cleanup_is_open() {
+    let mut demand = Demand::default();
+    demand.initial(statistics(1));
+    let stuck = demand.reserve(1, 2).unwrap();
+    demand.update_statistics(statistics(0));
+    demand.receive(&offers(&[11]));
+    let ids = demand.acquire(2);
+    assert_eq!(ids, vec![11]);
+    demand.acquired(&ids, &ids);
+    let next = demand.reserve(2, 2).unwrap();
+    assert!(demand.reserve(1, 2).is_none());
+    demand.finish(next, true);
+    demand.finish(stuck, true);
+}
+
+#[test]
+fn a_waiting_assignment_is_not_hidden_by_a_finished_job_whose_cleanup_is_open() {
+    let mut demand = Demand::default();
+    demand.initial(statistics(1));
+    let stuck = demand.reserve(1, 2).unwrap();
+    demand.update_statistics(statistics(0));
+    demand.receive(&Message {
+        statistics: statistics(1),
+        ..offers(&[11])
+    });
+    // the assigned job needs the one free seat, so the offer stays unacquired
+    assert!(demand.acquire(2).is_empty());
+    demand.finish(stuck, true);
+}
+
+#[test]
 fn overflow_is_not_acknowledgeable_and_duplicate_delivery_does_not_start_twice() {
     let mut demand = Demand::default();
     let message = offers(&[11, 12]);
