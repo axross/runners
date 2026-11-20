@@ -419,8 +419,9 @@ changes:
   scope is X2's work, and this schema has no `organization` pool key. Until X2
   adds one, a pool that sets `organization` fails as
   `pool[i].organization: unknown key`, with or without `scale_set`, and a fixture
-  pins that. X2 MUST keep `scale_set` combined with `organization` rejected when
-  it adds the key: a repository an organisation owns uses a repository pool.
+  pins each of the two. X2 MUST keep `scale_set` combined with `organization`
+  rejected when it adds the key: a repository an organisation owns uses a
+  repository pool.
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
@@ -4473,10 +4474,12 @@ need CRLF build it from the stored text.
   on-demand rules: the scale-set name and the routing label's character set, each
   kind of scale-set collision (an equal or hyphen-extended name, against another
   scale-set name, a logical `name` or a same-repository label, in both orders and
-  ignoring case), the `organization` key being unknown, the Mac rejection, and the
-  order and lines of the problems. Each expectation names the profile
-  (`axpc` for Windows, `axmc` for macOS), the outcome, the problems whole, with their
-  lines and in order, and `contains` and `lacks` strings checked against the problems
+  ignoring case), the `organization` key being unknown with and without
+  `scale_set`, the Mac rejection, and the order and lines of the problems, including
+  a pool's `scale_set` problem before its `labels` problem and a pool whose
+  `scale_set` is rejected joining the label collisions as an always-on pool. Each
+  expectation names the profile (`axpc` for Windows, `axmc` for macOS), the
+  outcome, the problems whole, with their lines and in order, and `contains` and `lacks` strings checked against the problems
   and, for an accepted file, a description of its plan. An unknown or misspelled key
   fails the read, and the test fails when a fixture has no expectation or an
   expectation has no fixture. Some inputs are built at run time because a stored file
@@ -4553,9 +4556,9 @@ The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Four more steps run on Linux only: the
-base-address, instance-roots, build-definition, release-overrides, and
-agent-overrides tests again with `--release` and `MARSHAL_EXPECT_RELEASE=1`, which
-makes each fail if built in the wrong profile;
+base-address, instance-roots, build-definition, release-overrides,
+agent-overrides, and scale-set client tests again with `--release` and
+`MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
@@ -4726,8 +4729,8 @@ cross-compilation and no cache action, and:
 2. writes the version with `set-release-version.sh`, and maps the installer's
    version, as [Installers](#installers) describes;
 3. runs the CLI's base-address, instance-roots, build-definition, release-overrides,
-   and agent-overrides tests and the app's mode-dispatch tests with `--release` and
-   `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
+   agent-overrides, and scale-set client tests and the app's mode-dispatch tests
+   with `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
    profile, on the target itself;
 4. installs `tauri-cli` with `cargo install tauri-cli --version =<pin> --locked`
    into a directory under `$RUNNER_TEMP`, with the pin read from
