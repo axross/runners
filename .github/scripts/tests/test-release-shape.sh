@@ -13,11 +13,12 @@
 # written, or with its run before it or not exactly once, with the word check,
 # FEED_CHECK_SHA256, update-tools or marshal-feed-check on any other line
 # (quoted or in a comment too), against a SHA-256 from another update-tool
-# output, or without unsigned/SHA256SUMS; a step condition that could skip a
-# check; a write to SHA256SUMS in the build's assemble job; PATH, BASH_ENV, ENV
-# or SYSTEM_BIN set in release.yaml; and a way past a failed job, whatever the
-# case of its status function. a change the test cannot find in the files fails
-# the test, so it cannot go stale and pass.
+# output or with no such entry on the comparing step, or without
+# unsigned/SHA256SUMS; a step condition that could skip a check; a write to
+# SHA256SUMS in the build's assemble job; PATH, BASH_ENV, ENV or SYSTEM_BIN set
+# in release.yaml; and a way past a failed job, whatever the case of its status
+# function. a change the test cannot find in the files fails the test, so it
+# cannot go stale and pass.
 # shellcheck disable=SC2016 # the texts the changes find and replace are literal, not expansions.
 set -euo pipefail
 

@@ -21,15 +21,15 @@
 //   - an option or variable name built at run time, such as `find "$option"` or
 //     `read -r "$name"` and `printf -v "$name"`;
 //   - an assignment through `${PATH:=...}`, and any environment variable other
-//     than PATH, BASH_ENV and ENV;
-//   - in assemble-signed, `eval`, a sourced file, an indirect variable name, and
-//     control flow that skips the feed check run, such as an earlier `exit` or an
-//     enclosing condition: it finds the run line once, after the hashing block,
-//     and does not check that it executes.
-// it also does not see a write to SHA256SUMS in release-build.yaml's assemble
-// job other than by a redirection, tee, cp or mv, or a step condition in attest
-// or release that skips a step, such as `if: false`. M2's signing job is added
-// to this check in its own pull request, under REVIEW.md's release lens.
+//     than PATH, BASH_ENV and ENV.
+// in assemble-signed it compares text: it does not follow `eval`, a sourced
+// file or an indirect variable name, and it finds the feed check run line once,
+// after the hashing block, without checking that it executes, so an earlier
+// `exit` or an enclosing condition can skip it. it also does not see a write to
+// SHA256SUMS in release-build.yaml's assemble job other than by a redirection,
+// tee, cp or mv, or a step condition in attest or release that skips a step,
+// such as `if: false`. M2's signing job is added to this check in its own pull
+// request, under REVIEW.md's release lens.
 import { readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
