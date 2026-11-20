@@ -333,7 +333,11 @@ that both Rust toolchain files name one channel and that `app/tauri-cli.version`
 holds one exact version, the test of the script that reads that version
 (`test:tauri-cli-version`), and `check:app-lock`, which fails when the app's
 lockfile resolves a crate `marshal-cli` builds with to another version than the
-CLI's. The same workflow also runs a
+CLI's. Before that run, the job prepares the editor rendering gate with
+`mise run prepare:app-render` and installs Chromium's OS libraries on its disposable
+runner. After it, the job runs `mise run test:app-render`, which `check` does not
+include, and keeps the gate's screenshots and measurements as the `editor-renders`
+artifact for 14 days, whether or not the gate passed. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the

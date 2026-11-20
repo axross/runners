@@ -4478,6 +4478,12 @@ the gates that cover it, so a change to the library knows what the app relies on
   log folder and file mode (`private::current_uid`, `ensure_private_directory` and
   `FILE_MODE`), and the log's timestamp (`runtime::name::stamp`). It adds no message to
   the protocol: a new message follows [Version Rules](#version-rules).
+- The client exposes `config_read`, `config_edit` and `config_reload`, with typed
+  `ConfigRead`, `ConfigChange` and `PoolEffect` answers. Their status and effect
+  names remain strings, so an unknown future name does not break decoding.
+  The session preserves structured configuration problems and passes each request
+  through the same connection as its other actions. Method negotiation controls
+  whether the window offers editing.
 - `cli/helpers/fake_docker.rs` is also built as the `fake-docker` binary of the app's
   executable package, so the app's tests can run the exporter child against a fake
   engine. The source stays under `cli/`; the CLI's own tests build it as before.

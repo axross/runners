@@ -9,11 +9,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use marshal_cli::agent::Launch;
+use marshal_cli::agent::config::{ConfigChange, ConfigRead, Problem};
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::UpdateEnding;
 use marshal_cli::github_status::GithubStatus;
 use marshal_view::{Clock, View};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 /// what the session asks of a connected agent.
@@ -44,11 +45,49 @@ pub enum Method {
     },
 }
 
+/// what the editor asks of the agent's configuration methods.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ConfigRequest {
+    Read,
+    /// the write path's operations, as `config_edit` takes them, against the file at
+    /// `revision`; with `check` nothing is written.
+    Edit {
+        revision: String,
+        edits: serde_json::Value,
+        check: bool,
+    },
+    Reload {
+        revision: String,
+        check: bool,
+    },
+    /// the optional, separately chosen clean-up after an apply. No token is read.
+    RemoveReleasedToken {
+        repository: String,
+    },
+}
+
+/// the agent's answer to a [`ConfigRequest`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ConfigAnswer {
+    Read(ConfigRead),
+    Change(ConfigChange),
+    TokenRemoved,
+}
+
 /// why a call got no result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Failure {
     /// the agent answered `busy`.
     Busy(String),
+    /// a configuration method was refused with one of its own codes, such as
+    /// `config_changed` or `config_invalid`, with the problems the agent named.
+    Config {
+        code: String,
+        message: String,
+        problems: Vec<Problem>,
+    },
     /// the token store failed; `detail` is its kind and code, when the agent gave them.
     Store {
         detail: Option<String>,
@@ -75,6 +114,7 @@ impl Failure {
             Self::Busy(_) => "The agent is busy. Try again in a moment.".to_string(),
             Self::Store { .. } => "The token store refused the request.".to_string(),
             Self::Refused(words) | Self::Other(words) => marshal_view::plain(words),
+            Self::Config { message, .. } => marshal_view::plain(message),
             Self::Lost => "Marshal has lost contact with the agent.".to_string(),
             Self::TimedOut => {
                 "The agent has not answered yet. The list shows what it is doing.".to_string()
@@ -135,6 +175,11 @@ pub trait Link: Send + Sync + 'static {
         &self,
         version: &str,
     ) -> impl Future<Output = Result<Option<u32>, Failure>> + Send;
+    /// calls a configuration method, or separately removes a released repository's token.
+    fn config(
+        &self,
+        request: ConfigRequest,
+    ) -> impl Future<Output = Result<ConfigAnswer, Failure>> + Send;
 }
 
 /// what the agent said of itself in `welcome`.
@@ -144,6 +189,9 @@ pub struct AgentInfo {
     pub version: String,
     /// whether it lists `drain_for_update`.
     pub drains: bool,
+    /// whether it lists `config_read`, `config_edit` and `config_reload`, without which
+    /// the window offers no editor.
+    pub edits: bool,
 }
 
 /// a connection and what the agent sends on it.

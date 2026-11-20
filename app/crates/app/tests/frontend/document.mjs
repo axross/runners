@@ -53,6 +53,39 @@ export class Element {
     }
     this.children.push(...nodes);
   }
+  get classList() {
+    const names = () => this.getAttribute("class")?.split(" ") ?? [];
+    return { contains: (name) => names().includes(name) };
+  }
+  /** this element or the nearest ancestor matching one of `.name` or `[name]`, as a list. */
+  closest(selector) {
+    const matches = (element) =>
+      selector.split(",").some((part) => {
+        const simple = part.trim();
+        return simple.startsWith(".")
+          ? element.classList.contains(simple.slice(1))
+          : element.attributes.has(simple.slice(1, -1));
+      });
+    for (let element = this; element; element = element.parent) {
+      if (matches(element)) return element;
+    }
+    return null;
+  }
+  /** the first descendant matching the simple class or tag selectors the cards use. */
+  querySelector(selector) {
+    return (
+      [...this.descendants()].find(
+        (element) =>
+          element !== this &&
+          (selector.startsWith(".")
+            ? element
+                .getAttribute("class")
+                ?.split(" ")
+                .includes(selector.slice(1))
+            : element.tag === selector),
+      ) ?? null
+    );
+  }
   replaceChildren(...nodes) {
     this.children = [];
     this.append(...nodes);

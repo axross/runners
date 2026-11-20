@@ -117,6 +117,19 @@ release, with its download URL and checksum in `mise.lock`, so it needs no compi
 in CI and no exception here. [App](../operations/app.md#licence-notices) describes how
 the notices check holds that version.
 
+The Linux x64 editor rendering gate adds only the test controller `playwright-core`
+under `app/crates/app/tests/render/`, not a dependency of the bundled page or the
+app's Rust workspaces. Its npm lock records the package integrity; preparation
+uses `npm ci --ignore-scripts`. `browser.json` in that directory pins the Chromium
+archive's version, HTTPS URL and SHA-256, computed from the real download.
+Preparation MUST verify that checksum before extracting or running the browser.
+Refresh the controller, browser pin and lock together, then rerun the render gate.
+To regenerate the lock after changing the manifest, use
+`npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
+OS libraries are prepared only on the disposable GitHub-hosted Check runner;
+the worktree preparation task installs no system package and the gate downloads
+nothing. The fake bridge has no credential, live agent or configuration-file access.
+
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain and
 `tauri-cli`, whose exceptions are recorded below, WiX is the one tool the release
 build fetches.
@@ -1291,10 +1304,14 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
   again, set a repository's token, remove a repository's token, set an
-  organisation's token, remove an organisation's token, hide the window and open a
-  runner's job. The
-  confirmation window's
-  grants the two commands that read its question and answer it. On macOS, where the
+  organisation's token, remove an organisation's token, hide the window, open a
+  runner's job and forward configuration requests. `configuration` accepts a typed
+  request for read, edit, reload or a separately chosen repository-token removal.
+  The three configuration methods keep all file access with the agent; the page
+  supplies no path, token, schema version or lifecycle field. Removal forwards the
+  existing `token_remove` method, returns a store refusal separately from the saved
+  edit, and reads no token. The confirmation window's capability grants the two
+  commands that read its question and answer it. On macOS, where the
   unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
   the main window `core:window:allow-start-dragging` and
   `core:window:allow-internal-toggle-maximize`, to drag and zoom it by its header
