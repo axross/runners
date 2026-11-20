@@ -1186,8 +1186,11 @@ stated in A Token Carries Only Its Pool Kind's Permissions above.
   Marshal changes no group, repository or organisation policy.
 - An organisation pool and another pool for that organisation or one of its
   repositories MUST NOT share a custom label when their OS labels match.
-  Validation checks pools on this host. Across hosts this remains an operator
-  and review rule, since no host knows another host's configuration.
+  An on-demand pool's only label is its scale-set name, so it shares a label with
+  an organisation pool only when that pool lists the name, never through the
+  default routing label or the platform labels. Validation checks pools on this
+  host. Across hosts this remains an operator and review rule, since no host
+  knows another host's configuration.
 - A registered idle runner may wait indefinitely for a job. The group can be
   opened, or the runner moved to another group, after a successful check and
   before that job arrives. Marshal neither deletes such runners nor polls group

@@ -59,7 +59,8 @@ name and a message session that supplies job demand to an **On-Demand Pool**.
 
 **On-Demand Pool** - an **Execution Pool** with the optional TOML `scale_set`
 setting, whose **Resident Agent** starts **Ephemeral Runners** in response to
-demand from a **Runner Scale Set**.
+demand from a **Runner Scale Set**. An **Organisation Pool** is never
+on-demand.
 
 **Organisation Pool** - an **Execution Pool** whose TOML `organization` and
 `runner_group` select one named group in a GitHub organisation instead of one

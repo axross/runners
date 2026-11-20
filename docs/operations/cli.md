@@ -423,7 +423,9 @@ changes:
   A routing label outside that character set makes an on-demand configuration
   invalid at `routing_label`. A scale-set name MUST NOT equal or extend another
   pool's scale-set name or logical `name` by a hyphen, in either direction, on
-  the same host. It MUST NOT equal another pool's label in the same repository.
+  the same host. It MUST NOT equal another pool's label in the same repository, and
+  an organisation pool of its owner MUST NOT list it as a label. Neither pair uses
+  `routing_label` or the platform labels, which an on-demand pool does not carry.
   A pool may use its own logical name as its scale-set name or use a distinct,
   non-colliding alias. The scale-set name is its only label; neither the platform
   labels nor `routing_label` is added. Mac pools reject the key at
@@ -439,7 +441,10 @@ changes:
   owns uses a repository pool. JSON gains no organisation keys. With the same OS, an organisation pool must not share a
   non-platform label with another pool of that organisation or any of its repositories,
   comparing logins and labels without case. This includes the default `routing_label`,
-  so overlapping pools need distinct explicit labels. Repository-only files retain their
+  so overlapping pools need distinct explicit labels. An on-demand pool of one of that
+  organisation's repositories is compared by its scale-set name alone, its only label:
+  it clashes with an organisation pool only when that pool's labels include the name,
+  never through the default `routing_label` or the platform labels. Repository-only files retain their
   validation rules. A pool naming neither target reports
   `pool[i]: names neither repository nor organization`, and one naming both reports
   `pool[i]: names both repository and organization`. An organisation pool without
@@ -554,7 +559,8 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
    3. An ambiguous routing label. For the same repository, a pair where either pool
       is on-demand is not compared, because an on-demand pool's only label is its
       scale-set name, which step 7.1 compares. For an organisation pool, it is the
-      organisation routing overlap in the Organisation pools bullet.
+      organisation routing overlap in the Organisation pools bullet, which compares
+      an on-demand pool by its scale-set name.
 
    Then on macOS the budget totals.
 
@@ -4565,7 +4571,9 @@ need CRLF build it from the stored text.
   kind of scale-set collision (an equal or hyphen-extended name, against another
   scale-set name, a logical `name` or a same-repository label, in both orders and
   ignoring case), `scale_set` on an organisation pool being refused whatever its
-  value, the Mac rejection, and the order and
+  value, an organisation pool beside an on-demand pool of the same owner (accepted
+  with the default `routing_label`, rejected when its labels include the scale-set
+  name, in both pool orders and ignoring case), the Mac rejection, and the order and
   lines of the problems, including
   a pool's `scale_set` problem before its `labels` problem and a pool whose
   `scale_set` is rejected joining the label collisions as an always-on pool. Each

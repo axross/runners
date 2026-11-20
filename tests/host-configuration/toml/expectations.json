@@ -106,6 +106,15 @@
     ],
     "lacks": []
   },
+  "accepted/windows-organization-beside-on-demand.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "pool[0]: name=alpha repository=Octo (runner group builders) runners=2"
+    ],
+    "lacks": []
+  },
   "accepted/windows-organization.toml": {
     "profile": "axpc",
     "outcome": "accept",
@@ -362,6 +371,15 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/on-demand-scale-set-is-organization-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 12: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels 'axpc-demand' also appear at pool[0]; give each pool its own labels"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/order-schema-then-top-level-then-lifecycle-then-pools.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -406,6 +424,15 @@
     "outcome": "reject",
     "problems": [
       "line 12: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels 'GPU' also appear at pool[0]; give each pool its own labels"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-label-is-on-demand-scale-set-name.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 11: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels 'AXPC-Demand' also appear at pool[0]; give each pool its own labels"
     ],
     "contains": [],
     "lacks": []

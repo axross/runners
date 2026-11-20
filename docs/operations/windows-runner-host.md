@@ -250,7 +250,9 @@ A pool configured with `organization` uses an organisation token, not any of tha
 organisation's repository tokens. Before starting one, satisfy the Organisation
 Pools Share a Runner Group's Trust Boundary section of
 [Security](../conventions/security.md). The TOML Configuration section of
-[CLI](./cli.md) describes `organization` and `runner_group`.
+[CLI](./cli.md) describes `organization` and `runner_group`. An organisation pool is
+never on-demand: `scale_set` is refused on it, and an on-demand pool for a repository
+the organisation owns is a repository pool with that repository's token.
 
 Create the token while signed in as an owner of the organisation:
 
