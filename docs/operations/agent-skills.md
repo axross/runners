@@ -274,14 +274,16 @@ bounded ways, each the maintainer's choice:
   no human step is verified there instead of naming one.
 
 The concrete counterexample to the first quoted rule is the review subagent
-itself: denying GitHub write tools would remove the direct publication that rule
-requires, a deny-list naming one host's session-starting or messaging tools
-would not travel, and a reader still needs the shell and the tracker to read the
-change. The accepted exposure is that a `reviewer` instance, whose definition
-carries the conditional posting permission, can still write through the shell
-or the tracker, or start another actor through a non-Agent tool, and the host
-would not stop it. The alternatives are a second, posting-capable definition and
-a deny-list that also names GitHub write tools and session-starting and
+itself: denying every GitHub write tool would remove the direct publication that
+rule requires; a deny-list naming only one connector's non-review GitHub write
+tools, or one host's session-starting or messaging tools, would not travel and
+would leave the same writes reachable through the shell; and a reader still
+needs the shell and the tracker to read the change. The accepted exposure is
+that a `reviewer` instance, whose definition carries the conditional posting
+permission, can still write through the shell or the tracker, or start another
+actor through a non-Agent tool, and the host would not stop it. The alternatives
+are a second, posting-capable definition and a deny-list that also names GitHub
+write tools, all of them or only the non-review ones, and session-starting and
 messaging tools; the maintainer chose one definition and left the rest
 instruction-only, and accepted the exposure.
 
@@ -292,9 +294,9 @@ maintainer's merge of the pull request that closes
 review route and grant amendments it served. This amendment follows the plan the
 maintainer approved in
 [issue #151](https://github.com/axross/runners/issues/151), recorded at
-[this comment](https://github.com/axross/runners/issues/151#issuecomment-7049089352),
-which is its adoption-evidence locator, and, like the earlier ones, is adopted
-by the maintainer's merge of the pull request that closes that issue. Its scope
+[this run-state comment](https://github.com/axross/runners/issues/151#issuecomment-7049089352),
+and, like the earlier ones, is adopted by the maintainer's merge of the pull
+request that closes that issue, which is its adoption evidence. Its scope
 is the Claude Code independent-review route only; the Amp and Codex routes are
 unaffected. It changes no installed skill, host restriction, or plan and review
 gate, and authorizes no upstream publication. Reassess it when the installed
