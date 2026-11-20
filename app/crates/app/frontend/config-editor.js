@@ -91,34 +91,31 @@ function changedFields(row, specs, prefix) {
   });
 }
 
-/** updates source entries before removals shift indices, then appends new entries.
+/** an array of tables' operations: kept source entries at their file index, removals from
+ * the end, then new entries appended at their resulting index. `nested` adds the
+ * operations of what an entry holds, at the entry's path.
  * @throws the problem from an invalid numeric field.
  */
-function volumeEdits(pool, specs, prefix) {
-  const edits = pool.volumes
-    .filter((v) => v.source !== null && !v.removed)
-    .flatMap((v) => changedFields(v, specs, `${prefix}.volumes[${v.source}]`));
-  for (const volume of pool.volumes
-    .filter((v) => v.source !== null && v.removed)
+function entryEdits(rows, specs, array, nested = () => []) {
+  const kept = rows.filter((row) => row.source !== null && !row.removed);
+  const edits = kept.flatMap((row) => {
+    const at = `${array}[${row.source}]`;
+    return [...changedFields(row, specs, at), ...nested(row, at)];
+  });
+  for (const row of rows
+    .filter((row) => row.source !== null && row.removed)
     .reverse()) {
-    edits.push({
-      op: "remove_entry",
-      path: `${prefix}.volumes[${volume.source}]`,
-    });
+    edits.push({ op: "remove_entry", path: `${array}[${row.source}]` });
   }
-  let index = pool.volumes.filter(
-    (v) => v.source !== null && !v.removed,
-  ).length;
-  for (const volume of pool.volumes.filter(
-    (v) => v.source === null && !v.removed,
-  )) {
-    edits.push({
-      op: "add_entry",
-      array: `${prefix}.volumes`,
-      values: values(volume, specs, `${prefix}.volumes[${index}]`),
+  rows
+    .filter((row) => row.source === null && !row.removed)
+    .forEach((row, n) => {
+      const at = `${array}[${kept.length + n}]`;
+      edits.push(
+        { op: "add_entry", array, values: values(row, specs, at) },
+        ...nested(row, at),
+      );
     });
-    index += 1;
-  }
   return edits;
 }
 
@@ -320,36 +317,12 @@ export class ConfigEditor {
    * @throws the problem from an invalid numeric field.
    */
   edits() {
-    const edits = changedFields(this.host, this.access.settings, "");
-    for (const pool of this.pools.filter(
-      (p) => p.source !== null && !p.removed,
-    )) {
-      const prefix = `pool[${pool.source}]`;
-      edits.push(
-        ...changedFields(pool, this.access.pool, prefix),
-        ...volumeEdits(pool, this.access.volume, prefix),
-      );
-    }
-    for (const pool of this.pools
-      .filter((p) => p.source !== null && p.removed)
-      .reverse()) {
-      edits.push({ op: "remove_entry", path: `pool[${pool.source}]` });
-    }
-    let index = this.pools.filter(
-      (p) => p.source !== null && !p.removed,
-    ).length;
-    for (const pool of this.pools.filter(
-      (p) => p.source === null && !p.removed,
-    )) {
-      edits.push({
-        op: "add_entry",
-        array: "pool",
-        values: values(pool, this.access.pool, `pool[${index}]`),
-      });
-      edits.push(...volumeEdits(pool, this.access.volume, `pool[${index}]`));
-      index += 1;
-    }
-    return edits;
+    return [
+      ...changedFields(this.host, this.access.settings, ""),
+      ...entryEdits(this.pools, this.access.pool, "pool", (pool, at) =>
+        entryEdits(pool.volumes, this.access.volume, `${at}.volumes`),
+      ),
+    ];
   }
 
   set(row, key, value) {
