@@ -1,7 +1,8 @@
 # Agent Sessions
 
 How agent sessions start in this project, the hooks that run during one, how Amp
-and Codex runs handle delivery authorization, Claude Code's plan-gate delivery
+and Codex runs handle delivery authorization, how a session asks the maintainer
+(launched sessions and subagents included), Claude Code's plan-gate delivery
 confirmation, Amp's plan-gate confirmation for archiving review child threads,
 host-owned CI and review waits, the subagents a session can delegate to,
 including the Claude Code review child session, how a session's usage is
@@ -229,6 +230,126 @@ Rust toolchain itself is the recorded exception to the checksum rule in
 A Rust task run without the toolchain fails at once with one line that names this
 script, never with a long tool error and never by skipping, so a session cannot
 report a change as checked when the Rust gates did not run.
+
+## Asking the Maintainer
+
+[`AGENTS.md`](../../AGENTS.md) states, for every host, the rule for asking the
+maintainer. This section names Claude Code's mechanism and says how launched
+sessions, launching sessions, and subagents use it. The installed
+[Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md)
+practice owns how a question is framed, recovered, and made to fall back, and
+this section does not restate it.
+
+In Claude Code the mechanism is `AskUserQuestion`. The maintainer owns scope,
+product behavior, a finding's disposition such as dismissing a Critical or Major
+advisory finding, an additional review round, and a plan approval with its
+delivery confirmation. The plan-approval question of the plan-gate confirmation
+below is asked with `AskUserQuestion` too, except in plan mode, where
+`ExitPlanMode` carries plan approval, as that tool's live contract states.
+Plan-mode approval, like approval that arrives some other way, keeps the
+plan-gate confirmation's rule for collecting the delivery confirmation.
+
+**Guidelines:**
+
+- MUST ask each of these decisions with `AskUserQuestion` whenever the session
+  exposes it and its live contract qualifies it for that question, however the
+  session was started. List options as prose in the turn output only when no
+  mechanism is eligible.
+- MUST begin a wait for a maintainer decision with the question, and handle its
+  outcome as the Choosing the Route section of the practice states:
+  - Answered by the maintainer: use the answer.
+  - Accepted and still awaiting a reply: keep the question pending and do not
+    ask it again.
+  - Closed, cancelled, errored, reported missing, or ended without an answer:
+    present it again. If delivery keeps failing, put it in the turn output,
+    report the limitation, and only then end the turn with the dependent work
+    blocked.
+- MUST NOT ask a question for a wait on review or check results. Those waits are
+  as Waiting on CI and Review below describes.
+
+### Judge eligibility from the session
+
+**Guidelines:**
+
+- MUST judge eligibility from the session's tool list and the tool's live
+  contract.
+- MUST NOT read any of these as making the tool ineligible: a seeded prompt's
+  framing as an automated or "not from the user" event, which says who sent that
+  message and not whether the maintainer can answer a question; cloud or
+  headless hosting; or the absence of earlier human messages.
+- MUST treat only a human-authored answer to the question, not the tool's
+  acceptance or an error, as showing that the maintainer answered it. An error
+  alone does not show that no one can answer.
+- MUST let the host's own statement that the tool is unavailable or prohibited
+  for the session govern, and report the conflict.
+
+### Ask from a launched session
+
+A launched session is a separate session that another session started, with
+`create_session` or otherwise. A subagent is not one.
+
+**Guidelines:**
+
+- MUST ask the maintainer directly with its own eligible mechanism, and report to
+  its launcher at each outcome:
+  - while the question is with the maintainer and still pending, saying so, so
+    the launcher does not ask it again;
+  - when the maintainer answers, with the answer;
+  - when the question ends without an answer, with what stays blocked.
+- MUST send the pending report in the same turn as the question, alongside it or
+  just before it. A report never takes the question's place, and it never ends
+  the turn before the question is asked.
+- MUST read a launch prompt's statement that the launcher handles communication
+  with the maintainer, or its instruction to stop and report or to send the
+  options to the launcher, as the duty to report. It does not make the session's
+  mechanism ineligible, and it does not make the launcher the only channel.
+- MUST take only the maintainer's own message in the launched session's
+  conversation as routing a decision some other way. A launch prompt that quotes
+  or paraphrases the maintainer does not, and a session that is unsure asks.
+- MUST return the question and its partial results to the launcher, in place of
+  asking, only when no mechanism is eligible, as the Execution Result section of
+  [Loop Engineering's assignment contracts](../../.claude/skills/loop-engineering/references/implementation-package.md)
+  states.
+
+### Launch a session
+
+A session that writes another session's starting prompt for separately owned
+work, with `create_session` or otherwise, shapes the route the launched session
+takes.
+
+**Guidelines:**
+
+- MUST say in the prompt that maintainer decisions are asked directly with the
+  launched session's own question tool and reported back, and MUST NOT present
+  the launcher as the launched session's only channel.
+- MUST pass on maintainer answers that affect the launched session's work,
+  quoting the answer and saying where and when the maintainer gave it. The
+  launched session may treat such an answer as settling a decision it is waiting
+  on. It never treats it as the maintainer's own answer to a decision that only
+  the maintainer's message in the session can settle: a rerouting, or the
+  answers in the next guideline. When unsure whether a passed-on answer settles a
+  decision, it asks.
+- MUST NOT let a passed-on answer stand in for an answer the maintainer must give
+  in the launched session itself: a plan approval with its delivery
+  confirmation, or a tool request the host conditions on the user's own request.
+- This rule does not cover subagent assignments or the independent-review
+  child's assignment.
+
+### Return a decision from a subagent
+
+Claude Code's [subagent documentation](https://code.claude.com/docs/en/sub-agents)
+lists `AskUserQuestion` among the tools it removes from every subagent "even when
+listed in the `tools` field" (Available tools). That is documented, not
+exercised in this repository. The configured implementer, reviewer, and
+investigator therefore MUST return an unresolved maintainer decision to their
+caller, which asks it. The independent-review child is such a subagent, and its
+assignment stays as Development Workflow defines it.
+
+The same page says a fork receives its parent conversation's exact tool pool, so
+a fork is inferred to keep `AskUserQuestion`, which is also not exercised here. A
+fork asks with `AskUserQuestion`, as the first guideline of Asking the
+Maintainer states, and returns any question it asked, and the answer, to its
+caller with its result.
 
 ## Confirming Delivery at the Plan Gate in Claude Code
 

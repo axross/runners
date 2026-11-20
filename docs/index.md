@@ -54,7 +54,8 @@ names every other document the change corrects.
   and the independent review route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, their hooks, Amp's and Codex's delivery
-  authorization, the plan-gate delivery confirmation, Amp's plan-gate archive
+  authorization, asking the maintainer (launched sessions and subagents
+  included), the plan-gate delivery confirmation, Amp's plan-gate archive
   confirmation for review child threads, subagents including the Claude Code
   review child session, and telemetry.
 - [operations/development-setup.md](./operations/development-setup.md) - the
