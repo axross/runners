@@ -1,4 +1,5 @@
-//! one repository entry: its fields, then whether it takes part in the cross-entry
+//! one pool entry: its fields, its target (a repository, or in a TOML file an
+//! organisation and runner group), then whether it takes part in the cross-entry
 //! checks.
 
 use std::path::Path;
@@ -17,7 +18,7 @@ use super::limits::{
 use super::macos_pool;
 use super::paths;
 use super::patterns;
-use super::plan::{Entry, PlannedVolume};
+use super::plan::{Entry, PlannedVolume, PoolTarget};
 use super::problem::{Key, KeyPath, Kind};
 use super::volumes::volume_definitions;
 
@@ -37,6 +38,10 @@ pub(super) struct EntryFields {
     owner: Field,
     #[serde(default)]
     repository: Field,
+    #[serde(default)]
+    organization: Field,
+    #[serde(default)]
+    runner_group: Field,
     #[serde(default)]
     name: Field,
     #[serde(default)]
@@ -77,7 +82,7 @@ pub fn read_entry(
     let path = KeyPath::root().key(Key::Repositories).index(index);
     let node = fields::read_object::<EntryFields>(value, &path, reader, &mut cx.errors)?;
 
-    let (owner, repository) = read_owner_and_repository(&node, &path, cx);
+    let target = read_target(&node, &path, cx);
     let token_path = read_token_path(&node.token_path, &path, cx);
     let os = read_os(&node.os, &path, cx);
     let labels = registration_labels(
@@ -131,8 +136,8 @@ pub fn read_entry(
     }
 
     let os_usable = !has_os(cx) || os.is_some();
-    let (Some(owner), Some(repository), Some(token_path), Some(labels), Some(volumes), Some(slots)) =
-        (owner, repository, token_path, labels, volumes, slots)
+    let (Some(target), Some(token_path), Some(labels), Some(volumes), Some(slots)) =
+        (target, token_path, labels, volumes, slots)
     else {
         return None;
     };
@@ -146,8 +151,7 @@ pub fn read_entry(
     Some(Entry {
         index,
         path: reader.entry_path(index),
-        owner: owner.to_string(),
-        repository: repository.to_string(),
+        target,
         name: name.clone(),
         slots,
         token_path: token_path.map(str::to_string),
@@ -197,6 +201,74 @@ fn read_token_path<'a>(
         ),
     }
     .map(Some)
+}
+
+/// preserves JSON's repository contract; TOML cross-key errors accumulate even
+/// when an individual target or group value is invalid.
+fn read_target(node: &EntryFields, path: &KeyPath, cx: &mut Context) -> Option<PoolTarget> {
+    if !cx.reader.format().carries_settings() {
+        return read_repository(node, path, cx);
+    }
+    let organization_present = node.organization.get().is_some();
+    let repository_present = node.repository.get().is_some();
+    match (repository_present, organization_present) {
+        (true, true) => cx.errors.add(path.clone(), Kind::BothTargets),
+        (false, false) => cx.errors.add(path.clone(), Kind::NeitherTarget),
+        _ => {}
+    }
+    let repository = repository_present
+        .then(|| read_repository(node, path, cx))
+        .flatten();
+    let organization = organization_present
+        .then(|| {
+            fields::string(
+                &node.organization,
+                &path.key(Key::Organization),
+                &mut cx.errors,
+                patterns::is_owner,
+                "a GitHub owner name (letters, digits and hyphens)",
+            )
+        })
+        .flatten();
+    let runner_group = if organization_present {
+        if node.runner_group.get().is_none() {
+            cx.errors
+                .add(path.key(Key::RunnerGroup), Kind::RunnerGroupRequired);
+            None
+        } else {
+            fields::string(
+                &node.runner_group,
+                &path.key(Key::RunnerGroup),
+                &mut cx.errors,
+                |text| !text.trim().is_empty() && !text.chars().any(char::is_control),
+                "a non-empty runner group name without control characters",
+            )
+        }
+    } else {
+        if node.runner_group.get().is_some() {
+            cx.errors
+                .add(path.key(Key::RunnerGroup), Kind::OnlyWithOrganization);
+        }
+        None
+    };
+    match (repository_present, organization_present) {
+        (true, false) => repository,
+        (false, true) => Some(PoolTarget::Organization {
+            organization: organization?.to_string(),
+            runner_group: runner_group?.to_string(),
+        }),
+        _ => None,
+    }
+}
+
+/// applies the reader's owner/repository layout without adding organisation rules
+/// to formats that cannot represent an organisation pool.
+fn read_repository(node: &EntryFields, path: &KeyPath, cx: &mut Context) -> Option<PoolTarget> {
+    let (owner, repository) = read_owner_and_repository(node, path, cx);
+    Some(PoolTarget::Repository {
+        owner: owner?.to_string(),
+        repository: repository?.to_string(),
+    })
 }
 
 /// reads the owner and the repository name, from the two keys of a format that has
@@ -296,6 +368,13 @@ fn read_volumes(
     path: &KeyPath,
     cx: &mut Context,
 ) -> Option<Vec<super::volumes::Volume>> {
+    if cx.reader.format().carries_settings() && node.organization.get().is_some() {
+        if node.volumes.get().is_some() {
+            cx.errors
+                .add(path.key(Key::Volumes), Kind::NotAllowedWithOrganization);
+        }
+        return Some(Vec::new());
+    }
     match cx.profile {
         Profile::Axpc => volume_definitions(&node.volumes, path, cx.reader, &mut cx.errors),
         Profile::Axmc => {

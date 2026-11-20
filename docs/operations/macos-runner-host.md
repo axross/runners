@@ -13,17 +13,23 @@ with the code that names it. [CLI](./cli.md) owns how the runtime works, and the
 rules the host is reviewed against are in [Security](../conventions/security.md). The
 Windows equivalent is [Windows Runner Host](./windows-runner-host.md).
 
-**No supported way to run axmc yet.** Since W1's installer pull request no `marshal`
-command line is built and no release carries a macOS file, so axmc has no supported
-way to run its runners until M2's Mac app; the maintainer accepted that gap. A Mac
-that runs the last command-line release keeps it; The Last Command-Line Release
-section of [CLI](./cli.md) identifies that release. That release is cut from `main` after M1,
-so its `start` and `build` run
-axmc's pools in Tart VMs; `v0.1.0` predates M1 and refuses `--profile axmc`. That
-release's tag holds this document's procedures with their
-commands: installing `marshal`, `build`, `start` and its clients `status`, `restart`,
-`stop` and `diagnostics`. Below, `start` and `build` name the library's entry points
-of those names, which that release ran as commands and which M2's Mac app is to run.
+**No supported app release for axmc yet.** W1's app release baseline builds no
+`marshal` command line and carries no macOS file; M2's Mac app remains the planned
+release route. During bounded F0 recovery, the temporary release workflow instead
+builds the fixed historical CLI, including the macOS bare binary and legacy pkg.
+[CLI Recovery](./cli-recovery.md) owns the actual-version installation lifecycle
+procedures. The recovery is not a supported parallel CLI product, and no recovery
+release version or native installer evidence is recorded
+yet. App source and normal builds remain; app publication resumes only after
+successful public F0 evidence and a separate reviewed restoration.
+
+A Mac that already runs the command line keeps it. The Last Command-Line Release
+section of [CLI](./cli.md) identifies the fixed historical tree, which includes M1,
+so its `start` and `build` run axmc's pools in Tart VMs; `v0.1.0` predates M1 and
+refuses `--profile axmc`. Runtime command procedures remain in that tree's copy
+of this document. Below, `start` and `build` name the library's entry points of
+those names, which the historical CLI runs as commands and which M2's Mac app is to
+run.
 
 `start` on the axmc profile runs the `os: "linux"` and `os: "macos"` pools of the
 configuration through the library; see
@@ -269,8 +275,8 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
 when the new one is complete. It is needed after installing Tart and Softnet, after
 any change of the library that raises the golden VM version or the image contract
 version, when the runtime reports a missing or mismatched golden VM, and when the
-freshness warnings ask for it. The last command-line release ran it as
-`marshal build --profile axmc`, at its tag.
+freshness warnings ask for it. The historical CLI runs it as
+`marshal build --profile axmc`; its fixed source tree keeps the command procedure.
 
 **Before you start**
 
@@ -392,6 +398,20 @@ first Mac check on #80
 booted a Linux VM beside two macOS VMs, so Linux VMs do not count against macOS's
 limit.
 
+### Organisation Pools
+
+For a pool configured with `organization`, create its token using the Organisation
+Pools procedure in [Windows Runner Host](./windows-runner-host.md). The GitHub steps
+are the same on either host. On the Mac, enter the token in the organisation's row
+under **Organisations** in the **Tokens** tab. The token stays in the login
+keychain, separate from the tokens in repository rows. The Tokens and a Locked
+Keychain section of [App](./app.md) covers a store failure; a GitHub refusal is a
+registration failure, not evidence that the keychain is locked.
+
+Removing an organisation's last pool does not remove its token. Before removing it,
+choose **Remove Token** on the organisation's row. If the pool is already gone, delete
+the keychain item with the account `github.com/<org>`.
+
 ### Starting, watching and stopping
 
 Before the first `start` on axmc, confirm that every self-hosted job in each
@@ -401,9 +421,9 @@ place of `axmc` when `labels` replaces it. A job that names neither, such as one
 names only `self-hosted`, can land on axmc. Search each repository's workflows for
 `runs-on` and check every hit.
 
-With the last command-line release, the golden VM is built once and the pools are
-started from a terminal of the signed-in session, as that release's tag gives with
-the commands. `start` validates the configuration, opens its log under
+With the historical CLI, the golden VM is built once and the pools are
+started from a terminal of the signed-in session, as the fixed historical tree's
+copy of this section gives with the commands. `start` validates the configuration, opens its log under
 `~/Library/Logs/marshal/`, checks Tart and Softnet, checks the golden VM of each
 configured OS, prepares every pool, and runs every slot until it is stopped. It also holds off idle
 sleep and watches for a sleep or a network change; see
@@ -632,11 +652,11 @@ the run goes in this order:
 1. Confirm that no Docker Desktop is installed, and record the macOS version, the
    literal output of `tart --version` and `softnet --version`, and Softnet's SUID bit
    as [Setting Up Softnet](#setting-up-softnet) lists it.
-2. Install the last command-line release's macOS binary with the macOS procedure at
-   its tag, since no later build carries one, and record its version and the commit
-   it was built from.
+2. Install the CLI with the actual-version macOS procedure in the recovery tag's
+   [CLI Recovery](./cli-recovery.md) guide. Record its version and both the
+   workflow/tag commit and the fixed historical program commit.
 3. Build the golden VM, then start the pools, with that release's `build` and
-   `start`, as its tag's copy of
+   `start`, as the fixed historical tree's copy of
    the Starting, watching and stopping section gives, with the
    sizing of [the example configuration](../../hosts/macos/runner-host.example.json).
    Record the golden VM's and Tart's cache's disk use.

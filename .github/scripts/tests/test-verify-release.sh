@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# runs verify-release.sh, the release gate, against temporary release
-# directories, and checks that the asset globs in release/.releaserc.json match
-# exactly the files the gate passes, so the upload and the gate agree on the
-# names. each case checks the exit status and the cause the script names.
+# checks the retained app gate independently of the temporary CLI release
+# selection, whose asset globs are covered by test-cli-recovery-release.sh.
 set -euo pipefail
 
 gate="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/verify-release.sh"
-config="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/release/.releaserc.json"
 work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 
@@ -65,44 +62,6 @@ GITHUB_OUTPUT="" expect "the plan phase without GITHUB_OUTPUT" 1 "GITHUB_OUTPUT 
 release_files "${work}/exact"
 expect "the release phase with the exact files" 0 "are complete and match SHA256SUMS" \
   release "$version" "${work}/exact"
-
-# the asset globs @semantic-release/github uploads, relative to release/, must
-# each match one file and together the app executable, the MSI and SHA256SUMS.
-expect_assets() {
-  local directory="$1" pattern hits names=() problem=""
-  local -a assets
-  mapfile -t assets < <(node -e '
-    const config = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
-    const github = config.plugins.find((plugin) => [].concat(plugin)[0] === "@semantic-release/github");
-    for (const asset of github[1].assets) console.log(typeof asset === "string" ? asset : asset.path);
-  ' "$config")
-  if [[ ${#assets[@]} -ne 3 ]]; then
-    problem="${config} lists ${#assets[@]} asset globs, not 3"
-  fi
-  for pattern in "${assets[@]}"; do
-    [[ -z "$problem" ]] || break
-    if [[ "$pattern" != ../release-files/* ]]; then
-      problem="the asset glob ${pattern} is not under ../release-files/"
-      break
-    fi
-    hits="$(cd "$directory" && shopt -s nullglob && for file in ${pattern#../release-files/}; do if [[ -e "$file" ]]; then echo "$file"; fi; done)"
-    if [[ -z "$hits" || "$hits" == *$'\n'* ]]; then
-      problem="the asset glob ${pattern} matches '${hits//$'\n'/ }', not one file"
-      break
-    fi
-    names+=("$hits")
-  done
-  if [[ -z "$problem" && "$(printf '%s\n' "${names[@]}" | sort)" != "$(printf '%s\n' SHA256SUMS "$windows" "$windows_msi" | sort)" ]]; then
-    problem="the asset globs match ${names[*]}, not ${all_files}"
-  fi
-  if [[ -n "$problem" ]]; then
-    echo "FAIL the asset globs match the release files: ${problem}" >&2
-    failures=$((failures + 1))
-  else
-    echo "ok   the asset globs match the release files"
-  fi
-}
-expect_assets "${work}/exact"
 
 release_files "${work}/missing"
 rm "${work}/missing/${windows}"

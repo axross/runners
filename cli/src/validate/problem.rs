@@ -15,6 +15,8 @@ pub enum Key {
     Budget,
     Owner,
     Repository,
+    Organization,
+    RunnerGroup,
     Name,
     Slots,
     TokenPath,
@@ -41,12 +43,14 @@ pub enum Key {
 }
 
 impl Key {
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 29] = [
         Self::ImageName,
         Self::Repositories,
         Self::Budget,
         Self::Owner,
         Self::Repository,
+        Self::Organization,
+        Self::RunnerGroup,
         Self::Name,
         Self::Slots,
         Self::TokenPath,
@@ -76,7 +80,9 @@ impl Key {
     pub fn is_file_setting(self) -> bool {
         matches!(
             self,
-            Self::SchemaVersion
+            Self::Organization
+                | Self::RunnerGroup
+                | Self::SchemaVersion
                 | Self::RoutingLabel
                 | Self::Lifecycle
                 | Self::StartAtLogin
@@ -158,6 +164,11 @@ pub struct Location {
 pub enum Kind {
     /// a required key is absent or `null`.
     Missing,
+    BothTargets,
+    NeitherTarget,
+    RunnerGroupRequired,
+    OnlyWithOrganization,
+    NotAllowedWithOrganization,
     /// the value is not what the text describes, such as `a list`.
     MustBe(&'static str),
     MustBeIntegerUpTo(u32),
@@ -211,6 +222,12 @@ pub enum Kind {
     AmbiguousRouting {
         labels: String,
         other: usize,
+    },
+    OrganizationRoutingOverlap {
+        labels: String,
+        other: usize,
+        /// whether the shared labels include the file's `routing_label`.
+        routing_label_shared: bool,
     },
     MacosVmsOverLimit {
         total: u32,
@@ -308,6 +325,11 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
     } = wording;
     let per_pool = key_name(Key::Slots);
     let text = match kind {
+        Kind::BothTargets => "names both repository and organization".to_string(),
+        Kind::NeitherTarget => "names neither repository nor organization".to_string(),
+        Kind::RunnerGroupRequired => "required with organization".to_string(),
+        Kind::OnlyWithOrganization => "only with organization".to_string(),
+        Kind::NotAllowedWithOrganization => "not allowed with organization".to_string(),
         Kind::MustBeIntegerUpTo(max) => format!("must be an integer from 1 to {max}"),
         Kind::CpuCountOutOfRange => CPU_RANGE.to_string(),
         Kind::CpuCountRoundsToZero => format!(
@@ -341,6 +363,21 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
             "ambiguous same-repository routing; labels '{labels}' also appear at {}",
             entry_path(*other)
         ),
+        Kind::OrganizationRoutingOverlap {
+            labels,
+            other,
+            routing_label_shared,
+        } => {
+            let advice = if *routing_label_shared {
+                "set distinct explicit labels on each pool instead of the shared routing_label"
+            } else {
+                "give each pool its own labels"
+            };
+            format!(
+                "ambiguous routing for pools that may serve the same repository; labels '{labels}' also appear at {}; {advice}",
+                entry_path(*other)
+            )
+        }
         Kind::MacosVmsOverLimit { total, limit } => format!(
             "macOS pools total {total} VMs (the sum of their {per_pool}), above the limit of {limit}"
         ),

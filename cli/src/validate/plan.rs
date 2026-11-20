@@ -1,5 +1,7 @@
 //! what a valid configuration plans.
 
+use std::fmt;
+
 use crate::profile::{Os, Profile};
 
 /// a valid host configuration.
@@ -34,7 +36,45 @@ pub struct Lifecycle {
     pub resume_after_stop: Option<bool>,
 }
 
-/// one target repository's pool.
+/// a pool's registration destination; an organisation group name is resolved and
+/// checked at registration, not authorised by configuration validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PoolTarget {
+    Repository {
+        owner: String,
+        repository: String,
+    },
+    Organization {
+        organization: String,
+        runner_group: String,
+    },
+}
+
+impl PoolTarget {
+    /// the resource owner as configured, before token-key normalisation.
+    #[must_use]
+    pub fn owner(&self) -> &str {
+        match self {
+            Self::Repository { owner, .. } => owner,
+            Self::Organization { organization, .. } => organization,
+        }
+    }
+}
+
+impl fmt::Display for PoolTarget {
+    /// a human-readable destination, not a token-store key or configuration value.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Repository { owner, repository } => write!(f, "{owner}/{repository}"),
+            Self::Organization {
+                organization,
+                runner_group,
+            } => write!(f, "{organization} (runner group {runner_group})"),
+        }
+    }
+}
+
+/// one pool after the selected profile's configuration checks have succeeded.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
     /// the entry's position among the file's entries, counting from 0.
@@ -42,8 +82,7 @@ pub struct Entry {
     /// where the entry sits in the file, in the reader's path form, such as
     /// `repositories[0]`.
     pub path: String,
-    pub owner: String,
-    pub repository: String,
+    pub target: PoolTarget,
     pub name: String,
     pub slots: u32,
     /// the token file's path, for a format that has one.

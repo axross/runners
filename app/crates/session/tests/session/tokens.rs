@@ -1,7 +1,7 @@
 //! the token path: a token entered in the window reaches `token_set` once, trimmed and
 //! within the library's limits, and the app keeps no copy of it.
 
-use marshal_session::{Failure, Forms};
+use marshal_session::{Failure, Forms, Method};
 use marshal_view::TokenState;
 
 use crate::support::{Agent, Answer, Called, Running, World, fixture, secs, start, what};
@@ -425,4 +425,455 @@ async fn the_view_read_by_the_page_is_the_one_shown() {
     let read = session.handle.read_view(None).await.unwrap();
     assert_eq!(read.view, session.screen.view());
     assert!(read.announce.is_empty());
+}
+
+/// an organization-owned repository still needs a separate repository token.
+#[tokio::test(start_paused = true)]
+async fn organization_and_repository_tokens_keep_separate_keys_and_methods() {
+    let (agent, session) = connected("running").await;
+    let token = fake_token("abcdefghijklmnop1234");
+    let method = Method::OrganizationTokenSet {
+        organization: "owner".to_string(),
+        token: marshal_cli::runtime::secret::Secret::new(token.clone()),
+    };
+    for debug in [format!("{method:?}"), format!("{method:#?}")] {
+        assert!(!debug.contains(&token));
+        assert!(debug.contains("<redacted>"));
+    }
+    session
+        .handle
+        .set_organization_token("OwNeR".into(), format!(" {token}\r\n"))
+        .await
+        .unwrap();
+    session
+        .handle
+        .set_token("Owner/Docs".into(), token.clone())
+        .await
+        .unwrap();
+    session
+        .handle
+        .remove_organization_token("OWNER".into())
+        .await
+        .unwrap();
+    session
+        .handle
+        .remove_token("Owner/Docs".into())
+        .await
+        .unwrap();
+    session.settle().await;
+    assert_eq!(
+        agent.calls(),
+        [
+            Called::OrganizationTokenSet {
+                organization: "owner".into(),
+                token: token.clone()
+            },
+            Called::TokenSet {
+                repository: "owner/docs".into(),
+                token: token.clone()
+            },
+            Called::OrganizationTokenRemove {
+                organization: "owner".into()
+            },
+            Called::TokenRemove {
+                repository: "owner/docs".into()
+            },
+        ]
+    );
+    assert!(
+        session
+            .screen
+            .announced()
+            .contains(&"Token for owner saved.".into())
+    );
+    assert!(
+        session
+            .screen
+            .announced()
+            .contains(&"Token for owner removed.".into())
+    );
+    session.wait(secs(60)).await;
+    assert!(!everything(&session).contains(&token));
+}
+
+/// input checks do not depend on the agent or on a valid configuration.
+#[tokio::test(start_paused = true)]
+async fn organization_keys_and_token_limits_are_checked_before_sending() {
+    let (agent, session) = connected("running").await;
+    for key in ["", "owner/docs", "../x", "-org", "o rg", "org_x"] {
+        assert!(
+            session
+                .handle
+                .set_organization_token(key.into(), fake_token("abcdefghijklmnop1234"))
+                .await
+                .is_err()
+        );
+        assert!(
+            session
+                .handle
+                .remove_organization_token(key.into())
+                .await
+                .is_err()
+        );
+    }
+    let too_long = format!("{}😀", "a".repeat(1279));
+    for token in [" \t ".to_string(), too_long.clone()] {
+        session
+            .handle
+            .set_organization_token("Owner".into(), token)
+            .await
+            .unwrap();
+    }
+    session.settle().await;
+    assert!(agent.calls().is_empty());
+    let announced = session.screen.announced();
+    assert!(
+        announced
+            .iter()
+            .any(|line| line.contains("the token is empty"))
+    );
+    assert!(announced.iter().any(|line| line.contains("at most 1,280")));
+    assert!(!everything(&session).contains(&too_long));
+    let just_fits = format!("{}😀", "a".repeat(1278));
+    session
+        .handle
+        .set_organization_token("Owner".into(), just_fits.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        agent.calls(),
+        [Called::OrganizationTokenSet {
+            organization: "owner".into(),
+            token: just_fits,
+        }]
+    );
+    assert!(!everything(&session).contains(&"a".repeat(40)));
+}
+
+/// saving repairs a missing credential, not a failed store or an already running pool.
+#[tokio::test(start_paused = true)]
+async fn an_organization_save_announces_only_its_pools_skipped_for_no_token() {
+    let (agent, session) = connected("running").await;
+    let mut snapshot = fixture("running");
+    let missing = snapshot
+        .pools
+        .iter()
+        .find(|pool| pool.name == "docs")
+        .unwrap()
+        .clone();
+    for (name, organization, state, reason) in [
+        ("org-one", "owner", "skipped", "pool[3]: no token."),
+        ("org-two", "owner", "skipped", "repositories[4]: no token."),
+        ("other-org", "other", "skipped", "pool[5]: no token."),
+        (
+            "store-unavailable",
+            "owner",
+            "skipped",
+            "pool[6]: no token store.",
+        ),
+        ("already-running", "owner", "running", "no token"),
+    ] {
+        let mut pool = missing.clone();
+        pool.name = name.into();
+        pool.repository.clear();
+        pool.organization = Some(organization.into());
+        pool.state = state.into();
+        pool.reason = Some(reason.into());
+        snapshot.pools.push(pool);
+    }
+    assert_eq!(
+        marshal_view::pools_started_by(&snapshot, "owner/docs"),
+        ["docs"]
+    );
+    assert_eq!(
+        marshal_view::pools_started_by(&snapshot, "owner"),
+        ["org-one", "org-two"]
+    );
+    agent.push(snapshot.clone());
+    session.settle().await;
+    session
+        .handle
+        .set_organization_token("OWNER".into(), fake_token("abcdefghijklmnop1234"))
+        .await
+        .unwrap();
+    session.settle().await;
+    assert!(
+        session
+            .screen
+            .announced()
+            .contains(&"Token for owner saved. Starting pools org-one and org-two.".into())
+    );
+    snapshot.agent.state = "stopped".into();
+    assert!(marshal_view::pools_started_by(&snapshot, "owner").is_empty());
+    agent.push(snapshot);
+    session.settle().await;
+    session
+        .handle
+        .set_organization_token("owner".into(), fake_token("abcdefghijklmnop1234"))
+        .await
+        .unwrap();
+    session.settle().await;
+    assert!(
+        session
+            .screen
+            .announced()
+            .contains(&"Token for owner saved.".into())
+    );
+}
+
+/// an Ok reply acknowledges session handling, not successful storage.
+#[tokio::test(start_paused = true)]
+async fn organization_token_failures_use_session_feedback_without_echoing_secrets() {
+    let token = fake_token("abcdefghijklmnop1234");
+    for (failure, expected) in [
+        (
+            Failure::Store {
+                detail: Some("kind other, code 1312".into()),
+            },
+            "kind other, code 1312",
+        ),
+        (
+            Failure::Refused(format!("the agent refused {token}")),
+            "the agent refused <token>",
+        ),
+        (Failure::Lost, "lost contact"),
+        (
+            Failure::NotServed("organization_token_set".into()),
+            "does not offer organization_token_set",
+        ),
+    ] {
+        let (agent, session) = connected("running").await;
+        agent.answer("organization_token_set", Err(failure.clone()));
+        agent.answer("organization_token_remove", Err(failure));
+        session
+            .handle
+            .set_organization_token("Owner".into(), token.clone())
+            .await
+            .unwrap();
+        session
+            .handle
+            .remove_organization_token("OWNER".into())
+            .await
+            .unwrap();
+        session.settle().await;
+        let announced = session.screen.announced();
+        assert!(
+            announced.iter().any(|line| line.contains(expected)),
+            "{announced:?}"
+        );
+        assert!(
+            announced
+                .iter()
+                .any(|line| line.starts_with("Token for owner not saved.")
+                    || line.starts_with("The token for owner was not saved.")),
+            "{announced:?}"
+        );
+        assert!(
+            announced
+                .iter()
+                .any(|line| line.starts_with("Token for owner not removed.")
+                    && line.ends_with("It is still stored.")),
+            "{announced:?}"
+        );
+        assert!(
+            !announced
+                .iter()
+                .any(|line| line == "Token for owner saved." || line == "Token for owner removed.")
+        );
+        assert!(!everything(&session).contains(&token));
+    }
+}
+
+/// an overrun leaves the outcome to later snapshots and is not a failed connection.
+#[tokio::test(start_paused = true)]
+async fn organization_token_timeouts_are_not_lost_contact_or_success() {
+    for removal in [false, true] {
+        let (agent, session) = connected("running").await;
+        let method = if removal {
+            "organization_token_remove"
+        } else {
+            "organization_token_set"
+        };
+        let gate = agent.hold(method);
+        let handle = session.handle.clone();
+        let call = tokio::spawn(async move {
+            if removal {
+                handle.remove_organization_token("OWNER".into()).await
+            } else {
+                handle
+                    .set_organization_token("Owner".into(), fake_token("abcdefghijklmnop1234"))
+                    .await
+            }
+        });
+        session.settle().await;
+        session.wait(secs(11)).await;
+        call.await.unwrap().unwrap();
+        let verb = if removal { "removing" } else { "saving" };
+        assert!(session.screen.announced().contains(&format!("The agent has not answered yet about {verb} the token for owner. It may still do it; this row shows where the token stands.")));
+        assert_eq!(what(&session.screen.view()), "list");
+        assert!(!everything(&session).contains("abcdefghijklmnop1234"));
+        drop(gate);
+    }
+}
+
+/// an open form and a subsequent call each need their own lost-contact feedback.
+#[tokio::test(start_paused = true)]
+async fn disconnected_organization_token_calls_and_an_open_form_report_lost_contact() {
+    let (agent, session) = connected("running").await;
+    session
+        .handle
+        .read_view(Some(Forms {
+            editing: Some("owner".into()),
+            removing: None,
+        }))
+        .await
+        .unwrap();
+    agent.close();
+    session.settle().await;
+    session
+        .handle
+        .set_organization_token("OWNER".into(), fake_token("abcdefghijklmnop1234"))
+        .await
+        .unwrap();
+    session
+        .handle
+        .remove_organization_token("Owner".into())
+        .await
+        .unwrap();
+    session.settle().await;
+    let announced = session.screen.announced();
+    assert!(
+        announced
+            .iter()
+            .filter(|line| *line
+                == "The token for owner was not saved. Marshal has lost contact with the agent.")
+            .count()
+            >= 2
+    );
+    assert!(
+        announced
+            .iter()
+            .any(|line| line.starts_with("Token for owner not removed.")
+                && line.contains("lost contact"))
+    );
+    assert!(agent.calls().is_empty());
+    assert!(!everything(&session).contains("abcdefghijklmnop1234"));
+}
+
+/// exercises the real guarded dispatch without a resident agent or token store.
+#[cfg(all(unix, debug_assertions))]
+#[tokio::test]
+async fn the_library_link_dispatches_organization_methods_only_when_welcome_lists_each_one() {
+    use std::os::unix::fs::DirBuilderExt;
+
+    use marshal_cli::instance::roots::Roots;
+    use marshal_cli::runtime::secret::Secret;
+    use marshal_session::{Dial, Library, Link};
+    use serde_json::json;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::UnixListener;
+
+    for (set, remove) in [(false, false), (true, false), (false, true), (true, true)] {
+        // macOS's $TMPDIR is long enough to push the socket past sun_path's 104 bytes.
+        let directory = std::path::Path::new("/tmp").join(format!("ms-ow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let roots = Roots::for_tests(&directory);
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(roots.channel_directory())
+            .unwrap();
+        let listener = UnixListener::bind(roots.socket_path()).unwrap();
+        let token = fake_token("abcdefghijklmnop1234");
+        let expected_token = token.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (read, mut write) = stream.into_split();
+            let mut lines = BufReader::new(read).lines();
+            let hello: serde_json::Value =
+                serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+            assert_eq!(hello["type"], "hello");
+            let methods: Vec<_> = [
+                set.then_some("organization_token_set"),
+                remove.then_some("organization_token_remove"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            write
+                .write_all(
+                    format!(
+                        "{}\n",
+                        json!({"type": "welcome", "version": 2, "methods": methods})
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut called = Vec::new();
+            while let Some(line) = lines.next_line().await.unwrap() {
+                let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let method = request["method"].as_str().unwrap().to_string();
+                let expected = match method.as_str() {
+                    "organization_token_set" => {
+                        json!({"organization": "owner", "token": expected_token})
+                    }
+                    "organization_token_remove" => json!({"organization": "owner"}),
+                    other => panic!("unexpected method: {other}"),
+                };
+                assert_eq!(request["params"], expected);
+                called.push(method);
+                write.write_all(format!("{}\n", json!({"type": "response", "id": request["id"], "result": {"organization": "owner"}})).as_bytes()).await.unwrap();
+            }
+            called
+        });
+        let connected = Library::new(roots, "0.0.0-test").dial().await.unwrap();
+        let saved = tokio::time::timeout(
+            secs(2),
+            connected.link.call(Method::OrganizationTokenSet {
+                organization: "owner".into(),
+                token: Secret::new(token),
+            }),
+        )
+        .await
+        .unwrap();
+        let removed = tokio::time::timeout(
+            secs(2),
+            connected.link.call(Method::OrganizationTokenRemove {
+                organization: "owner".into(),
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            saved,
+            if set {
+                Ok(())
+            } else {
+                Err(Failure::NotServed("organization_token_set".into()))
+            }
+        );
+        assert_eq!(
+            removed,
+            if remove {
+                Ok(())
+            } else {
+                Err(Failure::NotServed("organization_token_remove".into()))
+            }
+        );
+        drop(connected);
+        let called = tokio::time::timeout(secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+        let expected: Vec<_> = [
+            set.then_some("organization_token_set"),
+            remove.then_some("organization_token_remove"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        assert_eq!(called, expected);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }

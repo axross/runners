@@ -7,6 +7,8 @@ use std::fmt;
 use std::io::{self, Read};
 use std::path::Path;
 
+use crate::validate::PoolTarget;
+
 use super::secret::Secret;
 
 /// where a slot's registration reads its token: the commands read the pool's token
@@ -17,7 +19,7 @@ pub trait TokenSource {
     /// a token.
     /// `file` is the pool's token file, which a configuration the agent reads has none
     /// of.
-    fn token(&self, owner: &str, repository: &str, file: Option<&Path>) -> Result<Secret, String>;
+    fn token(&self, target: &PoolTarget, file: Option<&Path>) -> Result<Secret, String>;
 }
 
 /// the commands' source: the pool's token file.
@@ -25,12 +27,7 @@ pub trait TokenSource {
 pub struct TokenFiles;
 
 impl TokenSource for TokenFiles {
-    fn token(
-        &self,
-        _owner: &str,
-        _repository: &str,
-        file: Option<&Path>,
-    ) -> Result<Secret, String> {
+    fn token(&self, _target: &PoolTarget, file: Option<&Path>) -> Result<Secret, String> {
         let file = file.ok_or_else(|| "the pool names no token file".to_string())?;
         read_token(file).map_err(|error| error.to_string())
     }
