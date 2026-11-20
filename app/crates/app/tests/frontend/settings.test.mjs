@@ -99,6 +99,22 @@ test("a reason the intro does not give is its own paragraph the checkbox points 
   assert.ok(described.includes(paragraphs[0].getAttribute("id")));
 });
 
+test("the page follows reason_in_intro, not whether the intro and the reason are equal strings", () => {
+  const why = "Settings cannot be changed while a setting is being saved.";
+  const panel = settingsPanel(
+    tab({ intro: why, unavailable: why, reason_in_intro: false }),
+    {},
+  );
+  const paragraphs = elements(panel).filter(
+    (element) => element.tag === "p" && element.textContent === why,
+  );
+  assert.equal(paragraphs.length, 2);
+  const [intro, reason] = paragraphs;
+  const described = checkbox(panel).getAttribute("aria-describedby").split(" ");
+  assert.ok(described.includes(reason.getAttribute("id")));
+  assert.ok(!described.includes(intro.getAttribute("id")));
+});
+
 test("a value the view does not know shows neither on nor off and does not toggle", () => {
   const panel = settingsPanel(
     tab({ groups: [{ title: "Sleep", rows: [{ ...ROW, checked: null }] }] }),
