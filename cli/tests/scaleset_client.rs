@@ -1217,10 +1217,10 @@ mod contract {
         assert_eq!(rest.header("accept"), Some("application/vnd.github+json"));
         let exchange = &requests[1];
         assert_eq!(exchange.names(), with_content_type);
-        assert_ne!(
+        assert_eq!(
             exchange.header("accept"),
-            service_accept,
-            "the exchange sends no service accept"
+            Some("*/*"),
+            "the exchange sets no Accept of its own, so the HTTP client's default goes out"
         );
         let lookup = &requests[2];
         let session_post = &requests[3];
