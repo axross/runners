@@ -46,6 +46,7 @@ impl Client {
     }
 
     /// shortens the wait between registration exchange attempts, so a test need not wait seconds.
+    #[doc(hidden)]
     #[must_use]
     pub fn with_exchange_retry_delay(mut self, delay: Duration) -> Self {
         self.exchange_retry_delay = delay;
