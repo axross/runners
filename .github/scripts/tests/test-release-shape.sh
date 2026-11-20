@@ -163,7 +163,7 @@ expect_fail "sign-macos with an action on a moving ref" "not a major tag" \
 expect_fail "sign-macos with a checkout" "checks out the repository" \
   "$release" "$first_step" $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Build\'s Release Files\n'
 expect_fail "a \${{ }} inside sign-macos's run" "expands \${{ }} inside run" \
-  "$release" $'          identifier="app.axross.marshal"\n          binary="signed/' $'          identifier="${{ vars.MACOS_TEAM_ID }}"\n          binary="signed/'
+  "$release" $'          identifier="app.axross.marshal"\n          binary="signed/' $'          identifier="${{ vars.APPLE_TEAM_ID }}"\n          binary="signed/'
 
 for manager in "npm ci" "npx prettier ." "brew install jq" "pip install requests" "cargo build" "mise install" "gem install bundler"; do
   expect_fail "sign-macos running ${manager%% *}" "runs the package manager ${manager%% *}" \
@@ -188,7 +188,7 @@ expect_fail "sign-macos calling security by name" "calls security by name, not b
 expect_fail "sign-macos calling codesign through a literal path" "runs /usr/bin/codesign" \
   "$release" '"$SYSTEM_BIN/codesign" --force' '/usr/bin/codesign --force'
 expect_fail "sign-macos decoding a secret through PATH" "runs base64" \
-  "$release" "$import_echo" $'          printf \'%s\' "$MACOS_APPLICATION_P12_BASE64" | base64 --decode >/dev/null\n'"$import_echo"
+  "$release" "$import_echo" $'          printf \'%s\' "$APPLE_APPLICATION_P12_BASE64" | base64 --decode >/dev/null\n'"$import_echo"
 expect_fail "sign-macos calling a tool after a pipe by name" "calls openssl by name" \
   "$release" '"$SYSTEM_BIN/openssl" rand -hex 24)"' $'"$SYSTEM_BIN/openssl" rand -hex 24 | openssl base64)"'
 expect_fail "sign-macos calling a tool in a command substitution by name" "calls shasum by name" \
@@ -320,7 +320,7 @@ expect_fail "a script that writes PATH to GITHUB_ENV" "refers to GITHUB_ENV othe
 expect_fail "the identities step that writes a third name to GITHUB_ENV" "refers to GITHUB_ENV other than" \
   "$release" $'            echo "INSTALLER_IDENTITY_NAME=${installer_name}"\n' $'            echo "INSTALLER_IDENTITY_NAME=${installer_name}"\n            echo "PATH=${installer_name}"\n'
 expect_fail "the identities step that writes to GITHUB_ENV again" "writes GITHUB_ENV outside its block" \
-  "$release" $'          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"' $'          echo "PATH=/tmp/fake" >>"$GITHUB_ENV"\n          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"'
+  "$release" $'          echo "team_id=${APPLE_TEAM_ID}" >>"$GITHUB_OUTPUT"' $'          echo "PATH=/tmp/fake" >>"$GITHUB_ENV"\n          echo "team_id=${APPLE_TEAM_ID}" >>"$GITHUB_OUTPUT"'
 
 echo "-- sign-macos: the stand-in prefixes --"
 expect_fail "a prefix default other than /usr/bin" "uses SYSTEM_BIN without the line" \
@@ -446,23 +446,23 @@ expect_pass_with "a comment before the final historical verification" \
 
 echo "-- the signing secrets --"
 expect_fail "a signing secret in attest" "only sign-macos may read a signing secret" \
-  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
+  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
 expect_fail "a signing secret in verify-macos's step" "release.yaml: jobs.verify-macos.steps[5].env.P8 reads" \
-  "$release" $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n' $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n          P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}\n'
+  "$release" $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n' $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n          P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}\n'
 expect_fail "a signing secret in the workflow's env" "release.yaml: env.P12 reads" \
-  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  P12: ${{ secrets.MACOS_INSTALLER_P12_BASE64 }}\n'
+  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  P12: ${{ secrets.APPLE_INSTALLER_P12_BASE64 }}\n'
 expect_fail "a signing secret read by bracket" "only sign-macos may read a signing secret" \
-  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets[\'MACOS_P12_PASSWORD\'] }}\n'
+  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets[\'APPLE_P12_PASSWORD\'] }}\n'
 expect_fail "every secret read through toJSON" "only sign-macos may read a signing secret" \
   "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      ALL: ${{ toJSON(secrets) }}\n'
 expect_fail "secrets: inherit on the build job" "release.yaml: jobs.build.secrets passes every secret on" \
   "$release" $'    uses: ./.github/workflows/cli-recovery-build.yaml\n' $'    uses: ./.github/workflows/cli-recovery-build.yaml\n    secrets: inherit\n'
 expect_fail "a signing secret in a pull request workflow" "merge-checks.yaml: jobs.sneaky.env.PASSWORD reads" \
-  "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n    steps:\n      - run: echo hi\n'
+  "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    env:\n      PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n    steps:\n      - run: echo hi\n'
 expect_fail_new_file "every secret passed on in a .yml workflow" "extra.yml: jobs.sneaky.secrets passes every secret on" \
   .github/workflows/extra.yml $'name: Extra\non:\n  workflow_dispatch:\njobs:\n  sneaky:\n    uses: ./.github/workflows/release-build.yaml\n    secrets: inherit\n'
 expect_fail "a signing secret in cli-recovery-build.yaml" "cli-recovery-build.yaml: jobs.assemble" \
-  "$release_build" $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n' $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
+  "$release_build" $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n' $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n    env:\n      PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
 
 echo "-- the Environment elsewhere --"
 expect_fail "an Environment on attest" "job attest declares an environment" \
@@ -609,7 +609,7 @@ expect_fail "a verify tool the dry run does not measure" "does not measure /usr/
 expect_fail "a measuring step that does not fail" "does not fail when a tool is missing" \
   "$release_build" $'            echo "error: signing tools are missing or do not support the required flags:${missing}" >&2\n            exit 1' $'            echo "error: signing tools are missing or do not support the required flags:${missing}" >&2'
 expect_fail "a measuring step that receives a signing value" "receives a signing value" \
-  "$release_build" $'      - name: Check The Signing Tools\n        if: runner.os == \'macOS\'\n' $'      - name: Check The Signing Tools\n        if: runner.os == \'macOS\'\n        env:\n          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
+  "$release_build" $'      - name: Check The Signing Tools\n        if: runner.os == \'macOS\'\n' $'      - name: Check The Signing Tools\n        if: runner.os == \'macOS\'\n        env:\n          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
 expect_fail "a build whose assemble job does not call the script" "cli-recovery-build.yaml assemble does not call assemble-release.sh" \
   "$release_build" 'bash .github/scripts/cli-recovery/assemble-release.sh' 'bash .github/scripts/other.sh'
 expect_fail "a measuring step on every leg" "must run on the macOS leg only" \
@@ -626,12 +626,12 @@ expect_fail "build without its main and version guard" "release.yaml build must 
   "$release" $'    needs: plan\n'"$guard" $'    needs: plan\n    if: true'
 expect_fail "an extra release job" "exactly the seven CLI release jobs" \
   "$release" $'jobs:\n' $'jobs:\n  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo extra\n'
-for name in MACOS_APPLICATION_P12_BASE64 MACOS_INSTALLER_P12_BASE64 MACOS_P12_PASSWORD MACOS_NOTARY_KEY_P8 MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID; do
+for name in APPLE_APPLICATION_P12_BASE64 APPLE_INSTALLER_P12_BASE64 APPLE_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_TEAM_KEY_ID APPLE_NOTARY_ISSUER_ID; do
   expect_fail "${name} from a variable instead of a secret" "must read ${name} from secrets.${name}" \
     "$release" "${name}: \${{ secrets.${name} }}" "${name}: \${{ vars.${name} }}"
 done
-expect_fail "the team from a secret instead of the variable" "must read MACOS_TEAM_ID from vars.MACOS_TEAM_ID" \
-  "$release" 'MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}' 'MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}'
+expect_fail "the team from a secret instead of the variable" "must read APPLE_TEAM_ID from vars.APPLE_TEAM_ID" \
+  "$release" 'APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}' 'APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}'
 expect_fail "a condition skipping attestation" 'release.yaml attest: step "Attest The Build Provenance" has a condition' \
   "$release" $'      - name: Attest The Build Provenance\n' $'      - name: Attest The Build Provenance\n        if: false\n'
 expect_fail "a condition skipping publication checks" 'release.yaml release: step "Release" has a condition' \
