@@ -222,6 +222,51 @@ mod tests {
         }
     }
 
+    /// whether a key's name says it holds a credential rather than configuration.
+    fn names_a_credential(name: &str) -> bool {
+        ["token", "secret", "password", "jit", "credential"]
+            .iter()
+            .any(|word| name.to_ascii_lowercase().contains(word))
+    }
+
+    #[test]
+    fn no_key_the_schema_defines_holds_a_credential() {
+        for table in [
+            Table::Root,
+            Table::Pool,
+            Table::Budget,
+            Table::Lifecycle,
+            Table::Volume,
+        ] {
+            for member in table.members() {
+                let name = key_name(member.key);
+                assert!(!names_a_credential(name), "{table:?} defines {name}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_key_named_for_a_credential_is_caught() {
+        for name in [
+            "token",
+            "pat_token",
+            "Secret",
+            "jit_config",
+            "api_password",
+            "credentials",
+        ] {
+            assert!(names_a_credential(name), "{name}");
+        }
+        for name in [
+            "scale_set",
+            "labels",
+            "diagnostic_raw_records",
+            "mount_path",
+        ] {
+            assert!(!names_a_credential(name), "{name}");
+        }
+    }
+
     #[test]
     fn the_host_without_a_key_does_not_define_it() {
         assert!(Table::Root.defined("budget", Profile::Axmc).is_some());
