@@ -994,6 +994,7 @@ mod tests {
     use crate::agent::on_demand::ListenerState;
     use crate::runtime::fake::MemoryLog;
     use crate::scaleset::Statistics;
+    use crate::token_store::MemoryTokenStore;
 
     use super::*;
 
@@ -1113,29 +1114,71 @@ mod tests {
         }
     }
 
+    /// an on-demand pool with a runner that has a workload, so its repository is checked.
+    const ON_DEMAND_WITH_RUNNER: &str = r#"{"name":"app","repository":"owner/app","state":"running",
+        "has_token":true,"runners":[{"slot":1,"state":"running","workload":"app-1"}],
+        "on_demand":{"name":"axpc-app","state":"listening"}}"#;
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn a_scale_set_entry_stands_without_a_repository_entry() {
+        let fetch = CountingFetch(Cell::new(0));
+        let log = MemoryLog::default();
+        let (published, status) = watch::channel(Arc::new(GithubStatus::default()));
+        let (_active_tx, active) = watch::channel(true);
+        let (_snapshot_tx, snapshots) = watch::channel(snapshot(&[ON_DEMAND]));
+        let (_listeners_tx, listeners_rx) = watch::channel(listeners(listener(
+            "axpc-app",
+            ("owner", "app"),
+            Some(statistics(2, 1, 0)),
+        )));
+        let collector = Collector::new(&fetch, None, &log, Box::new(|| 0), published, active)
+            .with_listeners(listeners_rx);
+        tokio::select! {
+            () = collector.run(snapshots) => panic!("the collector ended"),
+            () = sleep(Duration::from_secs(1)) => {}
+        }
+        let status = status.borrow();
+        assert_eq!(status.scale_sets, [entry(Some(2), Some(1), Some(0))]);
+        assert!(status.repositories.is_empty());
+    }
+
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn counts_are_published_only_while_subscribed_from_the_listener_and_cost_no_request() {
         let fetch = CountingFetch(Cell::new(0));
         let log = MemoryLog::default();
+        let store = MemoryTokenStore::default();
+        store
+            .set(
+                &TokenKey::of("owner", "app"),
+                &Secret::new("ghp_fake_token".to_string()),
+            )
+            .unwrap();
         let (published, status) = watch::channel(Arc::new(GithubStatus::default()));
         let (active_tx, active) = watch::channel(false);
-        let (_snapshot_tx, snapshots) = watch::channel(snapshot(&[ALWAYS_ON, ON_DEMAND]));
+        let (_snapshot_tx, snapshots) =
+            watch::channel(snapshot(&[ALWAYS_ON, ON_DEMAND_WITH_RUNNER]));
         let first = listener("axpc-app", ("owner", "app"), Some(statistics(2, 1, 0)));
         let (listeners_tx, listeners_rx) = watch::channel(listeners(first.clone()));
-        let collector = Collector::new(&fetch, None, &log, Box::new(|| 0), published, active)
-            .with_listeners(listeners_rx);
+        let collector = Collector::new(
+            &fetch,
+            Some(Arc::new(store)),
+            &log,
+            Box::new(|| 0),
+            published,
+            active,
+        )
+        .with_listeners(listeners_rx);
         let scale_sets = || status.borrow().scale_sets.clone();
         let script = async {
             sleep(Duration::from_secs(60)).await;
             assert!(scale_sets().is_empty(), "published while no one subscribes");
+            assert_eq!(fetch.0.get(), 0, "checked while no one subscribes");
 
             active_tx.send_replace(true);
             sleep(Duration::from_secs(1)).await;
+            let requested = fetch.0.get();
+            assert!(requested > 0, "the pool's repository is not checked");
             assert_eq!(scale_sets(), [entry(Some(2), Some(1), Some(0))]);
-            assert!(
-                status.borrow().repositories.is_empty(),
-                "the entry stands without a repository entry"
-            );
 
             // later statistics, then a change that leaves them as a 202 poll does
             let mut later = first.clone();
@@ -1162,11 +1205,17 @@ mod tests {
             active_tx.send_replace(true);
             sleep(Duration::from_secs(1)).await;
             assert_eq!(scale_sets(), [entry(Some(5), Some(2), Some(1))]);
+            // a failed check waits at least the 15 s interval, so only a request that
+            // publishing the counts made itself could raise the count in these few seconds
+            assert_eq!(
+                fetch.0.get(),
+                requested,
+                "the counts cost a display request"
+            );
         };
         tokio::select! {
             () = collector.run(snapshots) => panic!("the collector ended"),
             () = script => {}
         }
-        assert_eq!(fetch.0.get(), 0, "the counts cost a display request");
     }
 }
