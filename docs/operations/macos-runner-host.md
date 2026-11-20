@@ -396,6 +396,10 @@ keychain, separate from the tokens in repository rows. The Tokens and a Locked
 Keychain section of [App](./app.md) covers a store failure; a GitHub refusal is a
 registration failure, not evidence that the keychain is locked.
 
+Removing an organisation's last pool does not remove its token. Before removing it,
+choose **Remove Token** on the organisation's row. If the pool is already gone, delete
+the keychain item with the account `github.com/<org>`.
+
 ### Starting, watching and stopping
 
 Before the first `start` on axmc, confirm that every self-hosted job in each

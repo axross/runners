@@ -234,6 +234,11 @@ rotate it; the next registration reads the replacement. **Remove Token** stops
 those pools from getting new runners, but runners already up finish their job.
 Repository rows keep their separate tokens.
 
+Removing an organisation's last pool does not remove its token, and the window then
+shows no row to remove it from. Before removing the last pool for a login, choose
+**Remove Token** on the organisation's row. If the pool is already gone, delete the
+Credential Manager entry `app.axross.marshal:github.com/<org>`.
+
 If GitHub refuses registration, the pool shows GitHub's scrubbed answer. Check
 the token's resource owner and permission, then the organisation's token policy;
 Marshal cannot distinguish every policy refusal from a permission failure.

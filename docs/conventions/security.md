@@ -1065,7 +1065,9 @@ stated in A Token Carries Only Its Pool Kind's Permissions above.
 - A program running as the host's user can read that user's Credential Manager
   entry or request the Keychain item. Reading an organisation token reaches the
   whole organisation rather than one repository. The token is present on each
-  host that serves its organisation. The same-user store and channel risks also
+  host that serves or has served its organisation: removing the last pool for a
+  login neither removes its token nor lists it in `repositories_released`, and the
+  window then shows no row for it. The same-user store and channel risks also
   apply to organisation keys; the agent accepts any well-formed login, not just
   those currently configured.
 
