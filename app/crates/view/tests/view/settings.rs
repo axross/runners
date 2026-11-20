@@ -3,8 +3,8 @@
 //! setting can be changed.
 
 use marshal_view::{
-    Cause, Connection, Input, NEEDS_ATTENTION, NoteTone, SettingResult, SettingRow, SettingsTab,
-    SettingsUi, build,
+    Cause, Connection, Input, MACOS, NEEDS_ATTENTION, NoteTone, SettingResult, SettingRow,
+    SettingsTab, SettingsUi, build,
 };
 use serde_json::{Value, json};
 
@@ -371,7 +371,7 @@ fn the_macs_agent_reporting_no_settings_leaves_every_setting_unavailable_without
         value["configuration"]["status"] = json!("valid");
     });
     assert!(snapshot.lifecycle.is_none());
-    let view = view_of(&snapshot);
+    let view = build(&Input::new(Connection::Connected, Some(&snapshot), now()).words(MACOS));
     let tab = settings(&view);
     assert_eq!(
         tab.unavailable.as_deref(),
