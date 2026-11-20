@@ -40,6 +40,16 @@
     ],
     "lacks": []
   },
+  "accepted/scale-set-label-in-same-named-repository-of-another-owner.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[axpc-demand] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[1]: name=beta repository=cat/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc-demand] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
   "accepted/scale-set-near-misses.toml": {
     "profile": "axpc",
     "outcome": "accept",

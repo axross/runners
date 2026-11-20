@@ -50,6 +50,16 @@ impl<'a> Keys<'a> {
     }
 }
 
+impl Keys<'_> {
+    /// whether both entries are for one repository, which takes the same owner and
+    /// the same repository name; an organisation pool has no repository.
+    fn same_repository(&self, other: &Self) -> bool {
+        self.owner == other.owner
+            && self.repository.is_some()
+            && self.repository == other.repository
+    }
+}
+
 /// records every collision between a later entry and an earlier one, in entry order;
 /// token files compare under simple case folding, as Windows file names ignore case,
 /// and pools whose OS differs can share a non-platform label, as their platform
@@ -68,6 +78,7 @@ pub fn check_entries(
         let path = KeyPath::root().key(Key::Repositories).index(b.entry.index);
         for a in keys.iter().take(later) {
             let other = a.entry.index;
+            let same_repository = a.same_repository(b);
             for (own, peer) in [(b, a), (a, b)] {
                 if let Some(scale_set) = &own.entry.scale_set {
                     let name = scale_set.to_ascii_lowercase();
@@ -76,7 +87,7 @@ pub fn check_entries(
                             || peer.entry.scale_set.as_ref().is_some_and(|other| {
                                 names_collide(&name, &other.to_ascii_lowercase())
                             })
-                            || (own.repository == peer.repository
+                            || (same_repository
                                 && peer
                                     .entry
                                     .labels
@@ -105,8 +116,6 @@ pub fn check_entries(
                     },
                 );
             }
-            let same_repository =
-                a.owner == b.owner && a.repository.is_some() && a.repository == b.repository;
             if same_repository {
                 if a.token_path != b.token_path {
                     errors.add(path.key(Key::TokenPath), Kind::TokenFileDiffers { other });

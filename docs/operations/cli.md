@@ -554,7 +554,9 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
       `scale_set`. A scale-set name collides with the other pool's `name` or
       `scale_set` when the two are equal or one is the other followed by a hyphen,
       ignoring ASCII case, and with a label of the other pool when both pools are in
-      the same repository and the two are equal, ignoring ASCII case.
+      the same repository and the two are equal, ignoring ASCII case. The same
+      repository is the same owner and the same repository name, compared without
+      case, so `a/x` and `b/x` are different repositories.
    2. A colliding `name`, at the later pool's `name`.
    3. An ambiguous routing label. For the same repository, a pair where either pool
       is on-demand is not compared, because an on-demand pool's only label is its
