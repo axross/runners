@@ -622,6 +622,15 @@ so displaying a default never adds it to the file. The page sends only changed
 keys and array-entry operations, leaving comments and layout to the agent's write
 path.
 
+The pool fields are those of a repository pool. An organisation pool's
+`organization` and `runner_group` keys have no field, so the form neither shows nor
+changes them, and its Repository field reads as not set; its other fields edit as
+any pool's. A repository typed into it is refused by the agent's check, which allows
+one target per pool, and a new pool is added with a repository. Set an organisation
+pool's target in a text editor. Removing a pool offers to remove the token of a
+repository no remaining pool names, never an organisation's: an organisation's token
+is removed from the [Tokens tab](#configuration-and-tokens).
+
 `config-editor.js` keeps the unapplied draft across view updates and window hides.
 `editor.js` draws its fields, problems, change bar and in-list review. Apply first
 asks the agent to check, then lists the agent's effects for every pool. A change

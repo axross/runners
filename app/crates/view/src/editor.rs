@@ -110,7 +110,7 @@ pub fn editor_access(
             "repository",
             "Repository",
             "text",
-            "Not set — owner/name required",
+            "Not set — owner/name, unless the pool names an organization",
         ),
         field(
             "runners",
