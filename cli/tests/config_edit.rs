@@ -648,6 +648,41 @@ fn the_host_decides_which_result_is_valid() {
 }
 
 #[test]
+fn a_scale_set_on_the_mac_is_refused_with_its_path_and_the_file_stays() {
+    let before = "\
+schema_version = 1
+routing_label = \"axmc\"
+
+[budget]
+cpus = 4
+memory_gb = 16
+disk_gb = 100
+
+[[pool]]
+name = \"alpha\"
+repository = \"octo/hello\"
+runners = 1
+disk_gb = 40
+";
+    let config = Config::new(before);
+    let error = edit_config(
+        &config.path,
+        Profile::Axmc,
+        None,
+        &[set(pool(0, Key::ScaleSet), text("axmc-jobs"))],
+    )
+    .unwrap_err();
+    assert_eq!(
+        problems(error),
+        [
+            "line 14: pool[0].scale_set: must be absent on macOS; on-demand pools are not supported yet"
+        ]
+    );
+    assert_eq!(bytes_of(&config), before.as_bytes());
+    config.assert_nothing_left_beside_the_file();
+}
+
+#[test]
 fn a_file_that_is_not_a_toml_document_is_refused_without_quoting_it() {
     const TOKEN: &str = "ghp_0123456789abcdefghijABCDEFGHIJ012345";
     let before = format!("schema_version = 1\nrouting_label = {TOKEN}\n");

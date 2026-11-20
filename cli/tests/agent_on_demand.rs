@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use marshal_cli::agent::CallError;
 use marshal_cli::agent::machine::Launch;
 use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::fake::{Call, HostCall};
@@ -418,6 +419,60 @@ async fn hidden_window_demand_respects_capacity_and_stop_cleans_exact_registrati
             conn.ok("quit").await;
         })
         .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_scale_set_on_a_mac_reload_is_invalid_and_the_service_sees_nothing() {
+    const MAC: &str = "schema_version = 1\nrouting_label = \"axmc\"\n\n[budget]\ncpus = 8\n\
+         memory_gb = 32\ndisk_gb = 180\n\n[[pool]]\nname = \"logical\"\nrepository = \"o/r\"\n\
+         runners = 1\nos = \"linux\"\ndisk_gb = 40\n";
+    let service = Service::start(1).await;
+    let mut rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.profile.set(marshal_cli::profile::Profile::Axmc);
+    rig.write_toml(MAC);
+    rig.registrar.base_override = Some(service.base.clone());
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            rig.mark_running();
+            rig.write_toml(
+                &MAC.replace("runners = 1\n", "runners = 1\nscale_set = \"axmc-jobs\"\n"),
+            );
+            let revision = conn.ok("config_read").await["revision"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            let error = conn
+                .call("config_reload", json!({"revision": revision}))
+                .await
+                .unwrap_err();
+            let CallError::Agent(body) = error else {
+                panic!("the reload was not refused: {error:?}");
+            };
+            assert_eq!(body.code, "config_invalid");
+            assert_eq!(body.problems[0].path.as_deref(), Some("pool[0].scale_set"));
+            let snapshot = conn.status().await;
+            assert_eq!(snapshot.configuration.status, "invalid");
+            assert!(
+                snapshot.configuration.problems[0].starts_with("line 13: pool[0].scale_set: "),
+                "{:?}",
+                snapshot.configuration.problems
+            );
+            assert_eq!(snapshot.configuration.in_use.unwrap().source, "last_valid");
+            assert_eq!(snapshot.runners_up, 1);
+            assert!(snapshot.pools[0].on_demand.is_none());
+            conn.ok("quit").await;
+        })
+        .await;
+    assert!(
+        service.state.lock().unwrap().requests.is_empty(),
+        "{:?}",
+        service.state.lock().unwrap().requests
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
