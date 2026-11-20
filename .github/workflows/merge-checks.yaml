@@ -49,6 +49,8 @@ jobs:
         run: mise exec -- node app/crates/app/tests/render/node_modules/playwright-core/cli.js install-deps chromium
       - name: Run Checks
         run: mise run check
+      - name: Render The Editor
+        run: mise run test:app-render
       - name: Keep Editor Renders And Measurements
         if: always()
         uses: actions/upload-artifact@v7

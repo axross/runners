@@ -449,6 +449,5 @@ depends = [
   "check:app-lock",
   "test:app",
   "test:app-frontend",
-  "test:app-render",
   "deny:app",
 ]

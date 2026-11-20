@@ -46,15 +46,17 @@ Run from the repository root.
 | `mise run check:notices`            | Fail when the checked-in licence notices in `app/notices/` no longer match `app/Cargo.lock`; `mise run notices:app` writes them again                                                                                                                                                                                                                                                                                              |
 | `mise run check:app-pins`           | Fail unless the CLI's and the app's toolchain files name one channel and `app/tauri-cli.version` holds one exact version; `mise run test:tauri-cli-version` tests the script that reads it                                                                                                                                                                                                                                         |
 | `mise run check:app-lock`           | Fail when the app's lockfile resolves a crate `marshal-cli` builds with, for Windows, macOS or Linux, to another version than the CLI's                                                                                                                                                                                                                                                                                            |
-| `mise run check`                    | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                                                                                                                                                                                                                                             |
+| `mise run check`                    | Run every gate above except the writing `format` and the rendering gate; this is what the Check job's first step runs                                                                                                                                                                                                                                                                                                              |
 
 The Linux x64 rendering gate needs one explicit preparation step:
 `mise run prepare:app-render`. It installs test-only npm dependencies from
 `app/crates/app/tests/render/package-lock.json`, with lifecycle scripts disabled,
 and checksum-verifies Chromium before extracting it under `.amp/in/browser-runtime/`.
 It installs no OS libraries. CI prepares those on its disposable GitHub-hosted
-runner only. `mise run test:app-render` runs the browser gate alone; `mise run check`
-includes it and never installs the browser. Screenshots and results go under
+runner only. `mise run test:app-render` runs the browser gate alone. `mise run check`
+does not include it, so a checkout without the browser, and any host other than
+Linux x64, can still run `check`. The Check job runs the gate as its own step
+after `mise run check` and keeps its screenshots and results from
 `.amp/in/artifacts/k3-render-ci/`. [App](../operations/app.md#the-configuration-editor)
 describes the checks and their limits. To regenerate the test-only lock after
 changing its manifest, use `npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
