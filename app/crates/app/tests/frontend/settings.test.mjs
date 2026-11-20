@@ -24,6 +24,7 @@ function tab(changes = {}) {
   return {
     intro: "Saved in config.toml as soon as you change it.",
     unavailable: null,
+    reason_in_intro: false,
     chip: null,
     groups: [{ title: "Sleep and network", rows: [ROW] }],
     ...changes,
@@ -70,6 +71,32 @@ test("an unavailable checkbox does not toggle and gives its reason in its descri
     described.some((id) => byId(panel, id)?.textContent === why),
     "the reason is not among the checkbox's descriptions",
   );
+});
+
+test("a reason the intro gives is the checkbox's description, not a second paragraph", () => {
+  const why = "Settings cannot be changed while config.toml has problems.";
+  const panel = settingsPanel(
+    tab({ intro: why, unavailable: why, reason_in_intro: true }),
+    {},
+  );
+  const paragraphs = elements(panel).filter(
+    (element) => element.tag === "p" && element.textContent === why,
+  );
+  assert.equal(paragraphs.length, 1);
+  const described = checkbox(panel).getAttribute("aria-describedby").split(" ");
+  assert.ok(described.includes(paragraphs[0].getAttribute("id")));
+});
+
+test("a reason the intro does not give is its own paragraph the checkbox points to", () => {
+  const why =
+    "Settings cannot be changed while Marshal's agent does not answer.";
+  const panel = settingsPanel(tab({ unavailable: why }), {});
+  const paragraphs = elements(panel).filter(
+    (element) => element.tag === "p" && element.textContent === why,
+  );
+  assert.equal(paragraphs.length, 1);
+  const described = checkbox(panel).getAttribute("aria-describedby").split(" ");
+  assert.ok(described.includes(paragraphs[0].getAttribute("id")));
 });
 
 test("a value the view does not know shows neither on nor off and does not toggle", () => {

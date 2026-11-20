@@ -77,7 +77,7 @@ function settingRow(row, off, ctx) {
 export function settingsPanel(tab, ctx) {
   const offId = tab.unavailable ? nextId("settings-off") : null;
   // when the intro already says why, it is the reason every checkbox points to
-  const introSaysWhy = tab.unavailable === tab.intro;
+  const introSaysWhy = tab.reason_in_intro;
   return [
     h("p", {
       id: introSaysWhy ? offId : null,

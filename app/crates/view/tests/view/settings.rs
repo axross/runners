@@ -305,6 +305,7 @@ fn while_a_setting_is_saved_no_other_can_be_changed_and_it_shows_the_value_chose
     assert_eq!(saving.state, "Being saved as off.");
     let other = rows.iter().find(|row| row.key == "start_at_login").unwrap();
     assert_ne!(other.state, "Being saved as off.");
+    assert!(!tab.reason_in_intro);
 }
 
 #[test]
@@ -315,6 +316,7 @@ fn with_config_toml_invalid_at_launch_the_values_are_unknown_and_the_tab_needs_a
     let invalid = "Settings cannot be changed while config.toml has problems. Fix the file, then choose Start All.";
     assert_eq!(tab.unavailable.as_deref(), Some(invalid));
     assert_eq!(tab.intro, invalid);
+    assert!(tab.reason_in_intro);
     assert!(
         tab.groups
             .iter()
@@ -334,6 +336,7 @@ fn a_problem_naming_one_setting_leaves_only_that_one_unknown() {
     });
     let view = view_of(&snapshot);
     let tab = settings(&view);
+    assert!(tab.reason_in_intro);
     assert_eq!(row(tab, "keep_awake").checked, None);
     assert_eq!(row(tab, "keep_awake").state, "Not readable in config.toml.");
     assert_eq!(row(tab, "stop_on_network_change").checked, Some(false));
@@ -376,6 +379,37 @@ fn under_lost_contact_the_last_values_stay_and_nothing_can_be_changed() {
         Some("Settings cannot be changed while Marshal's agent does not answer.")
     );
     assert_eq!(row(tab, "start_at_login").checked, Some(true));
+    assert!(!tab.reason_in_intro);
+}
+
+#[test]
+fn the_intro_gives_the_reason_only_when_it_is_that_the_file_has_problems() {
+    let missing = with_lifecycle(|value| value["configuration"]["status"] = json!("missing"));
+    let view = view_of(&missing);
+    let tab = settings(&view);
+    assert_eq!(
+        tab.unavailable.as_deref(),
+        Some("Settings cannot be changed until config.toml exists.")
+    );
+    assert!(tab.intro.starts_with("Saved in config.toml"));
+    assert!(!tab.reason_in_intro);
+
+    // the intro still names the problems, but the reason shown is the lost contact
+    let invalid = with_lifecycle(|value| value["configuration"]["status"] = json!("invalid"));
+    let view = view_in(
+        Connection::LostContact {
+            last_heard_ms: now().now_ms,
+            cause: Cause::Dropped,
+        },
+        Some(&invalid),
+    );
+    let tab = settings(&view);
+    assert!(tab.intro.contains("has problems"));
+    assert_eq!(
+        tab.unavailable.as_deref(),
+        Some("Settings cannot be changed while Marshal's agent does not answer.")
+    );
+    assert!(!tab.reason_in_intro);
 }
 
 #[test]
@@ -412,6 +446,7 @@ fn the_macs_agent_reporting_no_settings_leaves_every_setting_unavailable_without
         row(tab, "start_at_login").label,
         "Start Marshal when I sign in"
     );
+    assert!(!tab.reason_in_intro);
     assert_eq!(tab.chip, None);
     assert_eq!(list(&view).header.settings_chip, None);
 }
