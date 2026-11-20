@@ -134,8 +134,9 @@ The independent-review gate remains mandatory.
 On Claude Code, a missing `reviewer` subagent leaves both gates unmet under this
 exception: it is the pre-flight reader whose absence the exception covers, and
 it is also the independent-review route, which no other subagent, provider, or
-session the run chooses replaces; the Claude CI alternative applies only when
-the maintainer selects it for the run. The pull request stays draft and the run
+session the run chooses replaces; the Claude CI alternative, or a review
+session the maintainer instructs, applies only when the maintainer selects it
+for the run. The pull request stays draft and the run
 reports both gates as unmet.
 
 ## Tracking Issue Completion
@@ -1311,8 +1312,9 @@ An instance that cannot post, a review that does not appear, a review that does
 not correlate, and a failed isolation check are failures of the selected route,
 which block the review gate as The Independent Review, above, states. A missing
 or refused `reviewer` is one too, and no other subagent, provider, or session
-the run chooses substitutes for it; the Claude CI alternative applies only when
-the maintainer selects it for the run. Record the incomplete evidence. Stop any round's instance
+the run chooses substitutes for it; the Claude CI alternative, or a review
+session the maintainer instructs, applies only when the maintainer selects it
+for the run. Record the incomplete evidence. Stop any round's instance
 that is still running after its result is verified or its round has failed with
 `TaskStop`, and record it as stopped.
 
@@ -1337,8 +1339,12 @@ A review session that another session starts for a run is not a route. Earlier
 runs used one on a decision relayed for a single run, but no document described
 it and the grant's targets cover only the actors the run itself creates, so it
 adds a second actor outside the grant between the author and the review.
-Reviews already completed that way are unaffected, and a review session the
-maintainer instructs for a run counts as that run's independent review.
+Reviews already completed that way are unaffected. A review session the
+maintainer instructs for a run counts as that run's independent review only
+when it meets the qualification in The Independent Review, above: a fresh
+context without the author's conversation, started after the draft pull request
+exists, and posting its own COMMENT-type review that the run correlates with a
+round token and the reviewed commit.
 
 ## Acceptance Criteria Verified Out of Tree
 

@@ -448,10 +448,12 @@ one. The denial covers editing tools and nested spawning, not every possible
 shell write. Without an assignment that names the instance as a round's
 independent review and carries that round's token, it returns its report
 privately and posts nothing; with one, it posts exactly one COMMENT-type review.
-Which limits the host enforces and which stay instruction-only is listed with
-the standing delivery grant in
-[Development Workflow](./development-workflow.md), including that the posting
-condition itself is instruction-only for every instance. An instance used for
+The host enforces only that denial. Every other limit is instruction-only for
+every instance: shell writes and commits, push and merge, approve or
+request-changes verdicts, GitHub writes beyond the round's one review, starting
+or messaging actors through non-Agent routes, and the posting condition itself.
+The standing delivery grant in [Development Workflow](./development-workflow.md)
+owns that list. An instance used for
 the pre-flight is advisory and is never the independent review; only a new
 instance the run assigns that role counts.
 
@@ -551,8 +553,8 @@ directly where permitted; an unavailable advisory reviewer is recorded rather
 than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
 or whose spawn the host refuses, is also an unavailable independent-review
 route: that gate stays unmet, and no other subagent, provider, or session the
-run chooses replaces it; the Claude CI alternative applies only when the
-maintainer selects it for the run. A CLI agent or persistent thread MUST NOT be
+run chooses replaces it; the Claude CI alternative, or a review session the
+maintainer instructs, applies only when the maintainer selects it for the run. A CLI agent or persistent thread MUST NOT be
 used to bypass a missing role or a prohibited purpose. For unavailable research,
 plan, or design review, the driver MUST use
 [Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).
