@@ -13,11 +13,22 @@ path = "src/main.rs"
 
 # the CLI's stand-in for the docker client, built here too so the tests that start this
 # executable's exporter child can run it against a fake engine, as the CLI's own tests do.
+# It and the process tests need the `fake-engine` feature, which no shipped build turns
+# on, so Tauri's bundler leaves it out of the Mac app's Contents/MacOS.
 [[bin]]
 name = "fake-docker"
 path = "../../../cli/helpers/fake_docker.rs"
 test = false
 doc = false
+required-features = ["fake-engine"]
+
+[[test]]
+name = "process"
+path = "tests/process/main.rs"
+required-features = ["fake-engine"]
+
+[features]
+fake-engine = []
 
 [dependencies]
 marshal-cli = { path = "../../../cli" }

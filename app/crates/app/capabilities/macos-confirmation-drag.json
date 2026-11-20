@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "macos-confirmation-drag",
+  "description": "On macOS only, where option B's unified title bar hides the question window's own: dragging the window by its top band; it cannot be zoomed, so nothing else is granted",
+  "platforms": ["macOS"],
+  "windows": ["confirmation"],
+  "permissions": ["core:window:allow-start-dragging"]
+}

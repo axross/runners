@@ -2,8 +2,8 @@
 
 This project's supply-chain and runner-trust conventions: how a `uses:` reference
 under [`.github/`](../../.github) is pinned, what a workflow may be granted, how a
-release of the app is published and how signing is held for its next signing job,
-where
+release of the app is published and its update feed signed, and how the Mac's signing
+is held for its next signing job, where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
 what the Windows app's web view and process may do, and what is never committed. It
 does not cover general application-level security, such as input validation or the
@@ -151,8 +151,8 @@ WiX. To bump it:
 The change needs the maintainer's review, since it changes the supply-chain
 surface (see [REVIEW.md](../../REVIEW.md)).
 
-The macOS signing job pins the one certificate it embeds. This pin is held for M2
-and W4: W1's installer pull request removed the job that embeds it, and M2's
+The macOS signing job pins the one certificate it embeds. This pin is held for M2:
+W1's installer pull request removed the job that embeds it, and M2's
 disk-image pull request brings the job back with the pin below. Apple's Developer ID
 G2 intermediate certificate is embedded in `sign-macos` as base64, because the runner
 image's trust in it is unknown and the job fetches nothing. The job refuses it
@@ -203,14 +203,16 @@ W4's `update-tool` job builds the update signer from the archive whose SHA-256
 in `mise run check` fails when its version differs from the pin. The
 install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
-the Windows job of `merge-checks.yaml` and, since W1's installer pull request, in the
-Windows leg of `release-build.yaml`, which builds the released app. Both hold
-`contents: read`, read no secret and publish nothing, and both install the tool the
-same way, at the same pin read through the same script, under `$RUNNER_TEMP` with no
-cache. `tauri-cli`'s build scripts and procedural macros run code at build time under
-that job's account, which is why the job is what bounds them; in the release build
-the tool's output is the app that the next jobs attest and publish, so the exception
-covers the released app's build too. Nothing else installs the tool. To move the pin, see
+the Windows and macOS app jobs of `merge-checks.yaml` and, since W1's installer pull
+request, in the Windows leg of `release-build.yaml`, which builds the released app.
+Each holds `contents: read`, reads no secret and publishes nothing, and each installs
+the tool the same way, at the same pin read through the same script, under
+`$RUNNER_TEMP` with no cache. The macOS job, which M2 adds, signs nothing and keeps
+the unsigned Mac app and disk image only as a workflow artifact. `tauri-cli`'s build
+scripts and procedural macros run code at build time under those jobs' accounts,
+which is why the jobs are what bounds them; in the release build the tool's output is
+the app that the next jobs attest and publish, so the exception covers the released
+app's build too. Nothing else installs the tool. To move the pin, see
 [App](../operations/app.md#the-tauri-cli-pin); the change needs the maintainer's
 review, since it changes the supply-chain surface (see
 [REVIEW.md](../../REVIEW.md)). Any other unpinned download remains a finding.
@@ -276,7 +278,9 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   to the tree and runs only when the target is Windows with the MSVC environment;
   `serde`, `serde_json` and `tokio` for the session and the view, at versions the
   library already builds, so they add no crate; `windows-registry` 0.6 on Windows, which reads the taskbar's mode and the
-  time zone's bias without `unsafe` code; and `keepawake` 0.6 on Windows, without its
+  time zone's bias without `unsafe` code; `core-foundation` 0.10 on macOS, Core
+  Foundation's safe wrapper, which reads the time zone's offset, at the version
+  Tauri's window crate already links there, so it adds no crate; and `keepawake` 0.6 on Windows, without its
   default features, which asks Windows not to idle-sleep while the agent's runners run
   and which the library's policy does not admit, so the executable gives the request to
   the agent. Its `derive_builder` macros bring a second version of the `darling`
@@ -499,7 +503,8 @@ record a change to either workflow, to the build call in
     read in the release workflows outside `sign-update`'s sign step, or if another
     workflow reads a signing secret, so a signing job that returns changes it in the
     same pull request.
-    [CLI](../operations/cli.md#what-the-release-tests-cover) lists its rules. A pull
+    The What the Release Tests Cover section of [CLI](../operations/cli.md)
+    lists its rules. A pull
     request can edit it, so it guards against mistakes, not against a hostile pull
     request, and [CLI](../operations/cli.md#extending-the-release-workflows) names
     what it does not read. What keeps pull requests away is the branch rule on the
@@ -523,7 +528,19 @@ record a change to either workflow, to the build call in
     crate archive whose SHA-256 equals one committed in the repository. The signing
     job checks the binary it receives against the SHA-256 that the tool job outputs,
     before it runs it.
-    [CLI](../operations/cli.md#extending-the-release-workflows) names the points.
+    These are contracts for later pull requests, not jobs already implemented,
+    except W4's `update-tool` and `sign-update`.
+    W1's installer pull request comes first; M2's disk-image and W4's feed
+    pull requests may then merge in either order. From W1's installer pull request
+    until the next signing job, M2's or W4's, no job declares `release` and no
+    signing approval step runs. The maintainer's dispatch remains the decision;
+    the Environment and its secrets stay in place. W4's pull request MUST allow
+    `release` on `sign-update` as well as `sign-macos` when present. The release
+    build's exact-pin `cargo install --locked` use of `tauri-cli` is an exception
+    under the Pinning Convention, with no cache and Cargo's checks against the
+    crates.io index checksums.
+    [CLI](../operations/cli.md#extending-the-release-workflows) owns the release
+    sets, job dependencies, restoration point and each extension's obligations.
 - **The documented install blocks run against the dry run's installer on a hosted
   runner.** The `Install Blocks` job in
   [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
@@ -922,12 +939,12 @@ later host:
   for all of them, and a secret that can register runners for the automation that
   reads it is not a boundary. The agent reads the token from the operating system's
   store on every registration, one entry per repository, as
-  [The Agent Keeps Tokens in the Operating System's Store](#the-agent-keeps-tokens-in-the-operating-systems-store)
+  the section The Agent Keeps Tokens in the Operating System's Store
   records. Until W1's installer pull request the command line read it from a file
   restricted to the host user; those token-file rules, and the command line that
-  applied them, are at the
-  [last command-line release](../operations/cli.md#the-last-command-line-release)'s
-  tag, and no code path of the app reads a token file.
+  applied them, are at the last command-line release's tag, identified in
+  The Last Command-Line Release section of [CLI](../operations/cli.md).
+  No code path of the app reads a token file.
 - Multiple execution pools for one repository MUST use the same token, the
   repository's one store entry; pools of different repositories never share one.
   Extra pools do not expand the token's repository authority.
@@ -1094,8 +1111,32 @@ named and used.
   persistence back. Any process of the same user can read the credential, as any
   can read a token file the user owns: the Credential Manager is not a boundary
   against the user's other programs.
-- On macOS and Linux the agent has no store, so it skips every pool with "no token
-  store" rather than falling back to a file; it never reads `tokenPath`.
+- On macOS a token is a generic password in the user's login keychain, with the
+  service `app.axross.marshal` and the account `github.com/<owner>/<name>` for a
+  repository or `github.com/<org>` for an organization; its label, which Keychain
+  Access shows, is `Marshal: <owner>/<name>` or `Marshal: <org> (organisation)`. The
+  agent is its only writer and reader. It adds each item with no access object of its
+  own, so macOS trusts the adding program by its designated requirement and its
+  team's partition, `teamid:<team>`. The requirement names the identifier
+  `app.axross.marshal`, the Developer ID markers and the team, not a path or a
+  certificate, so a later release signed by the same team reads the item; changing
+  the identifier or the team breaks that trust. An ad-hoc build, such as a dry run's,
+  is matched by its own code hash and reads only the items it stored. Setting a token
+  deletes the old item and adds a new one, so the item trusts the build that stored
+  it last.
+  - Any program the same team signs under `app.axross.marshal`, including a signed
+    `marshal` command line still on the Mac, can read the items. Another program of
+    the same user can ask for one, and macOS then asks the user, naming its label:
+    the Keychain is a boundary only as far as the user answers that dialog.
+  - The agent turns the Keychain's user interaction off for its whole life, so it
+    never shows a dialog. A read or write that would need the user, such as on a
+    locked keychain, fails at once with the kind `needs_user`, and the pool is
+    skipped with that reason rather than waiting on a dialog that an unattended Mac
+    would leave unseen.
+  - macOS refuses Keychain access to code changed on disk after it started; the
+    agent's changed-executable rule already ends such an agent.
+- On Linux the agent has no store, so it skips every pool with "no token store"
+  rather than falling back to a file. On no OS does it read `tokenPath`.
 - The `token_set` request is the first message in which a secret travels, from the
   client to the agent. The token is held as a `Secret` once the request is parsed,
   is masked in the log from then on, and is never repeated: not in the
@@ -1164,14 +1205,19 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   never as markup. A change to the policy, to the files it governs or to the element
   builder needs the maintainer's review.
 
-- **Two capabilities grant what a window may call.** The app declares its commands, so
+- **Four capabilities grant what a window may call, two of them on macOS only.** The app declares its commands, so
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
   again, set a token, remove a token, hide the window and open a runner's job. The
   confirmation window's
-  grants the two commands that read its question and answer it. Neither grants
-  anything else, each is limited to its window, and a test shows that a call the
+  grants the two commands that read its question and answer it. On macOS, where the
+  unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
+  the main window `core:window:allow-start-dragging` and
+  `core:window:allow-internal-toggle-maximize`, to drag and zoom it by its header
+  band, and `macos-confirmation-drag` grants the question window, which cannot be
+  zoomed, only `core:window:allow-start-dragging`. None grants anything else, each is
+  limited to its window, and a test shows that a call the
   capability does not grant is refused. The permission files Tauri generates are
   checked in, so a change to them shows in a diff, and Tauri's `dynamic-acl` feature
   is off, so no capability can be added while the app runs. Quit has no command: it
@@ -1204,10 +1250,16 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   [Updates Come Only From the Signed Feed](#updates-come-only-from-the-signed-feed).
 - **The debug-only test variables are ignored in a release build.** A debug build's
   agent and app read `MARSHAL_TEST_ROOT`, `MARSHAL_TEST_DOCKER` and
-  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host.
-  A release build ignores all three, so no environment can move the lock, channel,
-  log, configuration, `docker` program or GitHub address of an installed Marshal, as
-  for the CLI under [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user).
+  `MARSHAL_TEST_GITHUB_API`, so a test can run the executable against a scratch host;
+  on axmc the agent also reads the CLI's debug-only `tart` and signal variables, and
+  on the Mac the app reads `MARSHAL_TEST_ANY_LOCATION`, which lifts the rule that
+  only a copy in Applications controls an agent. A release build ignores all of them,
+  so no environment can move the lock, channel, log, configuration, `docker` or
+  `tart` program or GitHub address of an installed Marshal, or let a copy outside
+  Applications start an agent, as for the CLI under
+  [One Instance per Machine](#one-instance-per-machine-reached-only-by-its-user). The
+  `app-macos` job tests the location rule in the release profile with the variable
+  set.
 - **The app starts its agent from a file it checked.** It starts it from its own
   executable's absolute path as a plain detached child, never through Tauri's shell
   plugin, and never from a file that is missing, that it could not read when it
@@ -1578,7 +1630,9 @@ five after it are the constraints the VM runtime of
   instead.
 - Every `tart` call MUST set `TART_NO_AUTO_PRUNE`, so a clone never deletes an image
   another program cached; MUST get `marshal`'s own `PATH`, which `marshal` also uses
-  to find `tart` and `softnet`; and MUST have a standard output that is not a
+  to find `tart` and `softnet` (for the Mac app's agent, the fixed
+  `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin` the app gives it, so no
+  directory the user's shell adds is searched); and MUST have a standard output that is not a
   terminal, so Tart never offers to change Softnet's privilege. Only `build`
   deletes golden and build VMs.
 - A VM MUST have a fixed vCPU count, memory size and disk cap, the pool's `cpus`,
@@ -1724,6 +1778,54 @@ mounts a host's socket, or gives a VM to more than one job ends it and needs a n
 decision. [macOS Runner Host](../operations/macos-runner-host.md) records that the
 mount and the group match have not run on a Mac.
 
+## A macOS Job on axmc Runs in a Per-Job macOS VM
+
+An `os: "macos"` pool's job runs in its own Tart macOS VM, cloned from the golden
+macOS VM for that job and deleted after it. The constraints of
+[A Linux Job on axmc Runs in a Per-Job VM](#a-linux-job-on-axmc-runs-in-a-per-job-vm)
+hold for it: the clone and deletion, the shim, the settings that share and attach
+nothing, `TART_NO_AUTO_PRUNE`, the bounded guest output, and the fixed vCPUs, memory
+and disk. [CLI](../operations/cli.md#macos-vm-pools) owns the runtime and
+[macOS Runner Host](../operations/macos-runner-host.md#the-golden-macos-vm-and-macos-pools)
+the procedure. The differences are these:
+
+- **The guest is open inside.** SIP and Gatekeeper are off in the base, and a job
+  has root through `sudo`. This is accepted, because the VM serves one job and is
+  deleted afterwards. The job can read its own JIT configuration inside the VM, as
+  on Linux.
+- **The JIT configuration** reaches the launcher only on the guest agent's standard
+  input, and the launcher passes it to the runner in `ACTIONS_RUNNER_INPUT_JITCONFIG`.
+  It is never an argument of any call.
+- **Remote access is off.** The golden macOS VM's build turns off Remote Login and
+  Screen Sharing, so the base's known `admin` password opens no network login.
+- **Guest OS fixes arrive only with a new base pin.** The build turns off the
+  automatic download and installation of macOS updates and leaves the automatic
+  check on, so a job never meets a half-installed update; the base-age warning from
+  30 days prompts a bump.
+- **The base is a third-party image** with preinstalled tools, trusted by its pinned
+  digest. A base bump reviews what Cirrus Labs changed.
+- **The runner archive is checked.** The build installs
+  `actions-runner-osx-arm64-<version>.tar.gz` only when its SHA-256 equals the runner
+  record's. GitHub's JIT configuration turns the runner's self-update off, so the
+  checked archive is the only runner a job VM runs.
+  `MARSHAL_TEST_RUNNER`, which declares another runner and digest, works only in a
+  debug build.
+- **At most two macOS VMs.** Apple's macOS licence, §2B(iii) in both the macOS
+  Tahoe 26 and the macOS 27 licence, allows "up to two (2) additional copies or
+  instances" in virtual machines on a Mac the licensee owns or controls, for
+  software development, testing during development, macOS Server, or personal
+  non-commercial use, and excludes service-bureau, time-sharing and similar
+  services. The runtime counts the macOS VMs before every clone, as
+  [CLI](../operations/cli.md#the-two-vm-count) states, over-counting when it cannot
+  read a VM's OS.
+  The allowance assumes the Mac's macOS is licensed under §2B, as macOS installed or
+  updated by download is; a copy licensed only under §2A carries no right to virtual
+  copies.
+- **CPU placement** is the VM's vCPUs, with no container inside.
+- **Untested.** Softnet's filtering and the isolation settings are not tested for
+  macOS job VMs, as for Linux ones. M1's condition carries over: macOS pools take
+  jobs only while no public repository and no fork pull request reaches axmc.
+
 ## Tart, Softnet, and the Golden VM Are Pinned
 
 `marshal` neither bundles, installs nor repairs Tart or Softnet: the maintainer
@@ -1758,6 +1860,9 @@ what a reviewed change changes.
 - The runner image's arm64 build and smoke test in CI run on `ubuntu-24.04-arm`, a
   GitHub-hosted runner, tag the image on the runner and never push it, and their job
   holds only `contents: read`.
+- The macOS base, `ghcr.io/cirruslabs/macos-tahoe-base`, MUST be pinned by digest in
+  `MACOS_BASE`, with its macOS version and publication day, and its retired digests
+  follow the same rule as the Ubuntu base's.
 - The VM runtime adds no crate to the CLI.
 
 ## Nothing Identifying or Secret Is Committed
@@ -1828,7 +1933,8 @@ log, not in a process listing.
 `claude-review.yaml`'s reviewer job gates on the comment's `author_association`,
 admitting only `OWNER`, `MEMBER`, and `COLLABORATOR`. The gate exists to keep an
 untrusted author from spending this repository's tokens or steering the reviewer.
-Review requests from the Claude Code route, when posted through the installed
+Review requests from the explicitly selected Claude CI alternative, when posted
+through the installed
 Claude GitHub App, carry the `claude[bot]` identity, whose association GitHub
 reports as `NONE`, the same value an outside contributor's comment carries, so
 those requests were gated out identically to an outsider's. The gate's fourth
@@ -1879,8 +1985,8 @@ Two properties keep the admission bounded, and a third does not hold:
   damage, and is a maintainer decision made outside this repository.
 
 The cost is a silent-skip failure mode. The gate trusts a login string; if that
-login changes, the gate silently reverts to skipping the Claude Code route's
-requests, with no failed run and no comment. The trigger-phrase rule carries the
+login changes, the gate silently reverts to skipping the explicitly selected
+Claude CI alternative's requests, with no failed run and no comment. The trigger-phrase rule carries the
 opposite risk: if the reviewer quotes the phrase, a review starts that nobody
 asked for. Neither is mechanically detected; both are found only by noticing that
 reviews stopped arriving, or arrived when they should not have. Admitting the

@@ -97,6 +97,9 @@ pub enum ImageCheck {
     Unavailable(String),
     /// what the VM runtime's check of the golden VM found, in place of an image.
     Golden(GoldenCheck),
+    /// the configuration runs no Linux pool, so no runner image or Linux golden VM is
+    /// needed; the golden macOS VM is checked where a macOS VM is cloned.
+    NoLinuxPool,
 }
 
 /// what the check of the golden VM found, from the VM names alone.
@@ -168,7 +171,7 @@ impl ImageCheck {
     #[must_use]
     pub fn refusal(&self, image: &str) -> Option<String> {
         match self {
-            Self::Matching(_) | Self::Unavailable(_) => None,
+            Self::Matching(_) | Self::Unavailable(_) | Self::NoLinuxPool => None,
             Self::Golden(golden) => golden.refusal(),
             Self::Mismatched(labels) => Some(format!(
                 "the image {image} has image contract {}, but this CLI needs image contract {CONTRACT_VERSION}",
@@ -184,7 +187,7 @@ impl ImageCheck {
         match self {
             Self::Matching(labels) | Self::Mismatched(labels) => Some(labels),
             Self::Golden(golden) => golden.labels(),
-            Self::Missing | Self::Unavailable(_) => None,
+            Self::Missing | Self::Unavailable(_) | Self::NoLinuxPool => None,
         }
     }
 
@@ -261,7 +264,7 @@ fn runner_release(labels: &ImageLabels) -> Option<(&str, u64)> {
 }
 
 /// the start of a `YYYY-MM-DD` day in UTC, in Unix seconds, from 1970 on.
-fn date_seconds(text: &str) -> Option<u64> {
+pub(crate) fn date_seconds(text: &str) -> Option<u64> {
     let mut parts = text.split('-');
     let (Some(year), Some(month), Some(day), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
@@ -331,8 +334,9 @@ impl Freshness {
                 format!("{subject} is {days} days old and should be rebuilt")
             }
             Self::RunnerOld { version, days } => format!(
-                "runner {version} was released {days} days ago, so each job's runner likely updates \
-                 itself at start; update Marshal to get a newer runner, then build {subject} again"
+                "runner {version} was released {days} days ago and never updates itself; update \
+                 Marshal to get a newer runner, then build {subject} again before GitHub stops \
+                 sending jobs to this version"
             ),
             Self::RunnerMayBeNewer { version, days } => format!(
                 "runner {version} was released {days} days ago, and a newer runner may exist"
@@ -386,6 +390,7 @@ pub fn status_fields(
     let contract = match check {
         None | Some(ImageCheck::Unavailable(_)) => "not checked".to_string(),
         Some(ImageCheck::Matching(_)) => CONTRACT_VERSION.to_string(),
+        Some(ImageCheck::NoLinuxPool) => "not used, no Linux pool".to_string(),
         Some(ImageCheck::Mismatched(labels)) => format!(
             "mismatch (image {}, CLI {CONTRACT_VERSION})",
             shown_contract(labels)
@@ -708,8 +713,9 @@ mod tests {
         let warnings = freshness_warnings(&matching, now);
         assert_eq!(
             warnings.last().unwrap(),
-            "runner 2.337.0 was released 61 days ago, so each job's runner likely updates itself \
-             at start; update Marshal to get a newer runner, then build the golden VM again"
+            "runner 2.337.0 was released 61 days ago and never updates itself; update Marshal to \
+             get a newer runner, then build the golden VM again before GitHub stops sending jobs \
+             to this version"
         );
         let newer_golden_version = GOLDEN_VM_VERSION + 1;
         let mismatched = ImageCheck::Golden(GoldenCheck::Mismatched {

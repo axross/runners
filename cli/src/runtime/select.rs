@@ -20,8 +20,8 @@ impl Runtime {
     pub fn of_pool(profile: Profile, os: Option<Os>) -> Option<Self> {
         match (profile, os) {
             (Profile::Axpc, _) => Some(Self::DockerDesktop),
-            (Profile::Axmc, Some(Os::Linux)) => Some(Self::TartVm),
-            (Profile::Axmc, Some(Os::Macos) | None) => None,
+            (Profile::Axmc, Some(_)) => Some(Self::TartVm),
+            (Profile::Axmc, None) => None,
         }
     }
 }
@@ -31,16 +31,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_axpc_pool_selects_docker_an_axmc_linux_pool_a_vm_and_a_macos_pool_none() {
+    fn every_axpc_pool_selects_docker_and_every_axmc_pool_a_vm() {
         assert_eq!(
             Runtime::of_pool(Profile::Axpc, None),
+            Some(Runtime::DockerDesktop)
+        );
+        assert_eq!(
+            Runtime::of_pool(Profile::Axpc, Some(Os::Linux)),
             Some(Runtime::DockerDesktop)
         );
         assert_eq!(
             Runtime::of_pool(Profile::Axmc, Some(Os::Linux)),
             Some(Runtime::TartVm)
         );
-        assert_eq!(Runtime::of_pool(Profile::Axmc, Some(Os::Macos)), None);
-        assert_eq!(Runtime::of_pool(Profile::Axmc, None), None);
+        assert_eq!(
+            Runtime::of_pool(Profile::Axmc, Some(Os::Macos)),
+            Some(Runtime::TartVm)
+        );
     }
 }

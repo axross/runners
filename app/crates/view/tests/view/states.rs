@@ -440,7 +440,7 @@ fn old_packages_and_an_image_not_built_by_marshal_are_worded_without_a_command()
         view.window.footer.warnings,
         [
             "Warning: the image's operating-system packages are 30 days old; build the image again.",
-            "Warning: runner 2.330.0 was released 40 days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again.",
+            "Warning: runner 2.330.0 was released 40 days ago and never updates itself; update Marshal to get a newer runner, then build the image again before GitHub stops sending jobs to it.",
             "Warning: the image was not built by Marshal, so its build age is unknown."
         ]
     );

@@ -1,8 +1,9 @@
 # pins the lint and format toolchain, so a local run and CI use the same tool
-# versions; README.md documents the tasks and docs/operations/agent-sessions.md
-# the hooks that call them. cli/rust-toolchain.toml pins the Rust toolchain, app/
-# names the same channel, and .agents/install-rust provisions it, so it is not a mise
-# tool.
+# versions; docs/conventions/testing.md documents the tasks,
+# docs/operations/development-setup.md the contributor setup, and
+# docs/operations/agent-sessions.md the hooks that call them.
+# cli/rust-toolchain.toml pins the Rust toolchain, app/ names the same channel,
+# and .agents/install-rust provisions it, so it is not a mise tool.
 
 [tools]
 # release.yaml installs this Node with actions/setup-node, which Dependabot does not
@@ -101,7 +102,7 @@ dir = "app"
 run = "cargo fmt --all --check"
 
 [tasks."lint:app"]
-description = "Lint the app's platform-independent crates (the modes, the view, the session, the icon and the update feed) with clippy, warnings as errors; the Tauri crate is linted by the Windows job"
+description = "Lint the app's platform-independent crates (the modes, the view, the session, the icon and the update feed) with clippy, warnings as errors; the Tauri crate is linted by the Windows and macOS app jobs"
 depends = ["rust:require"]
 dir = "app"
 run = "cargo clippy --locked --package marshal-modes --package marshal-view --package marshal-session --package marshal-tray --package marshal-feed --all-targets -- -D warnings"

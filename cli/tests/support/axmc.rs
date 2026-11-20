@@ -94,7 +94,10 @@ pub fn running_jobs(status: &str) -> Vec<String> {
     status
         .lines()
         .filter(|line| line.starts_with("slot: "))
-        .filter_map(|line| line.split_once("running container "))
+        .filter_map(|line| {
+            line.split_once("running container ")
+                .or_else(|| line.split_once("running VM "))
+        })
         .map(|(_, name)| name.trim().to_string())
         .collect()
 }
@@ -268,7 +271,12 @@ impl MacHost {
 
     /// the command for `marshal <args>` on this host.
     pub fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(COMMANDS_HELPER);
+        self.command_of(COMMANDS_HELPER, args)
+    }
+
+    /// `program` with `args`, in this host's environment.
+    fn command_of(&self, program: &str, args: &[&str]) -> Command {
+        let mut command = Command::new(program);
         command
             .args(args)
             .current_dir(self.root.path())
@@ -280,6 +288,21 @@ impl MacHost {
             .env("PATH", &self.path)
             .stdin(Stdio::null());
         command
+    }
+
+    /// the resident agent of the test helper on the axmc profile, with this host's
+    /// configuration in its state, a token for each of `pools` and a GitHub at `github`.
+    pub fn agent(&self, github: &str, pools: &[&str]) -> super::agent::AgentProcess {
+        fs::copy(&self.config, self.state().join("config.json")).unwrap();
+        let mut command = self.command_of(super::agent::HELPER, &["agent", "--profile", "axmc"]);
+        command
+            .arg("--root")
+            .arg(self.state())
+            .args(["--github-api", github]);
+        for pool in pools {
+            command.args(["--token", &format!("o/{pool}={TOKEN}")]);
+        }
+        super::agent::AgentProcess::from_command(command, &self.state())
     }
 
     /// runs a client, such as `status`, to its end.
@@ -412,6 +435,22 @@ impl MacHost {
         );
     }
 
+    /// waits until the fake macOS runner has started in a VM whose name starts with
+    /// `prefix`, and returns `macos_runs`. The status names the job VM before its runner
+    /// starts, so a running slot alone does not show the runner ran.
+    pub fn wait_for_macos_run(&self, prefix: &str, within: Duration) -> String {
+        let started = Instant::now();
+        let mut runs = String::new();
+        while started.elapsed() < within {
+            runs = fs::read_to_string(self.tart_dir().join("macos_runs")).unwrap_or_default();
+            if runs.lines().any(|vm| vm.starts_with(prefix)) {
+                return runs;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("no macOS runner started in a VM named {prefix}*; runs: {runs:?}");
+    }
+
     /// the names of the VMs the fake `tart` holds.
     pub fn vm_names(&self) -> Vec<String> {
         fs::read_to_string(self.tart_dir().join("vms"))
@@ -437,14 +476,16 @@ impl MacHost {
 
 /// a configuration of `pools`, each of one repository whose token file is
 /// `<name>.token` in `root`.
-fn config_for(root: &Path, pools: &[Pool]) -> String {
+pub fn config_for(root: &Path, pools: &[Pool]) -> String {
     let entries: Vec<String> = pools
         .iter()
         .map(|pool| {
             format!(
                 r#"{{"owner":"o","repository":"{name}","name":"{name}","os":"{os}","slots":{slots},
-                "tokenPath":"{token}","cpus":2,"memoryGb":4,"diskGb":30{diagnostics}}}"#,
+                "tokenPath":"{token}","cpus":2,"memoryGb":4,"diskGb":{disk}{diagnostics}}}"#,
                 name = pool.name,
+                // a macOS pool's disk is at least the golden macOS VM's 50 GB.
+                disk = if pool.os == "macos" { 50 } else { 30 },
                 os = pool.os,
                 slots = pool.slots,
                 token = root.join(format!("{}.token", pool.name)).display(),

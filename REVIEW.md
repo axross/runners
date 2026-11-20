@@ -3,10 +3,11 @@
 Apply this file when reviewing changes, not when implementing them. It is this
 repository's highest-priority review-only policy and complements the
 [Code Review](./.claude/skills/code-review/SKILL.md) methodology. Where
-posted-report instructions differ, this file governs. The Claude adapter in
+posted-report instructions differ, this file governs. The explicitly selected
+Claude CI alternative in
 [claude-review.yaml](./.github/workflows/claude-review.yaml) supplies the policy
-through its system prompt, the Amp review child thread's assignment names it,
-and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
+through its system prompt, the assignments of the Claude Code review child
+session and the Amp review child thread name it, and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
 reviewer-origin result against this policy, and treat unobserved provider input
 as unknown, not as proof of a failed review.
 [Development Workflow](./docs/operations/development-workflow.md) owns provider
@@ -18,7 +19,7 @@ This is a **strict** review: run every mandatory check and report every finding
 within the scope below. Review the acceptance criteria carried in the pull
 request body's **Acceptance criteria** section. Do not open the tracking issue
 to find them; an absent criteria section is itself a finding (Important in
-Claude and Amp review).
+Claude, Claude Code child, and Amp review).
 
 ## Adopted review arrangements
 
@@ -34,7 +35,8 @@ presentation and reporting-scope defaults in this file and Code Review:
   and disposition; native acceptance never dismisses it. A final thumbs-up
   reaction can confirm a clean round only under Development Workflow's
   request, material, and terminal-result correlation.
-- **Claude** — use diff-anchored inline findings plus exactly one top-level
+- **Claude** — the explicitly selected Claude CI alternative uses
+  diff-anchored inline findings plus exactly one top-level
   summary, not a single formal review submission. Important/Nit labels,
   all-findings reporting, summary scope, and the tally remain required,
   including `0 important, 0 nits` for a clean round. This review is advisory,
@@ -45,6 +47,12 @@ presentation and reporting-scope defaults in this file and Code Review:
   REQUEST_CHANGES. Its summary also carries the `<!-- ai-agent -->` marker, the
   child thread's URL, and the reviewed commit, because the review is posted
   under the same GitHub account as the change it reviews.
+- **Claude Code child** — the Claude Code review child session follows the Amp
+  arrangement, with the round token its assignment names in place of the child
+  thread's URL: a single submitted COMMENT-type review whose summary carries the
+  `<!-- ai-agent -->` marker, the round token, and the reviewed commit, because
+  the review can be posted under the same GitHub account as the change it
+  reviews.
 
 Accepting native scope accepts the risk of unreported omissions, not proof of
 exhaustive checking. Explicitly unchecked required scope, outstanding findings,
@@ -53,7 +61,7 @@ under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
 ## Severity labels for posted reviews
 
-Claude and Amp review use Code Review's two posted labels, **Important** and
+Claude, Claude Code child, and Amp review use Code Review's two posted labels, **Important** and
 **Nit**, instead of its internal Critical/Major/Minor/Nit triage or an
 Approve/Request-Changes verdict. Codex managed review uses native priority
 labels; its presentation and reporting scope follow the adopted arrangements
@@ -68,7 +76,7 @@ boundary.
 **Guidelines:**
 
 - MUST flag an applicable hard-rule violation and cite its owning skill or
-  project convention and rule. Claude and Amp review MUST label it Important;
+  project convention and rule. Claude, Claude Code child, and Amp review MUST label it Important;
   Codex review uses its native priority label without implying an exact
   equivalence.
 
@@ -86,7 +94,7 @@ Run the following checks on every review and raise findings within their scope:
   under [Code Review's review lenses](./.claude/skills/code-review/references/review-lenses.md),
   Acceptance Criteria boundary. Report violations demonstrable by inspecting
   the changed material, inline where a changed line supports the finding.
-  Claude and Amp review label these Important; Codex uses its native
+  Claude, Claude Code child, and Amp review label these Important; Codex uses its native
   priorities. A real-host result, machine-specific measurement, or other
   external verification does not become a finding solely because it cannot be
   confirmed from the diff or lacks an evidence link, whether designated or not.
@@ -122,7 +130,7 @@ contributor's verification.
 
 ## Public-repository safety lenses
 
-Each lens is a hard project rule. Claude and Amp review label a violation
+Each lens is a hard project rule. Claude, Claude Code child, and Amp review label a violation
 Important; Codex review uses its native priority label.
 
 - **No credentials or host-identifying values.** No token, key, password,
@@ -215,11 +223,13 @@ Important; Codex review uses its native priority label.
 
 ## VM runtime lenses
 
-These lenses apply to a change of the axmc Linux VM runtime: `cli/src/runtime/tart/`,
-`cli/src/macos/`, `cli/src/golden/`, the golden VM's provisioning assets, and the
-macOS host document. Each is a hard project rule, owned by
+These lenses apply to a change of the axmc VM runtime: `cli/src/runtime/tart/`,
+`cli/src/macos/`, `cli/src/golden/`, `cli/src/build/golden_macos.rs`,
+`cli/src/build/build_vm.rs`,
+`cli/src/image/macos_base.rs`, the golden VMs' provisioning assets, and the macOS
+host document. Each is a hard project rule, owned by
 [Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
-and the sections after it. Claude and Amp review label a violation Important;
+and the sections after it. Claude, Claude Code child, and Amp review label a violation Important;
 Codex review uses its native priority label.
 
 - **No JIT configuration in an argument list.** The JIT configuration reaches the
@@ -267,7 +277,20 @@ Codex review uses its native priority label.
   the retired list, Docker Engine, and the runner image's Docker client, come from
   Docker's apt repository at pinned versions after the signing key's fingerprint is
   checked, and the tested Tart and Softnet versions agree between the CLI and the
-  host document.
+  host document. The macOS base is pinned by digest in `MACOS_BASE`, and a bump
+  records its macOS version and publication day with it.
+- **The golden macOS VM stays closed.** A change to its provisioning
+  (`cli/src/golden/macos.rs`, `cli/src/golden/scripts/macos/`, `build::golden_macos`)
+  keeps Remote Login and Screen Sharing off, keeps the automatic download and
+  installation of macOS updates off, checks the runner archive's SHA-256 against the
+  runner record before it unpacks anything, keeps the JIT configuration on the
+  launcher's standard input and off every command line, and keeps
+  `MARSHAL_TEST_RUNNER` out of release builds. A change that weakens any of these is
+  a finding.
+- **The macOS VM limit holds.** A macOS slot counts under `PlaceLock` before every
+  clone, and `build` before it creates a macOS build VM, and a count that is
+  unreadable counts the VM. A clone outside the lock, a path that clones without a
+  count, and a change to the counting rule that under-counts are findings.
 
 The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
 golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a
@@ -360,17 +383,19 @@ Apply the lens for each kind of file in the diff.
   record in [Security](docs/conventions/security.md#the-app-surface), its web view,
   capability and token bullets. The content security policy in `tauri.conf.json`
   stays the one Security states in full, and `tauri.conf.json` keeps the web view
-  on bundled files with no developer tools in the release build. The two
-  capabilities, the main window's and the confirmation window's, and the permission
-  files Tauri generates keep to the permissions Security lists; a permission, a
-  capability or Tauri feature added, such as `dynamic-acl`, is a finding. The
+  on bundled files with no developer tools in the release build. The four
+  capabilities, the main window's and the confirmation window's on both systems and
+  the two macOS-only drag capabilities of those windows, together with
+  `tauri.macos.conf.json`'s window list and the permission files Tauri generates, keep
+  to the permissions Security lists; a permission, a capability or Tauri feature
+  added, such as `dynamic-acl`, is a finding. The
   pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and
   `on*`,
   and text from the configuration, Docker or the agent is set as text, never as
   markup, with no inline script, remote asset or npm package. No token sits in the
   page, a view state or an event after `token_set` is called. A change to the
-  policy, a capability, a permission file, `tauri.conf.json` or the element builder
-  needs the maintainer's review. The test manifest `build.rs` links into the
+  policy, a capability, a permission file, `tauri.conf.json`,
+  `tauri.macos.conf.json` or the element builder needs the maintainer's review. The test manifest `build.rs` links into the
   integration tests holds only the version 6 common controls dependency and only on
   a Windows MSVC target; another entry in it, such as an execution level, a second
   `embed-resource` call, or a test skipped or cfg-ed out to avoid it, is a finding
@@ -403,8 +428,10 @@ Apply the lens for each kind of file in the diff.
   to `APPROVED_CONTRACTS` in `cli/src/image/contract.rs`. A change that alters
   either without raising the version is a finding, even when `APPROVED_CONTRACTS`
   cannot see it. A runner bump sets the `FROM` line and the `runner-version` and
-  `runner-released` labels of both Dockerfiles, and adds the release's date from
-  the actions/runner release page to `RUNNER_RELEASES` in the same file. The
+  `runner-released` labels of both Dockerfiles, sets `DECLARED_RUNNER_VERSION`,
+  and adds the release's date and the SHA-256 of its osx-arm64 archive, both from
+  the actions/runner release page, to `RUNNER_RELEASES` in
+  `cli/src/image/runner.rs`. The
   tests that depend on the declared values read them from the Dockerfiles or the
   CLI's contract version, so neither change edits any other test; see
   [CLI](docs/operations/cli.md#the-image-contract).

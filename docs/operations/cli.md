@@ -25,16 +25,17 @@ The sections below that name `validate`, `build`, `start` and the clients `stop`
 `restart`, `status` and `diagnostics` describe the library's entry points of those
 names, which the agent shares, and the foreground instance and its protocol version 1,
 which no shipped executable runs: the tests run them through a test-only helper, as
-[Running It](#running-it) says. The command-line procedures, with their commands,
-are at the [last command-line release](#the-last-command-line-release)'s tag.
+the Running It section says. The command-line procedures, with their commands,
+are at the last command-line release's tag, identified in The Last Command-Line
+Release section.
 [Windows Runner Host](./windows-runner-host.md) describes axpc with the app. axmc has
-no supported way to run its Linux pools from W1's installer pull request until M2's
+no supported way to run its Linux and macOS pools from W1's installer pull request until M2's
 Mac app, as [macOS Runner Host](./macos-runner-host.md) says.
 
 ## Running It
 
-The library has no `main`. The app's executable runs it, in the modes
-[App](./app.md#the-executable-and-its-modes) lists: the app, the resident agent, and
+The library has no `main`. The app's executable runs it, in the modes that
+The Executable and Its Modes section of [App](./app.md) lists: the app, the resident agent, and
 the hidden modes the library relaunches it in, the diagnostics exporter and on Unix
 the container and VM shims, which `marshal_cli::command::run` dispatches. No
 user-facing command is dispatched there, so the executable never serves protocol
@@ -116,6 +117,8 @@ is an integer from 1 to 64 on `axmc`, while axpc keeps its fractional CPU counts
 `volumes` is rejected on an entry even as `null`, because VM pools keep no volumes.
 A change to what these fields accept MUST come with a recorded migration, which
 [Migrations](#migrations) holds.
+A macOS pool's `slots`, `cpus`, `memoryGb`, and `diskGb` are optional and have
+minimums; [macOS VM Pools](#macos-vm-pools) states them.
 
 ### New Rules
 
@@ -144,9 +147,12 @@ unusable.
 When any Linux pool is configured, the disk total also counts a fixed 40 GB for the
 Linux golden VM and Tart's image cache, and the disk error says so:
 `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`.
-The summary's disk line includes the reserve and ends `, including a 40 GB reserve`.
-Without a Linux pool the total and the message are the sum of slots times `diskGb`
-alone.
+When any macOS pool is configured, the disk total also counts a fixed 100 GB for the
+golden macOS VM and its cached base, and the message adds
+`, plus 100 GB for the golden macOS VM and its cached base` after the Linux clause,
+or in its place without a Linux pool. The summary's disk line includes both
+reserves and ends `, including a <n> GB reserve`. Without a Linux or macOS pool the
+total and the message are the sum of slots times `diskGb` alone.
 
 ### Migrations
 
@@ -154,13 +160,19 @@ A change to what `axmc` accepts is recorded here with each old and new rule, its
 message, and the fixture that shows it. A configuration that validated before the
 change may be rejected now; the last column says how to change it.
 
-| Rule                          | Old                                                                                          | New                                                                                                                                                               | Fixture                                                                                                                                                                                                                                                              | To migrate                                                              |
-| ----------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `cpus` of a pool              | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                                  | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                              | Round each fractional `cpus` to a whole vCPU count, at least 1          |
-| `budget.cpus`                 | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                                           | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                    | Round `budget.cpus` to a whole number that covers the pools             |
-| `diskGb` of a Linux pool      | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                             | [`axmc-linux-disk-too-small.json`](../../tests/host-configuration/rust/rejected/axmc-linux-disk-too-small.json), accepted before and rejected now, with a macOS pool at the same `diskGb` left unflagged                                                             | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool is unchanged  |
-| `imageName` of axmc           | Optional and validated as on axpc, with its use undecided                                    | Optional and validated as before; an absent name is `actions-runner:local`, and the name is the image that `build` makes inside the golden VM and every pool runs | [`axmc-image-name.json`](../../tests/host-configuration/rust/accepted/axmc-image-name.json), accepted before and now; nothing is accepted or rejected differently                                                                                                    | None; a configuration that validated still validates                    |
-| Disk budget with a Linux pool | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`                 | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190 | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots` |
+| Rule                                 | Old                                                                                          | New                                                                                                                                                                                                                                                  | Fixture                                                                                                                                                                                                                                                                                                                                                                                                            | To migrate                                                                                       |
+| ------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `cpus` of a pool                     | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `repositories[i].cpus: must be an integer from 1 to 64`                                                                                                                                                                     | [`axmc-fractional-cpus.json`](../../tests/host-configuration/rust/rejected/axmc-fractional-cpus.json), accepted before and rejected now                                                                                                                                                                                                                                                                            | Round each fractional `cpus` to a whole vCPU count, at least 1                                   |
+| `budget.cpus`                        | A number above 0 and at most 64, fractions allowed                                           | An integer from 1 to 64: `budget.cpus: must be an integer from 1 to 64`                                                                                                                                                                              | [`axmc-budget-members.json`](../../tests/host-configuration/rust/rejected/axmc-budget-members.json), message changed; `axmc-fractional-cpus.json`                                                                                                                                                                                                                                                                  | Round `budget.cpus` to a whole number that covers the pools                                      |
+| `diskGb` of a Linux pool             | Any integer from 1 to 16384                                                                  | At least 20: `repositories[i].diskGb: must be at least 20 on a Linux pool, the golden VM's disk size`                                                                                                                                                | [`axmc-linux-disk-too-small.json`](../../tests/host-configuration/rust/rejected/axmc-linux-disk-too-small.json), accepted before and rejected now; its macOS pool, at 50 GB, gets no error                                                                                                                                                                                                                         | Raise a Linux pool's `diskGb` to 20 or more; a macOS pool needs at least 50, as its own row says |
+| `imageName` of axmc                  | Optional and validated as on axpc, with its use undecided                                    | Optional and validated as before; an absent name is `actions-runner:local`, and the name is the image that `build` makes inside the golden VM and every pool runs                                                                                    | [`axmc-image-name.json`](../../tests/host-configuration/rust/accepted/axmc-image-name.json), accepted before and now; nothing is accepted or rejected differently                                                                                                                                                                                                                                                  | None; a configuration that validated still validates                                             |
+| Disk budget with a Linux pool        | `budget: pools total N GB of disk (the sum of slots times diskGb), above the budget of M GB` | `budget: pools total N GB of disk (the sum of slots times diskGb, plus 40 GB for the golden VM and Tart's image cache), above the budget of M GB`                                                                                                    | [`axmc-disk-over-budget.json`](../../tests/host-configuration/rust/rejected/axmc-disk-over-budget.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 150 to 190                                                                                                                                               | Raise `budget.diskGb` by 40 GB, or lower the pools' `diskGb` or `slots`                          |
+| `slots` of a Linux pool              | Required: `repositories[i].slots: required field is missing`                                 | Optional, default 2; axpc still requires it                                                                                                                                                                                                          | [`axmc-linux-default-slots.json`](../../tests/host-configuration/rust/accepted/axmc-linux-default-slots.json), rejected before and accepted now                                                                                                                                                                                                                                                                    | None; a configuration that validated still validates                                             |
+| Disk budget with a macOS pool        | The sum of slots times `diskGb`, with the Linux reserve when a Linux pool is configured      | The same, plus 100 GB: `…, plus 100 GB for the golden macOS VM and its cached base), above the budget of M GB`                                                                                                                                       | [`axmc-budget-errors-come-last.json`](../../tests/host-configuration/rust/rejected/axmc-budget-errors-come-last.json), message and total; [`axmc-budget-at-limit.json`](../../tests/host-configuration/rust/accepted/axmc-budget-at-limit.json), whose budget rose from 190 to 290                                                                                                                                 | Raise `budget.diskGb` by 100 GB, or lower the pools' `diskGb` or `slots`                         |
+| Size of a macOS pool                 | `cpus`, `memoryGb` and `diskGb` as on a Linux pool, without the Linux `diskGb` minimum       | At least 2, 4 and 50: `repositories[i].cpus: must be at least 2 on a macOS pool`, `repositories[i].memoryGb: must be at least 4 on a macOS pool`, and `repositories[i].diskGb: must be at least 50 on a macOS pool, the golden macOS VM's disk size` | [`axmc-macos-cpus-below-minimum.json`](../../tests/host-configuration/rust/rejected/axmc-macos-cpus-below-minimum.json), [`axmc-macos-memory-below-minimum.json`](../../tests/host-configuration/rust/rejected/axmc-macos-memory-below-minimum.json) and [`axmc-macos-disk-below-minimum.json`](../../tests/host-configuration/rust/rejected/axmc-macos-disk-below-minimum.json), accepted before and rejected now | Raise each value to its minimum, or remove `cpus` or `memoryGb` to take the default              |
+| `diagnostics` of a macOS pool        | Accepted                                                                                     | `true` is rejected: `repositories[i].diagnostics: not supported on a macOS pool, because macOS VM pools have no diagnostics`                                                                                                                         | [`axmc-macos-diagnostics.json`](../../tests/host-configuration/rust/rejected/axmc-macos-diagnostics.json), accepted before and rejected now                                                                                                                                                                                                                                                                        | Remove `diagnostics`, or set it to `false`                                                       |
+| `cpus` default of a macOS pool       | 2, the axmc default                                                                          | 4, counted in the CPU budget                                                                                                                                                                                                                         | [`axmc-macos-defaults.json`](../../tests/host-configuration/rust/accepted/axmc-macos-defaults.json)                                                                                                                                                                                                                                                                                                                | Set `cpus`, or raise `budget.cpus`                                                               |
+| `slots` and `diskGb` of a macOS pool | Required, as on a Linux pool                                                                 | Optional, with defaults of 1 and 50                                                                                                                                                                                                                  | [`axmc-macos-defaults.json`](../../tests/host-configuration/rust/accepted/axmc-macos-defaults.json), rejected before and accepted now                                                                                                                                                                                                                                                                              | None; a configuration that validated still validates, unless another row above rejects it        |
 
 ### Labels
 
@@ -273,11 +285,13 @@ configuration prints its summary on standard output, with lines ending in `\n`:
 
 - **Required and direct fields.** A field read as a required value reports `null`
   as `required field is missing`: `repositories`, `imageName` on axpc, and per entry
-  `owner`, `repository`, `tokenPath`, `slots`, `name`, `volumes`,
+  `owner`, `repository`, `tokenPath`, `slots` on axpc, `name`, `volumes`,
   `diagnosticDirectory`, a volume's `suffix` and `mountPath`, and on axmc `budget`,
-  its members, `os`, and `diskGb`. A field read directly reports `null` as its own
+  its members, `os`, and a Linux pool's `diskGb`. A field read directly reports `null` as its own
   type error: `cpus`, `memoryGb`, `labels`, `diagnostics`, and
   `diagnosticRawRecords`.
+  On axmc every pool reads `slots` the second way, and a macOS pool reads `diskGb`
+  the second way too; see [macOS VM Pools](#macos-vm-pools).
 - **Names.** Known fields are found case-insensitively; the unknown-field check is
   case-sensitive, so `"Owner"` gives only `Owner: unknown field`.
 - **Patterns.** A pattern matches the whole value, so a trailing newline does not
@@ -364,12 +378,12 @@ tables, an inline array of tables, and hexadecimal integers.
 | ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`                   | string                              | `name`                           | Required.                                                                                                                                                       |
 | `repository`             | string                              | `owner` and `repository`         | Required, `"owner/name"`. Anything that is not one owner, a slash, and one name is `must be "owner/name"`; each part then follows the owner or repository rule. |
-| `runners`                | integer                             | `slots`                          | Required.                                                                                                                                                       |
+| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                                                       |
 | `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                                                       |
 | `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`.                         |
 | `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                                                |
 | `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                                                |
-| `disk_gb`                | integer                             | `diskGb`                         | macOS: required, as `diskGb` is. Windows: an undefined key.                                                                                                     |
+| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                                        |
 | `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                                                     |
 | `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                                                       |
 | `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                                            |
@@ -692,40 +706,44 @@ The library holds the code that runs a host's pools: the container backend, JIT
 registration, and the loop of one slot. `start` reaches it through the instance
 layer, and the tests also drive it through its seams.
 
-| Module                                                   | Holds                                                                                                        |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                         |
-| `runtime::backend`                                       | The backend seam                                                                                             |
-| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                    |
-| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                  |
-| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                 |
-| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                              |
-| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release                |
-| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent         |
-| `tart::boot`                                             | The wait for a booted VM's guest agent and the boot failure text, shared by a job VM and the build VM        |
-| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                        |
-| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it  |
-| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                      |
-| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                       |
-| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal            |
-| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                               |
-| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                       |
-| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                    |
-| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                     |
-| `runtime::worker`                                        | The slot loop and its backoff                                                                                |
-| `runtime::job_marks`                                     | What a runner's output says about its job, idle, busy or unknown, which a drain reads                        |
-| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                         |
-| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                          |
-| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                              |
-| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                   |
-| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                          |
-| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                    |
-| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                             |
-| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                        |
-| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                            |
-| `macos::monitor`, `macos::gate`                          | The instance's signals on axmc: the watch, the keep-awake hold, and the gate that holds back the first clone |
-| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                     |
-| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                 |
+| Module                                                   | Holds                                                                                                                     |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `affinity`                                               | The CPU offsets `validate` and the backend share, and the selection of a slot's CPUs                                      |
+| `runtime::backend`                                       | The backend seam                                                                                                          |
+| `runtime::select`                                        | The runtime a pool's operating system selects on its host                                                                 |
+| `runtime::docker`, `runtime::docker_args`                | The container backend and the exact `docker` argument lists                                                               |
+| `runtime::tart`, `tart::args`, `tart::client`            | The `tart` client: the exact argument lists, and the bounded process wrapper                                              |
+| `runtime::tart::list`, `tart::names`                     | The reader of `tart list --format json`, and the VM names, parsers and matchers                                           |
+| `runtime::tart::backend`                                 | The Tart backend: the slot cycle's host steps, the probes, the job container, and the release                             |
+| `tart::golden_check`, `tart::guest`                      | The golden VM check from VM names alone, and the commands run in a booted VM through the guest agent                      |
+| `tart::boot`                                             | The wait for a booted VM's guest agent and the boot failure text, shared by a job VM and the build VM                     |
+| `tart::hold`, `tart::teardown`, `vm_shim`                | The holder of a VM's `tart run`, the stop-and-delete within a budget, and the VM shim                                     |
+| `golden`, `golden::pins`, `golden::key`, `golden::steps` | The golden VM's pins, the check of Docker's signing key, the launcher and the guest calls that provision it               |
+| `macos::version`                                         | The tested Tart and Softnet versions, the readers of their `--version`, and the sorting                                   |
+| `macos::softnet`                                         | Finding Softnet on `PATH` as Tart does, the judgment of its file, and its version read                                    |
+| `macos::prerequisites`                                   | The host checks: Tart's version, then Softnet's file and version, each a pass, warning or refusal                         |
+| `runtime::tart::macos`                                   | What the Tart backend does differently for a macOS pool: the clone source, the VM-limit refusal, and the probe's judgment |
+| `macos::count`, `macos::place`                           | The count of macOS VMs against the limit of two, and the lock under which a slot takes the last place                     |
+| `macos::name`                                            | The names of the golden macOS VM and a macOS build VM                                                                     |
+| `golden::macos`                                          | The guest calls that provision the golden macOS VM, and the launcher and probe calls of a macOS job VM                    |
+| `runtime::registration`, `token`, `scrub`, `secret`      | JIT registration, the token file, error text, and the type that hides a secret                                            |
+| `runtime::clock`, `runtime::log`                         | The time source and the sink for the runtime's messages, each a seam the tests replace                                    |
+| `runtime::name`                                          | Runner and container names, and the test for a pool's own                                                                 |
+| `runtime::pool`                                          | Pools from a plan, and their preparation                                                                                  |
+| `runtime::worker`                                        | The slot loop and its backoff                                                                                             |
+| `runtime::job_marks`                                     | What a runner's output says about its job, idle, busy or unknown, which a drain reads                                     |
+| `runtime::retained`                                      | The diagnostic containers the backend retains, their records, and who finalises each                                      |
+| `runtime::diagnostic`                                    | Finalising diagnostic containers at job end, in the container steps, and at startup                                       |
+| `diagnostics`, `diagnostics::exporter`                   | The exporter child and the lines and exit codes it answers with                                                           |
+| `diagnostics::transport`                                 | The transport seam through which the exporter reads a container's evidence                                                |
+| `diagnostics::sink`, `archive`, `identity`               | The sink checks and admission, the strict archive reader, and the identity readback                                       |
+| `runtime::board`                                         | Each pool's and each slot's state, which `status` reports                                                                 |
+| `macos::signals`, `macos::mac`                           | The signal-source seam and its real macOS source                                                                          |
+| `macos::sleep`, `macos::network`, `macos::watch`         | The sleep judgment, the `route` and `arp` readers, and the primary network's judgment                                     |
+| `macos::keep_awake`, `macos::probe`, `macos::reason`     | The `caffeinate` hold, the bounded system-program call, and the stop-reason texts                                         |
+| `macos::monitor`, `macos::gate`                          | The instance's signals on axmc: the watch, the keep-awake hold, and the gate that holds back the first clone              |
+| `macos::fake`, `macos::scripted`                         | The in-process signal source for tests, and the one a debug build reads from a directory                                  |
+| `runtime::fake`                                          | In-memory stand-ins for the seams, used by tests; a debug or test build only                                              |
 
 ### Backend
 
@@ -776,7 +794,10 @@ Two steps, per job and per slot, carry this:
   probe, a failed or refused registration, a run that ended or failed, and a stop at
   any of those points. A diagnostic container is exported first, so the host is
   released after the export. A release that fails is a warning and changes nothing
-  else.
+  else, except that a macOS VM still waiting for its deletion is then deleted again
+  through `finish_release` until it is gone, before the slot backs off. A stop ends
+  that wait and its sequence releases the host; a drain ends it too, and the slot's
+  next preparation deletes the VM.
 
 The backend counts a host as prepared from the start of its preparation until its
 release and lists the hosts it still counts, so the stop sequence can release the
@@ -879,7 +900,7 @@ selection is `Runtime::of_pool` in `runtime::select`:
 | ---- | ------------------ | ------------------------------------------------------- |
 | axpc | every pool (Linux) | The Docker Desktop container runtime, the backend above |
 | axmc | `os: "linux"`      | The VM runtime, a Tart VM per job, run by `start`       |
-| axmc | `os: "macos"`      | None: `start` skips the pool                            |
+| axmc | `os: "macos"`      | The VM runtime, a Tart macOS VM per job, run by `start` |
 
 The backend above is the Docker Desktop runtime. The runtime core takes nothing from
 the Docker modules: it drives the containers, and the per-job host steps under
@@ -894,18 +915,14 @@ vCPUs, the pool's `memoryGb` and the pool's `diskGb`, and the job container's CP
 quota and affinity cover all of the host's vCPUs, 0 to `cpus` - 1, with its memory
 limit equal to the host's memory. The image defaults to `actions-runner:local` when
 `imageName` is absent. `start` and the core apply that default, and `validate` and
-its summary do not. The macOS pools of a plan are not made into pools. The VM
+its summary do not. Each Linux or macOS pool of a plan is made into a VM pool. The VM
 runtime is the [Tart Backend](#tart-backend), which `start` runs, and
-`build --profile axmc` makes its golden VM:
+`build --profile axmc` makes its golden VMs:
 
-- `start --profile axmc` runs the Linux pools on the Tart backend. Each macOS pool
-  is skipped: the core logs `Skipping pool <pool>: macOS VM pools are not supported yet`
-  once for it at each run, and `status` shows the pool as
-  `skipped: macOS VM pools are not supported yet`. When every pool is skipped,
-  nothing can start, and `start` exits 1 with
-  `No pool can start, because macOS VM pools are not supported yet`, without
-  checking Tart or Softnet. A restart or a resume that finds only macOS pools fails
-  the core the same way, as any later run without a startable pool does. On a
+- `start --profile axmc` runs every pool on the Tart backend: a Linux pool's job VM
+  is cloned from the golden Linux VM, and a macOS pool's from the golden macOS VM.
+  `start` refuses a configuration with a macOS pool when no golden macOS VM of the
+  current version exists, naming `marshal build`, as it does for a Linux pool. On a
   Windows host, `start --profile axmc` exits 1 first, before taking the lock or
   calling any engine, with `error: the axmc profile runs only on macOS`; a Linux
   host is refused as unsupported, as under [Start](#start).
@@ -1000,8 +1017,24 @@ golden VM whose old runner asks for a rebuild.
    deadline passes.
 
 A boot that fails is `Failed`, with the text
-`boot failure: <tart run for the job VM <vm> ended with exit code N (<Tart's own error>) | the guest agent of the job VM <vm> did not answer by the boot deadline (<last error>)>; a locked login keychain is the documented cause, see the "The Signed-In Session" section of the macOS Runner Host document`.
-The section is [The Signed-In Session](./macos-runner-host.md#the-signed-in-session).
+`boot failure: <tart run for the job VM <vm> ended with exit code N (<Tart's own error>) | the guest agent of the job VM <vm> did not answer by the boot deadline (<last error>)>`.
+When `tart run` ended, a hint follows if its whole output, read before the text is
+cut to 500 characters, carries one of these:
+
+- `SecKeyCreateRandomKey_ios failed`, `Failed to generate keypair` or
+  `Interaction is not allowed with the Security Server`, the texts Tart's FAQ lists
+  for a locked login keychain:
+  `; Tart's error points to a locked login keychain, see the "The Signed-In Session" section of the macOS Runner Host document`.
+- `Softnet process terminated prematurely` or `softnet not found in PATH`, the two
+  Softnet errors of Tart 2.41.1 that the runtime's `tart run` can produce:
+  `; Tart's error points to Softnet, see the "Setting Up Softnet" section of the macOS Runner Host document`.
+- At least one of each:
+  `; Tart's error points to a locked login keychain, see the "The Signed-In Session" section of the macOS Runner Host document, and to Softnet, see the "Setting Up Softnet" section of the macOS Runner Host document`.
+
+Any other boot failure has no hint, including Virtualization's generic
+`The virtual machine failed to start.` and a guest agent that did not answer. The
+sections are [The Signed-In Session](./macos-runner-host.md#the-signed-in-session)
+and [Setting Up Softnet](./macos-runner-host.md#setting-up-softnet).
 
 **Probes.** `select_cpuset` finds the slot's VM from the probe's name and waits up to
 60 s for the Docker Engine in it (`docker info` every 2 s, each call bounded at
@@ -1901,10 +1934,17 @@ the same process model as `start`: the agent takes the same single-instance lock
 opens the same control channel, writes a log in the same directory and, on Windows,
 runs inside the same kind of Job Object, so `start` and the agent never run on one
 machine at once, and a second agent is refused as a second `start` is. It has no
-command or flag of its own: `agent::run` is the entry that wires the container
+command or flag of its own: `agent::run` is the entry that wires the profile's
 backend, GitHub, the token store, the lock, the channel and the log, and the app's
 executable runs it in its hidden agent mode, as [App](./app.md#the-executable-and-its-modes)
-describes. The CLI's tests start it through `instance-helper agent`. Only a debug
+describes. On axpc the backend is the container backend and Build builds the
+embedded definition with Docker. On axmc it is the Tart backend, which runs the Linux
+and macOS pools in VMs as `start` does, with every job VM under the shim. The Linux
+runners use `actions-runner:local` when the configuration names no image. Build makes
+the golden VMs of the configured pools as `build --profile axmc` does, through the
+same function: [The Golden VM Build](#the-golden-vm-build) for a Linux pool, then the
+golden macOS VM for a macOS pool. The
+CLI's tests start it through `instance-helper agent`. Only a debug
 build lets a test replace the agent's token store, channel limits, watched file, log
 size and `docker` environment; a release build ignores each
 request, as it does the roots and the GitHub address, and `tests/agent_overrides.rs`
@@ -1924,9 +1964,9 @@ shows both halves and runs again in the release profile in CI.
 | `agent::snapshot`   | The value of the `state` topic and its fit to the message limit                     |
 | `agent::log`        | The log file that is continued in a new file at 10 MiB                              |
 | `agent::executable` | The check that the file the agent started from is still the same file               |
-| `agent::builder`    | The seam the agent builds the runner image through                                  |
-| `agent::run`        | `run_resident` on its seams, and `run` with Docker, GitHub and the platform's store |
-| `token_store`       | The token store interface, the in-memory store, and the Windows Credential Manager  |
+| `agent::builder`    | The seam the agent builds the runner image through: Docker's, and the golden VM's   |
+| `agent::run`        | `run_resident` on its seams, and `run` with the profile's backend, GitHub and store |
+| `token_store`       | The token store interface, the in-memory store, the Credential Manager and Keychain |
 
 ### Agent State
 
@@ -2120,7 +2160,15 @@ the default, and the agent itself names no operating system:
 update only from `running`, so an update never undoes a signal stop.
 
 On Windows, `agent::run` gives the agent `WindowsMonitor` (`windows_host::monitor`)
-on `WindowsSignals` (`windows_host::signals`); elsewhere it gives `NoMonitor`.
+on `WindowsSignals` (`windows_host::signals`). On the axmc profile it gives M1's
+`SignalMonitor` (`macos::monitor`), the monitor `start` uses there, sharing its
+network gate with the Tart backend: until M4 it reads no setting, so the Mac is kept
+awake while the agent is `running`, `resuming`, `building` or `stopping`, a sleep or a
+change of the primary network stops every runner with `slept` or `network_changed`,
+and nothing resumes on its own. Elsewhere it gives `NoMonitor`. On every profile the
+agent's stops reserve the backend's release budget as `start`'s do, so a stop on Tart
+has the time to delete its job VMs.
+
 `WindowsMonitor` reads the settings in effect, which the agent sets from each
 configuration it reads into `lifecycle_settings::Current`, at every tick, so a
 change takes effect within a second:
@@ -2258,18 +2306,42 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
   the Credential Manager to a registration; only the Windows CI job runs it.
-- **macOS and Linux.** There is no store yet. The agent runs with none, every pool is
-  skipped with the reason "no token store", a `token_set` is refused as
-  `store_failed`, and the agent is stopped for `no_pool_started`. A Keychain store can
-  later sit behind the same interface by naming its entries, as the Windows store
-  does.
+- **macOS.** The user's login keychain, through `security-framework`, as one generic
+  password per key with the service `app.axross.marshal`. A repository's item has the
+  account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
+  organization's the account `github.com/<org>` and the label
+  `Marshal: <org> (organisation)`; Keychain Access shows the label. Only a
+  repository's account has a slash after `github.com/`, so the two kinds never share
+  an item. These names are a contract K3, M4, X1 and X2 build on, and change only
+  through a revision of M2's plan. The store is the file-based login keychain, the
+  default keychain that adds go to, not the data-protection keychain. Setting a token
+  deletes any item for the key and adds a new one, so the item trusts the build that
+  stored it last; if the add fails after the delete, the key has no token. Removing
+  deletes the item, and removing a key without one is not an error. The store turns
+  the Keychain's user interaction off for as long as it lives, which is the agent's
+  life, so a call that would need the user fails at once instead of showing a dialog.
+  `tests/keychain_store.rs` sets, reads, replaces and removes a real item of each
+  kind under a test-only service, checks each label with `security`, and checks that
+  removing an organization's token keeps a repository's token of the same owner.
+- **Linux.** There is no store. The agent runs with none, every pool is skipped with
+  the reason "no token store", a `token_set` is refused as `store_failed`, and the
+  agent is stopped for `no_pool_started`.
 - **Tests.** An in-memory store, which can be made to fail with each kind of error.
 
 A store failure has a kind, which says what it asks of the caller, and the platform's
 own code when it gave one. The kinds are `needs_user`, such as a locked keychain the
 user can unlock, `access_refused`, when the item refuses this program, and `other`.
 The Credential Manager's failures are all `other`, with the Windows error number in
-the code. The kind and the code appear in the `store_failed` error (see Errors), in
+the code. The Keychain's codes `errSecInteractionNotAllowed` (-25308),
+`errSecInteractionRequired` (-25315) and `errSecAuthFailed` (-25293), which a locked
+keychain returns, are `needs_user`; `errSecItemNotFound` (-25300) is no token, not a
+failure; every other code is `other`, with Apple's code. Until the Mac run shows
+which code an item another build of Marshal added returns, a `needs_user` failure's
+words name both causes, a locked login keychain or another build's item, and the
+fix: unlock the keychain in Keychain Access, or enter the token again. A refused
+delete also gives the one command the window shows,
+`security delete-generic-password -s app.axross.marshal -a github.com/<owner>/<name>`
+(`-a github.com/<org>` for an organisation's item). The kind and the code appear in the `store_failed` error (see Errors), in
 the reason of a pool skipped because the store failed (`the token store failed: ...
 (kind needs_user, code 1312)`), and in the log line of a registration that failed
 for the same reason. None of them ever holds a token.
@@ -2435,7 +2507,7 @@ So a client written against today's agent keeps working against a later agent of
 version 2, and a later client works against today's agent by calling only what
 `welcome` lists. [Protocol Version 2](#protocol-version-2) says how the library's
 `Client` follows these rules, and App says how the app follows them, in
-[The View](./app.md#the-view) and
+[The Window's Page](./app.md#the-windows-page) and
 [The Agent and the App's Session](./app.md#the-agent-and-the-apps-session). A
 change that removes or reinterprets anything above is a version 3, which is a new
 framing decision for the maintainer, not an addition.
@@ -2526,24 +2598,24 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                          | Holds                                                                                                                      |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                |
-| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                  |
-| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                   |
-| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                         |
-| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason` |
-| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                 |
-| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                   |
-| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                |
-| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                    |
-| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                    |
-| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                      |
-| `pools[].runners`              | `slot`, `state`, `workload`, `reason`, `since`                                                                             |
-| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                 |
-| `leftovers`                    | What a stop could not remove, `kind` (today `container`) and `name`                                                        |
-| `images`                       | Each image the agent tracks (today the runner image): `name`, `lines`, `warnings`                                          |
-| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                              |
+| Field                          | Holds                                                                                                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
+| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
+| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
+| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
+| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
+| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
+| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
+| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
+| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
+| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
+| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
+| `pools[].runners`              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
+| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
+| `leftovers`                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
+| `images`                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
+| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                                                               |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the
@@ -2554,20 +2626,28 @@ lists its pools again. `repositories` is still listed.
 
 A pool is `waiting_for_docker`, `preparing`, `running`, `skipped` or `stopped`; the
 first word stands for whichever engine the pool waits for. A runner is `running`,
-`registering`, `backing_off`, `held` or `stopped`. The `reason` of a runner is plain
-text that says more about its state, such as what a state means that the reader may
-not know. A backing-off runner gives the reason it backs off: a token store
+`registering`, `backing_off`, `held`, `waiting_for_vm_limit`,
+`waiting_for_vm_deletion` or `stopped`. The `reason` of a runner is plain text that
+says more about its state, such as what a state means that the reader may not know.
+A `waiting_for_vm_limit` runner's macOS job VM waits for a place under the macOS VM
+limit, and a `waiting_for_vm_deletion` runner waits for the deletion of the VM its
+`workload` names; both occur only on axmc's Tart backend, and each `reason` says what
+the slot waits for. `workload_kind` is `vm` when the `workload` is a Tart VM, and is
+absent for a container. A backing-off runner gives the reason it backs off: a token store
 failure's kind and code, or what GitHub answered, scrubbed of any token and never a
 command. A `held` runner is one whose job host a host prerequisite refuses, with
 that prerequisite's reason, scrubbed the same way and cut to 500 characters; it
 occurs only on axmc's Tart backend, which the agent, running axpc only today, does
 not run. An image warning is data, not text: a `code` (`not_built_by_marshal`,
 `packages_old`, `image_old`, `runner_old` or `runner_may_be_newer`) with `days` or
-`version` where they apply, so the app words it. `leftovers` lists every container
+`version` where they apply, so the app words it; the golden macOS VM's codes are
+under [macOS Status](#macos-status). `leftovers` lists every container
 name of a failed removal call, which can name more containers than the one that
 failed. They stay listed until a start prepares the pools, which removes what is
 stale, so a `start_all` that stops for a missing image or an invalid configuration
-keeps them.
+keeps them. A `vm_unconfigured_pool` entry is not a failed removal: it follows the
+latest count of macOS VMs, which `start` never deletes, and stays listed until a
+count no longer finds it.
 
 An agent may add a runner state, an image and an image warning within version 2, so
 a reader MUST treat a state word it does not know as an unknown state and show the
@@ -2775,12 +2855,15 @@ the launcher, and the labels under [Backend](#backend), and what they need from 
 image. The image declares the contract it was built for, and the CLI checks it
 before any pool runs and before each job.
 
-| Module              | Holds                                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `image::contract`   | The label names, and this CLI's contract version, read from the embedded Dockerfile      |
-| `image::definition` | The image definition embedded in the binary, and the debug-only test definition          |
-| `image::archive`    | The build context: a ustar archive of the definition, written by the CLI itself          |
-| `image::check`      | The image check's format and outcomes, the refusal, the freshness warnings, and `status` |
+| Module                | Holds                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `image::contract`     | The label names, and this CLI's contract version, read from the embedded Dockerfile      |
+| `image::definition`   | The image definition embedded in the binary, and the debug-only test definition          |
+| `image::archive`      | The build context: a ustar archive of the definition, written by the CLI itself          |
+| `image::check`        | The image check's format and outcomes, the refusal, the freshness warnings, and `status` |
+| `image::runner`       | The runner record: each declared runner version's release date and osx-arm64 SHA-256     |
+| `image::macos_base`   | The macOS base record and its age warnings                                               |
+| `image::macos_golden` | What `status` and the snapshot say about the golden macOS VM, and its age warnings       |
 
 ### Labels
 
@@ -2828,10 +2911,12 @@ Unit tests in `cli/src/image/contract.rs` keep the declaration honest:
 - The Dockerfile must hold the golden VM's pins, as
   [Golden VM Provisioning](#golden-vm-provisioning) says, and the image smoke test
   must check the same client version and group id.
-- `RUNNER_RELEASES` holds each runner version's release date. The declared runner
-  version must equal the base image's tag, have a row, and declare the row's date.
-  A Dependabot runner bump stays red until both labels and the row are updated by
-  hand; see
+- `RUNNER_RELEASES` in `cli/src/image/runner.rs` is the runner record: each
+  declared runner version's release date and the SHA-256 of its osx-arm64 archive.
+  The declared runner version, `DECLARED_RUNNER_VERSION`, must equal the base
+  image's tag and the `runner-version` label, have an entry, and declare the
+  entry's date. A Dependabot runner bump stays red until both labels, the declared
+  version, and the entry are updated by hand; see
   [Development Workflow](./development-workflow.md#bumping-the-runner).
 - The embedded set must be exactly the Dockerfile and every file it copies, and
   `cli/tests/build-definition/Dockerfile` must start from the same base and declare
@@ -2846,7 +2931,8 @@ is checked as `<name>:latest`, as `docker run` resolves it. When inspect fails, 
 `docker image ls --quiet <name>` tells a missing image from Docker not answering.
 Both calls share a bound of 4 s. A resume's reload is the configuration read, then
 on axmc the [host prerequisites](#host-prerequisites), whose two version reads run
-together and get 2 s each, and then this check. It takes 4 s at the most on axpc and
+together and get 2 s each, and then this check, whose one listing also judges the
+golden macOS VM when a macOS pool is configured. It takes 4 s at the most on axpc and
 6 s on axmc, so it fits inside `start`'s 10 s wait. It follows the container steps of
 a `restart`, which take 28 s at the most, so it ends at 32 s on axpc and 34 s on axmc,
 inside the 35 s wait.
@@ -2892,10 +2978,10 @@ The check also reads the build-time and runner-release labels. An age is
 00:00 UTC. An age under 7 days gives no warning, 7 to 20 days the first, and 21 or
 more the second:
 
-| Age        | Build age                                                                | Runner release age                                                                                                                                            |
-| ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7 to 20    | `the image is <d> days old and should be rebuilt`                        | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                          |
-| 21 or more | `the image's operating-system packages are <d> days old; build it again` | `runner <v> was released <d> days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again` |
+| Age        | Build age                                                                | Runner release age                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7 to 20    | `the image is <d> days old and should be rebuilt`                        | `runner <v> was released <d> days ago, and a newer runner may exist`                                                                                                               |
+| 21 or more | `the image's operating-system packages are <d> days old; build it again` | `runner <v> was released <d> days ago and never updates itself; update Marshal to get a newer runner, then build the image again before GitHub stops sending jobs to this version` |
 
 An image without a build-time label, such as one CI or a build by hand made, has an
 unknown build age, and its warning says it was not built by
@@ -2908,7 +2994,8 @@ the warnings nor an unknown age block a start.
 - `image: <name>`;
 - `image-contract: <n>`, `mismatch (image <m>, CLI <n>)`, `missing`, or
   `not checked`, which shows only before the first check Docker answers; a later
-  check Docker does not answer leaves the latest answer in place;
+  check Docker does not answer leaves the latest answer in place; on axmc with
+  only macOS pools it is `not used, no Linux pool`;
 - `image-built: <d> days ago`, or `unknown`;
 - `runner: <version>, released <d> days ago`, or `unknown`;
 - on axmc, `golden-vm: <name>` once a golden VM exists, and `mismatch (golden VM
@@ -2917,13 +3004,393 @@ version <g> and image contract <m>, CLI golden VM version <G> and image contract
 - one `warning: <text>` line per freshness warning.
 
 `image-built` and `runner` read `unknown` before the first check Docker answers, and
-when the image is missing or its labels are missing or malformed.
+when the image is missing or its labels are missing or malformed, or when no Linux
+pool is configured.
+
+## macOS VM Pools
+
+An axmc pool with `os: "macos"` runs its jobs in macOS virtual machines. This
+section states what `validate` accepts for such a pool, the runner and base records
+the golden macOS VM is built from, the names of the macOS VMs, the count of macOS
+VMs against the host's limit, how `build` makes the golden macOS VM, how a job runs
+in a macOS VM, and what `status` and the agent's snapshot show for them.
+The pool rules apply to a pool with `os: "macos"` under the axmc profile only.
+axpc pools accept what they accepted before, and so do axmc Linux pools, except
+that `slots` is now optional with a default of 2.
+
+### Defaults and Minimums
+
+A macOS pool needs no size or count field, and each field it sets replaces its
+default.
+
+| Field         | macOS pool                        | Linux pool on axmc               |
+| ------------- | --------------------------------- | -------------------------------- |
+| `slots`       | Optional, default 1               | Optional, default 2              |
+| `cpus`        | Default 4, at least 2             | Default 2, as before             |
+| `memoryGb`    | Default 8, at least 4             | Default 8, as before             |
+| `diskGb`      | Optional, default 50, at least 50 | Required, at least 20, as before |
+| `diagnostics` | `true` is rejected                | Accepted, as before              |
+
+The minimums are the golden macOS VM's: its disk is 50 GB, and the base needs at
+least 2 vCPUs and 4 GB of memory. Their messages, with `i` the pool's index as in
+the other axmc messages:
+
+| Rule                    | Path and message                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `cpus` below 2          | `repositories[i].cpus: must be at least 2 on a macOS pool`                                               |
+| `memoryGb` below 4      | `repositories[i].memoryGb: must be at least 4 on a macOS pool`                                           |
+| `diskGb` below 50       | `repositories[i].diskGb: must be at least 50 on a macOS pool, the golden macOS VM's disk size`           |
+| `diagnostics` is `true` | `repositories[i].diagnostics: not supported on a macOS pool, because macOS VM pools have no diagnostics` |
+
+Each message comes at its field's own place in an entry's errors. The
+`diagnostics` one follows the boolean type errors of `diagnostics` and
+`diagnosticRawRecords` and comes before the `diagnosticDirectory` errors, which
+still apply as for any pool.
+
+- **Absent and `null`.** Only an absent field takes its default. A `null`
+  `slots` or `diskGb` is a type error, `must be an integer from 1 to <max>`, as a
+  `null` `cpus` or `memoryGb` is, and is not reported as missing.
+- **The minimum is a rule, not a type error.** A value below its minimum is
+  recorded as an error, and the pool still joins the cross-entry and budget
+  checks, so one run reports a pool's size and its VM count together. `cpus` is a
+  whole number on every axmc pool, so a fractional count is the type error
+  `must be an integer from 1 to 64`, and the minimum is not compared.
+- **The two-VM rule counts defaults.** A pool without `slots` counts one VM toward
+  `budget: macOS pools total N VMs (the sum of their slots), above the limit of 2`,
+  so three macOS pools without `slots` are rejected.
+- **The budgets use the resolved values.** The CPU, memory, and disk sums include
+  the defaults, so a macOS pool without `cpus` uses 4 CPUs of the budget.
+
+The disk budget counts 100 GB for the golden macOS VM and its cached base when a
+macOS pool is configured, as [Profiles](#profiles) states.
+
+### Migration
+
+The macOS rules change what axmc accepts, so they are a recorded migration of the
+fixtures under [`tests/host-configuration/rust/`](../../tests/host-configuration/rust).
+No axpc fixture changes, and no `shared/` fixture changes. `axmc-defaults.json` and
+`axmc-diagnostics.json` describe Linux pools, so their outcomes and totals stay.
+`axmc-budget-at-limit.json` already sets every macOS value at or above its minimum,
+so only the macOS reserve changes it, as the reserve table below lists.
+
+Each existing fixture whose macOS pool had `"diskGb": 40` now has 50, because 40
+is below the macOS minimum and each fixture was written to test something else:
+
+| Fixture                                                        | Change                                                                                                                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accepted/axmc-os-labels.json`                                 | The macOS pool's `diskGb` 40 to 50; it stays accepted, and its labels are what it pins                                                                                    |
+| `accepted/axmc-shared-label-different-os.json`                 | The same; it stays accepted with `macOS VMs: 1 of 2`                                                                                                                      |
+| `rejected/axmc-label-linux-on-macos.json`                      | The same, so the label error stays the only error                                                                                                                         |
+| `rejected/axmc-label-own-platform.json`                        | The same, so the two label errors stay the only errors                                                                                                                    |
+| `rejected/axmc-label-x64.json`                                 | The same, so the label error stays the only error                                                                                                                         |
+| `rejected/axmc-different-os-shared-label-different-token.json` | The same, so the token error stays the only error                                                                                                                         |
+| `rejected/axmc-three-macos-vms.json`                           | Both pools' `diskGb` 40 to 50, and `budget.cpus` 8 to 12, because three default macOS slots of 4 CPUs total 12; the VM-limit error stays the only error                   |
+| `rejected/axmc-budget-errors-come-last.json`                   | The first pool's `diskGb` 40 to 50 and `budget.cpus` 8 to 12, for the same reason; the disk total in the last error is 1200 GB (2 × 50 + 1000 + the 100 GB macOS reserve) |
+
+One fixture of M1's changes because its macOS pool is below the new minimum:
+
+| Fixture                                   | Change                                                                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rejected/axmc-linux-disk-too-small.json` | M1's fixture: the macOS pool's `diskGb` 19 to 50, because 19 is below the macOS minimum; the Linux pool's error stays the only error, and the macOS pool still gets none |
+
+The 100 GB macOS reserve raises the disk total of every existing fixture with a macOS
+pool.
+Where the fixture tests something else, its `budget.diskGb` rose by 100 so its
+outcome stays; where its expected text quotes the disk line or message, the text
+changed:
+
+| Fixture                                                        | Change                                                                                                                                                                   |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `accepted/axmc-budget-at-limit.json`                           | `budget.diskGb` 190 to 290, so it stays exactly at the limit: `290 of 290 GB, including a 140 GB reserve`                                                                |
+| `accepted/axmc-os-labels.json`                                 | `budget.diskGb` 200 to 300; it stays accepted                                                                                                                            |
+| `accepted/axmc-shared-label-different-os.json`                 | `budget.diskGb` 200 to 300; it stays accepted                                                                                                                            |
+| `rejected/axmc-different-os-shared-label-different-token.json` | `budget.diskGb` 200 to 300, so the token error stays the only error                                                                                                      |
+| `rejected/axmc-three-macos-vms.json`                           | `budget.diskGb` 200 to 300, so the VM-limit error stays the only error                                                                                                   |
+| `rejected/axmc-budget-errors-come-last.json`                   | Its expected disk message names 1200 GB and the macOS reserve                                                                                                            |
+| TOML `accepted/macos-full.toml`                                | `budget.disk_gb` 180 to 280; it stays accepted                                                                                                                           |
+| TOML `rejected/macos-budget-totals.toml`                       | Its expected disk messages name the macOS reserve and a total 100 GB higher                                                                                              |
+| TOML `rejected/macos-clashes-come-before-budget-totals.toml`   | The first pool's `disk_gb` 40 to 50 and `budget.cpus` 8 to 12, as for `axmc-budget-errors-come-last.json`; its expected disk message names 1200 GB and the macOS reserve |
+
+These fixtures pin the new rules, and each default, minimum, and message has one:
+
+| Fixture                                            | Pins                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `accepted/axmc-macos-defaults.json`                | A pool with only its required fields gets 1 slot, 4 CPUs, 8 GB of memory, and 50 GB of disk      |
+| `accepted/axmc-macos-values-replace-defaults.json` | Each value a pool sets replaces its default                                                      |
+| `accepted/axmc-macos-minimums.json`                | Each minimum is inclusive: 2 CPUs, 4 GB, 50 GB                                                   |
+| `accepted/axmc-macos-two-default-slots.json`       | Two pools without `slots` total two VMs and are accepted                                         |
+| `accepted/axmc-macos-diagnostics-false.json`       | `diagnostics: false` is accepted on a macOS pool                                                 |
+| `rejected/axmc-macos-three-default-slots.json`     | Three pools without `slots` total three VMs and are rejected                                     |
+| `rejected/axmc-macos-cpus-below-minimum.json`      | The `cpus` message                                                                               |
+| `rejected/axmc-macos-memory-below-minimum.json`    | The `memoryGb` message                                                                           |
+| `rejected/axmc-macos-disk-below-minimum.json`      | The `diskGb` message                                                                             |
+| `rejected/axmc-macos-diagnostics.json`             | The `diagnostics` message, with no other error                                                   |
+| `rejected/axmc-macos-errors-in-field-order.json`   | The four messages together, in an entry's field order, at the index of a pool after a Linux pool |
+| `rejected/axmc-macos-slots-null.json`              | A `null` `slots` is a type error, not a default and not a missing field                          |
+| `rejected/axmc-linux-slots-null.json`              | The same for a Linux pool on axmc, where `slots` is optional too                                 |
+| `accepted/axmc-linux-default-slots.json`           | A Linux pool without `slots` gets 2 on axmc, beside a macOS pool without it that gets 1          |
+
+### The Runner Record
+
+`RUNNER_RELEASES` in `cli/src/image/runner.rs` holds, for each runner version the
+CLI has declared, the release date and the SHA-256 of
+`actions-runner-osx-arm64-<version>.tar.gz`, both taken from the
+[actions/runner releases](https://github.com/actions/runner/releases) page. The
+Linux image's freshness check reads its release date from the image's label, and
+a unit test requires the label to equal the record's date. The golden macOS VM's
+build takes the digest from the record, and `status` the date.
+`DECLARED_RUNNER_VERSION` is the version that both install. One runner bump moves
+the Linux image and the macOS golden VM together, and it stays red until its
+entry is complete; [Development
+Workflow](./development-workflow.md#bumping-the-runner) lists the edits.
+
+The tests in `image::runner` fail with a message that names what is missing:
+
+- the declared version must equal the `runner-version` label of the Linux image's
+  Dockerfile;
+- the declared version must have an entry, which names the date and the archive
+  to look up when it has none;
+- every entry must have a release date that is a real `YYYY-MM-DD` day and a
+  SHA-256 of 64 lowercase hexadecimal digits, and no version may be listed twice.
+
+`MARSHAL_TEST_RUNNER` declares another runner for the tests and for the Mac
+verification of a golden macOS VM whose runner is behind. `declared_runner` in
+`image::runner` reads it:
+
+- **The format** is `<version>=<sha256>`: a version of three dot-separated
+  decimal numbers, each of at most nine digits and none with a leading zero, then
+  an equals sign, then 64 lowercase hexadecimal digits. Anything else, such as
+  an empty value, a missing part, uppercase digits, whitespace, or a second `=`,
+  is refused with a message that names the format and not the value.
+- **A debug build** declares that version and digest in place of the record's. The
+  record has no date for a version it does not hold, so the runner age of such a
+  golden VM shows `unknown`.
+- **A release build** ignores the variable, malformed or not, and declares the
+  record's entry for `DECLARED_RUNNER_VERSION`, so a release binary cannot be made
+  to install a runner the record does not hold. `tests/base_address.rs` shows both
+  halves, and CI runs it again in the release profile.
+
+`build` reads the variable for the golden macOS VM's build; `declared_runner`
+takes the value from its caller, and the tests pin it.
+
+### The Base Record
+
+`MACOS_BASE` in `cli/src/image/macos_base.rs` holds the macOS base the golden
+macOS VM is built from:
+
+| Field           | Holds                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `digest`        | The base's manifest digest; the reference is `ghcr.io/cirruslabs/macos-tahoe-base@<digest>`      |
+| `macos_version` | The macOS version the base ships, which the host must be at or above                             |
+| `published`     | The day the base was published, from the manifest's `org.cirruslabs.tart.upload-time` annotation |
+| `retired`       | The digests of earlier pins, the only bases a build removes from Tart's cache; empty so far      |
+
+The registry tags only `latest`, so the digest is the only fixed reference, and a
+base bump records the digest, the version, and the date together. The pinned
+base ships macOS 26.6.2 (25G83), as the first Mac check on
+[#80](https://github.com/axross/runners/issues/80) read inside a clone of it.
+
+`base_age_warnings` returns the base's age warnings as of a given time, from the
+whole days since `published`. Under 30 days there is none, from 30 days the first
+and from 60 days the second replaces it, and both thresholds are inclusive, as the
+runner's are. Each tells the maintainer to bump the base pin and rebuild the
+golden macOS VM, because rebuilding alone does not update macOS. `status` and the
+log show them under [macOS Status](#macos-status).
+
+### VM Names
+
+The `macos::name` module writes and reads the names of the macOS VMs Marshal
+makes. The job VM form and the Linux forms are M1's, in `runtime::tart::names`,
+and the macOS count reads job, Linux golden and Linux build VMs with M1's readers.
+Each form is read strictly: the whole name matches, nothing precedes or follows
+it, and case matters.
+
+| VM              | Form                                                                                                     |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| Golden macOS VM | `marshal-golden-macos-g<golden VM version>-r<runner version>-<yyyyMMddHHmmss>`                           |
+| macOS build VM  | `marshal-build-macos-<yyyyMMddHHmmssfff>`                                                                |
+| Job VM, any OS  | `marshal-job-<pool>-<slot>-<yyyyMMddHHmmssfff>`                                                          |
+| Linux golden VM | `marshal-golden-linux-g<golden VM version>-c<image contract version>-r<runner version>-<yyyyMMddHHmmss>` |
+| Linux build VM  | `marshal-build-linux-<yyyyMMddHHmmssfff>`                                                                |
+
+- **The golden macOS VM version** is `GOLDEN_MACOS_VM_VERSION`, 1 for now. It goes
+  up whenever the base digest, the provisioning steps, or the launcher change. In
+  a name it is a positive integer without a leading zero, and the runner version
+  is three dot-separated numbers, as the runner record writes it.
+- **Times** are UTC. A golden VM's name carries its build time to the second and a
+  build VM's to the millisecond.
+- **The newest golden macOS VM** is the one with the latest build time in its
+  name, whatever its golden VM version, so a stale one is found and refused, not
+  missed. Names that are not golden macOS VMs' are ignored, so selection never
+  returns a Linux golden VM, and the Linux selection never returns a macOS one.
+- **A job VM's pool** is everything between `marshal-job-` and the last
+  `-<digits>-<17 digits>`, so a pool name may contain hyphens and may end in
+  `-<digits>`: `marshal-job-ci-2-1-<stamp>` is slot 1 of pool `ci-2`, and
+  `marshal-job-ci-2-<stamp>` is slot 2 of pool `ci`. Pool names are unique per
+  host, so a pool name identifies the pool whatever its OS.
+
+`build` writes the golden and build VM names, and the macOS runtime reads them.
+`cli/tests/macos_names.rs` pins the forms, the strict reading, the golden VM
+selection, and that neither OS's forms or selection match the other's.
+
+### The Two-VM Count
+
+Apple's licence allows two additional macOS VMs on a Mac, so the macOS runtime
+counts them before it creates one. `macos::count` is that count as pure logic: it
+takes Tart's VM list once (each VM's name and state, running, suspended, or
+stopped, where a stopping VM is still running), the configured pools with their
+operating systems, and an OS lookup that stands in for `tart get`, and calls no
+process itself. The lookup answers macOS, Linux, or unreadable, which covers a
+failed call and an answer the reader does not know.
+
+| Counts                                                                                                                                      | Does not count                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| A job VM of a configured macOS pool, or a macOS build VM, by its name form, in any state                                                    | The golden macOS VM while it is stopped                                       |
+| A Marshal job VM of a pool that is no longer configured, or whose `os` changed, in any state, when the lookup reports macOS                 | Linux golden and build VMs, by their name forms                               |
+| Any other running or suspended VM the lookup reports as macOS, including the golden macOS VM if someone boots it by hand                    | A job VM of a configured Linux pool, unless the lookup reports macOS          |
+| Any running or suspended VM whose operating system is unreadable, and a Marshal job VM of a pool that is no longer configured, in any state | Other VMs the lookup reports as Linux, and stopped VMs Marshal did not create |
+
+- **The lookup is asked only what the names leave open**, once for each such VM:
+  a Marshal job VM in any state whose pool is not a configured macOS pool, and any
+  other running or suspended VM that is not a Linux golden or build VM. A VM the
+  name and the configured pools already decide is never asked about.
+- **Unreadable counts** because over-counting only makes a job wait, while
+  under-counting could exceed the licence. A job VM of an unconfigured pool counts
+  in any state when its operating system is unreadable. It is among the leftover
+  job VMs that the log and `status` name, so the maintainer can delete it.
+- **A job VM of a configured Linux pool is presumed Linux.** Only an explicit
+  macOS answer counts it, as a VM left from before the pool's `os` changed. An
+  answer of Linux, or an unreadable one, in any state, does not, so a `tart get`
+  that fails never blocks macOS jobs because of Linux job VMs. It is not a
+  leftover of an unconfigured pool, because `start` deletes a configured pool's
+  leftovers.
+- **A failed deletion** needs no rule of its own: the VM stays in Tart's list, so
+  it counts until a later attempt deletes it.
+- **The output** is the VMs that count, each with its reason; the total; whether a
+  place is free, below `MAX_MACOS_VMS`; and the counted job VMs of unconfigured
+  pools, by name, for the log and `status`, because `start` deletes only the leftovers
+  of configured pools.
+
+`macos::place::PlaceLock` is the lock for taking a place, one per instance and
+shared by the macOS slots. A slot gives its `hold` the whole "count, then clone"
+step, so the lock stays held until the clone is listed and cannot be released
+between the two. The second slot then counts after the first's VM exists, and sees
+two. A macOS slot counts before each clone, and `build` before it creates the macOS
+build VM. `cli/tests/macos_vm_count.rs` runs every row of the table and the race of
+slots over a fake Tart.
+
+### The Golden macOS VM Build
+
+`build --profile axmc` builds the Linux golden VM when a Linux pool is configured,
+as [Tart Backend](#tart-backend) describes, and then the golden macOS VM when a
+macOS pool is. Each golden VM is replaced only when its own build succeeds; a
+failure of either is reported with its message and makes `build` exit 1, and a
+golden VM that was built stays. `build::golden_macos` runs the macOS build:
+
+1. It checks Tart and Softnet as `start` does, and refuses a Mac whose macOS is
+   older than the base's, with
+   `the pinned macOS base is macOS <v>, newer than this Mac's macOS <h>; update the Mac first`.
+2. It deletes any leftover macOS build VM; one it cannot delete is a warning. Then
+   it counts the macOS VMs, so a leftover it deleted does not count, and refuses a
+   full limit with
+   `<n> macOS VMs already count against the limit of 2 (<names>), so no macOS build VM was created; stop or delete one of them and build again`.
+3. It pulls the base by its pinned digest and clones it to a build VM.
+4. It boots the build VM as a job VM boots, with 180 s for the guest agent's first
+   answer.
+5. Through the guest agent, it removes the base's runner; downloads
+   `actions-runner-osx-arm64-<version>.tar.gz` for the declared runner and stops
+   unless its SHA-256 equals the runner record's; unpacks it to
+   `/Users/admin/actions-runner` and installs the launcher; turns off Remote Login
+   and Screen Sharing; and turns off the automatic download and installation of
+   macOS updates, leaving the automatic check on. The scripts are in
+   `cli/src/golden/scripts/macos/`.
+6. It flushes the disk, shuts the VM down and renames it to the golden name.
+7. It deletes every other golden macOS VM, and removes from Tart's cache only the
+   retired base digests; a failure there is a warning, and the next build tries
+   again.
+
+Any failure, and a stop at any step, deletes the build VM within the stop sequence
+and leaves the previous golden macOS VM in place. The disk keeps the base's layout,
+recovery partition included: the first Mac check on
+[#80](https://github.com/axross/runners/issues/80) found that the guest agent grows
+the disk at boot with it kept. `cli/tests/golden_macos_build.rs` runs the build over
+the fake Tart.
+
+### The macOS Job VM
+
+A macOS slot runs one job per VM, on the Tart backend, with M1's slot cycle and
+these steps in place of the Linux ones:
+
+1. **A place under the limit.** Under `PlaceLock`, the slot counts the macOS VMs
+   and, when a place is free, clones the newest golden macOS VM to the slot's job VM
+   name. When two already count, it clones nothing and registers nothing, logs
+   `<pool> slot <n>: waiting for the macOS VM limit; <n> count (<names>).` once,
+   and counts again every 5 s. A missing golden macOS VM, or one of another golden
+   VM version, fails only that slot's attempt, which backs off.
+2. **Boot and probe.** It sets the pool's vCPUs, memory and disk, boots the VM
+   under its shim, and waits at most 180 s for the guest agent; Linux keeps 120 s.
+   It then probes the guest every 3 s for at most 90 s, each probe within 30 s,
+   until the disk has grown: the launcher must be present, the runner must report
+   the version the golden VM's name records, and `diskutil` must report a disk
+   within 1 GB of the pool's `diskGb`, with less than 1 GB outside any partition. A
+   failed probe ends the attempt before registration.
+3. **The runner.** The JIT configuration goes to the launcher on the guest agent's
+   standard input, never on a command line. The launcher runs the runner's own
+   `run.sh` as `admin` with the configuration in `ACTIONS_RUNNER_INPUT_JITCONFIG`.
+   There is no container, so CPU placement is the VM's vCPUs, and a stop signals
+   `Runner.Listener` with `sudo -n pkill -INT`, then `-KILL`.
+4. **Deletion.** When the job ends the VM is deleted, as on Linux. A VM the slot
+   fails to delete is deleted again every 5 s, before the slot backs off, and it
+   counts toward the limit meanwhile.
+
+When `tart run` ends with Tart's VM-limit error, `The number of VMs exceeds the
+system limit`, the slot deletes the clone, backs off, and logs
+`macOS refused another macOS VM: <error>; if no other macOS VM is running, restart the Mac to release the place`.
+Any other boot failure stays a generic boot failure. `start`, a resume and a
+`restart` refuse a missing golden macOS VM, or one of another golden VM version,
+before any VM boots, with the Linux golden VM's messages: `the golden macOS VM is missing; this CLI needs one with golden VM version <G>`
+or `the golden macOS VM <name> has golden VM version <g>, but this CLI needs golden VM version <G>`,
+as image refusals: `start` ends with the Linux golden VM's `build` and `start`
+advice, and a resume or `restart` stays stopped with its `stop`, `build` and
+`start` advice. A later macOS job launch that meets the same refusal fails only that
+slot's attempt, which backs off.
+
+### macOS Status
+
+When a macOS pool is configured, `status` adds these lines after the image lines;
+with no golden macOS VM, the first three read `missing`:
+
+- `golden-macos-vm: <name>`, or `missing`;
+- `golden-macos-vm-version: <n>`, `mismatch (golden VM version <g>, CLI <n>)`, or
+  `missing`;
+- `golden-macos-runner: <version>, released <d> days ago`,
+  `<version>, released unknown` for a version the runner record does not hold, or
+  `missing`;
+- `macos-base-published: <date>, <d> days ago`;
+- one `warning: <text>` line each for a runner released 7 or more days ago, which
+  says from 21 days that the runner never updates itself, since GitHub's JIT
+  configuration turns that off, and asks for a rebuild before GitHub stops sending
+  jobs to the version, a runner whose
+  age is unknown, and the base's age from 30 days, as The Base Record says.
+
+The log carries the same warnings at each run of the core, as `Golden macOS VM
+freshness: <text>.`. A macOS slot shows `waiting for the macOS VM limit` or
+`waiting for VM <name> to be deleted` while it waits, and one `leftover-vm` line
+names each counted job VM of a pool that is no longer configured, with
+`` delete it with `tart delete <name>` ``, because `start` deletes only the leftovers
+of configured pools; the log names each once when a count first finds it.
+
+In the agent's snapshot these are the runner states `waiting_for_vm_limit` and
+`waiting_for_vm_deletion`, the runner field `workload_kind: "vm"`, an `images` entry
+named `golden macOS VM` with the lines `name`, `golden-vm-version`, `runner-version`
+and `base-published` and the warnings `runner_old` with `days`, `runner_age_unknown`
+and `base_old` with `days`, and `leftovers` of kind `vm_unconfigured_pool`.
 
 ## Running a Host
 
 This section describes the library's foreground instance, its `build` and its version
 1 clients. Since W1's installer pull request no shipped executable runs them: the
-app's agent runs a host instead, as [The Agent](#the-agent) describes, with the
+app's agent runs a host instead, as The Agent section describes, with the
 runtime layer, the image check, the log and containment that this section shares
 with it. The tests run them through `commands-helper`, and the last command-line
 release's tag documents them as commands.
@@ -2933,15 +3400,16 @@ runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it fro
 over the control channel. `build` builds the runner image, and the same clients
 talk to it. On axmc `build` makes the golden VM, which M2's Mac app is to build.
 
-| Module                   | Holds                                                                                                                |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `start`                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                 |
-| `build`, `build::golden` | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build |
-| `control`                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                           |
-| `shim`                   | The Unix shim between `start` and one job container's `docker run` client                                            |
-| `diagnostics`            | The exporter child, listed under The Runtime Layer                                                                   |
-| `instance::runtime_core` | The runtime core, listed under The Instance Layer                                                                    |
-| `instance::log_file`     | The log, listed under The Instance Layer                                                                             |
+| Module                                   | Holds                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start`                                  | `start`: the lock, validation, the log file, containment, the channel, the instance, and its signals                                                                                                                                                                                                                  |
+| `build`, `build::golden`                 | `build`: the lock, validation, the channel, its states, and its `docker` steps and their aborts; the golden VM build                                                                                                                                                                                                  |
+| `build::golden_macos`, `build::build_vm` | The golden macOS VM build, and what a build of either OS shares: the Tart and Softnet check, the deletion of build VMs an earlier build left, the build VM's boot, guest calls under the stop signal, shutdown, commit, and deletion, and the stop and failure handling of retiring the old golden VMs after a commit |
+| `control`                                | The clients `stop`, `restart`, `status`, and `diagnostics`                                                                                                                                                                                                                                                            |
+| `shim`                                   | The Unix shim between `start` and one job container's `docker run` client                                                                                                                                                                                                                                             |
+| `diagnostics`                            | The exporter child, listed under The Runtime Layer                                                                                                                                                                                                                                                                    |
+| `instance::runtime_core`                 | The runtime core, listed under The Instance Layer                                                                                                                                                                                                                                                                     |
+| `instance::log_file`                     | The log, listed under The Instance Layer                                                                                                                                                                                                                                                                              |
 
 ### Start
 
@@ -2981,13 +3449,17 @@ operated host. `MARSHAL_TEST_ROOT` moves the lock, the channel, and the log
 directory, `MARSHAL_TEST_GITHUB_API` moves the GitHub base address,
 `MARSHAL_TEST_DOCKER` names the `docker` client that `start` and `build` run, the
 Unix shim's removal in `start` included, `MARSHAL_TEST_TART` names the `tart`
-client that `start` runs on axmc, and `MARSHAL_TEST_BUILD_DEFINITION` names
-a test definition that `build` builds instead of the embedded one. On axmc the
+client that `start` runs on axmc, `MARSHAL_TEST_BUILD_DEFINITION` names
+a test definition that `build` builds instead of the embedded one, and
+`MARSHAL_TEST_RUNNER` declares another runner version and its osx-arm64 SHA-256
+in place of the runner record's, as `<version>=<sha256>`; [The Runner
+Record](#the-runner-record) says how it is read. On axmc the
 tests also set `PATH` to find the fake `softnet`, as Tart does, and
 `MARSHAL_TEST_SOFTNET_OWNER_MODE` to judge its file, and `MARSHAL_TEST_SIGNALS` to
 script the sleep, the primary network and the keep-awake hold. Only a debug
 build honours any of them: in the release profile `tests/base_address.rs` shows
-that the client stays `docker`, `tests/build_definition.rs` that `build` keeps
+that the client stays `docker` and that the declared runner stays the record's,
+`tests/build_definition.rs` that `build` keeps
 the embedded definition, and `tests/release_overrides.rs` that the client stays
 `tart`, the `route`, `arp` and `caffeinate` programs stay the system's, the
 signals are not read from a directory, and Softnet's file is judged as it is.
@@ -3026,9 +3498,12 @@ answer in time.
   `waiting for Docker` (`waiting for Tart` on axmc), `preparing`, `running`, or
   `skipped: <reason>`; one `slot`
   line per slot, which is `registering` (the preparation of its job host and the CPU
-  probe included), `backing off`, `held: <reason>`, or `running container <name>`;
-  and the image lines under
-  [The Image Contract](#the-image-contract), then, on axmc, a
+  probe included), `backing off`, `held: <reason>`, `running container <name>`, or,
+  for a macOS slot, `running VM <name>`, `waiting for the macOS VM limit` or
+  `waiting for VM <name> to be deleted`; on axmc, one `leftover-vm` line per
+  counted job VM of an unconfigured pool; the image lines under
+  [The Image Contract](#the-image-contract), and with a macOS pool the golden macOS
+  VM's lines under [macOS Status](#macos-status); then, on axmc, a
   `network: waiting for a network (no IPv4 default route)` line while no primary
   network is recorded, a `warning: keep-awake is not held (...)` line while the hold
   is wanted and not held, and one `warning: <message>` line per
@@ -3482,8 +3957,7 @@ does these in order:
 4. **Boot.** `tart run` under the VM shim (this program run again, as for a job VM),
    then the wait for the guest agent, every second with each question bounded at 5 s,
    until it answers, `tart run` ends, or 120 s pass. A boot that fails has the job VM
-   boot failure's text, naming the build VM, and the same section,
-   [The Signed-In Session](./macos-runner-host.md#the-signed-in-session). The wait is
+   boot failure's text, naming the build VM, with the same hints. The wait is
    `tart::boot`, which the Tart backend's job VM boot shares.
 5. **Provisioning.** The six guest calls of [Golden VM Provisioning](#golden-vm-provisioning),
    in order, each through `tart exec` with its own budget. Their output is read as data,
@@ -3685,8 +4159,10 @@ a panicking core, and no startable pool. The diagnostics tests are listed under
 
 `axmc_start.rs` runs `start` on the axmc profile as real processes, with the fake
 `tart`, the fake `softnet` and the fake `docker` in the VMs: a configuration of
-Linux and macOS pools that starts only the Linux pools, with one skip warning per
-macOS pool, and one of macOS pools alone that exits 1; a missing `tart`, a missing
+Linux and macOS pools that runs each pool in a VM of its OS, a macOS slot that
+waits for the limit while a leftover and a running macOS VM count, a macOS job VM
+that fails to delete and is deleted again while its slot waits, and a macOS-only
+configuration without a golden macOS VM that exits 1; a missing `tart`, a missing
 `softnet`, version refusals, Softnet setup refusals and a `softnet` that does not
 answer, each exiting 1 before any VM is cloned or booted; a `tart` that does not
 answer, which makes the slots wait; a newer patch, with its warnings in the log and
@@ -3818,7 +4294,7 @@ Five fixtures have an expectation of their own, because the TOML rules differ:
 | `rust/rejected/axpc-axmc-only-fields.json` | Only `budget` and `pool[0].disk_gb` are unknown                                  | `os` is a key a Windows pool defines, and it accepts `"linux"`.                                              |
 | `shared/rejected/field-name-case.json`     | The wrong-case keys are unknown, and the keys they stand for are missing as well | TOML keys match in exact case, where JSON finds a known field in any case and reports only the unknown ones. |
 
-**The fixtures that do not map** stay JSON-only. The test lists all 42 by name with
+**The fixtures that do not map** stay JSON-only. The test lists all 44 by name with
 the category that keeps each out, and fails when a fixture that cannot be translated
 is not listed, when a listed one can be, or when its category is wrong. The
 categories are:
@@ -3938,7 +4414,8 @@ the gates that cover it, so a change to the library knows what the app relies on
   `[lints] workspace = true`.
 
 **Gates.** `mise run check` covers what builds without the web view's system
-libraries, so the Check job on Linux needs none; the Windows job covers the rest.
+libraries, so the Check job on Linux needs none; the Windows `app` job and the macOS
+`app-macos` job cover the rest.
 
 | Task                             | Runs                                                                                                                                                                                                 |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -3959,7 +4436,9 @@ web view and is not in `lint:app` or `test:app`.
 
 The `app` job in [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs
 on a Windows hosted runner: clippy and the tests over the whole workspace, then
-`cargo tauri build --no-bundle`, failing if the build changed or left a file. An
+`cargo tauri build --no-bundle`, failing if the build changed or left a file. The
+`app-macos` job runs clippy and the tests over the whole workspace with the
+`fake-engine` feature on a macOS hosted runner. An
 `app-modes` job runs clippy and the tests of `marshal-modes` on a macOS hosted runner,
 which covers the dispatch of both Unix shims, `shim` and `vm-shim`, there, and runs the
 crate's tests again in the release profile, where the debug-only variables are
@@ -3988,7 +4467,7 @@ records the controls around it.
 
 Since W1's installer pull request a release carries the Windows app, Marshal, and its
 installer, and no command line and no macOS file. The releases before it carry the
-command line; the [last command-line release](#the-last-command-line-release) says
+command line; The Last Command-Line Release section says
 where their procedures are.
 
 The version is never committed. `cli/Cargo.toml`, `app/Cargo.toml` and their
@@ -4043,7 +4522,7 @@ cross-compilation and no cache action, and:
    [`app/tauri-cli.version`](../../app/tauri-cli.version) by
    [`tauri-cli-version.sh`](../../.github/scripts/tauri-cli-version.sh), the one place
    the merge checks' `app` job reads it from too, so one edit moves both
-   ([App](./app.md#the-tauri-cli-pin));
+   (The `tauri-cli` Pin section of [App](./app.md));
 5. builds the app with `cargo tauri build --no-bundle` in `app/crates/app`, and fails
    if the build changed `app/Cargo.lock`;
 6. fails unless the built `marshal-app.exe`'s product version, read from its version
@@ -4052,7 +4531,7 @@ cross-compilation and no cache action, and:
    the version its caller passed, in a dry run too, and runs the same check with a
    version that differs, which must fail, so a check that cannot fail does not pass;
 7. copies the app to its release name, and fails if it imports a `vcruntime` DLL;
-8. builds the MSI from the app and the licence notices, as [Installers](#installers)
+8. builds the MSI from the app and the licence notices, as the Installers section
    describes, and runs the installer test there;
 9. hands the SHA-256 of the app and of the MSI to the next job as job outputs, and
    uploads those two files by name.
@@ -4250,7 +4729,7 @@ the procedures there. The commit before W1's installer pull request on main, its
 first parent, holds the command line and everything that pull request removed.
 
 Moving a host from the command line to the app is that release's uninstall procedure
-for the command line, then [Installing](#installing) here. The command line's MSI and
+for the command line, then the Installing section here. The command line's MSI and
 this one are separate products that share `%LOCALAPPDATA%\Programs\marshal\`, so
 uninstalling the command line removes `marshal.exe` and its `PATH` entry and leaves
 Marshal's files, and `where.exe marshal` then finds nothing.
@@ -4348,7 +4827,7 @@ and M4 consume them. Each is a child of roadmap
   layout are M2's. M2 also holds the Keychain store. Its Keychain items trust the
   signed Marshal executable, which is the code object that carries the identifier in
   the first contract below, and must be created by F0's stable Developer ID identity.
-- **M4**, "Mac app: login, power, updates and telemetry", updates the installed Mac
+- **M4**, "Mac app: login, power and updates", updates the installed Mac
   app. Its updates keep M2's Keychain tokens working only while the identifier and the
   team stay the same.
 
@@ -4428,28 +4907,16 @@ The contracts F0 owns are these:
 ### Reading a Signature
 
 The commands that read the command line's signed macOS package are in this document at the
-[last command-line release](#the-last-command-line-release)'s tag, under the same
-heading. M2's pull request brings this section back, rewritten for the app and the
+last command-line release's tag, under the same heading; The Last Command-Line
+Release section identifies that tag. M2's pull request brings this section back, rewritten for the app and the
 disk image.
 
 ### Extending the Release Workflows
 
-The release workflows' structure is F0's, and W4, M2 and M4 extend them at these
-points:
-
-- **M2** adds an app job to `release-build.yaml` that builds the unsigned Mac app,
-  and brings back `sign-macos` and `verify-macos` from the restoration point, with
-  steps that sign the Mac app with the same identifier and team, and notarize and
-  staple its disk image. `assemble-signed` then needs both, and the disk image joins
-  the signed set. The commands and the layout are M2's.
-- **W4** added `update-tool`, a job without the Environment, and its own
-  update-signing job, `sign-update`, which roadmap
-  [#72](https://github.com/axross/runners/issues/72) adopted, to sign the update
-  archive; `assemble-signed` needs both and writes `latest.json`
-  (see The Update Feed in the Release above). The archive's
-  signature is W4's contract. M2 adds `sign-macos` beside `sign-update` in the shape
-  check's rules.
-- **M4** may sign the Mac's update archive in W4's update-signing job.
+F0 owns the release workflows' structure. W1, W4, M2 and M4 MUST follow the
+extension contracts below in their own pull requests. W1 and W4 implement the
+four-file, seven-job app release with its update feed described above; M2 and M4 are
+requirements for later changes, not jobs already implemented.
 
 `assemble-release.sh` takes a mode as its first argument: `unsigned` for
 `release-build.yaml` and `signed` for `assemble-signed`, which requires the
@@ -4457,7 +4924,7 @@ signed-only files, today `latest.json`. A pull request that changes
 the release set changes every place that encodes it in the same change: the
 workflows, `assemble-release.sh`, `verify-release.sh` and their tests,
 `.releaserc.json`, the shape check and its test, `mise.toml` descriptions, the
-documents, REVIEW.md, the glossary and README.
+documents, REVIEW.md, the glossary, Testing and README.
 
 Every extension keeps these rules:
 
@@ -4467,11 +4934,235 @@ Every extension keeps these rules:
 - no pull-request run reaches the Environment;
 - F0's and M2's signing jobs use only operating-system signing tools.
 
-W4's update-signing job is the one exception to the last rule. It runs `tauri-cli`'s
+W4's `sign-update` job is the one exception to the last rule. It runs `tauri-cli`'s
 `signer sign`. A tool job without the Environment builds that binary with `--locked`
 from a crate archive whose SHA-256 must equal one committed in the repository. The
 signing job checks the binary it receives against the SHA-256 that the tool job
-outputs, before running it.
+outputs, before running it. W1 owns the `tauri-cli` pin and W4 owns that checksum;
+a change to one MUST move both in the same pull request once the checksum exists.
+
+#### Release Sets and Job Dependencies
+
+W1's installer pull request MUST merge before M2's disk-image pull request.
+M2's disk-image and W4's feed pull requests may then merge in either order. The file names
+keep the `marshal-<version>-<target><suffix>` pattern; the version distinguishes a
+command-line release from an app release. Each stage's release set is:
+
+| From                         | Release files                                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Last command-line release    | `marshal-<version>-windows-x64.exe`, `marshal-<version>-macos-arm64`, `marshal-<version>-windows-x64.msi`, `marshal-<version>-macos-arm64.pkg`, `SHA256SUMS` |
+| W1's installer pull request  | `marshal-<version>-windows-x64.exe` (the bytes of `marshal-app.exe`), `marshal-<version>-windows-x64.msi` (W1's MSI), `SHA256SUMS`                           |
+| M2's disk-image pull request | adds `marshal-<version>-macos-arm64.dmg`, in the signed set only                                                                                             |
+| W4's feed pull request       | adds `latest.json`, in the signed set only                                                                                                                   |
+
+From W1's installer pull request, `marshal-release` is the unsigned build and dry-run
+set: the two Windows files and `SHA256SUMS`. `marshal-release-signed` adds the disk
+image and feed only when their signing jobs exist. The bare executable MUST retain
+the build's bytes, and the MSI MUST install it unchanged. Every release's
+`SHA256SUMS` MUST list every other release file, computed after all signing;
+`attest` MUST attest every file that list names.
+
+The required job dependencies are:
+
+- **Last command-line release:** `plan` → `build` → `sign-macos` → `verify-macos` → `assemble-signed`
+  → `attest` → `release`.
+- **After W1's installer pull request:** `plan` → `build` → `assemble-signed`
+  → `attest` → `release`. `assemble-signed` needs only `plan` and `build`, checks
+  the Windows set and publishes it as `marshal-release-signed`.
+- **With M2:** `sign-macos` and `verify-macos` return between `build` and
+  `assemble-signed`, which MUST wait for them.
+- **With W4:** `update-tool` needs `plan`; `sign-update` needs `plan`, `build` and
+  `update-tool`; `assemble-signed` MUST also need `update-tool` and `sign-update`.
+  These dependencies coexist with M2's when both extensions are present.
+- **Always:** every job except `plan` MUST need `plan` directly and carry
+  `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`.
+  `attest` and `release` MUST download only `marshal-release-signed`. Neither
+  release workflow uses a cache, and no dry run reaches an Environment.
+
+Every extension MUST keep `verify-macos` bounded at 20 minutes when present and
+`assemble-signed` at 10 minutes. Build-time tool downloads are limited to:
+
+- the pinned WiX 7.0.1;
+- `tauri-cli` and its locked dependencies through Cargo;
+- `update-tool`'s checksum-verified crate archive.
+
+W1 MUST change `assemble-release.sh` to take the version, the directory and the
+build's two SHA-256 values. W4's feed pull request gives it an
+`unsigned` or `signed` mode as its first argument. `release-build.yaml` uses the
+unsigned mode, which refuses signed-only files; `assemble-signed` uses the signed
+mode, which requires every listed signed-only file and refuses unlisted files.
+Each extension adds its file to that list. The disk image's expected SHA-256 comes
+from `sign-macos`, checked by `verify-macos`; `assemble-signed` writes `latest.json`
+itself and checks it before writing `SHA256SUMS`.
+
+A change to the release set MUST update every place that encodes it in the same
+pull request: `release-build.yaml`, `release.yaml`, `assemble-release.sh`,
+`verify-release.sh`, `set-release-version.sh` where its version checks change,
+their tests, `release/.releaserc.json`, `check-release-shape.mjs` and its test,
+`mise.toml`'s task descriptions, the affected CLI, Security, Development Workflow
+and Windows Runner Host text, REVIEW.md's asset list, the glossary, Testing and README.
+The release-phase checks and semantic-release asset list MUST name the signed set.
+
+#### W1's Installer Pull Request
+
+The Windows leg MUST install `tauri-cli` with
+`cargo install tauri-cli --version =<pin> --locked` under `$RUNNER_TEMP`, without a
+cache, reading the same single pin as W1's app CI. It builds with
+`tauri build --no-bundle` and makes the MSI with F0's WiX 7.0.1 fetch and pin. W1's
+pull request MUST record this release-build use as an exception under Security's
+Pinning Convention, rather than silently treating it as a checksum-pinned binary.
+Cargo checks the crate archive and locked dependencies against the crates.io
+index checksums. This leg does not use W4's later committed archive checksum.
+
+W1 MUST replace the binary's `--version` check with the built `marshal-app.exe`'s
+product version matching the stamped version, including in dry runs; W4 does not
+add that check later. The leg's timeout MUST be twice its first successful dry
+run's wall-clock time, rounded up to a whole five minutes. W1 MUST keep these
+checks, adapting them to its app build:
+
+- the `vcruntime` import check;
+- the version stamp before compilation;
+- the compiler host-target check;
+- the release-profile tests of the crates the leg still builds;
+- an MSI test as `test-msi-installer.ps1` provides today.
+
+W1's pull request MUST remove:
+
+- the macOS build leg, its package build and test, its `MEASURED: signing tools`
+  step, and the macOS Install Blocks legs;
+- `sign-macos` and `verify-macos`, updating `assemble-signed`'s dependencies;
+- `checkSigningJob`, `checkPackageArguments`, `checkMeasuredTools`, their constants,
+  the `build-pkg.sh` existence rule and their cases in `test-release-shape.sh`;
+- `build-pkg.sh`, `test-pkg-installer.sh`, `test-sign-macos.sh`,
+  `test-signed-pkg.sh`, `test-signed-pkg-refusals.sh`, the macOS install-block suites
+  and their `mise` tasks.
+
+The generic shape-check rules MUST remain, with the new job chain and no job
+allowed to declare an Environment. W1 MUST re-anchor their test cases on text
+that remains, stop copying `build-pkg.sh` and `test-signed-pkg.sh` into the test
+tree, and add a case refusing any job that declares an Environment. A removed
+required check is a request to the maintainer to change branch settings, never
+permission for an agent to change them.
+
+The optional Windows check block MUST keep the checksum, tag-commit and
+attestation checks, but stop running the binary. It compares the SHA-256 of
+`marshal-app.exe`, extracted from the MSI without elevation, with the executable's
+line in `SHA256SUMS`. W1 owns the wording and choice of install, update, uninstall
+and rollback procedures, provided every documented block keeps a test, the
+standard-user Windows test continues for W1's MSI, and the documents point to the
+last command-line release's tag for both operating systems' old procedures and
+the migration from command line to app.
+
+W1 MUST update the CLI document's Releases and Installers sections, Security's
+release record, Development Workflow's Each Release section, REVIEW.md, the
+glossary and README alongside the scripts, tests and task descriptions. Between
+this pull request and the next signing job, M2's or W4's, no job declares `release`
+and there is no signing approval step. The maintainer's dispatch remains the
+decision; the Environment and its secrets stay in place.
+
+#### The Restoration Point and Documents Through the Gap
+
+The restoration point is the first parent of W1's installer commit on `main`.
+Find that commit from W1's merged pull request, then use its first-parent revision,
+`<W1-installer-commit>^`; `git rev-parse <W1-installer-commit>^` gives the restoration
+SHA. W1's PR body MUST list what it removes. M2's body MUST cite that SHA and show
+its diff against it. M2 reapplies the jobs, rules and tests onto `main` as it then
+is, rather than replacing newer shared rules with an old file wholesale.
+
+The following documents MUST remain through the gap, marked as held for M2, except
+what W4's `sign-update` uses, the Environment and the two feed secrets:
+
+- The Signing Contracts: identifier, designated requirement, team, Environment,
+  secrets and certificate lifetime;
+- Security's record of the Environment, secrets and G2 pin;
+- Development Workflow's Before the First Release and Renewing the Certificates.
+
+W1 removes the job descriptions in Signing the macOS Files and Security's lines
+on `sign-macos` and `verify-macos`, and points Reading a Signature to the last
+command-line release's tag. M2 MUST restore those descriptions for the app and
+disk image. The signing identity record stays even while no job uses it, because
+M2's Keychain trust depends on that identity.
+
+#### M2's Disk-Image Pull Request
+
+M2 MUST restore `sign-macos`, `verify-macos`, the measured-tools step, their
+shape-check rules and test cases from the restoration point. It leaves out the
+command-line signing and package steps, the Installer identity's check, import
+and exported name, the `pkgbuild` argument and `build-pkg.sh` existence rules,
+and package-only tools such as `pkgbuild`, `pkgutil`, `lsbom` and `installer`.
+The restored job MUST NOT read `MACOS_INSTALLER_P12_BASE64`.
+
+Its app job in `release-build.yaml` MUST run on `macos-latest` with a 45-minute
+timeout, install `tauri-cli` by the Windows leg's route, build the unsigned app,
+archive it with `ditto`, and upload `marshal-macos-app` separately from
+`marshal-release`. It exposes `app_sha256` as a reusable-workflow output. The
+measured-tools step moves into that job, and `checkMeasuredTools` follows it.
+
+The restored `sign-macos` MUST check the app archive against `app_sha256`, sign
+inside-out without `--deep`, use the hardened runtime and a timestamp, and put
+`app.axross.marshal` on the main executable. It builds the disk image with the app
+job's `hdiutil create` arguments, signs the image as `app.axross.marshal.dmg`, then
+notarizes and staples it. Steps keep the `# sign-macos: <name>` marker, context
+values reach `run:` through `env:` only, and the job keeps its 60-minute bound.
+`hdiutil` and `ditto` join the check, measured and shape-check tool lists; `ln` and
+`sleep` join the allowed commands. The shape check compares the disk-image
+creation arguments with the app job's.
+
+`verify-macos` MUST read the designated requirement from the signed app. At M2's
+first release, M2 compares it with the recorded `marshal` requirement. The disk
+image's identifier is not the app's Keychain identity; that trust uses only
+`app.axross.marshal` on the main executable.
+
+If W4 merged first, M2 MUST retain W4's Environment rule, secret rule, job lists
+and chain rules, adding `sign-macos` alongside `sign-update`. Each shared rule
+keeps a case for each job. M2 also updates the signed release set and restores the
+documents named above, without restoring the command-line package.
+
+#### W4's Feed Pull Request and M4's Archive
+
+W4 MUST add `update-tool` on `ubuntu-latest`, with `contents: read`, no Environment,
+no secret or cache, and a checkout with `persist-credentials: false`. It runs W4's
+tool script, also run by the merge checks, and uploads the built `tauri-cli` and
+feed checker with their SHA-256 outputs. Its timeout is twice its first
+successful run's wall-clock time, rounded up to a whole five minutes.
+
+`sign-update` MUST run on `ubuntu-latest`, with `environment: release`,
+`contents: read`, no checkout and only the download and upload artifact actions.
+Every `run:` starts with `# sign-update: <name>`, with no `${{ }}` inside it.
+Before signing, the job MUST refuse unless all three conditions hold:
+
+- the MSI matches its `SHA256SUMS` line in `marshal-release`;
+- the tool matches `update-tool`'s SHA-256 output;
+- both feed secrets are set.
+
+It runs the tool by its absolute path under `$RUNNER_TEMP`, passes
+the two secrets through `env:` only to that signing step, uploads only the
+signature and has a 15-minute timeout.
+
+`assemble-signed` MUST write `latest.json` from the signature, with a URL naming
+`marshal-<version>-windows-x64.msi` under that release's tag. Before writing
+`SHA256SUMS`, it checks the feed checker against `update-tool`'s output and runs
+it. W4's pull request updates the signed set and its checks, as well as Security's
+secret statement and Before the First Release: the maintainer adds
+`UPDATE_FEED_SIGNING_KEY` and `UPDATE_FEED_SIGNING_KEY_PASSWORD` to `release`
+before the first release with the feed.
+
+W4 MUST extend the shape check to allow `release` on `sign-update` and close the
+secret-detection gap: in `release.yaml` and `release-build.yaml`, any secret read
+outside a signing job fails; `sign-update` may read its secrets only in the
+`signer sign` step. `sign-macos` stays checked per job because more than one step
+reads its secrets. Across every workflow, the signing-secret rule MUST also
+recognize both feed secret names. Other workflows retain the name-specific rule,
+so the review workflow's unrelated token still passes. The new rules
+MUST enforce the job requirements above for `update-tool` and `sign-update`, with
+a test case for each rule and each signing job when M2 is already present.
+
+M4's Mac update archive's app MUST be signed and notarized in `sign-macos` using
+M2's steps. Its feed signature is made in `sign-update`; if M4 signs that archive
+there, M4's plan MUST add `sign-macos` to `sign-update`'s dependencies. M4 owns the
+archive commands, and its `darwin-aarch64` feed entry follows W4's contract.
+
+#### Extending the Shape Check
 
 An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
 own pull request, under REVIEW.md's release lens and the maintainer's review, and
@@ -4584,7 +5275,7 @@ change after it. The check block below names `2.0.0`. To check another release,
 change the block's `version` and `file` assignment lines. If the first release of the
 app gets another version, a later change corrects the lines. A host that runs the
 command line moves to the app as
-[The Last Command-Line Release](#the-last-command-line-release) says.
+The Last Command-Line Release section says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
 `Install Blocks` job ([What the Install Tests Cover](#what-the-install-tests-cover)).
@@ -4754,8 +5445,8 @@ In PowerShell 5.1 or 7:
   version of Marshal is already installed.", and the installed version stays, so
   uninstall first.
 - **Roll back to the command line.** Uninstall Marshal, then install the
-  [last command-line release](#the-last-command-line-release) by that release's
-  procedure. The command line reads its token files, not Credential Manager, so it
+  last command-line release by that release's procedure; The Last Command-Line
+  Release section identifies it. The command line reads its token files, not Credential Manager, so it
   needs them; the app's tokens stay in Credential Manager.
 
 Immutable releases keep a published release's tag from moving, so a version you
@@ -4883,6 +5574,7 @@ must move `cli/Cargo.lock` and `app/Cargo.lock` to the same version in one chang
 | `windows-native-keyring-store` and `byteorder`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | The Windows Credential Manager behind the token store, with default features off, and the byte-order helper it uses for the UTF-16 token; they build on Windows only                                                                                                                                                                                               | MIT OR Apache-2.0 for the store, Unlicense OR MIT for `byteorder`                           |
 | `netdev` and `mac-addr`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | The primary network for the lifecycle settings: the default interface, its IPv4 gateway and, with the `gateway` feature only, the gateway's hardware address, which `SendARP` reads; they build on Windows only and also use `ipnet`, listed above                                                                                                                 | MIT                                                                                         |
 | `block2`, `deranged`, `dispatch2`, `dlopen2`, `netlink-packet-core`, `netlink-packet-route`, `netlink-sys`, `num-conv`, `objc2`, `objc2-core-foundation`, `objc2-encode`, `objc2-system-configuration`, `plist`, `powerfmt`, `quick-xml`, `time`, `time-core`, `time-macros`, `winapi`, `winapi-i686-pc-windows-gnu`, `winapi-x86_64-pc-windows-gnu`, `zerocopy`, and `zerocopy-derive`                                                                                                                                                                                                                            | `netdev`'s dependencies on its other targets, which the lockfile records and none of the three CI targets builds; `time-macros` and `zerocopy-derive` are procedural macros                                                                                                                                                                                        | MIT, MIT OR Apache-2.0, Zlib OR Apache-2.0 OR MIT, or BSD-2-Clause OR Apache-2.0 OR MIT     |
+| `security-framework` 3.7.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Mac's Keychain store, with default features off; it builds on macOS only, and reqwest's platform verifier already locks this version with `security-framework-sys`, `core-foundation`, `core-foundation-sys`, `libc` and `bitflags`, so it adds no crate. Its project is looking for a maintainer                                                              | MIT OR Apache-2.0                                                                           |
 | `winsafe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | The current user's security identifier, with only the `advapi` feature, and the lifecycle settings' Run key value and unbiased interrupt time; it builds on Windows only                                                                                                                                                                                           | MIT                                                                                         |
 | `win32job`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | The Job Object that ends each job container's `docker run` client with `start`; it builds on Windows only (see [Containment](#containment))                                                                                                                                                                                                                        | MIT OR Apache-2.0                                                                           |
 | `windows`, `windows-core`, `windows-collections`, `windows-future`, `windows-numerics`, `windows-threading`, `windows-result`, `windows-strings`, and `windows-link` 0.1                                                                                                                                                                                                                                                                                                                                                                                                                                           | The Windows API bindings `win32job` uses; they build on Windows only                                                                                                                                                                                                                                                                                               | MIT OR Apache-2.0                                                                           |

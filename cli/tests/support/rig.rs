@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use marshal_cli::macos::count::ConfiguredPool;
 use marshal_cli::macos::gate::NetworkGate;
 use marshal_cli::macos::softnet::OwnerMode;
 use marshal_cli::runtime::backend::{HostRequest, JobHost};
@@ -32,6 +33,9 @@ pub const START_MILLIS: u64 = 1_709_618_828_009;
 pub const POOL: &str = "example-repo-one";
 pub const SLOT: u32 = 2;
 pub const LAUNCHER: &str = "/usr/local/bin/marshal-launch";
+/// what `tart run` prints when its Softnet process ends early: Softnet's own cause
+/// chain, then Tart's error.
+pub const SOFTNET_ENDED_EARLY: &str = "failed to initialize proxy: failed to create vmnet network 192.0.2.0/29: vmnet returned an error status: Failure RuntimeFailed(why: \"Softnet process terminated prematurely\")";
 
 /// the time never moves, so a job VM's name is the same in every test, and a sleep
 /// is real.
@@ -61,6 +65,10 @@ pub fn quick_timings() -> TartTimings {
         tart_poll: Duration::from_millis(50),
         image_check: Duration::from_secs(5),
         release: Duration::from_secs(10),
+        macos_boot_deadline: Duration::from_secs(5),
+        place_poll: Duration::from_millis(50),
+        disk_wait: Duration::from_secs(2),
+        disk_poll: Duration::from_millis(50),
     }
 }
 
@@ -105,6 +113,8 @@ pub struct Setup {
     pub exporter: Option<PathBuf>,
     /// the network gate the backend waits at, open when there is none.
     pub gate: Option<NetworkGate>,
+    /// the configured pools the backend tells macOS slots by.
+    pub pools: Vec<ConfiguredPool>,
 }
 
 impl Default for Setup {
@@ -120,6 +130,7 @@ impl Default for Setup {
             tart: None,
             exporter: None,
             gate: None,
+            pools: Vec::new(),
         }
     }
 }
@@ -176,6 +187,14 @@ impl Rig {
         })
     }
 
+    /// a host whose backend is configured with these pools.
+    pub fn with_pools(pools: Vec<ConfiguredPool>) -> Self {
+        Self::build(&Setup {
+            pools,
+            ..Setup::default()
+        })
+    }
+
     /// a host whose `tart` is this program.
     pub fn with_tart_program(program: &str) -> Self {
         Self::build(&Setup {
@@ -211,7 +230,8 @@ impl Rig {
             log.clone(),
         )
         .with_softnet_owner_mode(setup.owner_mode)
-        .with_exporter(setup.exporter.clone(), None);
+        .with_exporter(setup.exporter.clone(), None)
+        .with_pools(setup.pools.clone());
         if let Some(gate) = &setup.gate {
             backend = backend.with_network_gate(gate.clone());
         }

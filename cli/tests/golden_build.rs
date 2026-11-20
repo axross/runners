@@ -300,9 +300,18 @@ fn a_failed_boot_deletes_the_build_vm_and_keeps_the_old_golden_vm() {
         fails(
             |rig| {
                 rig.fake.script("run_mode", "exit");
+                rig.fake
+                    .script("run_error", "Error: Failed to generate keypair");
+            },
+            "ended with exit code 1 (Error: Failed to generate keypair); Tart's error points to a locked login keychain, see the \"The Signed-In Session\" section of the macOS Runner Host document), so",
+        )
+        .await;
+        fails(
+            |rig| {
+                rig.fake.script("run_mode", "exit");
                 rig.fake.script("run_error", "the keychain is locked");
             },
-            "boot failure: tart run for the build VM",
+            "ended with exit code 1 (the keychain is locked)), so",
         )
         .await;
         fails(
@@ -938,6 +947,59 @@ fn marshal_build_names_the_image_the_configuration_gives() {
         .find(|arguments| arguments.iter().any(|word| word == "tag"))
         .unwrap();
     assert_eq!(tag.last().map(String::as_str), Some("example-image:tag"));
+}
+
+#[test]
+fn a_failed_macos_build_keeps_the_new_linux_golden_vm_and_exits_1() {
+    let rig = Rig::new();
+    let macos_golden = "marshal-golden-macos-g1-r2.337.0-20240101000000";
+    rig.fake.seed(&[
+        (&old_golden(), "stopped", "local"),
+        (macos_golden, "stopped", "local"),
+    ]);
+    let config = rig.config("axmc-shared-label-different-os.json");
+    let output = rig
+        .command(&["build", "--profile", "axmc", "--config"])
+        .arg(&config)
+        .env("MARSHAL_TEST_RUNNER", "not-a-runner")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("MARSHAL_TEST_RUNNER"), "{stderr}");
+    let golden = rig.golden_vms();
+    assert_eq!(golden.len(), 1, "{golden:?}");
+    assert_ne!(golden[0], old_golden(), "the Linux build committed");
+    assert!(
+        rig.local_vms().iter().any(|name| name == macos_golden),
+        "the Linux build left the golden macOS VM"
+    );
+}
+
+#[test]
+fn a_failed_linux_build_keeps_the_old_golden_vm_still_runs_the_macos_build_and_exits_1() {
+    let rig = Rig::new();
+    let macos_golden = "marshal-golden-macos-g1-r2.337.0-20240101000000";
+    rig.fake.seed(&[
+        (&old_golden(), "stopped", "local"),
+        (macos_golden, "stopped", "local"),
+    ]);
+    rig.fake.script("fail-rename", "rename went wrong");
+    let config = rig.config("axmc-shared-label-different-os.json");
+    let output = rig
+        .command(&["build", "--profile", "axmc", "--config"])
+        .arg(&config)
+        .env("MARSHAL_TEST_RUNNER", "not-a-runner")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    // both failures are reported: the macOS build ran after the Linux one failed, and
+    // its own failure did not hide the Linux one
+    assert!(stderr.contains("rename went wrong"), "{stderr}");
+    assert!(stderr.contains("MARSHAL_TEST_RUNNER"), "{stderr}");
+    assert_eq!(rig.golden_vms(), [old_golden()]);
+    assert!(rig.local_vms().iter().any(|name| name == macos_golden));
 }
 
 #[test]

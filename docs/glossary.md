@@ -151,8 +151,8 @@ mode. Not to be confused with an **Agent Host**. See
 shows the icon, its menu and the main window and, started again with `agent` as its
 first argument, runs the **Resident Agent** in a separate hidden process that outlives
 it. The app is a client of **Protocol Version 2** only; it never holds the lock, reads
-the configuration, touches the **Token Store** or runs Docker. It is built in CI and
-not yet installed or released. See [operations/app.md](./operations/app.md).
+the configuration, touches the **Token Store** or runs Docker. A release ships it with
+its per-user MSI. See [operations/app.md](./operations/app.md).
 
 **Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
 token, by the repository's lower-case `owner/name`, and an organization's by its
@@ -198,21 +198,33 @@ whatever a job runs in. The core keeps the configuration, registration, backoff 
 the stop sequence; the runtime behind the seam waits for its engine, checks its
 image, prepares and releases a job's host, runs the job, and exports diagnostics. A
 pool's operating system, on the **Host Profile**'s host, selects the runtime: a
-Docker Desktop container on axpc, a **Job VM** for a Linux pool on axmc. See
+Docker Desktop container on axpc, a **Job VM** for a pool on axmc. See
 [operations/cli.md](./operations/cli.md#runtime-seam).
 
 **Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
-host and every **Job VM** is cloned from. It holds Docker Engine, the launcher and
+host and every Linux **Job VM** is cloned from. It holds Docker Engine, the launcher and
 the **Runner Image**, and its name records its golden VM version, the **Image
 Contract Version**, the runner version and the build time, so they are read without
 booting it. Only `build` deletes it. See
 [operations/macos-runner-host.md](./operations/macos-runner-host.md#the-golden-vm-contract).
 
-**Job VM** - the VM that runs one job of an axmc Linux **Execution Pool**: a clone
-of the **Golden VM**, named `marshal-job-<pool>-<slot>-<time>`, booted on
+**Job VM** - the VM that runs one job of an axmc **Execution Pool**: a clone of the
+**Golden VM** for a Linux pool, or of the **Golden macOS VM** for a macOS one, named `marshal-job-<pool>-<slot>-<time>`, booted on
 **Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
 and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
 runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
+
+**Golden macOS VM** - the Tart macOS VM that `build --profile axmc` makes from the
+digest-pinned Cirrus Labs base when a macOS pool is configured, and every macOS
+**Job VM** is cloned from. It holds the runner and the launcher, with no container,
+and its name, `marshal-golden-macos-g<golden VM version>-r<runner version>-<time>`,
+records what it holds. See
+[operations/cli.md](./operations/cli.md#the-golden-macos-vm-build).
+
+**macOS VM Limit** - the two macOS VMs that Apple's licence allows at once on the
+Mac. A macOS **Slot** counts the macOS VMs before it clones one and waits while two
+count; Linux VMs do not count. See
+[operations/cli.md](./operations/cli.md#the-two-vm-count).
 
 **VM-Local Docker Socket** - the Docker socket, `/var/run/docker.sock`, of the Docker
 Engine inside a **Job VM**, which the VM runtime mounts into that VM's runner
@@ -221,8 +233,10 @@ belongs to a VM that one job uses and that is deleted afterwards, never to a hos
 and the Docker runtime on axpc mounts no socket. See
 [conventions/security.md](./conventions/security.md#the-vm-local-docker-socket).
 
-**Build VM** - the temporary VM, named `marshal-build-linux-<time>`, in which
-`build --profile axmc` makes a new **Golden VM**. It is renamed to the golden name
+**Build VM** - the temporary VM, named `marshal-build-linux-<time>` or
+`marshal-build-macos-<time>`, in which `build --profile axmc` makes a new
+**Golden VM** or **Golden macOS VM**. A macOS one counts toward the **macOS VM
+Limit** while it exists. It is renamed to the golden name
 only when complete, and a failed or interrupted build deletes it, so the previous
 Golden VM stays in place.
 
@@ -282,12 +296,19 @@ gate is the maintainer's approval of that plan.
 
 **Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
 with every plan-approval question: delivery of the run's draft pull request, the
-Claude review request on it, and watching its activity. See
-[operations/agent-sessions.md](./operations/agent-sessions.md).
+Claude Code review child session that reviews it, or the Claude CI review
+request when the maintainer has selected that alternative, and watching its
+activity. See [operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
 independent-review round; it posts its own review on the pull request and is
 archived afterwards when the plan-gate archive confirmation allows it. See
+[operations/development-workflow.md](./operations/development-workflow.md).
+
+**Claude Code Review Child Session** - a fresh, non-fork general-purpose
+subagent a Claude Code run starts in its own worktree for one
+independent-review round, which posts its own review on the pull request; the
+counterpart of an Amp review child thread for a Claude Code run. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Plan-Gate Archive Confirmation** - the human's answer, collected at the plan

@@ -28,7 +28,7 @@ jobs:
   build:
     name: Build windows-x64
     runs-on: windows-latest
-    # twice the leg's 22 min 56 s in its first successful dry run (#117), rounded
+    # twice the leg's 22 min 56 s in its first successful dry run, rounded
     # up to whole 5 minutes; see docs/operations/cli.md.
     timeout-minutes: 50
     outputs:
