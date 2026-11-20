@@ -94,16 +94,30 @@ pub struct PoolCard {
 }
 
 /// refusal and cleanup details are plain text, never a service response or credential.
+/// the agent words its reason with the status or host it found, as in "rejected by GitHub
+/// (403)", so the status or host is added only when the reason does not already say it.
 fn listener_detail(info: &OnDemandInfo) -> Option<String> {
     let mut parts = Vec::new();
-    if let Some(reason) = &info.reason {
-        parts.push(clean::cut(&plain(reason), clean::MESSAGE_CHARS));
+    let reason = info.reason.as_deref().map(plain);
+    if let Some(reason) = &reason {
+        parts.push(clean::cut(reason, clean::MESSAGE_CHARS));
     }
-    if let Some(status) = info.status {
+    let said = |text: &str| {
+        reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains(text))
+    };
+    if let Some(status) = info.status
+        && !said(&format!("({status})"))
+        && !said(&format!("HTTP {status}"))
+    {
         parts.push(format!("HTTP {status}"));
     }
     if let Some(host) = &info.refused_host {
-        parts.push(format!("Refused host: {}", clean::name(&plain(host))));
+        let host = clean::name(&plain(host));
+        if !said(&host) {
+            parts.push(format!("Refused host: {host}"));
+        }
     }
     if let Some(kind) = &info.store_error_kind {
         parts.push(format!("Token store: {}", clean::name(&plain(kind))));
@@ -131,7 +145,7 @@ fn on_demand(context: &Context<'_>, pool: &PoolInfo) -> Option<OnDemand> {
     let state = match info.state.as_str() {
         "listening" => "Listening".to_string(),
         "another_listener" => "Another listener".to_string(),
-        "rejected" => "Rejected by GitHub".to_string(),
+        "rejected" => "Rejected".to_string(),
         "store_error" => "Token store error".to_string(),
         "backing_off" => "Backing off".to_string(),
         "stopped" => "Stopped".to_string(),

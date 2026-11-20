@@ -581,7 +581,7 @@ fn on_demand_cards_show_all_six_listener_states_and_keep_always_on_controls() {
         [
             "On demand · axpc-linux · Listening · 0 assigned",
             "On demand · axpc-shared · Another listener",
-            "On demand · axpc-labels · Rejected by GitHub",
+            "On demand · axpc-labels · Rejected",
             "On demand · axpc-store · Token store error",
             "On demand · axpc-retry · Backing off",
             "On demand · axpc-stopped · Stopped",
@@ -618,6 +618,69 @@ fn on_demand_cards_show_all_six_listener_states_and_keep_always_on_controls() {
     assert_eq!(list(&view).header.controls, list(&baseline).header.controls);
     assert_eq!(view.menu, baseline.menu);
     assert_eq!(view.tooltip, baseline.tooltip);
+}
+
+/// the reasons the agent reports are the `Display` of its scale-set client's error, which
+/// already says the status or the refused host the snapshot also carries separately.
+#[test]
+fn a_listener_detail_says_each_status_and_host_once() {
+    let detail_of = |change: &dyn Fn(&mut Value)| {
+        let snapshot = crate::support::patched("on_demand", |value| {
+            let info = &mut value["pools"][2]["on_demand"];
+            for key in ["status", "refused_host", "reason"] {
+                info[key] = Value::Null;
+            }
+            change(info);
+        });
+        let view = crate::support::view_of(&snapshot);
+        let listener = list(&view).pools[2].on_demand.clone().unwrap();
+        assert_eq!(listener.line, "On demand · axpc-labels · Rejected");
+        listener.detail
+    };
+    for (reason, status) in [
+        ("rejected by GitHub (403)", 403),
+        ("rejected by GitHub (401)", 401),
+        ("scale set, session or runner not found (404)", 404),
+        ("scale-set service failure (502)", 502),
+    ] {
+        assert_eq!(
+            detail_of(&|info| {
+                info["reason"] = reason.into();
+                info["status"] = status.into();
+            }),
+            Some(reason.to_string())
+        );
+    }
+    assert_eq!(
+        detail_of(&|info| {
+            info["reason"] = "rejected by GitHub: refused host: service.example.invalid".into();
+            info["refused_host"] = "service.example.invalid".into();
+        }),
+        Some("rejected by GitHub: refused host: service.example.invalid".to_string())
+    );
+    // a reason without the status or host leaves them to be added
+    assert_eq!(
+        detail_of(&|info| {
+            info["reason"] = "scale-set label mismatch".into();
+            info["status"] = 403.into();
+        }),
+        Some("scale-set label mismatch · HTTP 403".to_string())
+    );
+    assert_eq!(
+        detail_of(&|info| {
+            info["status"] = 403.into();
+            info["refused_host"] = "service.example.invalid".into();
+        }),
+        Some("HTTP 403 · Refused host: service.example.invalid".to_string())
+    );
+    // a different status in the reason does not stand for the one in the snapshot
+    assert_eq!(
+        detail_of(&|info| {
+            info["reason"] = "rejected by GitHub (401)".into();
+            info["status"] = 403.into();
+        }),
+        Some("rejected by GitHub (401) · HTTP 403".to_string())
+    );
 }
 
 #[test]
@@ -766,7 +829,7 @@ fn listener_changes_are_announced_once_and_assigned_count_changes_are_silent() {
     assert!(baseline.announced.messages.is_empty());
     for (index, (state, text)) in [
         ("another_listener", "Another listener"),
-        ("rejected", "Rejected by GitHub"),
+        ("rejected", "Rejected"),
         ("store_error", "Token store error"),
         ("backing_off", "Backing off"),
         ("stopped", "Stopped"),

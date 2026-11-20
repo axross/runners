@@ -828,7 +828,12 @@ existing meanings.
 
 The listener states are listening, another listener, rejected, store error,
 backing off and stopped. The card shows the applicable non-secret reason, HTTP
-status, refused host, or token-store error kind and code. A label mismatch says
+status, refused host, or token-store error kind and code; a status or host the
+reason already names is not added a second time. The state word is the plain
+"Rejected", because the reason says whether GitHub or Marshal refused the pool.
+The view draws the line for any snapshot that carries `on_demand`, whatever the
+host. A Mac window shows none because the Mac agent's configuration check
+rejects `scale_set`, not because the view tests the host. A label mismatch says
 "scale-set label mismatch", without inventing an HTTP status. Incomplete cleanup
 keeps the exact pending non-secret runner identities visible; a stopped container
 is not evidence that GitHub has removed the registration. Listener-state changes
