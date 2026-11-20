@@ -2855,7 +2855,10 @@ An on-demand listener is independent of display collection and continues while t
 window is hidden. Its `scale_sets` counts come from the session's initial or latest
 message statistics, with no extra display request. A `202` retains the last counts.
 The counts are published only while the `github` subscription is held, including
-for a pool whose repository has no entry in `repositories`. The existing
+for a pool whose repository has no entry in `repositories`, and the entries are
+cleared when the subscription ends, so the next subscriber's first value carries no
+earlier counts. A listener that is not the pool's own, by pool, scale-set name and
+repository, gives null counts. The existing
 repository and budget fields keep their meanings.
 
 **The checks.** A repository is checked while one of its pools has a runner with a
