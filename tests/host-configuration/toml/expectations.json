@@ -461,6 +461,16 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/repository-organization-and-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 5: pool[0]: names both repository and organization",
+      "line 11: pool[0].scale_set: not allowed with organization"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/organization-scale-set.toml": {
     "profile": "axpc",
     "outcome": "reject",
