@@ -4,6 +4,9 @@
 const STATE_CHANGED =
   "Marshal's state changed. Check and review again before applying. Your changes are kept.";
 
+/** the codes of a call that was sent and may still have taken effect. */
+const UNANSWERED = new Set(["not_answered", "lost_contact"]);
+
 function displayed(value) {
   return value === undefined
     ? ""
@@ -384,6 +387,16 @@ export class ConfigEditor {
     this.notify(`${this.error.message} Your unapplied changes are kept.`);
   }
 
+  /** a write the agent may have applied: the draft stays, and config.toml is read again first. */
+  unconfirmed() {
+    this.error = null;
+    this.review = null;
+    this.applyResult = "Configuration may have been saved";
+    this.notify(
+      "The agent did not confirm the write, so config.toml may have changed. Read config.toml again before editing. Your unapplied changes are kept.",
+    );
+  }
+
   /** captures the exact source revision and operations for a later confirmed write. */
   async check(reload = false) {
     if (
@@ -473,6 +486,7 @@ export class ConfigEditor {
     if (!this.review || this.reason || this.busy) return;
     const review = this.review;
     let saved = false;
+    let sent = false;
     this.busy = true;
     this.changed();
     try {
@@ -501,6 +515,7 @@ export class ConfigEditor {
         );
         return;
       }
+      sent = true;
       await this.invoke("configuration", {
         request: { ...review.request, check: false },
       });
@@ -530,6 +545,8 @@ export class ConfigEditor {
         this.notify(
           `Saved, but config.toml could not be read again: ${error?.message ?? String(error)}. Read Configuration to continue.`,
         );
+      } else if (sent && UNANSWERED.has(error?.code)) {
+        this.unconfirmed();
       } else {
         this.applyResult = "Configuration not applied";
         this.refused(error);
@@ -568,9 +585,18 @@ export class ConfigEditor {
       this.tokenRemovals.set(repository, { state: "removed" });
       this.announce([`The stored token for ${repository} was removed.`]);
     } catch (error) {
-      const cause = error?.message ?? String(error);
-      this.tokenRemovals.set(repository, { state: "failed", cause });
-      this.announce([`The token for ${repository} was not removed: ${cause}`]);
+      if (UNANSWERED.has(error?.code)) {
+        this.tokenRemovals.set(repository, { state: "unanswered" });
+        this.announce([
+          `The agent has not answered about removing the token for ${repository}. It may still be stored.`,
+        ]);
+      } else {
+        const cause = error?.message ?? String(error);
+        this.tokenRemovals.set(repository, { state: "failed", cause });
+        this.announce([
+          `The token for ${repository} was not removed: ${cause}`,
+        ]);
+      }
     }
     this.changed();
   }

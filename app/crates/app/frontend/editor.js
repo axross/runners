@@ -368,13 +368,16 @@ function tokenRemoval(model, repository, result) {
     failed: "Try Again",
     removed: "Removed",
     cancelled: "Cancelled",
+    unanswered: "Not Answered",
   }[result.state];
   const message =
     result.state === "cancelled"
       ? `The earlier token-removal choice for ${repository} was cancelled when the repository returned to the configuration.`
       : result.state === "removed"
         ? `The stored token for ${repository} was removed. The configuration stays saved.`
-        : `The token for ${repository} was not removed: ${result.cause}. The configuration stays saved.`;
+        : result.state === "unanswered"
+          ? `The agent has not answered about removing the token for ${repository}, so it may or may not still be stored. The configuration stays saved.`
+          : `The token for ${repository} was not removed: ${result.cause}. The configuration stays saved.`;
   const reason = model.busy
     ? "Waiting for the agent's answer."
     : model.review

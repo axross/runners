@@ -616,7 +616,10 @@ repeats validation before writing. A successful or refused confirmation keeps th
 same logical focus on Done, with a saved or not-applied result. This also holds
 while token removal or the final read finishes after a successful write.
 Done or Esc closes the result and moves focus to the heading; starting another
-edit or read also clears the result.
+edit or read also clears the result. A confirmed write the agent does not answer
+in time, or whose connection ends before it answers, may still have been applied,
+so it is reported as "Configuration may have been saved" rather than not applied.
+The notice asks to read config.toml again before editing, and the draft stays.
 
 An edit refused by the agent keeps the draft and shows structured problems beside
 their fields, with the key and line as accessible descriptions. A problem with no
@@ -634,10 +637,13 @@ Keeping them is the default. Removal uses the existing `token_remove` method onl
 after the configuration write succeeds. Its result travels separately through
 `configuration` so a store refusal can show its cause and offer Try Again even
 after the repository has left the Tokens tab. A failed removal never undoes the
-saved configuration, and retrying it never reapplies the edit. No stored token is
-read or displayed. A successful retry keeps its focusable Removed control and
-does not offer another removal. A later read cancels an old removal choice when
-any pool names that repository again, ignoring letter case. The focusable
+saved configuration, and retrying it never reapplies the edit. A removal the agent
+does not answer, or whose connection ends first, is neither removed nor failed: its
+row says the agent has not answered, that the token may still be stored, and offers
+no retry. No stored token is read or displayed. A successful retry keeps its
+focusable Removed control and does not offer another removal. A later read
+cancels an old removal choice when any pool names that repository again,
+ignoring letter case. The focusable
 Cancelled result keeps the same control key and cannot retry; removing the pool
 again does not restore the old choice. A retry waits until the configuration
 check and review finish, and locks configuration actions until its answer arrives.

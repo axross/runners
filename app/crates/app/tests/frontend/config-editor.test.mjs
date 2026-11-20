@@ -517,6 +517,101 @@ test("a successful write followed by a failed read is saved, not an unapplied dr
   assert.equal(calls.filter((call) => call.request.check === false).length, 1);
 });
 
+for (const code of ["not_answered", "lost_contact"]) {
+  test(`a sent write that ends in ${code} is an unknown outcome, not a refusal`, async () => {
+    installDocument();
+    const { model, calls } = editor((_command, { request }) => {
+      if (request.check === false) throw { code, message: "No answer." };
+      return {
+        kind: "change",
+        value: { effects: [], repositories_released: [], applies: true },
+      };
+    });
+    model.set(model.pools[0], "runners", "5");
+    await model.check();
+    await model.apply();
+    assert.equal(
+      calls.filter((call) => call.request.check === false).length,
+      1,
+    );
+    assert.equal(model.applyResult, "Configuration may have been saved");
+    assert.match(model.message, /may have changed.*Read config\.toml again/);
+    assert.doesNotMatch(model.message, /not applied/);
+    assert.equal(model.pools[0].fields.runners, "5");
+    assert.equal(model.dirty, true);
+    assert.equal(
+      editorReview(model).getAttribute("aria-label"),
+      "Configuration may have been saved",
+    );
+  });
+}
+
+test("a sent write the agent refuses is still not applied", async () => {
+  const { model } = editor((_command, { request }) => {
+    if (request.check === false)
+      throw { code: "config_changed", message: "Changed." };
+    return {
+      kind: "change",
+      value: { effects: [], repositories_released: [], applies: true },
+    };
+  });
+  model.set(model.pools[0], "runners", "5");
+  await model.check();
+  await model.apply();
+  assert.equal(model.applyResult, "Configuration not applied");
+  assert.match(model.message, /Your unapplied changes are kept/);
+});
+
+test("a token removal that is not answered is neither removed nor failed, and offers no retry", async () => {
+  installDocument();
+  const { model, calls, announcements } = editor((_command, { request }) => {
+    if (request.kind === "read") return { kind: "read", value: doc };
+    if (request.kind === "remove_released_token")
+      throw { code: "not_answered", message: "No answer." };
+    return {
+      kind: "change",
+      value: {
+        effects: [],
+        repositories_released: ["owner/released"],
+        applies: true,
+      },
+    };
+  });
+  model.set(model.pools[0], "runners", "4");
+  await model.check();
+  model.review.remove.add("owner/released");
+  await model.apply();
+  assert.equal(model.applyResult, "Configuration saved");
+  assert.deepEqual(model.tokenRemovals.get("owner/released"), {
+    state: "unanswered",
+  });
+  const row = [...editorNotice(model).descendants()].find(
+    (node) => node.dataset.key === "retry-token:owner/released",
+  );
+  assert.equal(row.getAttribute("aria-label"), "Not Answered");
+  assert.equal(row.getAttribute("aria-disabled"), "true");
+  assert.ok(
+    announcements.some((message) =>
+      /has not answered about removing/.test(message),
+    ),
+  );
+  assert.equal(
+    [...editorNotice(model).descendants()].some((node) =>
+      /not removed/.test(node.textContent ?? ""),
+    ),
+    false,
+  );
+  const removals = calls.filter(
+    (call) => call.request.kind === "remove_released_token",
+  ).length;
+  await model.retryToken("owner/released");
+  assert.equal(
+    calls.filter((call) => call.request.kind === "remove_released_token")
+      .length,
+    removals,
+  );
+});
+
 test("reading again asks before dropping an unapplied draft and can be cancelled", async () => {
   const { model, calls } = editor(() => ({ kind: "read", value: doc }));
   model.set(model.pools[0], "runners", "5");
