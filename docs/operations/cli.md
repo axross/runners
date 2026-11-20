@@ -2362,7 +2362,11 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   kind, a repository's and an organization's, checks its name with `cmdkey`, reads
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
-  the Credential Manager to a registration; only the Windows CI job runs it.
+  the Credential Manager to a registration; only the Windows CI job runs it. Its tests
+  take turns at the Credential Manager, as a precaution, because the crate's upstream
+  reports it losing updates under concurrent use; the cause of the CI misses is not
+  established, and [#148](https://github.com/axross/runners/issues/148) holds the
+  investigation and the probe's result.
 - **macOS.** The user's login keychain, through `security-framework`, as one generic
   password per key with the service `app.axross.marshal`. A repository's item has the
   account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
