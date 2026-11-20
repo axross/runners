@@ -56,29 +56,26 @@ async fn welcome_lists_the_version_the_methods_and_the_topics() {
             assert_eq!(welcome["type"], "welcome");
             assert_eq!(welcome["version"], 2);
             assert_eq!(welcome["agent"]["version"], env!("CARGO_PKG_VERSION"));
-            let methods: Vec<&str> = welcome["methods"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|method| method.as_str().unwrap())
-                .collect();
-            for method in [
-                "status",
-                "subscribe",
-                "start_all",
-                "stop_all",
-                "build",
-                "quit",
-                "token_set",
-                "token_remove",
-                "drain_for_update",
-                "renew",
-                "config_read",
-                "config_edit",
-                "config_reload",
-            ] {
-                assert!(methods.contains(&method), "{method} is not served");
-            }
+            assert_eq!(
+                welcome["methods"],
+                json!([
+                    "status",
+                    "subscribe",
+                    "start_all",
+                    "stop_all",
+                    "build",
+                    "quit",
+                    "token_set",
+                    "token_remove",
+                    "drain_for_update",
+                    "renew",
+                    "config_read",
+                    "config_edit",
+                    "config_reload",
+                    "launch",
+                    "lifecycle_set",
+                ])
+            );
             assert_eq!(welcome["topics"], json!(["state", "github"]));
             conn.ok("quit").await;
         })
