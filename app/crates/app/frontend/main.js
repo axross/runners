@@ -201,11 +201,11 @@ function cancelRemoval(repository) {
   showForms({ editing, removing: null }, `row:${repository}:remove`);
 }
 
-async function removeToken(repository) {
-  if (repository.includes("/")) {
-    await run("remove_token", { repository });
-  } else {
+async function removeToken(repository, organization) {
+  if (organization) {
     await run("remove_organization_token", { organization: repository });
+  } else {
+    await run("remove_token", { repository });
   }
   try {
     apply(await readView(), { focus: `row:${repository}:primary` });
@@ -218,16 +218,16 @@ async function removeToken(repository) {
  * passes the field's token to the app and clears the field at once, whatever comes of
  * it. The page holds the token nowhere else, and shows no token back.
  */
-async function saveToken(repository, field) {
+async function saveToken(repository, field, organization) {
   if (state.notice !== null) {
     state.notice = null;
   }
-  const sent = repository.includes("/")
-    ? invoke("set_token", { repository, token: field.value })
-    : invoke("set_organization_token", {
+  const sent = organization
+    ? invoke("set_organization_token", {
         organization: repository,
         token: field.value,
-      });
+      })
+    : invoke("set_token", { repository, token: field.value });
   field.value = "";
   field.dispatchEvent(new Event("input"));
   try {

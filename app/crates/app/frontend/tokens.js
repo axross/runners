@@ -17,6 +17,10 @@ export function tokenKey(row) {
   return row.organization ?? row.repository;
 }
 
+export function isOrganization(row) {
+  return typeof row.organization === "string";
+}
+
 export function tokenRows(tab) {
   return [...tab.rows, ...(tab.organizations ?? [])];
 }
@@ -67,7 +71,7 @@ export function clearTypedTokens() {
 }
 
 /** Save is unavailable while the field is empty, and says why. */
-function saveButton(form, repository, field, ctx) {
+function saveButton(form, repository, organization, field, ctx) {
   const button = h(
     "button",
     {
@@ -77,7 +81,7 @@ function saveButton(form, repository, field, ctx) {
       on: {
         click: () =>
           button.getAttribute("aria-disabled") !== "true" &&
-          ctx.saveToken(repository, field),
+          ctx.saveToken(repository, field, organization),
       },
     },
     h("span", { text: form.save }),
@@ -102,6 +106,7 @@ function saveButton(form, repository, field, ctx) {
 function tokenForm(row, ctx) {
   const form = row.form;
   const repository = tokenKey(row);
+  const organization = isOrganization(row);
   const fieldId = nextId("token");
   const hintId = nextId("hint");
   const errorId = form.error ? nextId("error") : null;
@@ -116,7 +121,7 @@ function tokenForm(row, ctx) {
     if (event.key === "Enter") {
       event.preventDefault();
       if (field.value !== "") {
-        ctx.saveToken(repository, field);
+        ctx.saveToken(repository, field, organization);
       }
     }
   };
@@ -141,7 +146,7 @@ function tokenForm(row, ctx) {
     h(
       "div",
       { class: "form-actions" },
-      saveButton(form, repository, field, ctx),
+      saveButton(form, repository, organization, field, ctx),
       h("button", {
         type: "button",
         class: "button neutral",
@@ -190,7 +195,9 @@ function removalQuestion(row, ctx) {
           type: "button",
           class: "button destructive",
           "data-key": `confirm-remove:${repository}`,
-          on: { click: () => ctx.removeToken(repository) },
+          on: {
+            click: () => ctx.removeToken(repository, isOrganization(row)),
+          },
         },
         icon("trash", 20),
         h("span", { text: question.confirm }),
