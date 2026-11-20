@@ -348,6 +348,19 @@ fn a_problem_naming_one_setting_leaves_only_that_one_unknown() {
 }
 
 #[test]
+fn a_problem_on_a_key_that_only_starts_like_a_setting_leaves_that_setting_readable() {
+    let snapshot = with_lifecycle(|value| {
+        value["configuration"]["status"] = json!("invalid");
+        value["configuration"]["problems"] =
+            json!(["line 14: lifecycle.keep_awake_x: unknown key"]);
+    });
+    let view = view_of(&snapshot);
+    let tab = settings(&view);
+    assert_eq!(row(tab, "keep_awake").checked, Some(true));
+    assert_eq!(row(tab, "keep_awake").state, "On (default).");
+}
+
+#[test]
 fn under_lost_contact_the_last_values_stay_and_nothing_can_be_changed() {
     let snapshot = with_lifecycle(|_| {});
     let view = view_in(

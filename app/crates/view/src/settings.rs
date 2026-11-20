@@ -3,6 +3,7 @@
 //! about it needs saying. The agent writes a change; the view shows what it came to.
 
 use marshal_cli::agent::StopReason;
+use marshal_cli::agent::config::problem;
 use marshal_cli::agent::machine::{RESUME_NO_GATEWAY, RESUME_WAITING};
 use marshal_cli::agent::snapshot::LifecycleInfo;
 use marshal_cli::lifecycle_settings::Setting;
@@ -300,7 +301,8 @@ fn state_note(
     }
 }
 
-/// whether the configuration's problems name `setting`, so its value cannot be read.
+/// whether the configuration's problems name `setting` by exactly its key path, so its
+/// value cannot be read.
 fn unreadable(context: &Context<'_>, setting: Setting) -> bool {
     let named = format!("lifecycle.{}", setting.name());
     context.snapshot.is_some_and(|snapshot| {
@@ -308,7 +310,7 @@ fn unreadable(context: &Context<'_>, setting: Setting) -> bool {
             .configuration
             .problems
             .iter()
-            .any(|problem| problem.contains(&named))
+            .any(|text| problem(text).path.as_deref() == Some(named.as_str()))
     })
 }
 
