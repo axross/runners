@@ -91,8 +91,8 @@ capabilities by task instead of applying every change gate to read-only work:
   was started, and MUST NOT list options as prose in the turn output in place of
   the question unless none is eligible. A launch prompt's statement that the
   launcher handles communication with the maintainer, or its instruction to stop
-  and report, assigns a duty to report to the launcher; it MUST NOT be read as
-  replacing the question.
+  and report or to send the options to the launcher, assigns a duty to report to
+  the launcher; it MUST NOT be read as replacing the question.
 - MUST read
   [Asking the Maintainer](./docs/operations/agent-sessions.md#asking-the-maintainer)
   when a session holds a maintainer decision, was launched by another session, or

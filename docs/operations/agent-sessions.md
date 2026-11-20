@@ -234,8 +234,9 @@ report a change as checked when the Rust gates did not run.
 ## Asking the Maintainer
 
 [`AGENTS.md`](../../AGENTS.md) states, for every host, the rule for asking the
-maintainer. This section names Claude Code's mechanism and says how launched
-sessions, launching sessions, and subagents use it. The installed
+maintainer. This section names Claude Code's mechanism, says how launched and
+launching sessions on any host apply that rule, and covers Claude Code subagents
+and forks. The installed
 [Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md)
 practice owns how a question is framed, recovered, and made to fall back, and
 this section does not restate it.
