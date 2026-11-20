@@ -5,7 +5,7 @@ It covers the temporary release route and the CLI procedures kept with its tag,
 not app installation. You need GitHub release access, `gh` 2.102 or later,
 the existing signing prerequisites in [Development Workflow](./development-workflow.md),
 and separately approved native hosts. No instruction here authorizes an agent
-to dispatch, sign, change settings or operate a host.
+to push or move a tag, dispatch, sign, change settings or operate a host.
 
 ## Release the Fixed CLI
 
