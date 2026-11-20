@@ -628,9 +628,9 @@ replaced by the comment footer, so the comparison above reports a difference for
 it. This command builds the expected stored text from the composed file, with
 the attribution replaced by the footer, and compares the stored body with that,
 reusing the `stored.json` of the search read. With the direct read, use
-`jq -j .body stored.json` in place of the select. It accepts the attribution
-only in its exact form at the very end of the file, and otherwise says so
-without comparing.
+`jq -j .body stored.json` in place of the `jq` filter that selects the item from
+the search result. It accepts the attribution only in its exact form at the very
+end of the file, and otherwise says so without comparing.
 
 ```sh
 node -e '
@@ -673,24 +673,21 @@ jq -j .body stored.json | cmp - body.md && echo "ok: stored comment is identical
 
 Otherwise the agent checks the comment as MCP's comments read returns it: each
 URL is unwrapped, and the footer appears exactly once, at the end. This check
-does not establish the stored content, because MCP reads drop U+200B and their
-result does not reach a command, so the comment write is reported as
-unverified, as GitHub Operation requires. A review or review reply is checked
-the same way, through whatever MCP read returns it.
+does not establish the stored content, for the reason given under Reading Back a
+Body.
 
 **Guidelines:**
 
-- MUST check each comment, review, and reply after writing it, by the exact read
-  above where the session may use it, and otherwise as MCP returns it.
+- MUST check each issue or pull request conversation comment after writing it,
+  by the exact read above where the session may use it, and otherwise as MCP
+  returns it.
 - MUST report a comment checked only through MCP as checked through MCP only,
-  with its exact stored content unverified. MUST report a review or review reply
-  as unverified unless the session has an exact read for it, and MUST report any
-  write that no read returns as unverified.
+  with its exact stored content unverified, as GitHub Operation requires.
+- MUST check each review and review reply as MCP returns it, and report it as
+  unverified unless the session has an exact read for it.
+- MUST report any write that no read returns as unverified.
 
 ### Recovering from a Difference
-
-The rewrite is deterministic, so identical text written again is stored the same
-way.
 
 To confirm that the stored text differs from the intended text only by the known
 patterns, show the differences line by line. `<` lines come from `body.md` and
@@ -719,7 +716,8 @@ that the comparison was not byte-exact.
 
 **Guidelines:**
 
-- MUST NOT re-send identical text.
+- MUST NOT re-send identical text; the rewrite is deterministic, so identical
+  text written again is stored the same way.
 - MUST confirm, before any corrective write, that the stored text differs from
   the intended text only by the known patterns: a URL wrapped in a code span,
   whose closing backticks fall either before or after the link's `)`; an
