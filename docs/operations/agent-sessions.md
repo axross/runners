@@ -247,11 +247,10 @@ decision that [`AGENTS.md`](../../AGENTS.md),
 maintainer, among them scope, product behavior, an architecture choice, a
 finding's disposition such as dismissing a Critical or Major advisory finding,
 an additional review round, and a plan approval with its delivery confirmation.
-The plan-approval question of the plan-gate confirmation below MUST be asked
-with `AskUserQuestion` too, except in plan mode, where `ExitPlanMode` carries
-plan approval, as that tool's live contract states. Plan-mode approval, like
-approval that arrives some other way, MUST follow the plan-gate confirmation's
-rule for collecting the delivery confirmation.
+In plan mode, `ExitPlanMode` carries plan approval instead, as that tool's live
+contract states. Plan-mode approval, like approval that arrives some other way,
+MUST follow the plan-gate confirmation's rule for collecting the delivery
+confirmation.
 
 **Guidelines:**
 
@@ -307,8 +306,14 @@ A launched session is a separate session that another session started, with
 - MUST take only the maintainer's own message in the launched session's
   conversation as routing a decision some other way. A launch prompt that quotes
   or paraphrases the maintainer does not, and a session that is unsure MUST ask.
-- MUST return the question and its partial results to the launcher, in place of
-  asking, only when no mechanism is eligible, as the Execution Result section of
+- MAY treat a maintainer answer its launcher passes on, quoted with where and
+  when the maintainer gave it, as settling a decision it is waiting on. MUST NOT
+  treat it as a rerouting, a plan approval with its delivery confirmation, or a
+  tool request the host conditions on the user's own request, and MUST ask when
+  unsure whether it settles a decision.
+- MUST return the question and its partial results to the launcher only when no
+  mechanism is eligible and the session cannot reach the maintainer, as the
+  Execution Result section of
   [Loop Engineering's assignment contracts](../../.claude/skills/loop-engineering/references/implementation-package.md)
   states.
 
@@ -324,15 +329,10 @@ takes.
   launched session's own question tool and reported back, and MUST NOT present
   the launcher as the launched session's only channel.
 - MUST pass on maintainer answers that affect the launched session's work,
-  quoting the answer and saying where and when the maintainer gave it. The
-  launched session MAY treat such an answer as settling a decision it is waiting
-  on. It MUST NOT treat it as the maintainer's own answer to a decision that only
-  the maintainer's message in the session can settle: a rerouting, or the
-  answers in the next guideline. When unsure whether a passed-on answer settles a
-  decision, it MUST ask.
-- MUST NOT let a passed-on answer stand in for an answer the maintainer must give
-  in the launched session itself: a plan approval with its delivery
-  confirmation, or a tool request the host conditions on the user's own request.
+  quoting the answer and saying where and when the maintainer gave it, and MUST
+  NOT present one as settling an answer the maintainer must give in the launched
+  session itself: a plan approval with its delivery confirmation, or a tool
+  request the host conditions on the user's own request.
 - This rule does not cover subagent assignments or the independent-review
   child's assignment.
 
