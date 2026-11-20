@@ -2366,7 +2366,9 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   take turns at the Credential Manager, as a precaution, because the crate's upstream
   reports it losing updates under concurrent use; the cause of the CI misses is not
   established, and [#148](https://github.com/axross/runners/issues/148) holds the
-  investigation and the probe's result.
+  investigation and the probe's result. The tests neither retry a read nor warm the
+  Credential Manager up first, since either would hide a miss rather than remove
+  its cause.
 - **macOS.** The user's login keychain, through `security-framework`, as one generic
   password per key with the service `app.axross.marshal`. A repository's item has the
   account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
