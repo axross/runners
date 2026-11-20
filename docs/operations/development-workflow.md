@@ -630,10 +630,10 @@ Do these once, before the first dispatch:
      because the maintainer is the only reviewer and approves runs they started.
    - **Allow administrators to bypass:** off.
    - **Secrets**, Environment secrets and not repository secrets:
-     `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`,
-     `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and
-     `MACOS_NOTARY_ISSUER_ID`.
-   - **Variable**, not a secret: `MACOS_TEAM_ID`, the team ID of both certificates:
+     `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`,
+     `APPLE_P12_PASSWORD`, `APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and
+     `APPLE_NOTARY_ISSUER_ID`.
+   - **Variable**, not a secret: `APPLE_TEAM_ID`, the team ID of both certificates:
      10 characters of A-Z and 0-9.
 
    What the secrets hold:
@@ -756,9 +756,9 @@ that was signed with a secure timestamp keeps working after its certificate expi
    Developer Program membership allows no new certificate, so renew the membership
    first.
 2. Export each new identity as a `.p12` with one password, base64-encode them, and
-   replace the secrets `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`
-   and, if the password changed, `MACOS_P12_PASSWORD`. Do not change the identifier
-   or `MACOS_TEAM_ID`: the identifier and the team stay the same, so the designated
+   replace the secrets `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`
+   and, if the password changed, `APPLE_P12_PASSWORD`. Do not change the identifier
+   or `APPLE_TEAM_ID`: the identifier and the team stay the same, so the designated
    requirement is expected to stay the same and the Keychain trust it carries is kept.
    Keep one identity of each kind in the exported files, since `sign-macos` refuses
    two of the same kind.

@@ -108,7 +108,7 @@ checks the download first, and the installer's version is the release's `X.Y.Z`,
 [operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
 
 **Release Environment** - the GitHub Environment named `release`, which holds the
-macOS signing secrets and the `MACOS_TEAM_ID` variable. It admits `main` only and
+macOS signing secrets and the `APPLE_TEAM_ID` variable. It admits `main` only and
 needs the maintainer's approval for each run. No job declares it from W1's installer
 pull request until M2's or W4's signing job returns; it and its secrets are kept for
 that job. The maintainer creates and changes it; agents never do. See

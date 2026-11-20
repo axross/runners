@@ -4906,7 +4906,7 @@ The contracts F0 owns are these:
   team ID, the form that matched, and the exact requirement printed for the bare
   binary here, as the text that M2 consumes.
 
-- **The team** is pinned by the Environment variable `MACOS_TEAM_ID`. `sign-macos`
+- **The team** is pinned by the Environment variable `APPLE_TEAM_ID`. `sign-macos`
   refuses a certificate of another team, and `verify-macos` refuses a designated
   requirement that is neither form A nor form B above, each built from the identifier
   and the team ID that `sign-macos` output after checking it.
@@ -4921,14 +4921,14 @@ The contracts F0 owns are these:
 
   | Secret                         | Holds                                                             |
   | ------------------------------ | ----------------------------------------------------------------- |
-  | `MACOS_APPLICATION_P12_BASE64` | The Developer ID Application identity as a `.p12`, base64-encoded |
-  | `MACOS_INSTALLER_P12_BASE64`   | The Developer ID Installer identity as a `.p12`, base64-encoded   |
-  | `MACOS_P12_PASSWORD`           | The password of both `.p12` files                                 |
-  | `MACOS_NOTARY_KEY_P8`          | The App Store Connect team API key's `.p8` text                   |
-  | `MACOS_NOTARY_KEY_ID`          | The key's ID                                                      |
-  | `MACOS_NOTARY_ISSUER_ID`       | The issuer ID                                                     |
+  | `APPLE_APPLICATION_P12_BASE64` | The Developer ID Application identity as a `.p12`, base64-encoded |
+  | `APPLE_INSTALLER_P12_BASE64`   | The Developer ID Installer identity as a `.p12`, base64-encoded   |
+  | `APPLE_P12_PASSWORD`           | The password of both `.p12` files                                 |
+  | `APPLE_NOTARY_KEY_P8`          | The App Store Connect team API key's `.p8` text                   |
+  | `APPLE_NOTARY_TEAM_KEY_ID`     | The key's ID                                                      |
+  | `APPLE_NOTARY_ISSUER_ID`       | The issuer ID                                                     |
 
-  The team ID is the Environment variable `MACOS_TEAM_ID`, not a secret.
+  The team ID is the Environment variable `APPLE_TEAM_ID`, not a secret.
 
 - **A missing Environment.** A dispatch that finds no `release` Environment makes
   GitHub create one with no protection rules and no secrets. `sign-macos` then
@@ -5143,7 +5143,7 @@ shape-check rules and test cases from the restoration point. It leaves out the
 command-line signing and package steps, the Installer identity's check, import
 and exported name, the `pkgbuild` argument and `build-pkg.sh` existence rules,
 and package-only tools such as `pkgbuild`, `pkgutil`, `lsbom` and `installer`.
-The restored job MUST NOT read `MACOS_INSTALLER_P12_BASE64`.
+The restored job MUST NOT read `APPLE_INSTALLER_P12_BASE64`.
 
 Its app job in `release-build.yaml` MUST run on `macos-latest` with a 45-minute
 timeout, install `tauri-cli` by the Windows leg's route, build the unsigned app,
