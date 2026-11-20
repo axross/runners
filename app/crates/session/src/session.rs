@@ -39,8 +39,8 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::connect::{Attempt, Found, RETRY_EVERY, attempt};
 use crate::seam::{
-    AgentInfo, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present,
-    Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
+    AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Launcher, Link,
+    Log, Method, Present, Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
 };
 use update::Drain;
 
@@ -131,6 +131,10 @@ impl Act {
 
 type Reply<T> = oneshot::Sender<Result<T, String>>;
 
+/// a configuration answer keeps its failure whole, so the editor can place each
+/// problem beside its field.
+type ConfigReply = oneshot::Sender<Result<ConfigAnswer, Failure>>;
+
 /// the token namespace; a bare login is not inferred to mean an organization.
 #[derive(Clone, Copy)]
 enum TokenScope {
@@ -173,6 +177,10 @@ enum Command {
         scope: TokenScope,
         key: String,
         reply: Reply<()>,
+    },
+    Config {
+        request: ConfigRequest,
+        reply: ConfigReply,
     },
     WindowShown(bool),
     OpenJob {
@@ -262,6 +270,18 @@ impl Handle {
             reply,
         })
         .await
+    }
+
+    /// asks the agent's configuration methods; under lost contact the answer is
+    /// [`Failure::Lost`], and the editor keeps its unapplied changes.
+    pub async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        let (reply, answer) = oneshot::channel();
+        self.commands
+            .send(Command::Config { request, reply })
+            .map_err(|_| Failure::Other(GONE.to_string()))?;
+        answer
+            .await
+            .unwrap_or_else(|_| Err(Failure::Other(GONE.to_string())))
     }
 
     /// says whether the main window is shown and not minimized, which is when the
@@ -645,6 +665,7 @@ impl<D: Dial> Session<D> {
             .tokens(&self.tokens)
             .github(feed)
             .ended_jobs(&self.ended_jobs)
+            .editor(self.agent.edits)
             .after_moved(self.after_moved);
         let Update { view, announced } = self.tracker.update(input);
         self.recheck = announced
@@ -949,6 +970,7 @@ impl<D: Dial> Session<D> {
                 reply,
             } => self.set_token(scope, &key, token, reply),
             Command::RemoveToken { scope, key, reply } => self.remove_token(scope, &key, reply),
+            Command::Config { request, reply } => self.config(request, reply),
             Command::WindowShown(shown) => self.set_window_shown(shown),
             Command::OpenJob {
                 pool,
@@ -1151,6 +1173,51 @@ impl<D: Dial> Session<D> {
                 outcome,
                 reply,
             });
+        });
+    }
+
+    /// passes the editor's request to the agent; what an apply does shows in the
+    /// snapshots that follow, so the answer goes straight back to the window.
+    fn config(&mut self, request: ConfigRequest, reply: ConfigReply) {
+        let Some(link) = self.link() else {
+            let _ = reply.send(Err(Failure::Lost));
+            return;
+        };
+        if !self.agent.edits {
+            let _ = reply.send(Err(Failure::NotServed("configuration editing".into())));
+            return;
+        }
+        if let ConfigRequest::RemoveReleasedToken { repository } = &request
+            && TokenKey::parse(repository).is_err()
+        {
+            let _ = reply.send(Err(Failure::Refused(
+                "A repository is written owner/name.".into(),
+            )));
+            return;
+        }
+        let released = match &request {
+            ConfigRequest::RemoveReleasedToken { repository } => Some(repository.clone()),
+            _ => None,
+        };
+        let within = if released.is_some() {
+            TOKEN_WITHIN
+        } else {
+            CALL_WITHIN
+        };
+        let log = Arc::clone(&self.log);
+        tokio::spawn(async move {
+            let answer = tokio::time::timeout(within, link.config(request))
+                .await
+                .unwrap_or_else(|_| {
+                    if let Some(repository) = released {
+                        log.warn(&format!(
+                            "The agent did not answer the removal of the released token for {repository} in {} s; it may still do it.",
+                            TOKEN_WITHIN.as_secs()
+                        ));
+                    }
+                    Err(Failure::TimedOut)
+                });
+            let _ = reply.send(answer);
         });
     }
 

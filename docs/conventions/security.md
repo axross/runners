@@ -117,6 +117,19 @@ release, with its download URL and checksum in `mise.lock`, so it needs no compi
 in CI and no exception here. [App](../operations/app.md#licence-notices) describes how
 the notices check holds that version.
 
+The Linux x64 editor rendering gate adds only the test controller `playwright-core`
+under `app/crates/app/tests/render/`, not a dependency of the bundled page or the
+app's Rust workspaces. Its npm lock records the package integrity; preparation
+uses `npm ci --ignore-scripts`. `browser.json` in that directory pins the Chromium
+archive's version, HTTPS URL and SHA-256, computed from the real download.
+Preparation MUST verify that checksum before extracting or running the browser.
+Refresh the controller, browser pin and lock together, then rerun the render gate.
+To regenerate the lock after changing the manifest, use
+`npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
+OS libraries are prepared only on the disposable GitHub-hosted Check runner;
+the worktree preparation task installs no system package and the gate downloads
+nothing. The fake bridge has no credential, live agent or configuration-file access.
+
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain and
 `tauri-cli`, whose exceptions are recorded below, WiX is the one tool the release
 build fetches.
@@ -391,7 +404,7 @@ operator procedure and the two source identities.
 `release.yaml` remains dispatch-only on main with the existing release concurrency.
 Its seven stages are plan, build, sign-macos, verify-macos, assemble-signed, attest
 and release. Only `sign-macos` declares `release` and reads the six signing secrets
-and `MACOS_TEAM_ID` under the Environment contract retained below. It holds only
+and `APPLE_TEAM_ID` under the Environment contract retained below. It holds only
 `contents: read`, checks nothing out, and runs inline operating-system tools, no
 repository script, package manager or third-party action. Secret files are 0600,
 notary-key lines are masked, and keychain/files are removed after success or failure.
@@ -527,10 +540,10 @@ record a change to either workflow, to the build call in
     [the roadmap](https://github.com/axross/runners/issues/72) requires
     self-approval. "Allow administrators to bypass" is off. The maintainer reports
     the settings on the tracking issue, because agents cannot read them.
-  - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
-    `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
-    `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
-    `MACOS_TEAM_ID`, which is not secret. A job reads them only if it declares the
+  - **Its secrets** are the six Environment secrets `APPLE_APPLICATION_P12_BASE64`,
+    `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`, `APPLE_NOTARY_KEY_P8`,
+    `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and its variable is
+    `APPLE_TEAM_ID`, which is not secret. A job reads them only if it declares the
     Environment, and only after the reviewer approves it. No repository secret is
     added for signing.
   - **The signing identifier** `app.axross.marshal` and the team are fixed and
@@ -703,8 +716,8 @@ Residual risks, accepted:
   next dispatch would build that change and attest it as genuine. The control is
   the check in
   [Each Release](../operations/development-workflow.md#each-release), before
-  each dispatch, that every commit on main since the last `v*` tag came from a
-  merged pull request. A stronger option is a rule on main that requires a
+  each dispatch, that every commit on main since the last published release came
+  from a merged pull request. A stronger option is a rule on main that requires a
   pull request, with only the maintainer able to bypass it. That is the
   maintainer's choice, and it is not in place.
 - **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
@@ -718,8 +731,8 @@ Residual risks, accepted:
   Once a signing job returns, it signs whatever the dispatched commit builds, with the maintainer's Developer ID. The
   control is the check in
   [Each Release](../operations/development-workflow.md#each-release), before each
-  dispatch and before the approval, that every commit on main since the last `v*`
-  tag came from a merged pull request. A stronger option is a rule on main that
+  dispatch and before the approval, that every commit on main since the last
+  published release came from a merged pull request. A stronger option is a rule on main that
   requires a pull request, which is the maintainer's choice and is not in place.
 - **One identity can dispatch and approve (held for M2 and W4).** The Environment allows self-approval,
   because the roadmap requires it and the maintainer is the only reviewer, and agents
@@ -750,9 +763,19 @@ Residual risks, accepted:
   nothing before merge can exercise it. The stand-in suites and the shape check cover the flow,
   not Apple's answers. A failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
-  push, move, or delete a `v*` tag that has no published release, `v0.0.0`
-  included, and that changes the version semantic-release works out next.
-  Immutable releases lock only the tags of published releases.
+  push, move, or delete a `v*` tag that has no published release, `v0.0.0` and
+  `v0.1.1` included, and that changes the version semantic-release works out next.
+  Until the recovery release is published, moving `v0.1.1` to another commit, or
+  deleting it, can make the next plan print `1.0.0`; once a later release exists,
+  `v0.1.1` no longer affects the version. The check in
+  [Each Release](../operations/development-workflow.md#each-release) names such a
+  tag only when the check would start at it, and never `v0.1.1`, which it skips.
+  The version is guarded instead by the read-back of `v0.1.1` in
+  [CLI Recovery](../operations/cli-recovery.md#release-the-fixed-cli) before the
+  recovery dispatch, and by the maintainer cancelling, before approving
+  `sign-macos`, a run whose plan prints a version
+  [Version Rules](../operations/development-workflow.md#version-rules) does not
+  expect. Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
   check still tie the file to one commit on main, but no longer to a version. The
@@ -1291,10 +1314,14 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
   again, set a repository's token, remove a repository's token, set an
-  organisation's token, remove an organisation's token, hide the window and open a
-  runner's job. The
-  confirmation window's
-  grants the two commands that read its question and answer it. On macOS, where the
+  organisation's token, remove an organisation's token, hide the window, open a
+  runner's job and forward configuration requests. `configuration` accepts a typed
+  request for read, edit, reload or a separately chosen repository-token removal.
+  The three configuration methods keep all file access with the agent; the page
+  supplies no path, token, schema version or lifecycle field. Removal forwards the
+  existing `token_remove` method, returns a store refusal separately from the saved
+  edit, and reads no token. The confirmation window's capability grants the two
+  commands that read its question and answer it. On macOS, where the
   unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
   the main window `core:window:allow-start-dragging` and
   `core:window:allow-internal-toggle-maximize`, to drag and zoom it by its header
@@ -1970,9 +1997,9 @@ accident; it is a backstop, not the control. The workflows read one repository
 secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
 maintainer. The `release` Environment keeps six Environment secrets, read only
 by the temporary CLI signing job and retained for M2's and W4's later signing jobs:
-`MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`,
-`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
-Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
+`APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`,
+`APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and one
+Environment variable that is not secret, `APPLE_TEAM_ID`; the maintainer creates
 them, and no value is committed. A secret value is never echoed, passed on a command
 line, or written into an image layer or build cache. Two exceptions for a
 credential on a command line are recorded in `sign-macos` for the temporary CLI

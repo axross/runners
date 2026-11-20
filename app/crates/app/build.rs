@@ -6,8 +6,9 @@ use tauri_build::{AppManifest, Attributes};
 
 /// the commands the web view may call; each gets a permission, so a window can call
 /// it only when its capability grants it.
-const COMMANDS: [&str; 14] = [
+const COMMANDS: [&str; 15] = [
     "read_view",
+    "configuration",
     "start_all",
     "stop_all",
     "build",

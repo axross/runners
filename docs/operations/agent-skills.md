@@ -180,6 +180,40 @@ maintainer has not yet given the go-ahead for an issue on `axross/skills`; the
 completion report of any change that touches one of these surfaces names the gap
 as pending.
 
+### Gap - github-operation names no rewrite by the hosted write path
+
+The project installation of `github-operation`, whose computed hash in
+`skills-lock.json` is
+`cbe366fe59843dd47925eae36d341bec28397e25835884d303b23e8e52037d40`, has all six
+of its files byte-identical to `axross/skills` at commit
+`69a254dd6b368732a6f8a153f5826784b7df6746`: `SKILL.md`,
+`references/body-integrity.md`, `references/channel-selection.md`,
+`references/identity-and-targets.md`, `references/publication-and-recovery.md`,
+and `scripts/decode-sanitized-read.mjs`. They were compared on 2026-11-20 (PST).
+The upstream hash was not recomputed.
+
+The skill requires reading back each write, comparing the exact stored fields
+with the intended text, and reporting an unverified result when they cannot be
+shown to match. The only write-side changes it names are `--attach`'s intended
+ones, the rewrite of relative references and the appended attachments, which
+Body Integrity accepts after such a write; it names none made by the hosted
+write path. In Claude Code cloud sessions, the hosted write path was observed
+wrapping long URLs in code spans, appending the comment footer, replacing a pull
+request's attribution with that footer, and removing U+200B, so a write can be
+stored differently from the text sent.
+
+This project handles the case in the GitHub Write Fidelity in Claude Code Cloud
+Sessions section of [Agent Sessions](./agent-sessions.md). An agent composes the
+text in a local file, checks it by command before writing, and compares a stored
+issue or pull request body with that file by command. It compares a comment by
+command where the REST read is allowed, and otherwise checks it as MCP returns
+it, a check whose result stays unverified. It corrects a difference only within
+the recovery limits that section states. The installed skill is left as it is.
+
+**Upstream status:** not filed. The maintainer has not yet given the go-ahead
+for an issue on `axross/skills`, so the gap is pending and a completion report
+names it.
+
 ### Deviation - delivery, review, and watching share one confirmation
 
 The project installation of `professional-behavior`, from `axross/skills`

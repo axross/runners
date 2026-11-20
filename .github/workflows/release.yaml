@@ -112,13 +112,13 @@ jobs:
       - name: Check The Secrets, The Files And The Tools
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          MACOS_APPLICATION_P12_BASE64: ${{ secrets.MACOS_APPLICATION_P12_BASE64 }}
-          MACOS_INSTALLER_P12_BASE64: ${{ secrets.MACOS_INSTALLER_P12_BASE64 }}
-          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
-          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
-          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
+          APPLE_APPLICATION_P12_BASE64: ${{ secrets.APPLE_APPLICATION_P12_BASE64 }}
+          APPLE_INSTALLER_P12_BASE64: ${{ secrets.APPLE_INSTALLER_P12_BASE64 }}
+          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_TEAM_KEY_ID: ${{ secrets.APPLE_NOTARY_TEAM_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           # sign-macos: check
           set -euo pipefail
@@ -132,7 +132,7 @@ jobs:
 
           # names only; no value is ever printed.
           empty=""
-          for name in MACOS_APPLICATION_P12_BASE64 MACOS_INSTALLER_P12_BASE64 MACOS_P12_PASSWORD MACOS_NOTARY_KEY_P8 MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID MACOS_TEAM_ID; do
+          for name in APPLE_APPLICATION_P12_BASE64 APPLE_INSTALLER_P12_BASE64 APPLE_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_TEAM_KEY_ID APPLE_NOTARY_ISSUER_ID APPLE_TEAM_ID; do
             if [[ -z "${!name:-}" ]]; then
               empty="${empty} ${name}"
             fi
@@ -141,7 +141,7 @@ jobs:
             refuse "these secrets or variables are empty:${empty}; the release Environment is missing or incomplete"
           fi
           team_pattern='^[A-Z0-9]{10}$'
-          [[ "$MACOS_TEAM_ID" =~ $team_pattern ]] || refuse "MACOS_TEAM_ID is not a 10-character team ID"
+          [[ "$APPLE_TEAM_ID" =~ $team_pattern ]] || refuse "APPLE_TEAM_ID is not a 10-character team ID"
 
           number='(0|[1-9][0-9]*)'
           [[ "$VERSION" =~ ^${number}\.${number}\.${number}$ ]] || refuse "the version '${VERSION}' is not X.Y.Z"
@@ -201,9 +201,9 @@ jobs:
       # SHA-256 equals the pin, which docs/conventions/security.md also records.
       - name: Create The Keychain And Import The Certificates
         env:
-          MACOS_APPLICATION_P12_BASE64: ${{ secrets.MACOS_APPLICATION_P12_BASE64 }}
-          MACOS_INSTALLER_P12_BASE64: ${{ secrets.MACOS_INSTALLER_P12_BASE64 }}
-          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
+          APPLE_APPLICATION_P12_BASE64: ${{ secrets.APPLE_APPLICATION_P12_BASE64 }}
+          APPLE_INSTALLER_P12_BASE64: ${{ secrets.APPLE_INSTALLER_P12_BASE64 }}
+          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}
         run: |
           # sign-macos: keychain
           set -euo pipefail
@@ -251,8 +251,8 @@ jobs:
           "$SYSTEM_BIN/security" unlock-keychain -p "$keychain_password" "$keychain"
           "$SYSTEM_BIN/security" list-keychains -d user -s "$keychain"
 
-          printf '%s' "${MACOS_APPLICATION_P12_BASE64//[$'\r\n']/}" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/application.p12"
-          printf '%s' "${MACOS_INSTALLER_P12_BASE64//[$'\r\n']/}" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/installer.p12"
+          printf '%s' "${APPLE_APPLICATION_P12_BASE64//[$'\r\n']/}" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/application.p12"
+          printf '%s' "${APPLE_INSTALLER_P12_BASE64//[$'\r\n']/}" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/installer.p12"
           chmod 0600 "${dir}/application.p12" "${dir}/installer.p12"
           for file in application.p12 installer.p12; do
             [[ -s "${dir}/${file}" ]] || refuse "${file} is empty after decoding its secret"
@@ -260,7 +260,7 @@ jobs:
 
           "$SYSTEM_BIN/security" import "${dir}/DeveloperIDG2CA.cer" -k "$keychain" -t cert
           for file in application.p12 installer.p12; do
-            "$SYSTEM_BIN/security" import "${dir}/${file}" -k "$keychain" -f pkcs12 -P "$MACOS_P12_PASSWORD" -T "$SYSTEM_BIN/codesign" -T "$SYSTEM_BIN/pkgbuild"
+            "$SYSTEM_BIN/security" import "${dir}/${file}" -k "$keychain" -f pkcs12 -P "$APPLE_P12_PASSWORD" -T "$SYSTEM_BIN/codesign" -T "$SYSTEM_BIN/pkgbuild"
           done
           "$SYSTEM_BIN/security" set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" >/dev/null
           rm -f "${dir}/application.p12" "${dir}/installer.p12"
@@ -268,7 +268,7 @@ jobs:
       - name: Select The Identities And Check Their Certificates
         id: identities
         env:
-          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           # sign-macos: identities
           set -euo pipefail
@@ -346,7 +346,7 @@ jobs:
             team="$(printf '%s\n' "$subject" | tr ',' '\n' | sed -n 's/^ *OU=//p')"
             ends="$(printf '%s\n' "$details" | sed -n 's/^notAfter=//p')"
             echo "Developer ID ${kind}: subject ${subject}; team ${team}; expires ${ends}"
-            [[ "$team" == "$MACOS_TEAM_ID" ]] || refuse "the Developer ID ${kind} certificate names team '${team}', not MACOS_TEAM_ID"
+            [[ "$team" == "$APPLE_TEAM_ID" ]] || refuse "the Developer ID ${kind} certificate names team '${team}', not APPLE_TEAM_ID"
             if ! "$SYSTEM_BIN/openssl" x509 -in "$pem" -noout -checkend 0 >/dev/null; then
               refuse "the Developer ID ${kind} certificate expired on ${ends}"
             fi
@@ -365,7 +365,7 @@ jobs:
             echo "APPLICATION_IDENTITY=${application_identity}"
             echo "INSTALLER_IDENTITY_NAME=${installer_name}"
           } >>"$GITHUB_ENV"
-          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"
+          echo "team_id=${APPLE_TEAM_ID}" >>"$GITHUB_OUTPUT"
       # the signature replaces the linker's ad-hoc one. the identifier is fixed, not
       # taken from the file name, which carries the version: the binary's
       # designated requirement, which Keychain trust follows, must not change from
@@ -430,9 +430,9 @@ jobs:
         id: notarize
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
-          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_TEAM_KEY_ID: ${{ secrets.APPLE_NOTARY_TEAM_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: |
           # sign-macos: notarize
           set -euo pipefail
@@ -459,13 +459,13 @@ jobs:
             if [[ -n "$line" ]]; then
               echo "::add-mask::${line}"
             fi
-          done <<<"$MACOS_NOTARY_KEY_P8"
-          printf '%s\n' "$MACOS_NOTARY_KEY_P8" >"$key_file"
+          done <<<"$APPLE_NOTARY_KEY_P8"
+          printf '%s\n' "$APPLE_NOTARY_KEY_P8" >"$key_file"
           chmod 0600 "$key_file"
 
           submit_status=0
           "$SYSTEM_BIN/xcrun" notarytool submit "$pkg" \
-            --key "$key_file" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" \
+            --key "$key_file" --key-id "$APPLE_NOTARY_TEAM_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" \
             --wait --timeout 30m --output-format json >"$result" || submit_status=$?
           echo "notarytool submit exited ${submit_status} and printed:"
           cat "$result"
@@ -486,7 +486,7 @@ jobs:
           if [[ -n "$submission_id" ]]; then
             echo "submission_id=${submission_id}" >>"$GITHUB_OUTPUT"
             "$SYSTEM_BIN/xcrun" notarytool log "$submission_id" \
-              --key "$key_file" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" \
+              --key "$key_file" --key-id "$APPLE_NOTARY_TEAM_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" \
               "$log" || log_status=$?
           fi
 
@@ -502,7 +502,7 @@ jobs:
       - name: Staple And Check The Package
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           # sign-macos: staple
           set -euo pipefail
@@ -514,8 +514,8 @@ jobs:
           "$SYSTEM_BIN/xcrun" stapler validate "$pkg"
           signature="$("$SYSTEM_SBIN/pkgutil" --check-signature "$pkg")"
           echo "$signature"
-          if [[ "$signature" != *"Developer ID Installer: "*"(${MACOS_TEAM_ID})"* ]]; then
-            echo "error: the package is not signed by a Developer ID Installer certificate of team ${MACOS_TEAM_ID}" >&2
+          if [[ "$signature" != *"Developer ID Installer: "*"(${APPLE_TEAM_ID})"* ]]; then
+            echo "error: the package is not signed by a Developer ID Installer certificate of team ${APPLE_TEAM_ID}" >&2
             exit 1
           fi
       - name: Hash The Signed Files
