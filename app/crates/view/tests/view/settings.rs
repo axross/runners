@@ -364,3 +364,41 @@ fn under_lost_contact_the_last_values_stay_and_nothing_can_be_changed() {
     );
     assert_eq!(row(tab, "start_at_login").checked, Some(true));
 }
+
+#[test]
+fn the_macs_agent_reporting_no_settings_leaves_every_setting_unavailable_without_the_chip() {
+    let snapshot = patched("running", |value| {
+        value["configuration"]["status"] = json!("valid");
+    });
+    assert!(snapshot.lifecycle.is_none());
+    let view = view_of(&snapshot);
+    let tab = settings(&view);
+    assert_eq!(
+        tab.unavailable.as_deref(),
+        Some("Settings cannot be changed: the agent did not report them.")
+    );
+    let rows: Vec<_> = tab.groups.iter().flat_map(|group| &group.rows).collect();
+    let keys: Vec<&str> = rows.iter().map(|row| row.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "start_at_login",
+            "start_runners_on_launch",
+            "keep_awake",
+            "stop_on_network_change",
+            "resume_after_stop"
+        ]
+    );
+    for row in rows {
+        assert!(!row.label.is_empty(), "{row:?}");
+        assert_eq!(row.checked, None, "{row:?}");
+        assert_eq!(row.state, "Not known while config.toml cannot be read.");
+        assert_eq!(row.note, None, "{row:?}");
+    }
+    assert_eq!(
+        row(tab, "start_at_login").label,
+        "Start Marshal when I sign in"
+    );
+    assert_eq!(tab.chip, None);
+    assert_eq!(list(&view).header.settings_chip, None);
+}
