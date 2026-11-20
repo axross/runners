@@ -12,7 +12,7 @@ use serde_json::json;
 
 use crate::runtime::registration::{HttpLimits, RUNNER_GROUP_ID, resolve_base_url};
 use crate::runtime::secret::Secret;
-use crate::validate::patterns::{is_owner, is_repository};
+use crate::validate::patterns::{is_owner, is_repository, is_scale_set_name};
 
 pub use transport::{Error, ErrorKind, POLL_TIMEOUT};
 pub(crate) use types::ADMIN_RENEWAL_MARGIN;
@@ -20,7 +20,6 @@ pub use types::{
     Connection, JitRunner, JobEvent, JobEventKind, Message, Runner, ScaleSet, Session, Statistics,
 };
 
-const MAX_SCALE_SET_NAME_BYTES: usize = 45;
 const RUNNER_LIST_MAX_PAGES: u32 = 100;
 const RUNNER_LIST_PAGE_SIZE: &str = "100";
 const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -139,12 +138,7 @@ impl Client {
         connection: &Connection,
         name: &str,
     ) -> Result<ScaleSet, Error> {
-        if name.is_empty()
-            || name.len() > MAX_SCALE_SET_NAME_BYTES
-            || !name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
-        {
+        if !is_scale_set_name(name) {
             return Err(Error::new(ErrorKind::InvalidInput));
         }
         let mut url = connection.service_url("runnerscalesets")?;

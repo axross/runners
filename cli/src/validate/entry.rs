@@ -213,14 +213,8 @@ fn read_scale_set(
         );
         return None;
     }
-    let permitted = |text: &str| {
-        !text.is_empty()
-            && text
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
-    };
     let routing = routing_label?;
-    if !permitted(routing) {
+    if !patterns::has_scale_set_characters(routing) {
         if !std::mem::replace(&mut cx.routing_label_reported, true) {
             cx.errors.add(
                 KeyPath::root().key(Key::RoutingLabel),
@@ -236,8 +230,7 @@ fn read_scale_set(
         return None;
     };
     let prefix = format!("{}-", routing.to_ascii_lowercase());
-    if name.len() > 45
-        || !permitted(name)
+    if !patterns::is_scale_set_name(name)
         || !name
             .to_ascii_lowercase()
             .strip_prefix(&prefix)
