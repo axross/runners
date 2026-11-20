@@ -39,6 +39,15 @@ another platform, install `rustup` yourself.
 describes what the script installs, when it does nothing, and how a Rust task
 fails without the toolchain.
 
+## Rendering Gate
+
+On Linux x64, `mise run prepare:app-render` installs the locked `playwright-core`
+and the checksum-verified Chromium that `mise run test:app-render` uses. Both
+versions are pinned under `app/crates/app/tests/render/`. It needs Python 3, which
+extracts the verified archive, and it does not install Chromium's OS libraries.
+`mise run check` does not run the gate, so no other host needs this step.
+[Testing](../conventions/testing.md) says where the gate runs.
+
 ## Hooks
 
 The agent configuration is described in
