@@ -21,6 +21,8 @@ pub(super) struct Lease {
 pub(super) struct Demand {
     pub statistics: Statistics,
     pub leases: BTreeMap<u64, Lease>,
+    /// how many leases have ended, so a waiter can tell that a seat has freed since it looked.
+    pub released: u64,
     offers: BTreeMap<u64, Offer>,
     completed_since_statistics: u64,
     completed_before_finish: u64,
@@ -237,6 +239,7 @@ impl Demand {
         let Some(lease) = self.leases.remove(&id) else {
             return;
         };
+        self.released = self.released.wrapping_add(1);
         let unreflected = lease
             .offer
             .and_then(|offer| self.offers.get(&offer))

@@ -12,7 +12,8 @@ use crate::runtime::worker::Backoff;
 use crate::scaleset::{Error, ErrorKind, Message};
 
 use super::{
-    Coordinator, Credentials, ListenerState, MIN_REFRESH_WAIT, PendingSession, REFRESH_BEFORE,
+    Coordinator, Credentials, ListenerState, MIN_REFRESH_WAIT, PendingSession, REDELIVERY_WAIT,
+    REFRESH_BEFORE,
 };
 
 pub(crate) const CLOSE_WITHIN: Duration = Duration::from_secs(5);
@@ -153,6 +154,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                 .update_statistics(credentials.session.statistics);
             self.state.borrow_mut().view.statistics = Some(credentials.session.statistics);
         }
+        let released = self.state.borrow().demand.released;
         {
             let ids = self
                 .state
@@ -206,6 +208,9 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
         if self.halted() {
             return Err(Failure::Halted);
         }
+        if pending.is_some() && self.await_release(released).await {
+            return Ok(());
+        }
         let refresh_in = credentials
             .connection
             .expires_at()
@@ -228,6 +233,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
         self.state.borrow_mut().queue_refreshed = false;
         if let Some(message) = message {
             if last_processed.is_some_and(|id| message.id <= id) {
+                self.clock.sleep(REDELIVERY_WAIT).await;
                 return Ok(());
             }
             // progress cannot skip an unresolved overflow message even if a broken service advances delivery.
@@ -240,6 +246,24 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             self.publish();
         }
         Ok(())
+    }
+
+    /// an overflow message stays unacknowledged, and the service hands it back at once, so the
+    /// listener waits for a seat to free instead; false when the wait ran out and the statistics
+    /// are due. `released` is what `Demand::released` read before this cycle's acquire.
+    async fn await_release(&self, released: u64) -> bool {
+        let mut changes = self.changes();
+        let freed = async {
+            while self.state.borrow().demand.released == released {
+                if changes.changed().await.is_err() {
+                    return std::future::pending().await;
+                }
+            }
+        };
+        tokio::select! {
+            () = freed => true,
+            () = self.clock.sleep(REDELIVERY_WAIT) => false,
+        }
     }
 
     /// cleanup precedes the first session, and only offline whole-name matches are adopted.

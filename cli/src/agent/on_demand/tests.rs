@@ -513,6 +513,8 @@ mod http {
         /// the messages the queue redelivers at once until the session acknowledges them.
         message: RefCell<Option<Value>>,
         acknowledged: std::cell::Cell<bool>,
+        /// a service that hands the message back even after it was acknowledged.
+        stale: std::cell::Cell<bool>,
     }
 
     impl<'c> Service<'c> {
@@ -526,6 +528,7 @@ mod http {
                 requests: RefCell::new(Vec::new()),
                 message: RefCell::new(None),
                 acknowledged: std::cell::Cell::new(false),
+                stale: std::cell::Cell::new(false),
             }
         }
 
@@ -625,7 +628,10 @@ mod http {
                 (204, Value::Null)
             } else if route == "/queue" {
                 let message = self.message.borrow().clone();
-                (200, message.filter(|_| !self.acknowledged.get())?)
+                (
+                    200,
+                    message.filter(|_| self.stale.get() || !self.acknowledged.get())?,
+                )
             } else {
                 panic!("unexpected request {method} {path}");
             };
@@ -658,7 +664,8 @@ mod http {
         let end = clock.now() + horizon;
         while clock.now() < end {
             clock.advance(Duration::from_secs(10));
-            loop {
+            // a pool that never settles is left to the caller's counts, not waited on
+            for _ in 0..25 {
                 let seen = service.requests.borrow().len();
                 tokio::time::sleep(Duration::from_millis(4)).await;
                 if service.requests.borrow().len() == seen {
@@ -858,7 +865,20 @@ mod http {
         }
     }
 
-    async fn seed(coordinator: &Coordinator<'_, Tokens, SystemClock>) {
+    /// awaits `work` while the clock moves past each wait it reaches.
+    async fn advancing<T>(clock: &ControlledClock, work: impl Future<Output = T>) -> T {
+        let mut work = std::pin::pin!(work);
+        loop {
+            tokio::select! {
+                output = &mut work => return output,
+                () = tokio::time::sleep(Duration::from_millis(20)) => {
+                    clock.advance(REDELIVERY_WAIT);
+                }
+            }
+        }
+    }
+
+    async fn seed<K: Clock>(coordinator: &Coordinator<'_, Tokens, K>) {
         let pat = coordinator.tokens.token("", "", None).unwrap();
         let connection = Rc::new(
             coordinator
@@ -1142,18 +1162,111 @@ mod http {
         assert!(!coordinator.view().session_cleanup_incomplete);
     }
 
-    fn offer_message(ids: &[u64], assigned: u64) -> Reply {
+    fn offer_body(ids: &[u64], assigned: u64) -> Value {
         let jobs: Vec<_> = ids
             .iter()
             .map(|id| json!({"messageType": "JobAvailable", "runnerRequestId": id}))
             .collect();
         let jobs = serde_json::to_string(&jobs).unwrap();
-        Reply::json(
-            "GET",
-            "queue",
-            200,
-            json!({"messageId": 7, "messageType": "RunnerScaleSetJobMessages", "body": jobs, "statistics": statistics_json(assigned)}),
-        )
+        json!({"messageId": 7, "messageType": "RunnerScaleSetJobMessages", "body": jobs, "statistics": statistics_json(assigned)})
+    }
+
+    fn offer_message(ids: &[u64], assigned: u64) -> Reply {
+        Reply::json("GET", "queue", 200, offer_body(ids, assigned))
+    }
+
+    /// waits, in real time, for `condition`, which some task of the test is expected to make true.
+    async fn until(what: &str, mut condition: impl FnMut() -> bool) {
+        let waited = timeout(Duration::from_secs(3), async {
+            while !condition() {
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await;
+        assert!(waited.is_ok(), "timed out waiting for {what}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_message_at_or_below_the_acknowledged_one_is_not_polled_for_in_a_loop() {
+        let clock = ControlledClock::new();
+        let service = Service::new(&clock, Duration::from_secs(1200)).await;
+        *service.message.borrow_mut() = Some(offer_body(&[11], 0));
+        service.stale.set(true);
+        let client = service.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
+        timeout(Duration::from_secs(60), async {
+            tokio::select! {
+                () = service.serve() => unreachable!(),
+                () = async {
+                    tokio::join!(coordinator.run(), async {
+                        until("the acknowledgement", || service.count("DELETE", "/queue/7") == 1)
+                            .await;
+                        let before = service.count("GET", "/queue");
+                        run_for(&clock, &service, Duration::from_secs(300)).await;
+                        let polls = service.count("GET", "/queue") - before;
+                        assert!((15..=45).contains(&polls), "{polls} polls in 300 s");
+                        channels.stop.send_replace(true);
+                    });
+                } => {},
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_overflow_message_the_service_redelivers_is_polled_at_a_bounded_rate_until_a_seat_frees()
+     {
+        let clock = ControlledClock::new();
+        let service = Service::new(&clock, Duration::from_secs(1200)).await;
+        *service.message.borrow_mut() = Some(offer_body(&[11, 12], 0));
+        let client = service.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
+        timeout(Duration::from_secs(60), async {
+            tokio::select! {
+                () = service.serve() => unreachable!(),
+                () = async {
+                    tokio::join!(coordinator.run(), async {
+                        until("the first offer's acquisition", || {
+                            service.count("POST", "acquirejobs") == 1
+                        })
+                        .await;
+                        let mut lease = coordinator
+                            .reserve(1, channels.stop.subscribe())
+                            .await
+                            .unwrap();
+                        let before = service.count("GET", "/queue");
+                        run_for(&clock, &service, Duration::from_secs(300)).await;
+                        let polls = service.count("GET", "/queue") - before;
+                        // one poll per wait of REDELIVERY_WAIT, where an unthrottled loop makes thousands
+                        assert!((15..=45).contains(&polls), "{polls} polls in 300 s");
+                        assert_eq!(service.count("POST", "acquirejobs"), 1);
+                        assert_eq!(service.count("DELETE", "/queue/"), 0);
+                        lease
+                            .finish(true, Instant::now() + Duration::from_secs(1))
+                            .await
+                            .unwrap();
+                        // the freed seat is used without the clock moving
+                        until("the second offer's acquisition and acknowledgement", || {
+                            service.count("POST", "acquirejobs") == 2
+                                && service.count("DELETE", "/queue/7") == 1
+                        })
+                        .await;
+                        channels.stop.send_replace(true);
+                    });
+                } => {},
+            }
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1258,14 +1371,9 @@ mod http {
         let tokens = Tokens::new();
         let channels = Channels::new(1);
         let log = MemoryLog::default();
-        let coordinator = Coordinator::new(
-            pool(),
-            &client,
-            &tokens,
-            &SystemClock,
-            &log,
-            channels.controls(),
-        );
+        let clock = ControlledClock::new();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
         let mut replies = connect();
         let mut initial = session();
         initial.body["statistics"] = statistics_json(0);
@@ -1299,10 +1407,13 @@ mod http {
                 .cycle(&mut pending, &mut last, &mut session_id, &mut cleaned)
                 .await
                 .unwrap();
-            coordinator
-                .cycle(&mut pending, &mut last, &mut session_id, &mut cleaned)
-                .await
-                .unwrap();
+            // the overflow waits for a seat, then the poll hands the same message back
+            advancing(
+                &clock,
+                coordinator.cycle(&mut pending, &mut last, &mut session_id, &mut cleaned),
+            )
+            .await
+            .unwrap();
             assert_eq!(last, None);
             let mut first = coordinator
                 .reserve(1, channels.stop.subscribe())

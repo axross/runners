@@ -31,6 +31,10 @@ pub(super) const REFRESH_BEFORE: Duration = Duration::from_secs(120);
 /// two renewals are never closer than this, whatever lifetime or clock the credential shows.
 pub(super) const MIN_REFRESH_WAIT: Duration = Duration::from_secs(30);
 
+/// how long the listener leaves an unresolved message alone before asking the service again; the
+/// service redelivers it at once, and the wait ends early when a seat frees.
+pub(super) const REDELIVERY_WAIT: Duration = Duration::from_secs(10);
+
 /// logical identity stays distinct from the scale set's routing/runner identity.
 pub struct Pool {
     pub owner: String,
