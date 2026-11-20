@@ -343,6 +343,8 @@ takes.
   NOT present one as settling an answer the maintainer must give in the launched
   session itself: a plan approval with its delivery confirmation, or a tool
   request the host conditions on the user's own request.
+- MUST NOT put to the maintainer a decision that a launched session reports as
+  asked and still pending, since the maintainer answers it in that session.
 - This rule does not cover subagent assignments or the independent-review
   child's assignment.
 
