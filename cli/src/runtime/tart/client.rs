@@ -18,8 +18,9 @@ use crate::runtime::docker_args::JIT_VARIABLE;
 use crate::runtime::scrub::scrub_error_text;
 
 use super::args::{
-    clone_arguments, delete_arguments, exec_arguments, force_stop_arguments, is_digest_reference,
-    list_arguments, pull_arguments, rename_arguments, run_arguments, set_arguments, stop_arguments,
+    clone_arguments, delete_arguments, exec_arguments, force_stop_arguments, get_arguments,
+    is_digest_reference, list_arguments, pull_arguments, rename_arguments, run_arguments,
+    set_arguments, stop_arguments,
 };
 use super::list::{VmEntry, parse_vm_list};
 
@@ -163,6 +164,13 @@ impl Captured {
         scrub_error_text(&format!("{} {}", self.stderr, self.stdout), "")
     }
 
+    /// both streams as captured, each up to [`MAX_OUTPUT_BYTES`] and not cut to an
+    /// error text, for a match on a text anywhere in them.
+    #[must_use]
+    pub fn output(&self) -> String {
+        format!("{}\n{}", self.stdout, self.stderr)
+    }
+
     /// this answer when the client succeeded, else a [`TartError::Failed`] that
     /// begins with `what`.
     pub fn checked(self, what: &str) -> Result<Self, TartError> {
@@ -263,6 +271,17 @@ pub(crate) async fn capture_command(
         .map_err(|_| TartError::TimedOut(budget))?
         .map_err(TartError::Unavailable)?;
     Ok(captured(status.code(), &stdout, &stderr))
+}
+
+/// the `OS` string of `tart get`'s JSON object.
+fn os_field(bytes: &[u8]) -> Option<String> {
+    let crate::json::Value::Object(object) = crate::json::parse(bytes).ok()? else {
+        return None;
+    };
+    object.iter().find_map(|(key, value)| match value {
+        crate::json::Value::String(os) if key == "OS" => Some(os.clone()),
+        _ => None,
+    })
 }
 
 fn operand(value: &str) -> Result<&str, TartError> {
@@ -371,6 +390,22 @@ impl TartClient {
         }
         parse_vm_list(answer.stdout.as_bytes())
             .map_err(|error| TartError::Unreadable(error.to_string()))
+    }
+
+    /// the `OS` field of `tart get`, such as `darwin` or `linux`, as Tart 2.41.1
+    /// prints it; `None` when the call fails or the answer has no such string.
+    pub async fn os_of(&self, name: &str) -> Option<String> {
+        let arguments = get_arguments(operand(name).ok()?);
+        let answer = self
+            .capture(&arguments, None, self.config.limits.command_budget)
+            .await
+            .ok()?
+            .checked("tart get failed")
+            .ok()?;
+        if answer.stdout_cut {
+            return None;
+        }
+        os_field(answer.stdout.as_bytes())
     }
 
     /// clones the VM or cached image `source` to the new local VM `new_name`.
@@ -526,5 +561,20 @@ impl TartClient {
             .await?
             .checked(failure)
             .map(drop)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_os_comes_from_tart_get_s_os_field() {
+        let tart_get = br#"{"CPU":4,"Disk":50,"OS":"darwin","Running":false,"State":"stopped"}"#;
+        assert_eq!(os_field(tart_get), Some("darwin".to_string()));
+        assert_eq!(os_field(br#"{"OS":"linux"}"#), Some("linux".to_string()));
+        assert_eq!(os_field(br#"{"OS":2}"#), None);
+        assert_eq!(os_field(br#"{"os":"darwin"}"#), None);
+        assert_eq!(os_field(b"[]"), None);
     }
 }

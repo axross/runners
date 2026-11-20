@@ -7,6 +7,9 @@ use std::fmt;
 use std::time::SystemTime;
 
 use crate::image::check::{ImageCheck, status_fields};
+use crate::image::macos_base::MACOS_BASE;
+use crate::image::macos_golden;
+use crate::runtime::backend::HostWait;
 
 /// where a pool is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,8 +43,12 @@ pub enum SlotState {
     /// boots nothing because a host prerequisite refuses, for this reason, and
     /// retries on the backoff schedule.
     Held(String),
+    /// preparing its host, which waits for this.
+    Waiting(HostWait),
     /// running the job container of this name.
     Running(String),
+    /// running a job in the macOS job VM of this name, which has no container.
+    RunningVm(String),
     /// registers nothing while the agent drains for an update.
     Drained,
     /// being stopped for good, for this reason, such as an edit of the configuration
@@ -49,13 +56,21 @@ pub enum SlotState {
     Leaving(String),
 }
 
+/// how `status` and the snapshot's reason say a slot waits for the macOS VM limit.
+pub const VM_LIMIT_WAIT: &str = "waiting for the macOS VM limit";
+
 impl fmt::Display for SlotState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Registering => f.write_str("registering"),
             Self::BackingOff(_) => f.write_str("backing off"),
             Self::Held(reason) => write!(f, "held: {reason}"),
+            Self::Waiting(HostWait::VmLimit) => f.write_str(VM_LIMIT_WAIT),
+            Self::Waiting(HostWait::VmDeletion(vm)) => {
+                write!(f, "waiting for VM {vm} to be deleted")
+            }
             Self::Running(name) => write!(f, "running container {name}"),
+            Self::RunningVm(vm) => write!(f, "running VM {vm}"),
             Self::Drained => f.write_str("drained for an update"),
             Self::Leaving(reason) => write!(f, "stopping: {reason}"),
         }
@@ -75,6 +90,12 @@ pub struct Board {
     pools: RefCell<Vec<Row<PoolState>>>,
     slots: RefCell<Vec<Row<SlotState>>>,
     image: RefCell<Option<ImageRecord>>,
+    /// the newest golden macOS VM's name, `Some(None)` when there is none, or `None`
+    /// before a check or with no macOS pool.
+    macos_golden: RefCell<Option<Option<String>>>,
+    /// the counted leftover job VMs of pools that are no longer configured, from the
+    /// latest count.
+    vm_leftovers: RefCell<Vec<String>>,
 }
 
 /// a pool or slot, its state, and when it entered that state.
@@ -147,6 +168,38 @@ impl Board {
         }
     }
 
+    /// records the counted leftover job VMs of unconfigured pools the latest count
+    /// found.
+    pub fn record_vm_leftovers(&self, names: Vec<String>) {
+        self.vm_leftovers.replace(names);
+    }
+
+    /// the counted leftover job VMs of unconfigured pools, which `start` does not
+    /// delete.
+    #[must_use]
+    pub fn vm_leftovers(&self) -> Vec<String> {
+        self.vm_leftovers.borrow().clone()
+    }
+
+    /// forgets the golden macOS VM and the leftover job VMs, for a run with no macOS
+    /// pool.
+    pub fn forget_macos(&self) {
+        self.macos_golden.replace(None);
+        self.vm_leftovers.borrow_mut().clear();
+    }
+
+    /// records the newest golden macOS VM a check found, or that it found none.
+    pub fn record_macos_golden(&self, golden: Option<String>) {
+        self.macos_golden.replace(Some(golden));
+    }
+
+    /// the newest golden macOS VM the latest check found, as
+    /// [`record_macos_golden`](Board::record_macos_golden) took it.
+    #[must_use]
+    pub fn macos_golden(&self) -> Option<Option<String>> {
+        self.macos_golden.borrow().clone()
+    }
+
     /// records what a check of `image` found; an unavailable Docker said nothing
     /// about the image, so it leaves the latest answer in place.
     pub fn record_image(&self, image: &str, check: &ImageCheck) {
@@ -180,8 +233,8 @@ impl Board {
             .map(|record| (record.name.clone(), record.check.clone()))
     }
 
-    /// the `status` lines of the image, its ages counted to `now`; none before an
-    /// image is named.
+    /// the `status` lines of the image, its ages counted to `now`, none before an
+    /// image is named, then those of the golden macOS VM once a check found it.
     #[must_use]
     pub fn image_fields(&self, now: SystemTime) -> Vec<(&'static str, String)> {
         self.image
@@ -190,10 +243,15 @@ impl Board {
             .map_or_else(Vec::new, |record| {
                 status_fields(&record.name, record.check.as_ref(), now)
             })
+            .into_iter()
+            .chain(self.macos_golden().into_iter().flat_map(|golden| {
+                macos_golden::status_fields(golden.as_deref(), &MACOS_BASE, now)
+            }))
+            .collect()
     }
 
     /// one `pool` field per pool, then one `slot` field per slot, each
-    /// `<name>: <state>`.
+    /// `<name>: <state>`, then one `leftover-vm` field per counted leftover VM.
     #[must_use]
     pub fn fields(&self) -> Vec<(&'static str, String)> {
         let pools = self
@@ -208,8 +266,23 @@ impl Board {
             .iter()
             .map(|row| ("slot", format!("{}: {}", row.name, row.state)))
             .collect::<Vec<_>>();
-        pools.into_iter().chain(slots).collect()
+        let leftovers = self
+            .vm_leftovers
+            .borrow()
+            .iter()
+            .map(|name| ("leftover-vm", leftover_vm_text(name)))
+            .collect::<Vec<_>>();
+        pools.into_iter().chain(slots).chain(leftovers).collect()
     }
+}
+
+/// how `status` and the log name a counted leftover job VM of an unconfigured pool.
+#[must_use]
+pub fn leftover_vm_text(name: &str) -> String {
+    format!(
+        "{name} belongs to a pool that is no longer configured and counts toward the macOS VM \
+         limit; delete it with `tart delete {name}`"
+    )
 }
 
 #[cfg(test)]

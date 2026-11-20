@@ -170,6 +170,24 @@ svg {
   }
 }
 
+/* option B on macOS: the window buttons sit in the header band, so the heading moves
+   64 px right and each wrap point above moves with it */
+:root[data-platform="macos"] .header {
+  padding-left: 88px;
+}
+
+@media (max-width: 836px) {
+  :root[data-platform="macos"] .header[data-buttons="3"] .actions {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 673px) {
+  :root[data-platform="macos"] .header[data-buttons="2"] .actions {
+    flex-basis: 100%;
+  }
+}
+
 .notice {
   flex: 0 0 100%;
   color: var(--text-destructive-low);

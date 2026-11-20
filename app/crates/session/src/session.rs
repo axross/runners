@@ -449,9 +449,28 @@ pub struct Session<D: Dial> {
     github: Github<D::Link>,
     /// the pools whose Open run found its job ended, with when.
     ended_jobs: BTreeMap<String, u64>,
+    /// whether this launch follows an agent that ended because Marshal was moved.
+    after_moved: bool,
 }
 
 impl<D: Dial> Session<D> {
+    /// a session that never reaches or starts an agent, for a copy of Marshal running
+    /// outside Applications; its Quit ends only the app.
+    #[must_use]
+    pub fn outside_applications(mut self) -> Self {
+        self.stage = Stage::Parked;
+        self.connection = Connection::OutsideApplications;
+        self
+    }
+
+    /// a session that follows an agent that ended because Marshal was moved, renamed or
+    /// replaced while it ran; the window says so for this launch.
+    #[must_use]
+    pub fn after_moved(mut self) -> Self {
+        self.after_moved = true;
+        self
+    }
+
     #[must_use]
     pub fn new(seams: Seams<D>) -> (Self, Handle) {
         let (commands_sender, commands) = mpsc::unbounded_channel();
@@ -504,6 +523,7 @@ impl<D: Dial> Session<D> {
             window_shown: false,
             github: Github::new(),
             ended_jobs: BTreeMap::new(),
+            after_moved: false,
         };
         (
             session,
@@ -516,7 +536,9 @@ impl<D: Dial> Session<D> {
     /// runs until the agent ends or the user quits; the caller then ends the app.
     pub async fn run(mut self) -> Ended {
         self.first_check();
-        self.begin_attempt();
+        if self.connection != Connection::OutsideApplications {
+            self.begin_attempt();
+        }
         self.refresh();
         loop {
             let wake = self.wake_at();
@@ -585,11 +607,13 @@ impl<D: Dial> Session<D> {
             },
         };
         let input = Input::new(self.connection, self.snapshot.as_ref(), clock)
+            .words(marshal_view::HOST)
             .pending(self.pending)
             .tokens(&self.tokens)
             .github(feed)
             .ended_jobs(&self.ended_jobs)
-            .editor(self.agent.edits);
+            .editor(self.agent.edits)
+            .after_moved(self.after_moved);
         let Update { view, announced } = self.tracker.update(input);
         self.recheck = announced
             .recheck_at_ms
@@ -950,7 +974,9 @@ impl<D: Dial> Session<D> {
     }
 
     fn try_again(&mut self, reply: Reply<()>) {
-        if !matches!(self.stage, Stage::Parked | Stage::Waiting) {
+        if self.connection == Connection::OutsideApplications
+            || !matches!(self.stage, Stage::Parked | Stage::Waiting)
+        {
             let _ = reply.send(Err("Marshal is not waiting to try again.".to_string()));
             return;
         }
@@ -996,7 +1022,8 @@ impl<D: Dial> Session<D> {
     // ---- tokens
 
     fn record(&mut self, repository: &str, result: TokenResult) {
-        self.announce.push(result.announcement(repository));
+        self.announce
+            .push(result.announcement(repository, &marshal_view::HOST));
         self.tokens.results.insert(repository.to_string(), result);
     }
 

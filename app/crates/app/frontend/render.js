@@ -11,6 +11,7 @@ import {
   editorReview,
 } from "./editor.js";
 import { icon } from "./icons.js";
+import { DRAG_REGION } from "./platform.js";
 import { banners, footer, poolsPanel } from "./pools.js";
 import { tokensPanel } from "./tokens.js";
 
@@ -60,7 +61,11 @@ function header(list, ctx) {
   const model = list.header;
   return h(
     "header",
-    { class: "header", "data-buttons": String(model.controls.length) },
+    {
+      class: "header",
+      "data-buttons": String(model.controls.length),
+      "data-tauri-drag-region": DRAG_REGION,
+    },
     h(
       "div",
       { class: "summary" },
@@ -130,7 +135,7 @@ function listWindow(list, ctx) {
 function fullWindow(full, ctx) {
   return h(
     "main",
-    { class: "full" },
+    { class: "full", "data-tauri-drag-region": DRAG_REGION },
     h(
       "span",
       { class: "full-mark", "aria-hidden": "true" },

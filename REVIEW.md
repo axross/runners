@@ -3,10 +3,11 @@
 Apply this file when reviewing changes, not when implementing them. It is this
 repository's highest-priority review-only policy and complements the
 [Code Review](./.claude/skills/code-review/SKILL.md) methodology. Where
-posted-report instructions differ, this file governs. The Claude adapter in
+posted-report instructions differ, this file governs. The explicitly selected
+Claude CI alternative in
 [claude-review.yaml](./.github/workflows/claude-review.yaml) supplies the policy
-through its system prompt, the Amp review child thread's assignment names it,
-and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
+through its system prompt, the assignments of the Claude Code review child
+session and the Amp review child thread name it, and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
 reviewer-origin result against this policy, and treat unobserved provider input
 as unknown, not as proof of a failed review.
 [Development Workflow](./docs/operations/development-workflow.md) owns provider
@@ -18,7 +19,7 @@ This is a **strict** review: run every mandatory check and report every finding
 within the scope below. Review the acceptance criteria carried in the pull
 request body's **Acceptance criteria** section. Do not open the tracking issue
 to find them; an absent criteria section is itself a finding (Important in
-Claude and Amp review).
+Claude, Claude Code child, and Amp review).
 
 ## Adopted review arrangements
 
@@ -34,7 +35,8 @@ presentation and reporting-scope defaults in this file and Code Review:
   and disposition; native acceptance never dismisses it. A final thumbs-up
   reaction can confirm a clean round only under Development Workflow's
   request, material, and terminal-result correlation.
-- **Claude** — use diff-anchored inline findings plus exactly one top-level
+- **Claude** — the explicitly selected Claude CI alternative uses
+  diff-anchored inline findings plus exactly one top-level
   summary, not a single formal review submission. Important/Nit labels,
   all-findings reporting, summary scope, and the tally remain required,
   including `0 important, 0 nits` for a clean round. This review is advisory,
@@ -45,6 +47,12 @@ presentation and reporting-scope defaults in this file and Code Review:
   REQUEST_CHANGES. Its summary also carries the `<!-- ai-agent -->` marker, the
   child thread's URL, and the reviewed commit, because the review is posted
   under the same GitHub account as the change it reviews.
+- **Claude Code child** — the Claude Code review child session follows the Amp
+  arrangement, with the round token its assignment names in place of the child
+  thread's URL: a single submitted COMMENT-type review whose summary carries the
+  `<!-- ai-agent -->` marker, the round token, and the reviewed commit, because
+  the review can be posted under the same GitHub account as the change it
+  reviews.
 
 Accepting native scope accepts the risk of unreported omissions, not proof of
 exhaustive checking. Explicitly unchecked required scope, outstanding findings,
@@ -53,7 +61,7 @@ under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
 ## Severity labels for posted reviews
 
-Claude and Amp review use Code Review's two posted labels, **Important** and
+Claude, Claude Code child, and Amp review use Code Review's two posted labels, **Important** and
 **Nit**, instead of its internal Critical/Major/Minor/Nit triage or an
 Approve/Request-Changes verdict. Codex managed review uses native priority
 labels; its presentation and reporting scope follow the adopted arrangements
@@ -68,7 +76,7 @@ boundary.
 **Guidelines:**
 
 - MUST flag an applicable hard-rule violation and cite its owning skill or
-  project convention and rule. Claude and Amp review MUST label it Important;
+  project convention and rule. Claude, Claude Code child, and Amp review MUST label it Important;
   Codex review uses its native priority label without implying an exact
   equivalence.
 
@@ -86,7 +94,7 @@ Run the following checks on every review and raise findings within their scope:
   under [Code Review's review lenses](./.claude/skills/code-review/references/review-lenses.md),
   Acceptance Criteria boundary. Report violations demonstrable by inspecting
   the changed material, inline where a changed line supports the finding.
-  Claude and Amp review label these Important; Codex uses its native
+  Claude, Claude Code child, and Amp review label these Important; Codex uses its native
   priorities. A real-host result, machine-specific measurement, or other
   external verification does not become a finding solely because it cannot be
   confirmed from the diff or lacks an evidence link, whether designated or not.
@@ -122,7 +130,7 @@ contributor's verification.
 
 ## Public-repository safety lenses
 
-Each lens is a hard project rule. Claude and Amp review label a violation
+Each lens is a hard project rule. Claude, Claude Code child, and Amp review label a violation
 Important; Codex review uses its native priority label.
 
 - **No credentials or host-identifying values.** No token, key, password,
@@ -204,19 +212,22 @@ Important; Codex review uses its native priority label.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
-  credential are recorded, both in `sign-macos`: `security`'s password arguments, and
-  `notarytool`'s `--key-id` and `--issuer` arguments for the notary key's ID and issuer
-  ID. The `.p8` key reaches `notarytool` only as a file path. Any other change to how
-  the key's ID, issuer ID or `.p8` reaches `notarytool` is a finding to raise (see
+  credential are recorded, both in `sign-macos` and held with it for M2:
+  `security`'s password arguments, and `notarytool`'s `--key-id` and `--issuer`
+  arguments for the notary key's ID and issuer ID. The `.p8` key reaches
+  `notarytool` only as a file path. Any other change to how the key's ID, issuer ID
+  or `.p8` reaches `notarytool` is a finding to raise (see
   [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
 
 ## VM runtime lenses
 
-These lenses apply to a change of the axmc Linux VM runtime: `cli/src/runtime/tart/`,
-`cli/src/macos/`, `cli/src/golden/`, the golden VM's provisioning assets, and the
-macOS host document. Each is a hard project rule, owned by
+These lenses apply to a change of the axmc VM runtime: `cli/src/runtime/tart/`,
+`cli/src/macos/`, `cli/src/golden/`, `cli/src/build/golden_macos.rs`,
+`cli/src/build/build_vm.rs`,
+`cli/src/image/macos_base.rs`, the golden VMs' provisioning assets, and the macOS
+host document. Each is a hard project rule, owned by
 [Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
-and the sections after it. Claude and Amp review label a violation Important;
+and the sections after it. Claude, Claude Code child, and Amp review label a violation Important;
 Codex review uses its native priority label.
 
 - **No JIT configuration in an argument list.** The JIT configuration reaches the
@@ -241,13 +252,13 @@ Codex review uses its native priority label.
 - **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
   file check and a version check, and carries the two Softnet rules from
   [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
-  other network option. A boot path that skips the check, a cached result, a
-  `marshal` that sets Softnet's SUID bit, and a fallback to Tart's default network
+  other network option. A boot path that skips the check, a cached result, the
+  runtime setting Softnet's SUID bit, and a fallback to Tart's default network
   are findings.
 - **No shared directory, clipboard, audio, USB accessories or Rosetta.** Every
   `tart run` turns off graphics, the clipboard, audio and USB accessories, and
   carries no `--dir` and no `--rosetta`. Every Tart call sets `TART_NO_AUTO_PRUNE`,
-  gets `marshal`'s `PATH`, and has a standard output that is not a terminal.
+  gets the runtime's `PATH`, and has a standard output that is not a terminal.
 - **The VM-local socket is the only socket.** The VM runtime's job container mounts
   the job VM's own `/var/run/docker.sock` and nothing else of a host, and is never
   privileged. The Docker runtime's run arguments (`job_run_arguments`) carry no
@@ -259,12 +270,25 @@ Codex review uses its native priority label.
 - **Names and cleanup stay exact.** Cleanup at `start` matches only the job VMs of
   configured pools by their name form, so it never deletes a golden VM or a build
   VM. Only `build` deletes golden VMs, and only `build` and a build VM's own shim
-  delete a build VM. A looser match could delete a VM `marshal` does not own.
+  delete a build VM. A looser match could delete a VM the runtime does not own.
 - **Pins hold.** The base image is pinned by digest, the current pin is never on
   the retired list, Docker Engine, and the runner image's Docker client, come from
   Docker's apt repository at pinned versions after the signing key's fingerprint is
   checked, and the tested Tart and Softnet versions agree between the CLI and the
-  host document.
+  host document. The macOS base is pinned by digest in `MACOS_BASE`, and a bump
+  records its macOS version and publication day with it.
+- **The golden macOS VM stays closed.** A change to its provisioning
+  (`cli/src/golden/macos.rs`, `cli/src/golden/scripts/macos/`, `build::golden_macos`)
+  keeps Remote Login and Screen Sharing off, keeps the automatic download and
+  installation of macOS updates off, checks the runner archive's SHA-256 against the
+  runner record before it unpacks anything, keeps the JIT configuration on the
+  launcher's standard input and off every command line, and keeps
+  `MARSHAL_TEST_RUNNER` out of release builds. A change that weakens any of these is
+  a finding.
+- **The macOS VM limit holds.** A macOS slot counts under `PlaceLock` before every
+  clone, and `build` before it creates a macOS build VM, and a count that is
+  unreadable counts the VM. A clone outside the lock, a path that clones without a
+  count, and a change to the counting rule that under-counts are findings.
 
 The Dockerfile lens's rule against `apt-get upgrade` is about the runner image. The
 golden VM's provisioning upgrades the base's Ubuntu packages on purpose, so a
@@ -301,36 +325,33 @@ Apply the lens for each kind of file in the diff.
   checked against each bullet of the release record in
   [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
   A publish or attest step outside `release.yaml`, a job that both runs the npm tree
-  and holds `id-token: write`, an asset other than the two named binaries, the two
-  installers named for them, and `SHA256SUMS`, such as a helper binary, an installer
-  that carries a script or a custom action that runs code, a download that is none of
-  the pinned WiX package, the recorded Rust toolchain exception, or the Node that
-  `actions/setup-node` installs (recorded under Security's Pinning Convention), or a
-  departure from the record that the change does not also make to the record, is a
-  finding. Install-time verification is optional for the installers, so a document or
-  comment that presents the check block as required of an operator is a finding, and
-  so is a change that weakens a pin or drops one of the check block's four checks, or
-  any check of the bare-binary blocks that roll back to `v0.1.0`. The signing job's
-  rules are also findings when broken: an `environment:` in any job but `sign-macos`,
-  or in a workflow a pull request triggers or a job such a workflow calls; a signing
-  secret read by any job but `sign-macos`; `sign-macos` holding more than
-  `contents: read`, running a checkout, an action besides `actions/download-artifact` and
-  `actions/upload-artifact`, a package manager, a fetch, a file from the repository,
-  or a `${{ }}` inside `run:`, or calling a signing tool by anything but its system path; a
-  signing step that a later job can pass without, such as `continue-on-error`, a
+  and holds `id-token: write`, an asset other than the app executable
+  `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi` and
+  `SHA256SUMS`, such as a helper binary or a command-line file, an MSI custom action
+  that runs code other than the start of the installed app under
+  `AUTOLAUNCHAPP=True` and the uninstall's deletion of the HKCU Run value `Marshal`,
+  an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade
+  code or a component code, a download that is none of the pinned WiX package, the
+  recorded Rust toolchain exception, the recorded `tauri-cli` exception installed at
+  the pin `tauri-cli-version.sh` reads, or the Node that `actions/setup-node` installs
+  (recorded under Security's Pinning Convention), or a departure from the record that
+  the change does not also make to the record, is a finding. Install-time
+  verification is optional for the installer, so a document or comment that presents
+  the check block as required of an operator is a finding, and so is a change that
+  weakens a pin, drops one of the check block's four checks, or drops the build
+  leg's product-version check or its failing run. From W1's installer pull request
+  until the next signing job, M2's or W4's, joins the chain, an `environment:` in any
+  job or a signing secret read by any job is a finding; the signing job that returns
+  brings its rules back to this list, to `check-release-shape.mjs` and to its test in
+  the same change, and keeps
+  [Security's held record](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  A job or step that a later job can pass without, such as `continue-on-error`, a
   job-level `always()`, `!cancelled()` or `failure()`, a step condition in
-  `sign-macos` beyond the `if: always()` of the clean-up and the notary-log upload, a
-  step condition in `verify-macos` or `assemble-signed`, or one in `attest` or
-  `release` that skips a step, which the shape check does not see; an attest or release job that reads
-  the unsigned set or does not follow every signing step; a secret printed, or passed
-  on a command line apart from `security`'s password arguments and `notarytool`'s
-  `--key-id` and `--issuer` arguments in `sign-macos`, the two exceptions for a
-  credential that Security records; a change to how the notary
-  key's ID, issuer ID or `.p8` key reaches `notarytool`; a change to the identifier
-  `app.axross.marshal`, the team pin, or the G2 intermediate's pin without its source and the record's update;
-  and a signing job or step added without being added to `check-release-shape.mjs` and
-  its test. A change that relaxes the record, or touches the signing job, needs the
-  maintainer's review.
+  `assemble-signed`, or one in `attest` or `release` that skips a step, which the
+  shape check does not see, and an attest or release job that reads the unsigned set
+  are findings. A change to the identifier `app.axross.marshal`, the team pin, or the
+  G2 intermediate's pin without its source and the record's update is a finding. A
+  change that relaxes the record needs the maintainer's review.
 - **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
   `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
   indexing). The CLI collects every error in the order
@@ -353,17 +374,19 @@ Apply the lens for each kind of file in the diff.
   record in [Security](docs/conventions/security.md#the-app-surface), its web view,
   capability and token bullets. The content security policy in `tauri.conf.json`
   stays the one Security states in full, and `tauri.conf.json` keeps the web view
-  on bundled files with no developer tools in the release build. The two
-  capabilities, the main window's and the confirmation window's, and the permission
-  files Tauri generates keep to the permissions Security lists; a permission, a
-  capability or Tauri feature added, such as `dynamic-acl`, is a finding. The
+  on bundled files with no developer tools in the release build. The four
+  capabilities, the main window's and the confirmation window's on both systems and
+  the two macOS-only drag capabilities of those windows, together with
+  `tauri.macos.conf.json`'s window list and the permission files Tauri generates, keep
+  to the permissions Security lists; a permission, a capability or Tauri feature
+  added, such as `dynamic-acl`, is a finding. The
   pages stay text-only: `dom.js` refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and
   `on*`,
   and text from the configuration, Docker or the agent is set as text, never as
   markup, with no inline script, remote asset or npm package. No token sits in the
   page, a view state or an event after `token_set` is called. A change to the
-  policy, a capability, a permission file, `tauri.conf.json` or the element builder
-  needs the maintainer's review. The test manifest `build.rs` links into the
+  policy, a capability, a permission file, `tauri.conf.json`,
+  `tauri.macos.conf.json` or the element builder needs the maintainer's review. The test manifest `build.rs` links into the
   integration tests holds only the version 6 common controls dependency and only on
   a Windows MSVC target; another entry in it, such as an execution level, a second
   `embed-resource` call, or a test skipped or cfg-ed out to avoid it, is a finding
@@ -396,8 +419,10 @@ Apply the lens for each kind of file in the diff.
   to `APPROVED_CONTRACTS` in `cli/src/image/contract.rs`. A change that alters
   either without raising the version is a finding, even when `APPROVED_CONTRACTS`
   cannot see it. A runner bump sets the `FROM` line and the `runner-version` and
-  `runner-released` labels of both Dockerfiles, and adds the release's date from
-  the actions/runner release page to `RUNNER_RELEASES` in the same file. The
+  `runner-released` labels of both Dockerfiles, sets `DECLARED_RUNNER_VERSION`,
+  and adds the release's date and the SHA-256 of its osx-arm64 archive, both from
+  the actions/runner release page, to `RUNNER_RELEASES` in
+  `cli/src/image/runner.rs`. The
   tests that depend on the declared values read them from the Dockerfiles or the
   CLI's contract version, so neither change edits any other test; see
   [CLI](docs/operations/cli.md#the-image-contract).

@@ -4,26 +4,18 @@ This file defines the working agreement for agents contributing to runners.
 
 ## Project overview
 
-**runners** holds generic GitHub Actions self-hosted runner images and the CLI
-that runs them, and later the WSL 2 host configuration for Claude Code
-Remote Control and Amp runner agent hosts. It is being extracted from the
-runner setup of a private application repository, in steps. It holds its agent
-foundation (the entry files, agent configuration, documentation, and lint
-toolchain), the `images/actions-runner/` runner image, the
-`hosts/windows-docker-desktop/` example host configuration, the `hosts/macos/`
-example host configuration, and the CLI under `cli/`, a Rust command line tool
-that validates a host configuration, builds its runner image with `build`, and
-runs a host's pools with `start`, `stop`, `restart`, `status`, and `diagnostics`,
-and the Windows app under `app/`, a Tauri notification-area app that is also the
-executable that runs the CLI library's resident agent, built in CI and not yet
-installed or released. The axpc host runs its pools with the CLI. The axmc host,
-an Apple silicon Mac, runs its Linux pools with the CLI in Tart VMs, and `build`
-makes their golden VM; the agent-host configuration is still planned.
-[README.md](./README.md) owns project commands; [docs/index.md](./docs/index.md)
-indexes conventions, operations, and the glossary. mise pins the toolchain, and
-Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer,
-rustfmt, clippy, and cargo-deny provide format and lint. The Rust toolchain is
-pinned in `cli/rust-toolchain.toml` and provisioned by `.agents/install-rust`.
+**runners** holds generic GitHub Actions self-hosted runner images, the
+`marshal-cli` library under `cli/` that runs them, and Marshal, the app under
+`app/` that runs that library's resident agent; the WSL 2 host configuration for
+Claude Code Remote Control and Amp runner agent hosts is still planned. It is
+being extracted from the runner setup of a private application repository, in
+steps. [README.md](./README.md) introduces the project and its current status;
+[Development Setup](./docs/operations/development-setup.md) owns setup,
+[Testing](./docs/conventions/testing.md) owns the check commands, and
+[Directory Structure](./docs/conventions/directory-structure.md) owns the layout
+and the technologies, including the toolchain and the format and lint tools.
+[docs/index.md](./docs/index.md) indexes conventions, operations, and the
+glossary.
 
 This repository is public, so its GitHub Actions CI and review jobs run on
 GitHub-hosted runners only, never on a self-hosted one.
@@ -36,21 +28,35 @@ the maintainer, `@axross`.
 
 ## Response Approach
 
-This agreement is the maintainer's explicit request that every
+For each requested runners change, the first progress update MUST precede the
+first implementation edit and report:
+
+- The current phase
+- The tracking issue or its absence
+- The plan-approval state
+
+The existing Development Workflow remains the owner of the gates.
+
+After loading Professional Behavior, use
+[Loop Engineering](./.claude/skills/loop-engineering/SKILL.md) for requested
+project changes, including small code or document edits. Establish the current
+phase before planning or implementation. Standalone read-only work stays outside
+the change gates. This agreement is the maintainer's explicit request that every
 change run deliver through its required verification and the independent review
 selected by
 [Development Workflow](./docs/operations/development-workflow.md), then reach
 ready or a reported stop naming an unmet gate, without a further prompt.
-That workflow owns the delivery sequence and handoff boundary, including when a
-run obtains a host's per-session confirmation; Agent Sessions describes
+That workflow owns the delivery sequence and handoff boundary. Where a host
+still requires a per-session confirmation, the run obtains it at the plan gate,
+before the first action that needs it in a run without one, or when a new
+session resumes the run, and never by stopping after push;
+Agent Sessions describes
 [Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
 and
 [Amp's plan-gate archive confirmation](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
-Current host instructions and tool usage conditions still apply; for Amp, see
-[Handle Amp delivery authorization](#handle-amp-delivery-authorization); for
-Codex, see
-[Handle Codex delivery authorization](#handle-codex-delivery-authorization);
-for Claude Code, see [Claude Code entry guidance](./CLAUDE.md). Load
+Current host instructions and tool usage conditions still apply; for Amp and
+Codex, see the delivery-authorization guidance under Host and delivery routing
+below; for Claude Code, see [Claude Code entry guidance](./CLAUDE.md). Load
 capabilities by task instead of applying every change gate to read-only work:
 
 - MUST load
@@ -64,16 +70,17 @@ capabilities by task instead of applying every change gate to read-only work:
   before a comment or a doc-comment is written or kept, rather than relying
   on the skill's own trigger words to fire for a session that is only
   writing a comment.
-- MUST load [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md)
-  before planning or making any code or document change, including a small
-  edit, and establish the current phase before planning or implementation; then
-  follow
-  [Development Workflow](./docs/operations/development-workflow.md) for this
-  repository's gates. Read-only work stays outside the change loop.
+- MUST read [Development Workflow](./docs/operations/development-workflow.md)
+  for project changes or tracking issue management, including integration
+  reports. For code or document changes, MUST load
+  [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md) before planning
+  or making changes and follow the workflow's change gates. Read-only work
+  stays outside the change loop.
 - MUST load each matching skill's body, not act from its discovery description
   alone. Domain skills govern their subject, not host tool selection.
-- MUST read [README.md](./README.md) before running project commands. Software
-  Development owns the procedure when a command is undocumented.
+- MUST read [README.md](./README.md) and the relevant command guide it links
+  before running project commands. Software Development owns the procedure
+  when a command is undocumented.
 - MUST read [docs/index.md](./docs/index.md) when a task depends on project
   terminology, behavior, conventions, or past decisions, then follow only the
   relevant routes.
@@ -87,15 +94,20 @@ capabilities by task instead of applying every change gate to read-only work:
 
 Choose guidance from the actual session and changed surface:
 
-- **Amp:** follow the runtime's current tool contracts and consult
-  [Agent sessions](./docs/operations/agent-sessions.md#amp-quality-hooks) for
-  the quality-hooks plugin,
+- **Amp:** follow the runtime's current tool contracts. Before any delivery
+  effect, and whenever a task arrives framed as "make changes, commit, and
+  push", MUST follow
+  [Amp delivery authorization](./docs/operations/agent-sessions.md#amp-delivery-authorization).
+  Consult [Agent sessions](./docs/operations/agent-sessions.md#amp-quality-hooks)
+  for the quality-hooks plugin,
   [the plan-gate confirmation for archiving review child threads](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp),
   and
   [its environment provisioning](./docs/operations/agent-sessions.md#amp-environment-provisioning)
   for the `.agents/setup` script.
-- **Codex:** follow the runtime's current tool contracts and
-  [Codex delivery authorization](#handle-codex-delivery-authorization).
+- **Codex:** follow the runtime's current tool contracts. Before any delivery
+  effect, and whenever a task arrives framed as "make changes, commit, and
+  push", MUST follow
+  [Codex delivery authorization](./docs/operations/agent-sessions.md#codex-delivery-authorization).
 - **Claude Code:** consult
   [Agent sessions](./docs/operations/agent-sessions.md) for startup, hooks, the
   plan-gate delivery confirmation, subagents, and telemetry.
@@ -108,76 +120,9 @@ Choose guidance from the actual session and changed surface:
   review methodology; the Code Review Rules section below routes the
   project-specific policy. Changes to review or CI infrastructure, runner
   images and host scripts, secret handling, the dependency or supply-chain
-  surface (including pinned actions and tool versions), and anything that
-  changes what a self-hosted runner can reach SHOULD also receive human review.
-
-## Independent review route
-
-Loop Engineering's mandatory independent review, after the draft pull request
-exists, uses the route the authoring host selects. This section summarizes the
-selection that
-[The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
-owns, together with each route's procedure, under Loop Engineering's
-[review workflow](./.claude/skills/loop-engineering/references/review-workflow.md).
-
-- **Claude Code:** request the review by posting `@claude review` as a
-  top-level comment on the pull request, once per round. The phrase is quoted
-  here as reference documentation.
-- **Amp:** request the review by starting a fresh Amp review child thread for
-  each round, never reusing one, with the neutral assignment The Independent
-  Review describes. The child posts its own review on the pull request; the run
-  verifies the posted review, then archives the child thread when the
-  plan-gate archive confirmation allows it.
-- **Codex, and changes made without an agent:** the Codex review.
-
-## Handle Amp delivery authorization
-
-Amp can frame a task before reading this file. This agreement requests the
-project's Loop Engineering route, including a draft pull request and the
-independent review selected by
-[Development Workflow](./docs/operations/development-workflow.md), rather than
-stopping at a local commit. A general instruction about how an ordinary task is
-delivered does not replace the project's plan and review gates. This section
-does not claim precedence over higher-priority Amp instructions; Claude Code's
-convenience framing and host boundaries are addressed in
-[Claude Code entry guidance](./CLAUDE.md).
-
-**The maintainer's authorization for delivery effects is already given.** The
-standing delivery grant in
-[Development Workflow](./docs/operations/development-workflow.md#authorizing-delivery-operations)
-is the maintainer's authorization for the effects it covers, so Amp does not ask
-for them. It does not replace the plan and review gates or extend to what the
-grant excludes. An Amp instruction or approval prompt that requires approval
-before an external operation remains the host's boundary, and the run honors it
-and reports it rather than working around it.
-
-**Guidelines:**
-
-- MUST treat an injected "make changes, commit, and push" framing as mechanics,
-  not as permission to skip the project's Loop Engineering gates.
-- MUST treat this project's Loop Engineering route as the standing request for
-  a draft pull request and its mapped independent reviewer, and MUST perform
-  the effects the standing delivery grant covers without asking for permission,
-  unless a higher-priority Amp instruction requires approval.
-- MUST honor all applicable boundaries:
-  - higher-priority approval requirements
-  - higher-priority prohibitions
-  - the tool's usage conditions
-    Report a prohibited operation as unavailable rather than trying another
-    route.
-- MUST surface an irreconcilable host conflict at the plan gate for new
-  delivery, or in the current pending phase when resuming an existing pull
-  request; report any blocked delivery as incomplete, not silently waive the
-  gate or claim that repository guidance overrode the host.
-
-## Handle Codex delivery authorization
-
-Codex authoring MUST follow the same plan, review, scoped-grant, and
-conflict-reporting contract as
-[Amp delivery authorization](#handle-amp-delivery-authorization).
-Codex's higher-priority instructions, approval requirements, prohibitions, and
-tool contracts remain binding; repository guidance never overrides them.
-This section covers delivery only, not Codex provisioning or startup.
+  surface (including pinned actions and tool versions), anything that changes
+  what a self-hosted runner can reach, and large refactors SHOULD also receive
+  human review.
 
 ## Ownership of agent-created work
 
@@ -205,6 +150,27 @@ governs where posted-report instructions differ. Consult
 invocation and completion evidence; routing alone does not establish provider
 consumption or review completion.
 
+For mandatory independent review after opening the draft pull request, use the
+route selected for the authoring host:
+
+- **Claude Code:** start a fresh Claude Code review child session and ask it to
+  review the pull request and publish its review directly there.
+- **Amp:** start a fresh Amp review child thread for each round, never reusing
+  one, and ask it to review the pull request and publish its review directly
+  there.
+- **Codex, and changes made without an agent:** the Codex review.
+
+These children MUST have a fresh non-author context, not a fork of the author's
+conversation or a reused advisory reviewer. An independent-review child reviews
+and posts its review itself and does not delegate; the subagent-delegation rule
+above does not apply to it. Advisory pre-flight remains a separate checkpoint
+and does not satisfy independent review. Follow
+[The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
+for qualification, review rounds, publication verification, child cleanup, and
+the comment-triggered Claude CI review the maintainer can select instead.
+Current host and tool restrictions still apply; an unavailable selected route
+leaves the independent-review gate unmet rather than authorizing a substitute.
+
 ## Skill maintenance
 
 Every directory under `.claude/skills/` is an installed copy from
@@ -216,33 +182,10 @@ load
 follow [Agent Skills](./docs/operations/agent-skills.md). For content or
 metadata work, also load
 [Agent Skill Authoring](./.claude/skills/agent-skill-authoring/SKILL.md).
+Skill source, installed copies, and active loading have distinct evidence;
+their layout belongs to [Agent Skills](./docs/operations/agent-skills.md).
 
 At completion, MUST report whether skill maintenance was performed, skipped,
 or blocked. Loop Engineering's
 [Resume and Reporting](./.claude/skills/loop-engineering/SKILL.md#resume-and-reporting)
 section owns the evidence required beside that report.
-
-## Routing a Change
-
-Use these owners rather than duplicating their detailed rules. One owner
-below, Code Maintainability, is an installed capability rather than a
-project document. The agent-host surfaces are planned and do not exist yet; the
-security convention governs them as they arrive, and a change that adds one also
-adds the document that owns its procedure and the row that routes to it.
-
-| Task                                                                                                                                                                                                 | Project owner                                                                                                                                                                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commands and local verification                                                                                                                                                                      | [README.md](./README.md)                                                                                                                                                                                                                        |
-| Change loop, branches, delivery, independent review, and releases                                                                                                                                    | [Development Workflow](./docs/operations/development-workflow.md)                                                                                                                                                                               |
-| Skill installation, refresh, deviations, and gaps                                                                                                                                                    | [Agent Skills](./docs/operations/agent-skills.md)                                                                                                                                                                                               |
-| Claude Code and Amp startup, hooks, the plan-gate delivery confirmation, Amp's plan-gate archive confirmation for review child threads, subagents, and telemetry                                     | [Agent Sessions](./docs/operations/agent-sessions.md)                                                                                                                                                                                           |
-| Workflow permissions, action pinning, runner trust boundaries, cache and volume boundaries, and secrets                                                                                              | [Security](./docs/conventions/security.md)                                                                                                                                                                                                      |
-| Project terminology                                                                                                                                                                                  | [Glossary](./docs/glossary.md)                                                                                                                                                                                                                  |
-| Whether something should be a comment at all, or the code reshaped instead                                                                                                                           | [Code Maintainability](./.claude/skills/code-maintainability/SKILL.md)                                                                                                                                                                          |
-| Where a document goes and how it is indexed                                                                                                                                                          | [docs/index.md](./docs/index.md) and [Living Project Documentation](./.claude/skills/living-project-documentation/SKILL.md)                                                                                                                     |
-| Which document a change to a runner surface invalidates, and the documentation checks                                                                                                                | [Documentation](./docs/conventions/documentation.md)                                                                                                                                                                                            |
-| Runner image (`images/actions-runner/`), the Windows host configuration (`hosts/windows-docker-desktop/`), tokens, updating, rolling back, and recovery                                              | [Windows Runner Host](./docs/operations/windows-runner-host.md), with the per-repository isolation rules in [Security](./docs/conventions/security.md)                                                                                          |
-| The CLI (`cli/`), its commands, its profiles (`axpc`, `axmc`), the shared fixtures (`tests/host-configuration/`), and its Rust toolchain and gates                                                   | [CLI](./docs/operations/cli.md), with [Security](./docs/conventions/security.md) for labels, paths, and the dependency surface                                                                                                                  |
-| The macOS host (`hosts/macos/`): Tart, Softnet, the golden VM, the axmc host configuration, and the runtime that runs its Linux pools (`cli/src/runtime/tart/`, `cli/src/macos/`, `cli/src/golden/`) | [macOS Runner Host](./docs/operations/macos-runner-host.md), with [Security](./docs/conventions/security.md) for the per-job VM, Softnet, and the pins, and [CLI](./docs/operations/cli.md) for the runtime seam                                |
-| The Windows app (`app/`), its agent mode, web view, capabilities, icons, licence notices, and the `tauri-cli` pin                                                                                    | [App](./docs/operations/app.md), with [Security](./docs/conventions/security.md) for the web view's policy, the process rules, and the app's dependency policy, and [CLI](./docs/operations/cli.md) for what the library gives it and its gates |
-| Planned agent-host configuration (`agent-hosts/{claude-code,amp}/`)                                                                                                                                  | The operations document that change adds; until then [Security](./docs/conventions/security.md) and [REVIEW.md](./REVIEW.md)                                                                                                                    |

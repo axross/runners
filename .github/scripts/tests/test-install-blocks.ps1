@@ -4,14 +4,12 @@
     runs the Windows install blocks of docs/operations/cli.md against stand-ins.
 
 .DESCRIPTION
-    runs the optional check, migration, uninstall, and bare-binary blocks, each
-    extracted from the document, with stand-ins for gh, msiexec (through
-    Start-Process), Unblock-File, the Windows Installer COM object, and marshal.exe.
-    each stand-in records its calls, so every refusal is produced and a case
-    asserts what ran and what did not. LOCALAPPDATA points into a temporary
-    directory. the cases that write the user PATH in the registry run on Windows
-    only and put the value back; elsewhere they print SKIP. runs under Windows
-    PowerShell 5.1 and PowerShell 7. see docs/operations/cli.md.
+    runs the optional check and uninstall blocks, each extracted from the
+    document, with stand-ins for gh, msiexec (through Start-Process),
+    Unblock-File, Get-Process, and the Windows Installer COM object. each stand-in
+    records its calls, so every refusal is produced and a case asserts what ran
+    and what did not. LOCALAPPDATA points into a temporary directory. runs under
+    Windows PowerShell 5.1 and PowerShell 7. see docs/operations/cli.md.
 #>
 param(
     [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli.md')
@@ -22,15 +20,14 @@ $ErrorActionPreference = 'Stop'
 Assert-JqAvailable
 
 $script:Document = $Document
-$env:STANDIN_RECORD_CALLS = '1'
 $OnWindows = Test-RunningOnWindows
 $Version = '1.2.3'
 $CommitSha = '0123456789abcdef0123456789abcdef01234567'
-$UpgradeCode = '{512F67C6-97ED-4562-84F3-2584FA3BA29C}'
+$UpgradeCode = '{F53C5F78-BA20-4941-9091-988AFDFD656B}'
 $InstallerName = "marshal-$Version-windows-x64.msi"
+$AppName = "marshal-$Version-windows-x64.exe"
 $script:Failures = 0
 $script:Cases = 0
-$script:Skipped = 0
 $script:CaseName = ''
 $script:Scenario = @{}
 $script:Calls = New-Object System.Collections.Generic.List[string]
@@ -74,10 +71,12 @@ function Start-Process {
         $targetArgument = @($arguments | Where-Object { $_ -like 'TARGETDIR=*' })[0]
         $target = $targetArgument.Substring('TARGETDIR='.Length).Trim('"')
         if ($code -eq 0) {
-            foreach ($relative in $scenario.UnpackedBinaries) {
-                Write-StandInMarshal -Path (Join-Path $target $relative) -Version $scenario.UnpackedVersion -VersionExit $scenario.UnpackedVersionExit
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            foreach ($relative in $scenario.UnpackedApps) {
+                $path = Join-Path $target $relative
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+                Set-Content -LiteralPath $path -Value $scenario.UnpackedBytes -NoNewline
             }
-            if (@($scenario.UnpackedBinaries).Count -eq 0) { New-Item -ItemType Directory -Force -Path $target | Out-Null }
         }
     } elseif ($arguments[0] -eq '/x') {
         $code = $scenario.RemoveExit
@@ -85,6 +84,15 @@ function Start-Process {
         throw "The block ran msiexec.exe $($arguments -join ' ')."
     }
     return [pscustomobject]@{ ExitCode = $code; Handle = 0 }
+}
+
+# stands in for Get-Process, which the uninstall block calls to find a running app.
+function Get-Process {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'a stand-in must shadow the cmdlet the block calls')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'the block passes -ErrorAction')]
+    param([string[]]$Name, $ErrorAction)
+    $script:Calls.Add("Get-Process $($Name -join ',')")
+    foreach ($path in @($script:Scenario.Running)) { [pscustomobject]@{ Name = 'marshal-app'; Path = $path } }
 }
 
 function New-Object {
@@ -106,7 +114,6 @@ function New-Object {
 
 $Work = Join-Path ([IO.Path]::GetTempPath()) ('marshal-install-blocks-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $Work | Out-Null
-Initialize-StandInMarshal -Directory $Work
 $OriginalLocalAppData = $env:LOCALAPPDATA
 $OriginalTemp = $env:TEMP
 $OriginalTmp = $env:TMP
@@ -154,10 +161,10 @@ function Open-Case {
         Compare = 'identical'
         AttestFail = $false
         UnpackExit = 0
-        UnpackedBinaries = @('Programs\marshal\marshal.exe')
-        UnpackedVersion = $Version
-        UnpackedVersionExit = 0
+        UnpackedApps = @('Programs\marshal\marshal-app.exe')
+        UnpackedBytes = 'app bytes'
         RemoveExit = 0
+        Running = @()
         Products = @()
         InstallerFail = $false
     }
@@ -169,12 +176,6 @@ function Complete-Case {
     } else {
         Write-Output "ok   $($script:CaseName)"
     }
-}
-
-function Skip-Case {
-    param([string]$Reason)
-    $script:Skipped++
-    Write-Output "SKIP $($script:CaseName): $Reason"
 }
 
 # Invoke-Block <id> <replacements>: runs the documented block with each named
@@ -254,7 +255,11 @@ function Initialize-Check {
     Set-Content -LiteralPath $script:Installer -Value 'installer bytes'
     if ($OnWindows) { Set-Content -LiteralPath $script:Installer -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3" }
     $script:InstallerHash = Get-Sha256 $script:Installer
-    Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value "$($script:InstallerHash)  $InstallerName"
+    $appFile = Join-Path $script:CaseDirectory 'app-bytes'
+    Set-Content -LiteralPath $appFile -Value $script:Scenario.UnpackedBytes -NoNewline
+    $script:AppHash = Get-Sha256 $appFile
+    Remove-Item -LiteralPath $appFile
+    Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value @("$($script:AppHash)  $AppName", "$($script:InstallerHash)  $InstallerName")
 }
 
 function Invoke-Check {
@@ -346,10 +351,9 @@ $refusals = @(
     @{ Name = 'a commit diverged from main'; Set = { $script:Scenario.Compare = 'diverged' }; Text = 'is not on main (diverged)'; NotCalled = @('gh attestation', 'Start-Process') },
     @{ Name = 'an attestation that does not verify'; Set = { $script:Scenario.AttestFail = $true }; Text = 'the attestation does not verify'; NotCalled = @('Unblock-File', 'Start-Process') },
     @{ Name = 'an installer msiexec cannot unpack'; Set = { $script:Scenario.UnpackExit = 1603 }; Text = 'msiexec could not unpack the installer (exit code 1603)'; NotCalled = @() },
-    @{ Name = 'an installer with no marshal.exe'; Set = { $script:Scenario.UnpackedBinaries = @() }; Text = 'holds 0 files named marshal.exe, not 1'; NotCalled = @() },
-    @{ Name = 'an installer with two marshal.exe'; Set = { $script:Scenario.UnpackedBinaries = @('a\marshal.exe', 'b\marshal.exe') }; Text = 'holds 2 files named marshal.exe, not 1'; NotCalled = @() },
-    @{ Name = 'a binary that prints another version'; Set = { $script:Scenario.UnpackedVersion = '0.0.1' }; Text = "is not marshal ${Version}: marshal 0.0.1"; NotCalled = @() },
-    @{ Name = 'a binary that does not run'; Set = { $script:Scenario.UnpackedVersionExit = 3 }; Text = 'is not marshal'; NotCalled = @() }
+    @{ Name = 'an installer with no marshal-app.exe'; Set = { $script:Scenario.UnpackedApps = @() }; Text = 'holds 0 files named marshal-app.exe, not 1'; NotCalled = @() },
+    @{ Name = 'an installer with two marshal-app.exe'; Set = { $script:Scenario.UnpackedApps = @('a\marshal-app.exe', 'b\marshal-app.exe') }; Text = 'holds 2 files named marshal-app.exe, not 1'; NotCalled = @() },
+    @{ Name = 'an installer whose app is not the release executable'; Set = { $script:Scenario.UnpackedBytes = 'older app bytes' }; Text = "the app in the installer does not match the $AppName line of SHA256SUMS"; NotCalled = @() }
 )
 foreach ($refusal in $refusals) {
     Open-Case "check: $($refusal.Name)"
@@ -386,7 +390,7 @@ Complete-Case
 
 Open-Case 'check: a decoy line for a longer name does not count'
 Initialize-Check
-Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value @(('0' * 64 + "  $InstallerName.sig"), "$($script:InstallerHash)  $InstallerName")
+Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value @(('0' * 64 + "  $InstallerName.sig"), "$($script:AppHash)  $AppName", "$($script:InstallerHash)  $InstallerName")
 Invoke-Check
 Assert-Passed
 Assert-Called "gh attestation verify $($script:Installer) "
@@ -416,117 +420,53 @@ Assert-Refused 'could not be read'
 Assert-NotCalled 'gh attestation'
 Complete-Case
 
-# the migration block -----------------------------------------------------------
-
-$ManualDirectory = { Join-Path $env:LOCALAPPDATA 'Programs\marshal' }
-
-# the user PATH is a Windows registry value, so off Windows the block ends at its
-# PATH step with a refusal, after it has stopped the instance and removed the file.
-Open-Case 'migrate: the marshal installer is installed, so its file goes too'
-$script:Scenario.Products = @('{11111111-2222-3333-4444-555555555555}')
-$manual = Join-Path (& $ManualDirectory) 'marshal.exe'
-Write-StandInMarshal -Path $manual -Version '0.0.1'
-Invoke-Block -Id 'windows-migrate'
-if ($OnWindows) {
-    Assert-Passed
-    Assert-True ($script:Result.Output.Contains('The marshal installer is installed, and what was removed was part of it too; uninstall it and install it again.')) "no note: $($script:Result.Output)"
-    Assert-True ($script:Result.Output.Contains('marshal.exe')) "the removal is not named: $($script:Result.Output)"
-} else {
-    Assert-Refused 'the user PATH could not be updated'
-}
-Assert-True ((Get-StandInCall $manual) -contains 'stop') 'the instance was not asked to stop'
-Assert-Absent $manual
-Assert-InstallsNothing
-Assert-True ($script:Scenario.Installer.LastUpgradeCode -eq $UpgradeCode) "the products were looked up by '$($script:Scenario.Installer.LastUpgradeCode)', not the fixed upgrade code"
+Open-Case 'check: no line for the app executable'
+Initialize-Check
+Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value "$($script:InstallerHash)  $InstallerName"
+Invoke-Check
+Assert-Refused "SHA256SUMS has no single line for $AppName"
+Assert-NotCalled 'gh api'
+Assert-NotCalled 'Start-Process'
+Assert-CheckLeftTheFile
 Complete-Case
-
-Open-Case 'migrate: an installer that cannot be listed'
-$script:Scenario.InstallerFail = $true
-Invoke-Block -Id 'windows-migrate'
-Assert-Refused 'the installed products could not be listed'
-Complete-Case
-
-Open-Case 'migrate: an instance that does not stop'
-$manual = Join-Path (& $ManualDirectory) 'marshal.exe'
-Write-StandInMarshal -Path $manual -Version '0.0.1' -StopOutput 'the control channel did not answer' -StopExit 1
-Invoke-Block -Id 'windows-migrate'
-Assert-Refused 'the instance did not stop: the control channel did not answer'
-Assert-PathPresent $manual
-Complete-Case
-
-Open-Case 'migrate: the manual install and its PATH entry are removed'
-if (-not $OnWindows) {
-    Skip-Case 'the user PATH is a Windows registry value'
-} else {
-    $manual = Join-Path (& $ManualDirectory) 'marshal.exe'
-    Write-StandInMarshal -Path $manual -Version '0.0.1'
-    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
-    $originalPath = $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-    $originalKind = if ($null -ne $originalPath) { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }
-    # recording would leave marshal.exe.calls in the directory the block must remove.
-    $env:STANDIN_RECORD_CALLS = '0'
-    try {
-        $seeded = 'C:\keep-one;%LOCALAPPDATA%\Programs\marshal;C:\keep-two;' + (& $ManualDirectory) + '\'
-        $key.SetValue('Path', $seeded, [Microsoft.Win32.RegistryValueKind]::ExpandString)
-        Invoke-Block -Id 'windows-migrate'
-        Assert-Passed
-        Assert-Called 'New-Object -ComObject WindowsInstaller.Installer'
-        foreach ($removal in 'marshal.exe', 'the empty directory', 'the user PATH entry for') {
-            Assert-True ($script:Result.Output.Contains($removal)) "the output does not name '$removal': $($script:Result.Output)"
-        }
-        Assert-True (-not $script:Result.Output.Contains('nothing to migrate')) "the output says nothing was there: $($script:Result.Output)"
-        Assert-True (-not $script:Result.Output.Contains('The marshal installer is installed')) "the output mentions an installer that is not installed: $($script:Result.Output)"
-        Assert-Absent $manual
-        Assert-Absent (& $ManualDirectory)
-        $after = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-        Assert-True ($after -eq 'C:\keep-one;C:\keep-two') "the user PATH holds '$after', not the two other entries"
-        Assert-True ($key.GetValueKind('Path') -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) 'the user PATH is no longer an expandable string'
-    } finally {
-        if ($null -eq $originalPath) { $key.DeleteValue('Path', $false) } else { $key.SetValue('Path', $originalPath, $originalKind) }
-        $key.Close()
-        $env:STANDIN_RECORD_CALLS = '1'
-    }
-    Complete-Case
-}
-
-Open-Case 'migrate: there is no manual install'
-if (-not $OnWindows) {
-    Skip-Case 'the user PATH is a Windows registry value'
-} else {
-    Invoke-Block -Id 'windows-migrate'
-    Assert-Passed
-    Assert-True ($script:Result.Output.Contains('nothing to migrate')) "no note: $($script:Result.Output)"
-    Assert-True (-not $script:Result.Output.Contains('Removed')) "the output claims a removal: $($script:Result.Output)"
-    Complete-Case
-}
 
 # the uninstall block -----------------------------------------------------------
+
+$InstalledApp = { Join-Path $env:LOCALAPPDATA 'Programs\marshal\marshal-app.exe' }
 
 Open-Case 'uninstall: no product is installed'
 Invoke-Block -Id 'windows-uninstall'
 Assert-Passed
 Assert-True ($script:Result.Output.Contains('nothing to uninstall')) "no note: $($script:Result.Output)"
 Assert-NotCalled 'Start-Process'
+Assert-True ($script:Scenario.Installer.LastUpgradeCode -eq $UpgradeCode) "the products were looked up by '$($script:Scenario.Installer.LastUpgradeCode)', not Marshal's upgrade code"
 Complete-Case
 
-Open-Case 'uninstall: the instance is stopped and the product removed'
+Open-Case 'uninstall: the product is removed'
 $script:Scenario.Products = @('{11111111-2222-3333-4444-555555555555}')
-$installed = Join-Path (& $ManualDirectory) 'marshal.exe'
-Write-StandInMarshal -Path $installed -Version $Version
+$script:Scenario.Running = @('C:\elsewhere\marshal-app.exe')
 Invoke-Block -Id 'windows-uninstall'
 Assert-Passed
+Assert-Called 'Get-Process marshal-app'
 Assert-Called 'Start-Process msiexec.exe /x {11111111-2222-3333-4444-555555555555} /qn /norestart'
-Assert-True ((Get-StandInCall $installed) -contains 'stop') 'the instance was not asked to stop'
+Assert-NotCalled 'msiexec.exe /i'
+Assert-True ($script:Result.Output -like '*tokens in Credential Manager stay*') "the block did not say the tokens stay in Credential Manager: $($script:Result.Output)"
 Assert-True ($script:Scenario.Installer.LastUpgradeCode -eq $UpgradeCode) 'the products were not looked up by the fixed upgrade code'
 Complete-Case
 
-Open-Case 'uninstall: an instance that does not stop'
+Open-Case 'uninstall: Marshal is running from the install path'
 $script:Scenario.Products = @('{11111111-2222-3333-4444-555555555555}')
-$installed = Join-Path (& $ManualDirectory) 'marshal.exe'
-Write-StandInMarshal -Path $installed -Version $Version -StopOutput 'the control channel did not answer' -StopExit 1
+$script:Scenario.Running = @((& $InstalledApp).ToUpperInvariant())
 Invoke-Block -Id 'windows-uninstall'
-Assert-Refused 'the instance did not stop: the control channel did not answer'
+Assert-Refused 'Marshal is running; quit it from its menu first'
 Assert-NotCalled 'msiexec.exe /x'
+Complete-Case
+
+Open-Case 'uninstall: an installer that cannot be listed'
+$script:Scenario.InstallerFail = $true
+Invoke-Block -Id 'windows-uninstall'
+Assert-Refused 'the installed products could not be listed'
+Assert-NotCalled 'Start-Process'
 Complete-Case
 
 Open-Case 'uninstall: msiexec that fails'
@@ -534,102 +474,6 @@ $script:Scenario.Products = @('{11111111-2222-3333-4444-555555555555}')
 $script:Scenario.RemoveExit = 1603
 Invoke-Block -Id 'windows-uninstall'
 Assert-Refused 'exit code 1603'
-Complete-Case
-
-# the bare-binary block ---------------------------------------------------------
-
-$BareVersion = '0.1.0'
-$BareAsset = "marshal-$BareVersion-windows-x64.exe"
-
-function Initialize-Bare {
-    param([string]$AssetVersion = $BareVersion, [string]$VersionAtInstallPath = '')
-    Write-StandInMarshal -Path (Join-Path $script:Scenario.Release $BareAsset) -Version $AssetVersion -VersionAtInstallPath $VersionAtInstallPath
-    $hash = Get-Sha256 (Join-Path $script:Scenario.Release $BareAsset)
-    Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value "$hash  $BareAsset"
-}
-
-Open-Case 'bare binary: a genuine binary is installed'
-Initialize-Bare
-Invoke-Block -Id 'windows-bare'
-Assert-Passed
-$target = Join-Path (& $ManualDirectory) 'marshal.exe'
-Assert-PathPresent $target
-Assert-True ((Get-Sha256 $target) -eq (Get-Sha256 (Join-Path $script:Scenario.Release $BareAsset))) 'the installed file is not the downloaded one'
-Assert-Called "gh attestation verify "
-Assert-Called "--source-digest $CommitSha --deny-self-hosted-runners"
-Complete-Case
-
-Open-Case 'bare binary: a commit behind main passes'
-Initialize-Bare
-$script:Scenario.Compare = 'behind'
-Invoke-Block -Id 'windows-bare'
-Assert-Passed
-Assert-Called "compare/main...$CommitSha"
-Assert-Called 'gh attestation verify '
-Assert-PathPresent (Join-Path (& $ManualDirectory) 'marshal.exe')
-Complete-Case
-
-Open-Case 'bare binary: a running instance is stopped before the binary is replaced'
-Initialize-Bare
-$target = Join-Path (& $ManualDirectory) 'marshal.exe'
-Write-StandInMarshal -Path $target -Version '0.0.1'
-Invoke-Block -Id 'windows-bare'
-Assert-Passed
-Assert-True ((Get-StandInCall $target) -contains 'stop') 'the old copy was not asked to stop'
-Assert-True ((Get-Sha256 $target) -eq (Get-Sha256 (Join-Path $script:Scenario.Release $BareAsset))) 'the binary was not replaced'
-Complete-Case
-
-Open-Case 'bare binary: a checksum that does not match'
-Initialize-Bare
-Set-Content -LiteralPath (Join-Path $script:Scenario.Release 'SHA256SUMS') -Value ('0' * 64 + "  $BareAsset")
-Invoke-Block -Id 'windows-bare'
-Assert-Refused "$BareAsset does not match SHA256SUMS"
-Assert-Absent (Join-Path (& $ManualDirectory) 'marshal.exe')
-Assert-NotCalled 'gh attestation'
-Complete-Case
-
-Open-Case 'bare binary: a commit that is not on main'
-Initialize-Bare
-$script:Scenario.Compare = 'diverged'
-Invoke-Block -Id 'windows-bare'
-Assert-Refused 'is not on main (diverged)'
-Assert-Absent (Join-Path (& $ManualDirectory) 'marshal.exe')
-Complete-Case
-
-Open-Case 'bare binary: an attestation that does not verify'
-Initialize-Bare
-$script:Scenario.AttestFail = $true
-Invoke-Block -Id 'windows-bare'
-Assert-Refused 'the attestation does not verify'
-Assert-Absent (Join-Path (& $ManualDirectory) 'marshal.exe')
-Complete-Case
-
-Open-Case 'bare binary: a binary that reports another version once installed'
-Initialize-Bare -VersionAtInstallPath '0.9.9'
-Invoke-Block -Id 'windows-bare'
-Assert-Refused "the installed binary is not marshal ${BareVersion}: marshal 0.9.9"
-Assert-PathPresent (Join-Path (& $ManualDirectory) 'marshal.exe')
-Complete-Case
-
-Open-Case 'bare binary: an older binary under a newer name leaves the install path alone'
-Initialize-Bare -AssetVersion '0.0.9'
-$target = Join-Path (& $ManualDirectory) 'marshal.exe'
-Write-StandInMarshal -Path $target -Version '0.0.1'
-$before = Get-Sha256 $target
-Invoke-Block -Id 'windows-bare'
-Assert-Refused "is not marshal ${BareVersion}: marshal 0.0.9"
-Assert-True ((Get-Sha256 $target) -eq $before) 'the install path changed'
-Assert-True ((Get-StandInCall $target).Count -eq 0) 'the installed copy was asked to stop'
-Complete-Case
-
-Open-Case 'bare binary: an instance that does not stop leaves the install path alone'
-Initialize-Bare
-$target = Join-Path (& $ManualDirectory) 'marshal.exe'
-Write-StandInMarshal -Path $target -Version '0.0.1' -StopOutput 'the control channel did not answer' -StopExit 1
-$before = Get-Sha256 $target
-Invoke-Block -Id 'windows-bare'
-Assert-Refused 'the instance did not stop: the control channel did not answer'
-Assert-True ((Get-Sha256 $target) -eq $before) 'the install path changed'
 Complete-Case
 
 # ------------------------------------------------------------------------------
@@ -643,9 +487,8 @@ Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Output ''
 if ($script:Failures -ne 0) {
-    Write-Output "$($script:Failures) failure(s) in $($script:Cases - $script:Skipped) cases that ran, $($script:Skipped) skipped."
+    Write-Output "$($script:Failures) failure(s) in $($script:Cases) cases."
     exit 1
 }
-Write-Output "$($script:Cases - $script:Skipped) install block cases passed, $($script:Skipped) skipped under PowerShell $($PSVersionTable.PSVersion)."
-# the CI shell wrapper exits with the last native exit code, which a stop that reported "no instance" leaves at 1.
+Write-Output "$($script:Cases) install block cases passed under PowerShell $($PSVersionTable.PSVersion)."
 exit 0

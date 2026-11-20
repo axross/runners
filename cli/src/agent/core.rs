@@ -16,13 +16,14 @@ use tokio::time::timeout;
 use crate::instance::lifecycle::{CoreFailure, Ending, StopTimes};
 use crate::instance::runtime_core::{failure, verify_image};
 use crate::instance::steps::{Steps, some_container_steps};
+use crate::profile::Os;
 use crate::runtime::backend::{Backend, JobHost};
 use crate::runtime::board::{Board, PoolState, SlotState};
 use crate::runtime::clock::Clock;
 use crate::runtime::log::Log;
 use crate::runtime::name::parse_stamp;
 use crate::runtime::pool::{
-    NoPoolStartable, PoolSpec, SlotSpec, admit_pool, pools_from_plan, prepare_admitted,
+    NoPoolStartable, PoolSpec, SlotSpec, admit_pool, image_name, pools_from_plan, prepare_admitted,
 };
 use crate::runtime::registration::Registrar;
 use crate::runtime::worker::{Services, run_slot_with, wait_for_stop};
@@ -220,11 +221,13 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         orders: mpsc::UnboundedReceiver<ApplyOrder>,
     ) -> Result<(), CoreFailure> {
         self.board.clear();
+        self.backend.use_plan(plan);
+        forget_macos_without_a_macos_pool(self.board, plan);
         // taken before the pools are admitted, so a token set meanwhile is seen
         let changes = self.tokens.changes();
         let pools =
             pools_from_plan(plan).map_err(|error| failure(error.to_string(), Ending::Ordinary))?;
-        let image = plan.image_name.as_deref().unwrap_or_default();
+        let image = image_name(plan);
         self.board.expect_image(image);
         let mut drain = self.drain.subscribe();
         let wanted = pools.clone();
@@ -423,6 +426,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             );
         }
         self.stop_slots(leaving, running).await;
+        // the slots that leave were stopped under the pools they ran in
+        self.backend.use_plan(plan);
+        forget_macos_without_a_macos_pool(self.board, plan);
 
         let mut fresh = Vec::new();
         for (pool, step) in steps {
@@ -737,6 +743,14 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         if !ready.is_empty() {
             self.prepare_and_start(ready, running, stop).await;
         }
+    }
+}
+
+/// drops the board's golden macOS VM record and leftover VMs when `plan` has no
+/// macOS pool, as `start` does, so the snapshot does not keep them.
+fn forget_macos_without_a_macos_pool(board: &Board, plan: &Plan) {
+    if !plan.entries.iter().any(|entry| entry.os == Some(Os::Macos)) {
+        board.forget_macos();
     }
 }
 
