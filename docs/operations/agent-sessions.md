@@ -234,9 +234,11 @@ report a change as checked when the Rust gates did not run.
 ## Asking the Maintainer
 
 [`AGENTS.md`](../../AGENTS.md) states, for every host, the rule for asking the
-maintainer. This section names Claude Code's mechanism, says how launched and
-launching sessions on any host apply that rule, and covers Claude Code subagents
-and forks. The installed
+maintainer. It states the rule itself, not a pointer to this section, because
+AGENTS.md is the one file every session loads, and a session can miss a route it
+must first follow. This section names Claude Code's mechanism, says how launched
+and launching sessions on any host apply that rule, and covers Claude Code
+subagents and forks. The installed
 [Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md)
 practice owns how a question is framed, recovered, and made to fall back, and
 this section does not restate it.
@@ -288,6 +290,13 @@ confirmation.
 
 A launched session is a separate session that another session started, with
 `create_session` or otherwise. A subagent is not one.
+
+When a launched session has an eligible mechanism, the maintainer can answer in
+that session's own conversation. Options sent to the launcher, or left as prose,
+reach the maintainer only if someone finds them and carries the answer back. A
+launcher's wording about channels says how the launcher wants to hear about a
+decision, not who decides it or where the maintainer answers, so it adds a duty
+to report rather than replacing the question.
 
 **Guidelines:**
 
