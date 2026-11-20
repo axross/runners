@@ -663,8 +663,6 @@ fn read_result(
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-
     use crate::edit::Operation;
 
     use super::*;

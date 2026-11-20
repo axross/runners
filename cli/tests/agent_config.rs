@@ -789,8 +789,9 @@ async fn on_a_stopped_agent_an_image_is_written_unchecked_and_build_uses_it() {
         .await;
 }
 
-/// whether this process can create a file in a folder set to 0o500, which the kernel
-/// refuses unless the process holds CAP_DAC_OVERRIDE, as root does in a cloud container.
+/// whether this process can create a file in a folder set to 0o500. the kernel refuses
+/// that to an ordinary user but not to root (on Linux, to a process that holds
+/// CAP_DAC_OVERRIDE), which a cloud container runs the tests as.
 #[cfg(unix)]
 fn can_write_into_a_read_only_folder() -> bool {
     use std::os::unix::fs::PermissionsExt;
@@ -800,7 +801,6 @@ fn can_write_into_a_read_only_folder() -> bool {
     let written = std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o500))
         .map(|()| std::fs::File::create(folder.join("probe")).is_ok());
     let _ = std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700));
-    let _ = std::fs::remove_dir_all(&folder);
     written.expect("the read-only probe folder could not be made read-only")
 }
 
