@@ -223,13 +223,20 @@ fn recreation_and_capacity_reduction_never_release_active_or_uncertain_seats() {
     assert!(demand.reserve(1, 1).is_none());
 }
 
-struct Tokens(RefCell<Result<String, String>>, std::cell::Cell<usize>);
+/// the token store double: the token or error it answers, how often it was read, and
+/// the target each read asked for.
+struct Tokens(
+    RefCell<Result<String, String>>,
+    std::cell::Cell<usize>,
+    RefCell<Vec<PoolTarget>>,
+);
 
 impl Tokens {
     fn new() -> Self {
         Self(
             RefCell::new(Ok("<pat-placeholder>".to_owned())),
             std::cell::Cell::new(0),
+            RefCell::new(Vec::new()),
         )
     }
 
@@ -237,11 +244,22 @@ impl Tokens {
     fn reads(&self) -> usize {
         self.1.get()
     }
+
+    /// asserts that the store was read, and only for the listener's own repository.
+    fn assert_only_the_listeners_repository(&self) {
+        let targets = self.2.borrow();
+        assert!(!targets.is_empty());
+        assert!(
+            targets.iter().all(|target| *target == pool().target()),
+            "{targets:?}"
+        );
+    }
 }
 
 impl TokenSource for Tokens {
-    fn token(&self, _: &PoolTarget, _: Option<&Path>) -> Result<Secret, String> {
+    fn token(&self, target: &PoolTarget, _: Option<&Path>) -> Result<Secret, String> {
         self.1.set(self.1.get() + 1);
+        self.2.borrow_mut().push(target.clone());
         self.0.borrow().clone().map(Secret::new)
     }
 }
@@ -1376,6 +1394,9 @@ mod http {
             assert_eq!(coordinator.view().active_reservations, 0);
             assert!(!coordinator.admitting());
         });
+        // the seed, the registration and the cleanup of its drained attempt each read it
+        assert_eq!(tokens.reads(), 3);
+        tokens.assert_only_the_listeners_repository();
         assert!(!log.lines().join("\n").contains("<jit-placeholder>"));
     }
 
@@ -1509,6 +1530,63 @@ mod http {
                 .count(),
             1
         );
+        tokens.assert_only_the_listeners_repository();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_request_for_another_target_is_refused_before_any_token_read_or_request() {
+        let wrong_targets = [
+            PoolTarget::Organization {
+                organization: "example-owner".to_owned(),
+                runner_group: "builders".to_owned(),
+            },
+            PoolTarget::Repository {
+                owner: "another-owner".to_owned(),
+                repository: "example-repository".to_owned(),
+            },
+            PoolTarget::Repository {
+                owner: "example-owner".to_owned(),
+                repository: "another-repository".to_owned(),
+            },
+        ];
+        let fake = Fake::new().await;
+        let client = fake.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator = Coordinator::new(
+            pool(),
+            &client,
+            &tokens,
+            &SystemClock,
+            &log,
+            channels.controls(),
+        );
+        let mut replies = connect();
+        replies.push(session());
+        tokio::join!(fake.serve(replies), async {
+            seed(&coordinator).await;
+            let lease = coordinator
+                .reserve(1, channels.stop.subscribe())
+                .await
+                .unwrap();
+            let reads = tokens.reads();
+            let requests = fake.requests.borrow().len();
+            let token = Secret::new("<unused-runtime-token>".to_owned());
+            for target in &wrong_targets {
+                let mut wrong = request(&token);
+                wrong.target = target;
+                let error = lease.request_jit(&wrong).await.unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("on-demand registration identity mismatch"),
+                    "{target:?}: {error}"
+                );
+            }
+            assert_eq!(tokens.reads(), reads);
+            assert_eq!(fake.requests.borrow().len(), requests);
+        });
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1558,6 +1636,7 @@ mod http {
                     .await
                     .unwrap();
             });
+            tokens.assert_only_the_listeners_repository();
         }
     }
 
