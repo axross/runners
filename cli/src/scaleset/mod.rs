@@ -15,6 +15,7 @@ use crate::runtime::secret::Secret;
 use crate::validate::patterns::{is_owner, is_repository};
 
 pub use transport::{Error, ErrorKind, POLL_TIMEOUT};
+pub(crate) use types::ADMIN_RENEWAL_MARGIN;
 pub use types::{
     Connection, JitRunner, JobEvent, JobEventKind, Message, Runner, ScaleSet, Session, Statistics,
 };

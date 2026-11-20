@@ -189,7 +189,9 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
         while current.connection.needs_renewal(&pat, pool.clock.now()) {
             if renewals == MAX_CREDENTIAL_ROTATIONS {
                 return Err(
-                    "stored token changed during credential renewal; retry required".to_owned(),
+                    "credentials were still due for renewal after repeated renewals, because the \
+                     stored token kept changing or the credential expires at once; retry required"
+                        .to_owned(),
                 );
             }
             renewals += 1;

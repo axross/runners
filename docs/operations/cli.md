@@ -2503,8 +2503,9 @@ back to cached credentials. Running jobs keep their original JIT configuration
 and lifecycle behavior. Registration exchanges, refresh, startup runner listing,
 exact reconciliation and deletion are lifecycle requests outside the display
 queue and do not feed its budget. The listener renews the service credential when
-2 minutes of its life remain and never twice within 30 s; a renewed credential
-that is due again at once backs off as a failure instead of renewing every cycle. An idle listener with unchanged credentials
+2 minutes of its life remain, and that expiry-driven renewal never repeats
+within 30 s; a replaced token renews it at once. A renewed credential that is due
+again at once backs off as a failure instead of renewing every cycle. An idle listener with unchanged credentials
 and no pending cleanup makes no periodic REST display request: the listener polls
 the Actions broker and renews service credentials before expiry. Outbound hosts
 and memory-only credential handling are governed by the on-demand section of

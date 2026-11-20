@@ -20,7 +20,9 @@ use tokio::time::Instant;
 use crate::runtime::clock::Clock;
 use crate::runtime::log::Log;
 use crate::runtime::token::TokenSource;
-use crate::scaleset::{Client, Connection, Error, ErrorKind, ScaleSet, Session, Statistics};
+use crate::scaleset::{
+    ADMIN_RENEWAL_MARGIN, Client, Connection, Error, ErrorKind, ScaleSet, Session, Statistics,
+};
 
 use demand::Demand;
 pub(crate) use listener::{CLOSE_WITHIN, Failure};
@@ -29,6 +31,11 @@ pub(crate) use slot::run_on_demand_slot;
 
 /// the admin credential is renewed once this little of its lifetime remains.
 pub(super) const REFRESH_BEFORE: Duration = Duration::from_secs(120);
+
+const _: () = assert!(
+    REFRESH_BEFORE.as_secs() > ADMIN_RENEWAL_MARGIN.as_secs(),
+    "a renewal inside the client's own margin would be due again at once"
+);
 
 /// two renewals are never closer than this, whatever lifetime or clock the credential shows.
 pub(super) const MIN_REFRESH_WAIT: Duration = Duration::from_secs(30);

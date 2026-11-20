@@ -9,7 +9,7 @@ use crate::runtime::secret::Secret;
 
 use super::transport::{Error, ErrorKind, decode};
 
-const ADMIN_RENEWAL_MARGIN: Duration = Duration::from_secs(60);
+pub(crate) const ADMIN_RENEWAL_MARGIN: Duration = Duration::from_secs(60);
 
 /// credentials for one repository, bound to the PAT that produced them; URLs and tokens stay private.
 pub struct Connection {
