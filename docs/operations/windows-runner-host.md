@@ -217,6 +217,43 @@ The agent reads the token from the store at every registration, so a rotated tok
 applies to the next job in every slot with no restart. Rotate a token with
 **Replace Token** on its row, and remove one with **Remove Token**.
 
+### Organisation Pools
+
+A pool configured with `organization` uses an organisation token, not any of that
+organisation's repository tokens. Before starting one, satisfy the Organisation
+Pools Share a Runner Group's Trust Boundary section of
+[Security](../conventions/security.md). The TOML Configuration section of
+[CLI](./cli.md) describes `organization` and `runner_group`.
+
+Create the token while signed in as an owner of the organisation:
+
+1. Open **Settings, Developer settings, Fine-grained personal access tokens** and
+   choose **Generate new token**.
+2. Select the organisation as **Resource owner**.
+3. Select **Public repositories (read-only)** under **Repository access**. Do not
+   select private repositories; this token is not used to read repository data.
+4. Set the organisation permission **Self-hosted runners** to **Read and write**.
+   Add no repository permissions.
+5. Choose an expiration within the organisation's lifetime policy and generate
+   the token.
+6. Open Marshal's **Tokens** tab and find the organisation under
+   **Organisations**. Choose **Set Token**, paste the token and choose **Save**.
+
+Every organisation pool with that login uses this token. Saving it starts pools
+skipped for **no token** while the agent is running. Use **Replace Token** to
+rotate it; the next registration reads the replacement. **Remove Token** stops
+those pools from getting new runners, but runners already up finish their job.
+Repository rows keep their separate tokens.
+
+Removing an organisation's last pool does not remove its token, and the window then
+shows no row to remove it from. Before removing the last pool for a login, choose
+**Remove Token** on the organisation's row. If the pool is already gone, delete the
+Credential Manager entry `app.axross.marshal:github.com/<org>`.
+
+If GitHub refuses registration, the pool shows GitHub's scrubbed answer. Check
+the token's resource owner and permission, then the organisation's token policy;
+Marshal cannot distinguish every policy refusal from a permission failure.
+
 ### Adding Actions: read for Job Names
 
 Marshal's window names the job each busy runner runs, and links to it, only when the

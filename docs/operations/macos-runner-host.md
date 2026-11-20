@@ -392,6 +392,20 @@ first Mac check on #80
 booted a Linux VM beside two macOS VMs, so Linux VMs do not count against macOS's
 limit.
 
+### Organisation Pools
+
+For a pool configured with `organization`, create its token using the Organisation
+Pools procedure in [Windows Runner Host](./windows-runner-host.md). The GitHub steps
+are the same on either host. On the Mac, enter the token in the organisation's row
+under **Organisations** in the **Tokens** tab. The token stays in the login
+keychain, separate from the tokens in repository rows. The Tokens and a Locked
+Keychain section of [App](./app.md) covers a store failure; a GitHub refusal is a
+registration failure, not evidence that the keychain is locked.
+
+Removing an organisation's last pool does not remove its token. Before removing it,
+choose **Remove Token** on the organisation's row. If the pool is already gone, delete
+the keychain item with the account `github.com/<org>`.
+
 ### Starting, watching and stopping
 
 Before the first `start` on axmc, confirm that every self-hosted job in each

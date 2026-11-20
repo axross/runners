@@ -3,8 +3,11 @@
 //! rule, the job and its Open run, the pool notices, the budget, the pause, the summary's
 //! running jobs, and the announcements, queued and said once each.
 
+use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::github_status::GithubStatus;
-use marshal_view::{BannerKind, Connection, GithubFeed, HIDDEN_NAMES, Input, Tracker, View, build};
+use marshal_view::{
+    BannerKind, Connection, GithubFeed, HIDDEN_NAMES, Input, Tracker, View, build, job_page,
+};
 use serde_json::Value;
 
 use crate::support::{at, clock_at, list, load, load_json, now};
@@ -28,6 +31,63 @@ fn live(status: &GithubStatus) -> GithubFeed<'_> {
 fn view_with(status: &GithubStatus) -> View {
     let snapshot = load("running");
     build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(status)))
+}
+
+fn mixed_snapshot() -> Snapshot {
+    let mut snapshot = load("running");
+    snapshot.pools[0].runners[0].workload = Some("shared".to_string());
+    let pool = &mut snapshot.pools[1];
+    pool.repository.clear();
+    pool.organization = Some("EXAMPLE-ORG".to_string());
+    pool.runner_group = Some("build".to_string());
+    pool.runners_up = 3;
+    for (runner, name) in pool.runners.iter_mut().zip(["shared", "offline", "idle"]) {
+        runner.state = "running".to_string();
+        runner.workload = Some(name.to_string());
+        runner.reason = None;
+        runner.since = at(3, 39, 0);
+    }
+    snapshot.runners_up = 5;
+    snapshot
+}
+
+fn mixed_github(change: impl FnOnce(&mut Value)) -> GithubStatus {
+    github_of(|value| {
+        value["repositories"][0]["runners"][0]["name"] = "shared".into();
+        value["repositories"][1]["runners"][0]["name"] = "shared".into();
+        value["repositories"][1]["runners"][0]["github"] = "idle".into();
+        value["repositories"][1]["job_names"] = "hidden".into();
+        value["organizations"] = serde_json::json!([
+            {
+                "organization": "other-org", "runner_group": "build",
+                "checked_at": at(3, 51, 40), "status": "not_found",
+                "runners": [{"name": "shared", "github": "offline"}]
+            },
+            {
+                "organization": "example-org", "runner_group": "other",
+                "checked_at": at(3, 51, 40), "status": "token_rejected",
+                "runners": [{"name": "shared", "github": "idle"}]
+            },
+            {
+                "organization": "example-org", "runner_group": "Build",
+                "checked_at": at(3, 51, 40), "status": "error",
+                "runners": [{"name": "shared", "github": "offline"}]
+            },
+            {
+                "organization": "example-org", "runner_group": "build",
+                "checked_at": at(3, 51, 40), "status": "ok",
+                "runners": [
+                    {"name": "idle", "github": "idle"},
+                    {"name": "SHARED", "github": "offline"},
+                    {"name": "shared", "github": "busy"},
+                    {"name": "offline", "github": "offline"},
+                    {"name": "not-on-this-host", "github": "busy"},
+                    {"name": "app-2-20261104031530871", "github": "busy"}
+                ]
+            }
+        ]);
+        change(value);
+    })
 }
 
 /// each runner row's container and GitHub words, in list order.
@@ -552,4 +612,278 @@ fn a_cause_this_reader_does_not_know_gives_no_notice() {
         notes(&view, 1),
         ["Job names could not be read: GitHub answered with an error. | Last checked 03:51."]
     );
+}
+
+#[test]
+fn organisation_rows_match_their_own_group_and_name_without_a_job_link() {
+    let mut snapshot = mixed_snapshot();
+    let status = mixed_github(|_| {});
+    let view =
+        build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+    let repository = &list(&view).pools[0].runners[0];
+    assert_eq!(repository.job.as_deref(), Some("CI · test (ubuntu-latest)"));
+    assert_eq!(repository.open_run.as_ref().unwrap().label, "Open run");
+    assert_eq!(repository.open_run.as_ref().unwrap().runner, "shared");
+    assert_eq!(
+        job_page(&snapshot, &status, "app", "shared").as_deref(),
+        Some("https://github.com/owner/app/actions/runs/123/job/456")
+    );
+    let organization = &list(&view).pools[1];
+    assert_eq!(
+        organization
+            .runners
+            .iter()
+            .map(|row| row.github.as_deref())
+            .collect::<Vec<_>>(),
+        [
+            Some("GitHub: running a job"),
+            Some("GitHub: offline"),
+            Some("GitHub: idle")
+        ]
+    );
+    assert_eq!(
+        organization.runners[0].job.as_deref(),
+        Some("Job not shown for organisation runners")
+    );
+    assert!(
+        organization.runners[1..]
+            .iter()
+            .all(|row| row.job.is_none())
+    );
+    assert!(
+        organization
+            .runners
+            .iter()
+            .all(|row| row.open_run.is_none())
+    );
+    assert!(notes(&view, 1).is_empty());
+    assert!(list(&view).header.line.ends_with(" · 2 running jobs"));
+    assert_eq!(
+        list(&view).pools[0].runners[1].github.as_deref(),
+        Some("GitHub: idle")
+    );
+    assert_eq!(job_page(&snapshot, &status, "site", "shared"), None);
+    snapshot.pools[1].repository = "owner/app".to_string();
+    assert_eq!(job_page(&snapshot, &status, "site", "shared"), None);
+}
+
+#[test]
+fn organisation_freshness_and_held_values_follow_the_window_and_runner_state() {
+    for (opened, since, word, level, expected, checked) in [
+        (
+            (3, 50, 0),
+            (3, 39, 0),
+            "ok",
+            "normal",
+            "GitHub: running a job",
+            None,
+        ),
+        (
+            (3, 51, 50),
+            (3, 39, 0),
+            "ok",
+            "normal",
+            "GitHub: checking…",
+            None,
+        ),
+        (
+            (3, 50, 0),
+            (3, 51, 40),
+            "ok",
+            "normal",
+            "GitHub: checking…",
+            None,
+        ),
+        (
+            (3, 51, 50),
+            (3, 39, 0),
+            "ok",
+            "paused",
+            "GitHub: running a job",
+            Some("checked 03:51"),
+        ),
+        (
+            (3, 51, 50),
+            (3, 39, 0),
+            "unreachable",
+            "normal",
+            "GitHub: running a job",
+            Some("checked 03:51"),
+        ),
+        (
+            (3, 51, 50),
+            (3, 51, 40),
+            "unreachable",
+            "paused",
+            "GitHub: checking…",
+            None,
+        ),
+        (
+            (3, 51, 50),
+            (3, 39, 0),
+            "new_cause",
+            "normal",
+            "GitHub: checking…",
+            None,
+        ),
+    ] {
+        let mut snapshot = mixed_snapshot();
+        snapshot.pools[1].runners[0].since = at(since.0, since.1, since.2);
+        let status = mixed_github(|value| {
+            value["organizations"][3]["status"] = word.into();
+            value["budget"]["level"] = level.into();
+        });
+        let view = build(
+            &Input::new(Connection::Connected, Some(&snapshot), now()).github(GithubFeed::Live {
+                opened_ms: at(opened.0, opened.1, opened.2),
+                status: Some(&status),
+            }),
+        );
+        let row = &list(&view).pools[1].runners[0];
+        assert_eq!(
+            row.github.as_deref(),
+            Some(expected),
+            "{word}, {level}, {opened:?}, {since:?}"
+        );
+        assert_eq!(row.github_checked.as_deref(), checked);
+        assert_eq!(
+            row.job.as_deref(),
+            (expected == "GitHub: running a job")
+                .then_some("Job not shown for organisation runners")
+        );
+        assert!(row.open_run.is_none());
+    }
+    let snapshot = mixed_snapshot();
+    let status = mixed_github(|_| {});
+    let stale = build(
+        &Input::new(
+            Connection::LostContact {
+                last_heard_ms: at(3, 51, 50),
+                cause: marshal_view::Cause::Dropped,
+            },
+            Some(&snapshot),
+            now(),
+        )
+        .github(live(&status)),
+    );
+    assert!(list(&stale).stale);
+    let row = &list(&stale).pools[1].runners[0];
+    assert_eq!(row.github.as_deref(), Some("GitHub: running a job"));
+    assert_eq!(
+        row.job.as_deref(),
+        Some("Job not shown for organisation runners")
+    );
+    assert!(
+        list(&stale)
+            .pools
+            .iter()
+            .flat_map(|pool| &pool.runners)
+            .all(|row| row.open_run.is_none())
+    );
+}
+
+#[test]
+fn organisation_missing_unknown_and_omitted_values_do_not_borrow_repository_status() {
+    let snapshot = mixed_snapshot();
+    for (field, replacement, omitted, expected) in [
+        (
+            "organization",
+            Value::from("absent-org"),
+            0,
+            "GitHub: checking…",
+        ),
+        (
+            "runner_group",
+            Value::from("absent-group"),
+            0,
+            "GitHub: checking…",
+        ),
+        ("checked_at", Value::Null, 0, "GitHub: checking…"),
+        ("runners", serde_json::json!([]), 0, "GitHub: not listed"),
+        ("runners", serde_json::json!([]), 1, "GitHub: not shown"),
+        (
+            "runners",
+            serde_json::json!([{"name": "shared", "github": "new_state"}]),
+            0,
+            "GitHub: checking…",
+        ),
+    ] {
+        let status = mixed_github(|value| {
+            value["organizations"][3][field] = replacement;
+            value["omitted_runners"] = omitted.into();
+        });
+        let view =
+            build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+        let row = &list(&view).pools[1].runners[0];
+        assert_eq!(
+            row.github.as_deref(),
+            Some(expected),
+            "{field}, omitted {omitted}"
+        );
+        assert!(row.job.is_none());
+        assert!(row.open_run.is_none());
+        assert!(notes(&view, 1).is_empty());
+    }
+    let mut snapshot = snapshot;
+    snapshot.pools[1].has_token = false;
+    let status =
+        mixed_github(|value| value["organizations"][3]["status"] = "token_rejected".into());
+    let view =
+        build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+    assert!(notes(&view, 1).is_empty());
+    assert!(
+        list(&view).pools[1]
+            .runners
+            .iter()
+            .all(|row| row.github.is_none())
+    );
+}
+
+#[test]
+fn organisation_notices_name_the_organisation_and_keep_token_causes_single() {
+    let snapshot = mixed_snapshot();
+    for (word, text) in [
+        (
+            "token_rejected",
+            "GitHub rejected this organisation's token. Replace it on the Tokens tab.",
+        ),
+        (
+            "token_unreadable",
+            "This organisation's token cannot be read.",
+        ),
+        (
+            "not_found",
+            "GitHub cannot find this organisation with its token.",
+        ),
+        ("moved", "This organisation has moved on GitHub."),
+        ("unreachable", "GitHub could not be reached."),
+        ("error", "GitHub answered with an error."),
+    ] {
+        let status = mixed_github(|value| value["organizations"][3]["status"] = word.into());
+        let view =
+            build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(&status)));
+        assert_eq!(notes(&view, 1), [format!("{text} | Last checked 03:51.")]);
+        let attention = list(&view).pools[1].github_notes[0]
+            .attention
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            attention.key,
+            format!("github:organization:example-org:build:{word}")
+        );
+        assert_eq!(attention.text, format!("example-org: {text}"));
+        let row = &list(&view).pools[1].runners[0];
+        assert_eq!(row.github_checked.as_deref(), Some("checked 03:51"));
+    }
+    let mut rejected = load("token_rejected");
+    rejected.pools[0].repository.clear();
+    rejected.pools[0].organization = Some("example-org".to_string());
+    rejected.pools[0].runner_group = Some("build".to_string());
+    for word in ["token_rejected", "token_unreadable"] {
+        let status = mixed_github(|value| value["organizations"][3]["status"] = word.into());
+        let view =
+            build(&Input::new(Connection::Connected, Some(&rejected), now()).github(live(&status)));
+        assert!(list(&view).pools[0].pill.is_some());
+        assert!(notes(&view, 0).is_empty());
+    }
 }

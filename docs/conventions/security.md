@@ -1025,7 +1025,8 @@ later host:
   (see [CLI](../operations/cli.md#github-status)) are `GET`s there through the same
   client; neither follows a redirect, so a redirect cannot carry the token to
   another host, and a status read follows a next page only on the same origin and
-  endpoint path. It fails a connection after
+  endpoint path, or GitHub's numeric-id form of it for the same repository or
+  organisation. It fails a connection after
   10 s, a request after 30 s, and a response over 1 MiB. The token lives in a type
   with no `Display` and a redacted `Debug`, the header that carries it is marked
   sensitive, and error text has the token replaced before it is logged. Only a
@@ -1068,8 +1069,7 @@ is an operator rule and a review rule, not a check.
   rate-limit response means Actions: read is missing; Marshal hides job names for
   that repository rather than failing, and logs GitHub's message and its
   `X-Accepted-GitHub-Permissions` header.
-- Organisation pools are planned (X2) and no release configures one yet. An
-  organisation pool's token is created by an owner of the organisation, has the
+- An organisation pool's token is created by an owner of the organisation, has the
   organisation as its resource owner, and carries the organisation permission
   Self-hosted runners: Read and write. It carries no repository permission, and its
   repository access is public repositories only. One token serves one
@@ -1088,6 +1088,46 @@ is an operator rule and a review rule, not a check.
   publishes them, and a reader shows them as plain text, never as markup or an
   address. A reader builds a job's address itself from its configured repository
   and the two numbers it was given.
+
+## Organisation Pools Share a Runner Group's Trust Boundary
+
+An organisation pool's isolation boundary is its named runner group, not one
+repository. Every repository the group admits can run jobs on those runners.
+Repositories in one group are one trust domain; Marshal does not isolate them
+from each other. The organisation token's permissions and cost if leaked are
+stated in A Token Carries Only Its Pool Kind's Permissions above.
+
+- The group MUST admit selected repositories only and MUST forbid public
+  repositories. Marshal refuses the default group, inherited groups, `all` and
+  `private` visibility, and `allows_public_repositories: true`. It checks every
+  required page before each registration; a failed read never reuses a previous
+  permission. A conditional page counts only after an authorised `304`.
+- An organisation pool MUST NOT have persistent volumes, since jobs from
+  different repositories may use its slots. Its diagnostic bundles may contain
+  evidence from any admitted repository and remain subject to the private-sink
+  rules in Diagnostic Evidence Stays Private.
+- The operator MUST disable fork pull request workflows in private repositories,
+  or require their approval, for every private repository the group admits.
+  Marshal changes no group, repository or organisation policy.
+- An organisation pool and another pool for that organisation or one of its
+  repositories MUST NOT share a custom label when their OS labels match.
+  Validation checks pools on this host. Across hosts this remains an operator
+  and review rule, since no host knows another host's configuration.
+- A registered idle runner may wait indefinitely for a job. The group can be
+  opened, or the runner moved to another group, after a successful check and
+  before that job arrives. Marshal neither deletes such runners nor polls group
+  settings outside registration. The risk is acceptable only while the people who
+  can change a group are trusted: the organisation's owners, members holding the
+  CI/CD admin role or a role that manages runners, and holders of the organisation
+  token.
+- A program running as the host's user can read that user's Credential Manager
+  entry or request the Keychain item. Reading an organisation token reaches the
+  whole organisation rather than one repository. The token is present on each
+  host that serves or has served its organisation: removing the last pool for a
+  login neither removes its token nor lists it in `repositories_released`, and the
+  window then shows no row for it. The same-user store and channel risks also
+  apply to organisation keys; the agent accepts any well-formed login, not just
+  those currently configured.
 
 ## One Instance per Machine, Reached Only by Its User
 
@@ -1217,14 +1257,14 @@ Residual risks, accepted on a single-user host:
 ## The App Surface
 
 The Windows app is a notification-area icon, a menu and a web view that shows the
-runners and takes each repository's token. It runs as the signed-in user, beside an
+runners and takes each repository's or organisation's token. It runs as the signed-in user, beside an
 agent of the same executable that holds the pools' tokens, so the question is what
 the app may do with that reach. [App](../operations/app.md) owns how it works.
 
 - **The app process is a client only.** It never holds the instance lock, reads the
   configuration, touches the token store or runs Docker: it talks to the agent in
-  protocol version 2 and passes a newly entered token to it in `token_set`, then drops
-  it. One executable runs as both, so the operating system cannot enforce the rule
+  protocol version 2 and passes a newly entered token to it in `token_set` or
+  `organization_token_set`, then drops it. One executable runs as both, so the operating system cannot enforce the rule
   for the app mode. Only the `marshal-modes` crate reaches the library's agent entry,
   and only when the executable is started in its agent mode; the app's session
   reaches the agent through the library's client alone. A review checks that no
@@ -1250,7 +1290,9 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
-  again, set a token, remove a token, hide the window and open a runner's job. The
+  again, set a repository's token, remove a repository's token, set an
+  organisation's token, remove an organisation's token, hide the window and open a
+  runner's job. The
   confirmation window's
   grants the two commands that read its question and answer it. On macOS, where the
   unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
@@ -1271,7 +1313,7 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   the default browser from the Rust side with Tauri's opener plugin. The plugin's
   page script, which sends link clicks to its own command, is off, and no capability
   grants any of the plugin's three commands, which a test shows are refused.
-- **A token passes only through `token_set`.** The window's token field is a password
+- **A token passes only through `token_set` or `organization_token_set`.** The window's token field is a password
   input without autocomplete or spell checking. The page clears it when the token is
   submitted, whatever the outcome, and keeps the token in no variable once it has
   called the command. A token half typed is cleared when the window hides: the app
