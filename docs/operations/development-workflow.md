@@ -133,11 +133,10 @@ The independent-review gate remains mandatory.
 
 On Claude Code, a missing `reviewer` subagent leaves both gates unmet under this
 exception: it is the pre-flight reader whose absence the exception covers, and
-it is also the independent-review route, which no other subagent, provider, or
-session the run chooses replaces; the Claude CI alternative, or a review
-session the maintainer instructs, applies only when the maintainer selects it
-for the run. The pull request stays draft and the run
-reports both gates as unmet.
+it is also the independent-review route, whose missing-`reviewer` rule the
+[Claude Code review subagent from Claude Code](#claude-code-review-subagent-from-claude-code)
+section states. The pull request stays draft and the run reports both gates as
+unmet.
 
 ## Tracking Issue Completion
 
@@ -1342,9 +1341,12 @@ adds a second actor outside the grant between the author and the review.
 Reviews already completed that way are unaffected. A review session the
 maintainer instructs for a run counts as that run's independent review only
 when it meets the qualification in The Independent Review, above: a fresh
-context without the author's conversation, started after the draft pull request
-exists, and posting its own COMMENT-type review that the run correlates with a
-round token and the reviewed commit.
+context without the author's conversation, given a neutral assignment that
+carries no implementation receipt, pre-flight findings, or claimed verdicts,
+started after the draft pull request exists, and posting its own COMMENT-type
+review that the run correlates with a round token and the reviewed commit. The
+run records the maintainer's instruction, with its locator, in run state. A
+decision another session relays without that instruction is not one.
 
 ## Acceptance Criteria Verified Out of Tree
 

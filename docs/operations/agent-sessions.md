@@ -487,8 +487,8 @@ independent-review gate. Without the implementer, the loop delegates to a
 generic agent or runs single-agent. Without the reviewer, the pre-flight stage
 is skipped rather than performed by the main actor, which is what keeps it from
 collapsing into self-review, and the Claude Code independent-review gate stays
-unmet because no other subagent substitutes. Without the investigator, the main
-actor reads the payload itself.
+unmet, as [Record an unavailable role](#record-an-unavailable-role), below,
+states. Without the investigator, the main actor reads the payload itself.
 
 The advisory pre-flight review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the
@@ -554,9 +554,10 @@ than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
 or whose spawn the host refuses, is also an unavailable independent-review
 route: that gate stays unmet, and no other subagent, provider, or session the
 run chooses replaces it; the Claude CI alternative, or a review session the
-maintainer instructs, applies only when the maintainer selects it for the run. A CLI agent or persistent thread MUST NOT be
-used to bypass a missing role or a prohibited purpose. For unavailable research,
-plan, or design review, the driver MUST use
+maintainer instructs, applies only when the maintainer selects it for the run. A
+CLI agent or persistent thread MUST NOT be used to bypass a missing role or a
+prohibited purpose. For unavailable research, plan, or design review, the driver
+MUST use
 [Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).
 The parent retains delivery responsibility, and the independent review follows
 the host mapping in the Independent Review section of

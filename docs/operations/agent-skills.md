@@ -274,13 +274,16 @@ bounded ways, each the maintainer's choice:
 - In a cloud session, where `/tasks` is not documented, the handoff says that
   no human step is verified there instead of naming one.
 
-The concrete counterexample is the instruction-only exposure above: a
-`reviewer` instance, whose definition carries the conditional posting
-permission, can still write through the shell or the tracker, or start another
-actor through a non-Agent tool, and the host would not stop it. The alternatives
-are a second, posting-capable definition and a deny-list that also names GitHub
-write tools and session-starting and messaging tools; the maintainer chose one
-definition and left the rest instruction-only, and accepted the exposure.
+The concrete counterexample is the review subagent itself: denying GitHub write
+tools would remove the direct publication the same rule requires, and a
+deny-list naming one host's session-starting or messaging tools would not
+travel. The accepted exposure is that a `reviewer` instance, whose definition
+carries the conditional posting permission, can still write through the shell
+or the tracker, or start another actor through a non-Agent tool, and the host
+would not stop it. The alternatives are a second, posting-capable definition and
+a deny-list that also names GitHub write tools and session-starting and
+messaging tools; the maintainer chose one definition and left the rest
+instruction-only, and accepted the exposure.
 
 The deviation described before this amendment, a general-purpose subagent child
 whose limits beyond the worktree were all instructions, was adopted by the
