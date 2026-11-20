@@ -5248,12 +5248,13 @@ replaced one.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that risk.
 
-The first release expected to carry the app is `2.0.0`: the last command-line
-release is expected to be `1.0.0`, and W1's installer pull request is a breaking
-change after it. The check block below names `2.0.0`. To check another release,
-change the block's `version` and `file` assignment lines. If the first release of the
-app gets another version, a later change corrects the lines. A host that runs the
-command line moves to the app as
+The last command-line release is the F0 recovery release, expected to be `0.2.0`,
+and every release after #132's restoration carries the app. Releases stay on
+`0.x`, so no major version marks the change. The check block below names `0.3.0`
+as an example. To check another release, change the block's `version` and `file`
+assignment lines. If the recovery release gets another
+version, a later change corrects the lines. A host that runs the command line moves
+to the app as
 The Last Command-Line Release section says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
@@ -5277,7 +5278,7 @@ adds the configuration and the image around this one.
 
 ### Installing
 
-`<version>` is the release's version without the `v`, such as `2.0.0`.
+`<version>` is the release's version without the `v`, such as `0.3.0`.
 
 1. Download `marshal-<version>-windows-x64.msi` from the
    [release page](https://github.com/axross/runners/releases). If the browser warns
@@ -5336,8 +5337,8 @@ In PowerShell 5.1 or 7:
 
 ```powershell
 & {
-  $version = '2.0.0'
-  $file = "$env:USERPROFILE\Downloads\marshal-2.0.0-windows-x64.msi"
+  $version = '0.3.0'
+  $file = "$env:USERPROFILE\Downloads\marshal-0.3.0-windows-x64.msi"
   $ErrorActionPreference = 'Stop'
   function Refuse([string]$Why) { throw "refused: $Why" }
   $name = "marshal-$version-windows-x64.msi"

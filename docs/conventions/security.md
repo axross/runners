@@ -703,8 +703,8 @@ Residual risks, accepted:
   next dispatch would build that change and attest it as genuine. The control is
   the check in
   [Each Release](../operations/development-workflow.md#each-release), before
-  each dispatch, that every commit on main since the last `v*` tag came from a
-  merged pull request. A stronger option is a rule on main that requires a
+  each dispatch, that every commit on main since the last published release came
+  from a merged pull request. A stronger option is a rule on main that requires a
   pull request, with only the maintainer able to bypass it. That is the
   maintainer's choice, and it is not in place.
 - **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
@@ -718,8 +718,8 @@ Residual risks, accepted:
   Once a signing job returns, it signs whatever the dispatched commit builds, with the maintainer's Developer ID. The
   control is the check in
   [Each Release](../operations/development-workflow.md#each-release), before each
-  dispatch and before the approval, that every commit on main since the last `v*`
-  tag came from a merged pull request. A stronger option is a rule on main that
+  dispatch and before the approval, that every commit on main since the last
+  published release came from a merged pull request. A stronger option is a rule on main that
   requires a pull request, which is the maintainer's choice and is not in place.
 - **One identity can dispatch and approve (held for M2 and W4).** The Environment allows self-approval,
   because the roadmap requires it and the maintainer is the only reviewer, and agents
@@ -750,9 +750,10 @@ Residual risks, accepted:
   nothing before merge can exercise it. The stand-in suites and the shape check cover the flow,
   not Apple's answers. A failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
-  push, move, or delete a `v*` tag that has no published release, `v0.0.0`
-  included, and that changes the version semantic-release works out next.
-  Immutable releases lock only the tags of published releases.
+  push, move, or delete a `v*` tag that has no published release, `v0.0.0` and
+  `v0.1.1` included, and that changes the version semantic-release works out next.
+  Moving `v0.1.1` to another commit, or deleting it, can make the next plan print
+  `1.0.0`. Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
   check still tie the file to one commit on main, but no longer to a version. The

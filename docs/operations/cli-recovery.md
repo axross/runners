@@ -30,18 +30,26 @@ The reusable `cli-recovery-build.yaml` produces the unsigned
 
 For this bounded release, follow this order:
 
-1. Verify the existing release prerequisites and main's merged-PR history as
-   Development Workflow describes. Identify the native Windows11 host, actual
-   Smart App Control state and safe baseline separately; WSL is not that host.
-2. Dispatch `release.yaml` on main yourself and use the exact version produced
+1. Verify the existing release prerequisites as Development Workflow describes.
+   Identify the native Windows11 host, actual Smart App Control state and safe
+   baseline separately; WSL is not that host.
+2. Push or confirm the base tag `v0.1.1` on `954d349`
+   (`954d349d8c31c30d7b4439aadfea6f75ee210a0f`), yourself, as
+   [Version Rules](./development-workflow.md#version-rules) describes. It makes the
+   plan's version `0.2.0` from `0.1.1`; counted from `v0.1.0`, the plan would print
+   `1.0.0`.
+3. Verify main's merged-PR history as Development Workflow's
+   [Each Release](./development-workflow.md#each-release) step 1 describes. Do it
+   immediately before the dispatch.
+4. Dispatch `release.yaml` on main yourself and use the exact version produced
    by its plan. Do not guess the next version from the historical commit.
-3. Approve the signing deployment yourself. A failed build, signature,
+5. Approve the signing deployment yourself. A failed build, signature,
    notarization or signed-package check prevents publication.
-4. Check that the published release has exactly the Windows CLI `.exe`, CLI
+6. Check that the published release has exactly the Windows CLI `.exe`, CLI
    `.msi`, macOS bare CLI, signed/notarized `.pkg` and `SHA256SUMS`, all named
    `marshal-<version>-<platform>`. Record the run, tag/workflow commit, historical
    input, version and file hashes on #71.
-5. Use the CLI procedures below with that exact version. Publish every required
+7. Use the CLI procedures below with that exact version. Publish every required
    #71 step4 items2–4 measurement and native outcome there. Unknown or failed
    results remain blockers; hosted dry runs and signing stand-ins are not native
    evidence.
