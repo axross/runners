@@ -363,6 +363,27 @@ export class ConfigEditor {
     );
   }
 
+  /** undoes a pool's removal mark, returning focus to the restored card. */
+  keepPool(pool) {
+    if (this.locked) return;
+    this.applyResult = null;
+    pool.removed = false;
+    this.notify(
+      "Pool kept. It is no longer marked for removal.",
+      `edit-heading:${pool.id}`,
+    );
+  }
+
+  /** drops a new volume, or marks a stored one for removal until Apply. */
+  removeVolume(pool, volume) {
+    if (this.locked) return;
+    this.applyResult = null;
+    if (volume.source === null)
+      pool.volumes = pool.volumes.filter((v) => v !== volume);
+    else volume.removed = true;
+    this.changed(`edit-heading:${pool.id}`);
+  }
+
   addVolume(pool) {
     if (this.locked) return;
     this.applyResult = null;

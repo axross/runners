@@ -208,12 +208,7 @@ function form(model, pool) {
                 button(
                   `remove-volume:${volume.id}`,
                   "Remove Volume",
-                  () => {
-                    if (volume.source === null)
-                      pool.volumes = pool.volumes.filter((v) => v !== volume);
-                    else volume.removed = true;
-                    model.changed(`edit-heading:${pool.id}`);
-                  },
+                  () => model.removeVolume(pool, volume),
                   model.locked ? "Finish or cancel the review first." : null,
                   "destructive",
                 ),
@@ -277,10 +272,7 @@ export function editorPools(model, list, ctx, liveCard) {
         button(
           `keep-pool:${pool.id}`,
           "Keep",
-          () => {
-            pool.removed = false;
-            model.changed();
-          },
+          () => model.keepPool(pool),
           reason,
         ),
       );

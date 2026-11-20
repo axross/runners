@@ -333,6 +333,31 @@ test("reload warns before dropping a draft, checks the new revision, and cancell
   assert.equal(calls.length, 2);
 });
 
+test("keeping a pool or removing a volume clears a refused result and keeps focus on the pool", () => {
+  const { model, focuses } = editor();
+  const [pool] = model.pools;
+  model.removePool(pool);
+  model.applyResult = "Configuration not applied";
+  model.keepPool(pool);
+  assert.equal(pool.removed, false);
+  assert.equal(model.applyResult, null);
+  assert.equal(focuses.at(-1), `edit-heading:${pool.id}`);
+  model.applyResult = "Configuration not applied";
+  model.removeVolume(pool, pool.volumes[0]);
+  assert.equal(pool.volumes[0].removed, true);
+  assert.equal(model.applyResult, null);
+  assert.equal(focuses.at(-1), `edit-heading:${pool.id}`);
+  model.addVolume(pool);
+  model.removeVolume(pool, pool.volumes.at(-1));
+  assert.equal(pool.volumes.length, 2);
+  model.busy = true;
+  model.applyResult = "Configuration not applied";
+  model.keepPool(pool);
+  model.removeVolume(pool, pool.volumes[1]);
+  assert.equal(pool.volumes[1].removed, false);
+  assert.equal(model.applyResult, "Configuration not applied");
+});
+
 test("a new pool with volumes is added after removals at its resulting index", () => {
   const { model, focuses } = editor();
   model.removePool(model.pools[0]);
@@ -919,4 +944,16 @@ test("the window edits in cards, keeps drafts across views and hides, labels pro
     0,
   );
   assert.match(elements.get("live").children.at(-1).textContent, /cancelled/);
+  await click(`remove-pool:${poolID}`);
+  await click("check-config");
+  refuse = true;
+  await click("confirm-config");
+  assert.equal(byKey("confirm-config").getAttribute("aria-label"), "Done");
+  assert.equal(byKey("check-config"), undefined);
+  await click(`keep-pool:${poolID}`);
+  assert.equal(byKey(`keep-pool:${poolID}`), undefined);
+  assert.equal(byKey("confirm-config"), undefined);
+  assert.equal(document.activeElement, byKey(`edit-heading:${poolID}`));
+  assert.ok(byKey("check-config"));
+  assert.ok(byKey("discard-config"));
 });
