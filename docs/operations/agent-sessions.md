@@ -342,15 +342,15 @@ Claude Code's [subagent documentation](https://code.claude.com/docs/en/sub-agent
 lists `AskUserQuestion` among the tools it removes from every subagent "even when
 listed in the `tools` field" (Available tools). That is documented, not
 exercised in this repository. The configured implementer, reviewer, and
-investigator therefore MUST return an unresolved maintainer decision to their
-caller, which asks it. The independent-review child is such a subagent, and its
-assignment MUST stay as Development Workflow defines it.
+investigator therefore MUST return an unresolved maintainer decision and their
+partial results to their caller, which asks it, as the practice's Returning a
+Question You Cannot Ask section states. The independent-review child is such a
+subagent, and its assignment MUST stay as Development Workflow defines it.
 
 The same page says a fork receives its parent conversation's exact tool pool, so
 a fork is inferred to keep `AskUserQuestion`, which is also not exercised here. A
-fork MUST ask with `AskUserQuestion`, as the first guideline of Asking the
-Maintainer states, and MUST return any question it asked, and the answer, to its
-caller with its result.
+fork MUST follow the first guideline of Asking the Maintainer, and MUST return
+any question it asked, and the answer, to its caller with its result.
 
 ## Confirming Delivery at the Plan Gate in Claude Code
 
