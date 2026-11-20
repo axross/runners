@@ -626,11 +626,12 @@ path.
 The pool fields are those of a repository pool. An organisation pool's
 `organization` and `runner_group` keys have no field, so the form neither shows nor
 changes them, and its Repository field reads as not set; its other fields edit as
-any pool's. A repository typed into it is refused by the agent's check, which allows
-one target per pool, and a new pool is added with a repository. Set an organisation
-pool's target in a text editor. Removing a pool offers to remove the token of a
-repository no remaining pool names, never an organisation's: an organisation's token
-is removed from the [Tokens tab](#configuration-and-tokens).
+any pool's. The agent's check refuses a repository on it, since a pool has one
+target, and refuses volumes on it. A new pool is added with a repository. Set an
+organisation pool's target in a text editor. Removing a pool offers to remove the
+token of a repository no remaining pool names, never an organisation's. Remove an
+organisation's token from the [Tokens tab](#configuration-and-tokens) before removing
+the last pool that names it; after that, the tab has no row for it.
 
 `config-editor.js` keeps the unapplied draft across view updates and window hides.
 `editor.js` draws its fields, problems, change bar and in-list review. Apply first
