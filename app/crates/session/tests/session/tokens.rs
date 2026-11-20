@@ -774,7 +774,10 @@ async fn the_library_link_dispatches_organization_methods_only_when_welcome_list
     use tokio::net::UnixListener;
 
     for (set, remove) in [(false, false), (true, false), (false, true), (true, true)] {
-        let directory = crate::support::temp_dir("org-wire");
+        // macOS's $TMPDIR is long enough to push the socket past sun_path's 104 bytes.
+        let directory = std::path::Path::new("/tmp").join(format!("ms-ow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
         let roots = Roots::for_tests(&directory);
         std::fs::DirBuilder::new()
             .mode(0o700)
