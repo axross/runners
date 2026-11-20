@@ -57,9 +57,8 @@ jobs:
         with:
           name: editor-renders
           path: |
-            .amp/in/artifacts/k3-render-ci/*.png
-            .amp/in/artifacts/k3-render-ci/results.json
-          include-hidden-files: true
+            app/target/render/output/*.png
+            app/target/render/output/results.json
           retention-days: 14
           if-no-files-found: warn
 

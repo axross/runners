@@ -12,7 +12,7 @@ import { accessibility, geometryAndContrast } from "./checks.mjs";
 
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
 const frontend = path.join(root, "app/crates/app/frontend");
-const output = path.join(root, ".amp/in/artifacts/k3-render-ci");
+const output = path.join(root, "app/target/render/output");
 const pin = JSON.parse(
   await readFile(new URL("browser.json", import.meta.url)),
 );
@@ -86,7 +86,7 @@ const browser = await chromium.launch({
   headless: true,
   executablePath: path.join(
     root,
-    `.amp/in/browser-runtime/k3-ci-${pin.version}/chrome-headless-shell-linux64/chrome-headless-shell`,
+    `app/target/render/browser-${pin.version}/chrome-headless-shell-linux64/chrome-headless-shell`,
   ),
 });
 assert.equal(browser.version(), pin.version);

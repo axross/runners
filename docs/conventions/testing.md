@@ -51,13 +51,13 @@ Run from the repository root.
 The Linux x64 rendering gate needs one explicit preparation step:
 `mise run prepare:app-render`. It installs test-only npm dependencies from
 `app/crates/app/tests/render/package-lock.json`, with lifecycle scripts disabled,
-and checksum-verifies Chromium before extracting it under `.amp/in/browser-runtime/`.
+and checksum-verifies Chromium before extracting it under `app/target/render/browser-<version>/`.
 It installs no OS libraries. CI prepares those on its disposable GitHub-hosted
 runner only. `mise run test:app-render` runs the browser gate alone. `mise run check`
 does not include it, so a checkout without the browser, and any host other than
 Linux x64, can still run `check`. The Check job runs the gate as its own step
 after `mise run check` and keeps its screenshots and results from
-`.amp/in/artifacts/k3-render-ci/`. [App](../operations/app.md#the-configuration-editor)
+`app/target/render/output/`. [App](../operations/app.md#the-configuration-editor)
 describes the checks and their limits. To regenerate the test-only lock after
 changing its manifest, use `npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
 

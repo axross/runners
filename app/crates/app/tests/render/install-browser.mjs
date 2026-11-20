@@ -14,7 +14,7 @@ const pin = JSON.parse(
   await readFile(new URL("browser.json", import.meta.url)),
 );
 const runtime = new URL(
-  `../../../../../.amp/in/browser-runtime/k3-ci-${pin.version}/`,
+  `../../../../target/render/browser-${pin.version}/`,
   import.meta.url,
 );
 await mkdir(runtime, { recursive: true });

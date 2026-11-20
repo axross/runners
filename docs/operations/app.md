@@ -656,8 +656,8 @@ its own step, renders the bundled page in checksum-pinned Chromium on Linux x64.
 Prepare it first with `mise run prepare:app-render`; that needs Python 3 to
 extract the verified archive, but installs no OS package. The test-only
 `playwright-core` dependency is locked under `app/crates/app/tests/render/` and
-installs with lifecycle scripts disabled. It is not bundled with the app. Its public browser API avoids maintaining a
-second browser driver; the full Playwright test runner and Puppeteer are not
+installs with lifecycle scripts disabled. It is not bundled with the app. Its
+public browser API avoids maintaining a second browser driver; the full Playwright test runner and Puppeteer are not
 needed. The Check job alone prepares Chromium's OS libraries on its disposable
 GitHub-hosted runner.
 
