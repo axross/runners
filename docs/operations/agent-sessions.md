@@ -434,10 +434,10 @@ go through the session's git remote instead of this path; that was not tested
 either.
 
 The probe wrote issue bodies with `issue_write`, both creating and updating, and
-one issue comment. One pull request body has since been written, by create. Pull
-request body updates read back through REST remain untested, as do reviews,
-review comments and replies, comment edits, and URLs already inside code. The
-rules and the read-back below still apply to those surfaces.
+one issue comment. One pull request body has since been written by create, and
+one update to a pull request body was read back through REST. Reviews, review
+comments and replies, comment edits, and URLs already inside code remain
+untested. The rules and the read-back below still apply to those surfaces.
 
 ### The Rewrites Observed
 
@@ -476,11 +476,16 @@ Three more rewrites were observed:
   (PST), was stored with that attribution replaced by the comment footer, and
   every other byte matched what was sent
   ([comment 7046296956](https://github.com/axross/runners/issues/144#issuecomment-7046296956)).
-  That is one write, by create. Another session reported that
-  `update_pull_request` kept the attribution on #138 (three writes) and #139,
-  compared byte for byte with what MCP's get returned, with no REST read, so the
-  replacement may be specific to creating a pull request. A body sent without
-  the attribution, and whitespace after the attribution, were not tested.
+  That is one write, by create. The one write by `update_pull_request`, to
+  #150's description on 2026-11-20 (PST), was read back through REST search at
+  its update time and was byte-identical to the sent file, attribution included,
+  with no footer
+  ([comment 7047943100](https://github.com/axross/runners/issues/144#issuecomment-7047943100)).
+  Another session reported that `update_pull_request` kept the attribution on
+  #138 (three writes) and #139, compared byte for byte with what MCP's get
+  returned, with no REST read, so the replacement may be specific to creating a
+  pull request. A body sent without the attribution, and whitespace after the
+  attribution, were not tested.
 - **U+200B.** It was removed when an issue was created, the only write path
   tested. MCP reads also drop it; REST reads keep it. U+200C, U+200D, U+2060,
   and U+FEFF were not tested.
@@ -623,14 +628,14 @@ or added. The command therefore compares the exact structured field, as Body
 Integrity requires. A difference prints a `cmp` line and no `ok`, including a
 difference of one trailing newline.
 
-A pull request body that ends with the host's attribution is stored with it
-replaced by the comment footer, so the comparison above reports a difference for
-it. This command builds the expected stored text from the composed file, with
-the attribution replaced by the footer, and compares the stored body with that,
-reusing the `stored.json` of the search read. With the direct read, use
-`jq -j .body stored.json` in place of the `jq` filter that selects the item from
-the search result. It accepts the attribution only in its exact form at the very
-end of the file, and otherwise says so without comparing.
+When the write path replaces a pull request body's attribution with the comment
+footer, as it did when #150 was created, the comparison above reports a
+difference. This command builds the expected stored text from the composed
+file, with the attribution replaced by the footer, and compares the stored body
+with that, reusing the `stored.json` of the search read. With the direct read,
+use `jq -j .body stored.json` in place of the `jq` filter that selects the item
+from the search result. It accepts the attribution only in its exact form at the
+very end of the file, and otherwise says so without comparing.
 
 ```sh
 node -e '
@@ -702,8 +707,8 @@ diff body.md <(jq -j .body stored.json)
 Each known pattern looks like this in the output:
 
 - **A wrapped URL** appears inside a run of backticks with a space on each
-  side; the closing run can land after the link's `)`, and a wrapped autolink
-  also shows its angle brackets as `&lt;` and `&gt;`.
+  side; the closing run lands before the link's `)` or, as seen once, after it,
+  and a wrapped autolink also shows its angle brackets as `&lt;` and `&gt;`.
 - **An appended footer** appears as added lines at the end.
 - **A replaced attribution** appears as the attribution lines removed at the end
   and the footer lines added in their place.
@@ -719,12 +724,9 @@ that the comparison was not byte-exact.
 - MUST NOT re-send identical text; the rewrite is deterministic, so identical
   text written again is stored the same way.
 - MUST confirm, before any corrective write, that the stored text differs from
-  the intended text only by the known patterns: a URL wrapped in a code span,
-  whose closing backticks fall either before or after the link's `)`; an
-  appended footer; the pull request attribution replaced by the footer; or a
-  removed invisible character. Any other difference, including a change someone
-  else made in the meantime, stops the operation for reconciliation under GitHub
-  Operation's
+  the intended text only by the known patterns listed above. Any other
+  difference, including a change someone else made in the meantime, stops the
+  operation for reconciliation under GitHub Operation's
   [Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
   and is reported as an unverified write, not worked around.
 - MUST NOT make a corrective write for an appended footer or a replaced
@@ -732,11 +734,12 @@ that the comparison was not byte-exact.
 - MUST, for a body on a target the delivery grant in
   [Development Workflow](./development-workflow.md) covers, compose the
   corrected text from the intended text with the URL shortened, write it once,
-  and read it back again. When the corrected write also differs, report the
-  write as unverified and stop that operation.
+  and read it back again.
 - MUST, for a status comment on the run's tracking issue, append a corrected
-  status comment that supersedes it instead of editing the original. Status
-  comments stay append-only.
+  status comment that supersedes the original instead of editing it, because
+  Development Workflow keeps run state in append-only status comments.
+- MUST, when a corrective body or status comment also differs, report the write
+  as unverified and stop that operation.
 - MUST, for any other comment, report it as unverified and ask the maintainer,
   because the delivery grant names no corrective comment for it.
 
