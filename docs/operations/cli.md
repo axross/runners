@@ -2481,9 +2481,14 @@ A confirmed deletion or confirmed absence settles cleanup; a failed or unknown
 outcome stays visible with the pending non-secret identity. A stopped container
 alone does not prove the registration is gone. A cleanup that fails when a job
 ends is retried with the slot's back-off while the slot keeps its capacity, and
-the slot shows `registration cleanup incomplete (<reason>)` until it settles. A
-stop ends those retries, and also ends a registration that is waiting for, or
-renewing, its credentials. Cleanup shares the existing stop deadline.
+the slot shows `registration cleanup incomplete (<reason>)` until it settles. An
+error a retry cannot change, such as a refused token, ends the retries: the slot
+is held, the cleanup stays reported incomplete, and Start All retries it. A stop
+gets one last attempt within the stop deadline, and also ends a registration
+that is waiting for, or renewing, its credentials. During an update drain a
+failing cleanup gets at most one more attempt, then the slot counts as drained
+with its cleanup still reported incomplete, and the retries resume if the drain
+ends without an update. Cleanup shares the existing stop deadline.
 
 **Editing the configuration.** An edit that restarts or removes an on-demand pool
 waits for that pool's listener to end within the stop deadline. A pool whose
