@@ -112,7 +112,16 @@ pub fn editor_access(
             "text",
             "Not set — owner/name required",
         ),
-        field("runners", "Runners", "integer", "Not set — required"),
+        field(
+            "runners",
+            "Runners",
+            "integer",
+            if mac {
+                "Not set — 1 for macOS, 2 for Linux"
+            } else {
+                "Not set — required"
+            },
+        ),
         field(
             "labels",
             "Labels (one per line)",
@@ -129,7 +138,11 @@ pub fn editor_access(
             "cpus",
             "CPUs per runner",
             if mac { "integer" } else { "number" },
-            "Not set — 2",
+            if mac {
+                "Not set — 4 for macOS, 2 for Linux"
+            } else {
+                "Not set — 2"
+            },
         ),
         field(
             "memory_gb",
@@ -143,7 +156,7 @@ pub fn editor_access(
             "disk_gb",
             "Disk per runner (GB)",
             "integer",
-            "Not set — required",
+            "Not set — 50 for macOS, required for Linux",
         ));
     }
     pool.extend([

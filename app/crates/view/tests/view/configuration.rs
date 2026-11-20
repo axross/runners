@@ -253,3 +253,37 @@ fn the_editor_fields_follow_each_hosts_schema_without_tokens_or_lifecycle() {
         );
     }
 }
+
+#[test]
+fn an_unset_pool_value_says_what_the_agent_reads_it_as_on_each_host() {
+    use marshal_cli::profile::Profile;
+    use marshal_view::{Connection, EditorField, editor_access};
+    let running = load("running");
+    let absent = |profile, key: &str| {
+        let access = editor_access(profile, Connection::Connected, Some(&running));
+        let field: &EditorField = access
+            .pool
+            .iter()
+            .find(|field| field.key == key)
+            .expect("the host offers the field");
+        field.absent.clone()
+    };
+    // a Windows pool is Linux only, and requires its runners
+    assert_eq!(absent(Profile::Axpc, "runners"), "Not set — required");
+    assert_eq!(absent(Profile::Axpc, "cpus"), "Not set — 2");
+    assert_eq!(absent(Profile::Axpc, "memory_gb"), "Not set — 8");
+    // a Mac pool is macOS or Linux, which default differently
+    assert_eq!(
+        absent(Profile::Axmc, "runners"),
+        "Not set — 1 for macOS, 2 for Linux"
+    );
+    assert_eq!(
+        absent(Profile::Axmc, "cpus"),
+        "Not set — 4 for macOS, 2 for Linux"
+    );
+    assert_eq!(absent(Profile::Axmc, "memory_gb"), "Not set — 8");
+    assert_eq!(
+        absent(Profile::Axmc, "disk_gb"),
+        "Not set — 50 for macOS, required for Linux"
+    );
+}
