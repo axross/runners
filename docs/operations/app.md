@@ -305,6 +305,7 @@ then follows the snapshot, since the agent may still do it.
 | `dom.js`, `icons.js`                                | The element builder, which refuses `style`, `href`, `src`, `srcdoc`, `action`, `formaction` and `on*` attributes, and the inline icons |
 | `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                                                      |
 | `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                                                    |
+| `config-editor.js`, `editor.js`                     | The editor's unapplied draft and its calls to the agent; its fields, review, notice, bar and footer                                    |
 
 A balloon opens below its control, or above it near the bottom of the window. When
 the scrolling area has room on neither side, a balloon opened by keyboard focus
