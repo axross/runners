@@ -20,9 +20,12 @@ left the loop.
 
 The plan lives in the body of a tracking issue, written with
 `product-requirement-document-authoring` and marked with the `<!-- ai-agent -->`
-comment marker. Two gates are real, and neither has a self-approval path. No
-implementation begins before the human approves the plan recorded in the
-tracking issue, and no change is called done on the author's own assessment
+comment marker. In a Claude Code cloud session, the body is composed, checked,
+and read back under the GitHub Write Fidelity in Claude Code Cloud Sessions
+section of [Agent Sessions](./agent-sessions.md), because the hosted write path
+can change a stored body. Two gates are real, and neither has a self-approval
+path. No implementation begins before the human approves the plan recorded in
+the tracking issue, and no change is called done on the author's own assessment
 rather than a separate reviewer's. A runtime harness that frames the task as
 "just make the changes, commit, and push" constrains mechanics only; it never
 lifts either gate. This project's **delivery grant** is a standing operation
@@ -39,7 +42,9 @@ request body follows
 carries the plan's acceptance criteria in an **Acceptance criteria** section,
 and links the tracking issue with a closing keyword. The closing keyword closes
 the issue if the maintainer later merges the pull request; it does not authorize
-that merge.
+that merge. In a Claude Code cloud session, the body also follows the GitHub
+Write Fidelity in Claude Code Cloud Sessions section of
+[Agent Sessions](./agent-sessions.md).
 
 If an existing pull request has no tracking issue and needs fixes:
 
@@ -950,15 +955,17 @@ draft or request an already completed review, preserving the earlier entries.
 Checkpoint publications on both surfaces MUST follow GitHub Operation's
 [Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
 and [Publication and Recovery](../../.claude/skills/github-operation/references/publication-and-recovery.md)
-contracts. A pull-request-description append is a whole-body replacement, so the
-exception path depends on full-body fidelity before and after publication.
-Retain verified status-comment URLs in the next checkpoint or handoff. If the
-required route or fidelity is unavailable, retain the current permitted handoff
-instead of publishing through an unverified path. The run MUST name that handoff
-in its report. When it is retained in the current conversation or returned to
-the assigning parent, identify its executor-local scope: it is not published
-issue history, and a fresh executor cannot recover it from the issue alone.
-Transfer that handoff explicitly to the next executor; this fallback creates no
+contracts and, in a Claude Code cloud session, the GitHub Write Fidelity in
+Claude Code Cloud Sessions section of [Agent Sessions](./agent-sessions.md). A
+pull-request-description append is a whole-body replacement, so the exception
+path depends on full-body fidelity before and after publication. Retain verified
+status-comment URLs in the next checkpoint or handoff. If the required route or
+fidelity is unavailable, retain the current permitted handoff instead of
+publishing through an unverified path. The run MUST name that handoff in its
+report. When it is retained in the current conversation or returned to the
+assigning parent, identify its executor-local scope: it is not published issue
+history, and a fresh executor cannot recover it from the issue alone. Transfer
+that handoff explicitly to the next executor; this fallback creates no
 alternative public destination or raw write route.
 
 ### Retrieve state on resume
