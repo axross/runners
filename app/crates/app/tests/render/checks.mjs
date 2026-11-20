@@ -2,12 +2,6 @@
 // than inferring any of them from the page's document-building stand-in.
 
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
-
-const failureOutput = new URL(
-  "../../../../../.amp/in/artifacts/k3-round5-D-failure/",
-  import.meta.url,
-);
 
 /** checks all laid-out text, input boundaries and the current keyboard focus. */
 export async function geometryAndContrast(page) {
@@ -103,29 +97,11 @@ export async function geometryAndContrast(page) {
         issues.push(`focus contrast ${focusContrast}: ${focus.dataset.key}`);
     }
     const tooltip = document.querySelector('[role="tooltip"]');
-    let tooltipGeometry = null;
     if (tooltip) {
       const box = tooltip.getBoundingClientRect();
-      const ancestors = [];
       let top = 0;
       let bottom = innerHeight;
       for (let node = tooltip.parentElement; node; node = node.parentElement) {
-        const style = getComputedStyle(node);
-        ancestors.push({
-          tag: node.tagName,
-          id: node.id,
-          classes: node.className,
-          key: node.dataset.key ?? null,
-          rect: node.getBoundingClientRect().toJSON(),
-          scrollTop: node.scrollTop,
-          scrollLeft: node.scrollLeft,
-          scrollHeight: node.scrollHeight,
-          scrollWidth: node.scrollWidth,
-          clientHeight: node.clientHeight,
-          clientWidth: node.clientWidth,
-          overflowY: style.overflowY,
-          overflowX: style.overflowX,
-        });
         if (/auto|scroll|hidden/.test(getComputedStyle(node).overflowY)) {
           const clip = node.getBoundingClientRect();
           top = Math.max(top, clip.top);
@@ -133,30 +109,9 @@ export async function geometryAndContrast(page) {
         }
       }
       if (box.top < top - 1 || box.bottom > bottom + 1)
-        issues.push("tooltip clipped by its scroll region");
-      const control = tooltip.parentElement.querySelector("[data-key]");
-      tooltipGeometry = {
-        measuredAt: performance.now(),
-        viewport: { width: innerWidth, height: innerHeight, scrollX, scrollY },
-        tooltip: {
-          rect: box.toJSON(),
-          classes: tooltip.className,
-          text: tooltip.textContent,
-        },
-        control: control && {
-          key: control.dataset.key,
-          rect: control.getBoundingClientRect().toJSON(),
-          classes: control.className,
-          text: control.textContent,
-          disabled: control.getAttribute("aria-disabled"),
-        },
-        focus: {
-          key: focus?.dataset.key ?? null,
-          rect: focus?.getBoundingClientRect().toJSON() ?? null,
-        },
-        clip: { top, bottom },
-        ancestors,
-      };
+        issues.push(
+          `tooltip clipped by its scroll region: ${box.top}-${box.bottom} in ${top}-${bottom}`,
+        );
     }
     const footer = document.querySelector(".footer").getBoundingClientRect();
     const scroller = document
@@ -179,50 +134,9 @@ export async function geometryAndContrast(page) {
       lowestText,
       lowestBorder: Number.isFinite(lowestBorder) ? lowestBorder : null,
       focusContrast,
-      tooltipGeometry,
     };
   });
-  try {
-    assert.deepEqual(result.issues, [], result.issues.join("\n"));
-  } catch (error) {
-    if (result.issues.includes("tooltip clipped by its scroll region")) {
-      let directoryExit = 0;
-      let measurementExit = 1;
-      let screenshotExit = 1;
-      try {
-        await mkdir(failureOutput);
-      } catch (saveError) {
-        directoryExit = 1;
-        console.error("GEOMETRY_DIRECTORY_ERROR", saveError);
-      }
-      if (directoryExit === 0) {
-        try {
-          await writeFile(
-            new URL("measurement.json", failureOutput),
-            `${JSON.stringify({ result, assertion: error.stack }, null, 2)}\n`,
-            { flag: "wx" },
-          );
-          measurementExit = 0;
-        } catch (saveError) {
-          console.error("GEOMETRY_MEASUREMENT_ERROR", saveError);
-        }
-        try {
-          await writeFile(
-            new URL("viewport.png", failureOutput),
-            await page.screenshot(),
-            { flag: "wx" },
-          );
-          screenshotExit = 0;
-        } catch (saveError) {
-          console.error("GEOMETRY_SCREENSHOT_ERROR", saveError);
-        }
-      }
-      console.error(
-        `GEOMETRY_DIRECTORY_EXIT=${directoryExit} GEOMETRY_MEASUREMENT_EXIT=${measurementExit} GEOMETRY_SCREENSHOT_EXIT=${screenshotExit}`,
-      );
-    }
-    throw error;
-  }
+  assert.deepEqual(result.issues, [], result.issues.join("\n"));
   return result;
 }
 
