@@ -535,6 +535,16 @@ mod http {
                 .with_exchange_retry_delay(Duration::from_millis(1))
         }
 
+        /// the requests that reach `api.github.com` in production: everything under `/repos/`.
+        fn rest(&self) -> Vec<(String, String)> {
+            self.requests
+                .borrow()
+                .iter()
+                .filter(|(_, path)| path.starts_with("/repos/"))
+                .cloned()
+                .collect()
+        }
+
         fn count(&self, method: &str, part: &str) -> usize {
             self.requests
                 .borrow()
@@ -660,6 +670,7 @@ mod http {
 
     /// what an idle pool did to the service, and where it stood, after `horizon` of the clock.
     struct IdleRun {
+        rest: Vec<(String, String)>,
         registrations: usize,
         polls: usize,
         state: ListenerState,
@@ -693,6 +704,7 @@ mod http {
         .await
         .unwrap();
         IdleRun {
+            rest: service.rest(),
             registrations: service.count("POST", "registration-token"),
             polls: service.count("GET", "/queue"),
             state: view.state,
@@ -715,6 +727,35 @@ mod http {
             "{} registration tokens in an hour",
             run.registrations
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn two_idle_hours_reach_the_rest_api_only_for_the_start_up_listing_and_renewals() {
+        // the probe's admin credential lasted 1,200 s and is renewed 120 s before it ends
+        let lifetime = Duration::from_secs(1200);
+        let horizon = Duration::from_secs(2 * 3600);
+        let run = idle_pool(lifetime, horizon).await;
+        assert_eq!(run.state, ListenerState::Listening);
+        let renewals = horizon.as_secs() / (lifetime - REFRESH_BEFORE).as_secs();
+        let listings = run
+            .rest
+            .iter()
+            .filter(|(method, path)| method == "GET" && path.contains("/actions/runners?"))
+            .count();
+        assert_eq!(listings, 1, "one crash-cleanup listing per pool start");
+        // the opening exchange, then one more at each renewal
+        assert!(
+            (renewals..=renewals + 2).contains(&(run.registrations as u64)),
+            "{} registration tokens against {renewals} renewals",
+            run.registrations
+        );
+        assert_eq!(
+            run.rest.len(),
+            listings + run.registrations,
+            "an idle pool made REST requests beyond them: {:?}",
+            run.rest
+        );
+        assert!(run.polls >= 100, "the pool did not idle on the broker");
     }
 
     #[tokio::test(flavor = "current_thread")]
