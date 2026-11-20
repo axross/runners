@@ -15,7 +15,8 @@ use std::time::Duration;
 use marshal_cli::agent::machine::{Launch, UPDATE};
 use marshal_cli::agent::{CallError, Push};
 use marshal_cli::instance::lifecycle::StopTimes;
-use marshal_cli::runtime::fake::{Call, HostCall};
+use marshal_cli::runtime::backend::{BackendError, ContainerSpec};
+use marshal_cli::runtime::fake::{Call, FakeContainer, HostCall};
 use marshal_cli::token_store::{StoreError, StoreErrorKind};
 use serde_json::{Value, json};
 use support::agent::{JIT, ONE_POOL, OTHER_TOKEN, Rig, TOKEN};
@@ -81,6 +82,22 @@ struct ServiceState {
     delete_delay: Duration,
     delete_in_flight: bool,
     requests: Vec<(String, String, bool)>,
+    /// answers every request whose path ends with the suffix with the status and no body.
+    refuse: Option<(&'static str, u16)>,
+    /// reads every request whose path ends with the suffix and never answers it.
+    silent: Option<&'static str>,
+    /// the service URL the registration exchange returns in place of the fake's own.
+    service_url: Option<String>,
+    /// the queue URL a new session returns in place of the fake's own.
+    queue_url: Option<String>,
+    /// the jobs one message offers, less those an acquire has taken; it is redelivered until
+    /// it is acknowledged.
+    offers: Vec<u64>,
+    offer_message: Option<u64>,
+    acknowledged: Vec<u64>,
+    /// the request IDs of each acquire, and the ones an acquire has already taken.
+    acquires: Vec<Vec<u64>>,
+    taken: BTreeSet<u64>,
 }
 
 struct Service {
@@ -142,13 +159,18 @@ fn answer(
     state: &mut ServiceState,
 ) -> (u16, Value) {
     let path = path.split('?').next().unwrap();
+    if let Some((suffix, status)) = state.refuse
+        && path.ends_with(suffix)
+    {
+        return (status, Value::Null);
+    }
     if path.ends_with("registration-token") {
         return (201, json!({"token": "<registration-placeholder>"}));
     }
     if path.ends_with("runner-registration") {
         return (
             200,
-            json!({"url": format!("{base}/tenant"), "token": "fake.eyJleHAiOjQxMDI0NDQ4MDB9.signature"}),
+            json!({"url": state.service_url.clone().unwrap_or_else(|| format!("{base}/tenant")), "token": "fake.eyJleHAiOjQxMDI0NDQ4MDB9.signature"}),
         );
     }
     if path.ends_with("runnerscalesets/23") {
@@ -183,7 +205,14 @@ fn answer(
             .push(body["ownerName"].as_str().unwrap().to_string());
         return (
             200,
-            json!({"sessionId": id, "messageQueueUrl": format!("{base}/queue"), "messageQueueAccessToken": "<queue-placeholder>", "statistics": statistics(state.assigned)}),
+            json!({"sessionId": id, "messageQueueUrl": state.queue_url.clone().unwrap_or_else(|| format!("{base}/queue")), "messageQueueAccessToken": "<queue-placeholder>", "statistics": statistics(state.assigned)}),
+        );
+    }
+    if path.contains("/sessions/") && method == "PATCH" {
+        let id = path.rsplit('/').next().unwrap();
+        return (
+            200,
+            json!({"sessionId": id, "messageQueueUrl": state.queue_url.clone().unwrap_or_else(|| format!("{base}/queue")), "messageQueueAccessToken": "<queue-placeholder>", "statistics": statistics(state.assigned)}),
         );
     }
     if path.contains("/sessions/") && method == "DELETE" {
@@ -205,6 +234,22 @@ fn answer(
     }
     if path == "/queue" {
         state.polls += 1;
+        if !state.offers.is_empty() {
+            let id = *state.offer_message.get_or_insert(state.polls as u64);
+            if !state.acknowledged.contains(&id) {
+                state.sent = Some(state.assigned);
+                let jobs: Vec<_> = state
+                    .offers
+                    .iter()
+                    .filter(|id| !state.taken.contains(id))
+                    .map(|id| json!({"messageType": "JobAvailable", "runnerRequestId": id}))
+                    .collect();
+                return (
+                    200,
+                    json!({"messageId": id, "messageType": "RunnerScaleSetJobMessages", "body": serde_json::to_string(&jobs).unwrap(), "statistics": statistics(state.assigned)}),
+                );
+            }
+        }
         if state.sent == Some(state.assigned) {
             return (202, Value::Null);
         }
@@ -215,7 +260,19 @@ fn answer(
         );
     }
     if path.starts_with("/queue/") && method == "DELETE" {
+        state
+            .acknowledged
+            .push(path.rsplit('/').next().unwrap().parse().unwrap());
         return (204, Value::Null);
+    }
+    if path.ends_with("acquirejobs") {
+        let ids: Vec<u64> = serde_json::from_value(body.clone()).unwrap();
+        state.acquires.push(ids.clone());
+        let taken: Vec<u64> = ids
+            .into_iter()
+            .filter(|id| state.taken.insert(*id))
+            .collect();
+        return (200, json!({"count": taken.len(), "value": taken}));
     }
     if path.ends_with("generatejitconfig") {
         state.jit_in_flight = false;
@@ -359,6 +416,7 @@ async fn serve(mut stream: TcpStream, base: &str, state: &Mutex<ServiceState>) {
             || (method == "DELETE"
                 && path.contains("/actions/runners/")
                 && state.lose_delete_response)
+            || state.silent.is_some_and(|suffix| path.ends_with(suffix))
         {
             return;
         }
@@ -375,23 +433,46 @@ async fn serve(mut stream: TcpStream, base: &str, state: &Mutex<ServiceState>) {
     let _ = stream.write_all(response.as_bytes()).await;
 }
 
-fn rig(service: &Service) -> Rig {
+/// a rig for [`CONFIG`] with no token stored.
+fn rig_without_token(service: &Service) -> Rig {
     let mut rig = Rig::new(ONE_POOL);
     rig.write_toml(CONFIG);
     rig.registrar.base_override = Some(service.base.clone());
     rig.clock.real.set(true);
-    rig.store_token("o", "r", TOKEN);
     rig.hold_jobs();
     rig
 }
 
+fn rig(service: &Service) -> Rig {
+    let rig = rig_without_token(service);
+    rig.store_token("o", "r", TOKEN);
+    rig
+}
+
 fn containers(rig: &Rig) -> Vec<String> {
+    run_specs(rig).into_iter().map(|spec| spec.name).collect()
+}
+
+fn run_specs(rig: &Rig) -> Vec<ContainerSpec> {
     rig.backend
         .calls()
         .into_iter()
         .filter_map(|call| match call {
-            Call::RunContainer(spec) => Some(spec.name),
+            Call::RunContainer(spec) => Some(spec),
             _ => None,
+        })
+        .collect()
+}
+
+/// the names the engine was asked to stop, kill or remove, in order of the requests.
+fn ended_by_name(rig: &Rig) -> Vec<String> {
+    rig.backend
+        .calls()
+        .into_iter()
+        .flat_map(|call| match call {
+            Call::StopContainers(request) => request.names,
+            Call::KillContainers(names) | Call::RemoveContainers(names) => names,
+            _ => Vec::new(),
         })
         .collect()
 }
@@ -1586,16 +1667,7 @@ async fn session_close_recovery_survives_stop_start_and_uses_the_fresh_token() {
                     serde_json::to_string(&recovered).unwrap(),
                     rig.log.lines().join("\n")
                 );
-                for private in [
-                    TOKEN,
-                    OTHER_TOKEN,
-                    JIT,
-                    "<queue-placeholder>",
-                    "<registration-placeholder>",
-                    "fake.eyJleHAiOjQxMDI0NDQ4MDB9.signature",
-                    "/tenant",
-                    &original,
-                ] {
+                for private in PRIVATE.iter().copied().chain([original.as_str()]) {
                     assert!(
                         !exposed.contains(private),
                         "private session material escaped"
@@ -2290,4 +2362,713 @@ async fn a_failing_deletion_at_start_shows_the_leftover_as_incomplete_and_retrie
             conn.ok("quit").await;
         })
         .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_launch_failure_deletes_the_owned_registration_and_frees_the_seat_for_the_retry() {
+    let service = Service::start(1).await;
+    {
+        let mut state = service.state.lock().unwrap();
+        // offline runners that no listener of this pool owns, one beside a running pool's name
+        for (id, name) in [(901, "side-1-20261117000000000"), (902, "unrelated-runner")] {
+            state.registrations.insert(id, name.to_string());
+            state.offline.insert(id);
+        }
+    }
+    let rig = rig(&service);
+    rig.write_toml(&CONFIG.replace("runners = 2", "runners = 1"));
+    {
+        let mut engine = rig.backend.state.borrow_mut();
+        engine.hold_runs = false;
+        engine
+            .exits
+            .push_back(Err(BackendError::new("the engine refused the container")));
+    }
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.eventually("the failed launch's registration deleted", || {
+                let state = service.state.lock().unwrap();
+                state.jit_names.len() == 1 && !state.registrations.contains_key(&1)
+            })
+            .await;
+            assert_eq!(containers(rig).len(), 1);
+            // one seat: the retry runs only because the failed launch released it
+            conn.eventually("the retry running in the freed seat", || {
+                containers(rig).len() == 2
+            })
+            .await;
+            conn.eventually("the retry's registration deleted too", || {
+                let state = service.state.lock().unwrap();
+                state.jit_names.len() == 2 && !state.registrations.contains_key(&2)
+            })
+            .await;
+            {
+                let state = service.state.lock().unwrap();
+                assert_eq!(state.jit_names.len(), 2);
+                assert_eq!(
+                    state.registrations.keys().copied().collect::<Vec<_>>(),
+                    [901, 902]
+                );
+            }
+            assert_eq!(
+                deletions(service),
+                [
+                    "/repos/o/r/actions/runners/1",
+                    "/repos/o/r/actions/runners/2"
+                ]
+            );
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+/// what an offered job's request IDs have been asked for so far.
+fn acquires(service: &Service) -> Vec<Vec<u64>> {
+    service.state.lock().unwrap().acquires.clone()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stopped_pool_acquires_no_offer_and_registers_nothing_until_start_all() {
+    let service = Service::start(0).await;
+    service.state.lock().unwrap().offers = vec![11, 12];
+    let rig = rig(&service);
+    rig.write_toml(&CONFIG.replace("runners = 2", "runners = 1"));
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            // the second offer waits for the one seat
+            assert_eq!(acquires(service), [[11]]);
+            rig.mark_running();
+            assert_eq!(conn.ok("stop_all").await["state"], "stopped");
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            assert_eq!(acquires(service), [[11]]);
+            assert_eq!(service.state.lock().unwrap().jit_names.len(), 1);
+            assert_eq!(containers(rig).len(), 1);
+            conn.ok("start_all").await;
+            conn.eventually("the offer that waited, acquired after Start all", || {
+                acquires(service).last() == Some(&vec![12])
+            })
+            .await;
+            conn.eventually("its runner", || containers(rig).len() == 2)
+                .await;
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+const LISTENING: &str = "2026-11-12 08:00:01Z: Listening for Jobs";
+const JOB: &str = "2026-11-12 08:03:00Z: Running job: build";
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_update_draining_pool_acquires_no_offer_while_a_busy_job_runs_on() {
+    let service = Service::start(0).await;
+    service.state.lock().unwrap().offers = vec![11, 12, 13];
+    let rig = rig(&service);
+    rig.backend.state.borrow_mut().hold_runs_by_name = true;
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.until("both seats busy", |snapshot| snapshot.runners_up == 2)
+                .await;
+            assert_eq!(acquires(service), [[11, 12]]);
+            let names = containers(rig);
+            for name in &names {
+                rig.backend.print(name, LISTENING);
+                rig.backend.print(name, JOB);
+            }
+            conn.client.subscribe().await.unwrap();
+            conn.call("drain_for_update", json!({ "version": "1.4.0" }))
+                .await
+                .unwrap();
+            conn.until("the drain waiting for both jobs", |snapshot| {
+                snapshot
+                    .agent
+                    .update
+                    .as_ref()
+                    .is_some_and(|u| u.waiting == 2)
+            })
+            .await;
+            // one job ends and frees a seat while the other keeps the drain open
+            {
+                use marshal_cli::runtime::backend::{Backend, StopRequest};
+                rig.backend
+                    .stop_containers(&StopRequest {
+                        names: vec![names[0].clone()],
+                        grace: Duration::ZERO,
+                        budget: Duration::from_secs(1),
+                    })
+                    .await
+                    .unwrap();
+            }
+            conn.until("the finished job's seat settled", |snapshot| {
+                snapshot.pools[0].runners_up == 1
+            })
+            .await;
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            assert_eq!(acquires(service), [[11, 12]]);
+            assert_eq!(service.state.lock().unwrap().jit_names.len(), 2);
+            assert_eq!(containers(rig).len(), 2);
+            rig.end_jobs().await;
+            loop {
+                if let Push::Ending { .. } = conn.push().await {
+                    break;
+                }
+            }
+            assert_eq!(acquires(service), [[11, 12]]);
+            assert_eq!(containers(rig).len(), 2);
+        })
+        .await;
+}
+
+fn requests_made(service: &Service) -> usize {
+    service.state.lock().unwrap().requests.len()
+}
+
+fn on_demand_of(
+    snapshot: &marshal_cli::agent::snapshot::Snapshot,
+) -> &marshal_cli::agent::snapshot::OnDemandInfo {
+    snapshot.pools[0].on_demand.as_ref().unwrap()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_pool_with_no_stored_token_is_not_started_and_asks_nothing_of_the_service() {
+    let service = Service::start(1).await;
+    let rig = rig_without_token(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn
+                .until("the pool refused for want of a token", |snapshot| {
+                    snapshot.pools[0].reason.is_some()
+                })
+                .await;
+            assert_eq!(
+                snapshot.agent.reason.as_ref().unwrap().code,
+                "no_pool_started"
+            );
+            assert_eq!(
+                snapshot.pools[0].reason.as_deref(),
+                Some("pool[0]: no token.")
+            );
+            assert_eq!(on_demand_of(&snapshot).name, "axpc-jobs");
+            assert_eq!(on_demand_of(&snapshot).state, "stopped");
+            assert_eq!(on_demand_of(&snapshot).store_error_kind, None);
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            assert_eq!(requests_made(service), 0);
+            assert!(containers(rig).is_empty());
+            conn.set_token("o/r", TOKEN).await.unwrap();
+            conn.ok("start_all").await;
+            conn.until_runner_runs().await;
+            assert!(requests_made(service) > 0);
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn each_store_error_at_a_fresh_start_is_reported_on_the_pool_and_registers_nothing() {
+    for (kind, word, code) in [
+        (StoreErrorKind::NeedsUser, "needs_user", Some(1312)),
+        (StoreErrorKind::AccessRefused, "access_refused", Some(5)),
+        (StoreErrorKind::Other, "other", None),
+    ] {
+        let service = Service::start(1).await;
+        let rig = rig(&service);
+        rig.store
+            .fail_with_error(Some(StoreError::with(kind, code, "the vault said no")));
+        let (rig, service) = (&rig, &service);
+        let (_, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                let snapshot = conn
+                    .until("the store error on the pool", |snapshot| {
+                        snapshot.pools[0].reason.is_some()
+                    })
+                    .await;
+                assert!(
+                    snapshot.pools[0]
+                        .reason
+                        .as_deref()
+                        .is_some_and(|reason| reason.contains("the token store failed")),
+                    "{word}: {:?}",
+                    snapshot.pools[0].reason
+                );
+                let info = on_demand_of(&snapshot);
+                assert_eq!(info.state, "store_error", "{word}");
+                assert_eq!(info.store_error_kind.as_deref(), Some(word));
+                assert_eq!(info.store_error_code, code);
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                assert_eq!(requests_made(service), 0, "{word}");
+                assert!(containers(rig).is_empty(), "{word}");
+                rig.store.fail_with_error(None);
+                conn.set_token("o/r", TOKEN).await.unwrap();
+                conn.ok("start_all").await;
+                conn.until_runner_runs().await;
+                rig.mark_running();
+                conn.ok("quit").await;
+            })
+            .await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_returned_url_outside_the_allowed_hosts_is_rejected_with_its_host_and_never_requested() {
+    let trap = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let trapped = format!("http://{}", trap.local_addr().unwrap());
+    let trap = &trap;
+    for (place, url, host) in [
+        (
+            "service",
+            "https://xactions.githubusercontent.com/tenant".to_string(),
+            "xactions.githubusercontent.com",
+        ),
+        (
+            "queue",
+            "https://actions.githubusercontent.com.example.invalid/queue".to_string(),
+            "actions.githubusercontent.com.example.invalid",
+        ),
+        ("service", format!("{trapped}/tenant"), "127.0.0.1"),
+        ("queue", format!("{trapped}/queue"), "127.0.0.1"),
+    ] {
+        let service = Service::start(1).await;
+        {
+            let mut state = service.state.lock().unwrap();
+            if place == "service" {
+                state.service_url = Some(url.clone());
+            } else {
+                state.queue_url = Some(url.clone());
+            }
+        }
+        let rig = rig(&service);
+        let (rig, service) = (&rig, &service);
+        let (_, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                let snapshot = conn
+                    .until("the refused host", |snapshot| {
+                        snapshot.pools[0]
+                            .on_demand
+                            .as_ref()
+                            .is_some_and(|listener| listener.state == "rejected")
+                    })
+                    .await;
+                let listener = on_demand_of(&snapshot);
+                assert_eq!(listener.refused_host.as_deref(), Some(host), "{url}");
+                assert_eq!(listener.status, None);
+                assert!(
+                    listener
+                        .reason
+                        .as_deref()
+                        .is_some_and(|reason| reason.contains(host)),
+                    "{:?}",
+                    listener.reason
+                );
+                let before = requests_made(service);
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                assert_eq!(requests_made(service), before, "{url}: retried");
+                {
+                    let state = service.state.lock().unwrap();
+                    assert!(state.jit_names.is_empty(), "{url}");
+                    assert_eq!(state.polls, 0, "{url}");
+                    assert!(
+                        state
+                            .requests
+                            .iter()
+                            .all(|(_, path, _)| path != "/tenant" && !path.starts_with("/queue")),
+                        "{:?}",
+                        state.requests
+                    );
+                }
+                assert!(containers(rig).is_empty(), "{url}");
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(100), trap.accept())
+                        .await
+                        .is_err(),
+                    "{url}: the refused host was connected to"
+                );
+                conn.ok("quit").await;
+            })
+            .await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_persistent_401_403_or_404_rejects_the_pool_and_stops_it_retrying_until_start_all() {
+    // the 404 on the session is met once more after the scale set is found again
+    for (path, status, exchanges) in [
+        ("registration-token", 401, 1),
+        ("sessions", 403, 1),
+        ("sessions", 404, 2),
+    ] {
+        let service = Service::start(1).await;
+        service.state.lock().unwrap().refuse = Some((path, status));
+        let rig = rig(&service);
+        let (rig, service) = (&rig, &service);
+        let (_, ()) = rig
+            .drive(Launch::Running, |conn| async move {
+                let snapshot = conn
+                    .until("the rejection", |snapshot| {
+                        snapshot.pools[0]
+                            .on_demand
+                            .as_ref()
+                            .is_some_and(|listener| listener.state == "rejected")
+                    })
+                    .await;
+                assert_eq!(on_demand_of(&snapshot).status, Some(status));
+                assert_eq!(on_demand_of(&snapshot).refused_host, None);
+                let exchanged = |service: &Service| {
+                    service
+                        .state
+                        .lock()
+                        .unwrap()
+                        .requests
+                        .iter()
+                        .filter(|(_, path, _)| path.ends_with("registration-token"))
+                        .count()
+                };
+                assert_eq!(exchanged(service), exchanges, "{path} {status}");
+                let before = requests_made(service);
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                assert_eq!(requests_made(service), before, "{path} {status}: retried");
+                assert!(service.state.lock().unwrap().jit_names.is_empty());
+                assert!(containers(rig).is_empty());
+                // the fault clears, and the pool listens again only at Start all
+                service.state.lock().unwrap().refuse = None;
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                assert_eq!(on_demand_of(&conn.status().await).state, "rejected");
+                conn.ok("stop_all").await;
+                conn.ok("start_all").await;
+                conn.until_runner_runs().await;
+                rig.mark_running();
+                conn.ok("quit").await;
+            })
+            .await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_network_error_backs_the_pool_off_without_registering_and_retries_by_itself() {
+    let service = Service::start(1).await;
+    service.state.lock().unwrap().silent = Some("registration-token");
+    let rig = rig(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            let snapshot = conn
+                .until("the back-off", |snapshot| {
+                    snapshot.pools[0]
+                        .on_demand
+                        .as_ref()
+                        .is_some_and(|listener| listener.state == "backing_off")
+                })
+                .await;
+            assert_eq!(on_demand_of(&snapshot).status, None);
+            assert_eq!(on_demand_of(&snapshot).refused_host, None);
+            {
+                let state = service.state.lock().unwrap();
+                assert!(state.owners.is_empty());
+                assert!(state.jit_names.is_empty());
+            }
+            assert!(containers(rig).is_empty());
+            // no Start all: the retry finds the service answering and a runner starts
+            service.state.lock().unwrap().silent = None;
+            conn.until_runner_runs().await;
+            assert_eq!(on_demand_of(&conn.status().await).state, "listening");
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_running_job_continues_when_its_pools_token_is_replaced_and_when_it_is_removed() {
+    let service = Service::start(1).await;
+    let rig = rig(&service);
+    rig.write_toml(&CONFIG.replace("runners = 2", "runners = 3"));
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until_runner_runs().await;
+            rig.mark_running();
+            let before = requests_made(service);
+            conn.set_token("o/r", OTHER_TOKEN).await.unwrap();
+            service.state.lock().unwrap().assigned = 2;
+            conn.until("the second runner", |snapshot| snapshot.runners_up == 2)
+                .await;
+            {
+                let state = service.state.lock().unwrap();
+                let tokens: Vec<_> = state.requests[before..]
+                    .iter()
+                    .filter(|(_, path, _)| path.ends_with("registration-token"))
+                    .collect();
+                assert!(!tokens.is_empty());
+                assert!(
+                    tokens.iter().all(|(.., replacement)| *replacement),
+                    "{tokens:?}"
+                );
+            }
+            rig.mark_running();
+            assert!(ended_by_name(rig).is_empty(), "{:?}", ended_by_name(rig));
+            conn.client.token_remove("o/r").await.unwrap();
+            let before = requests_made(service);
+            service.state.lock().unwrap().assigned = 3;
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            {
+                let state = service.state.lock().unwrap();
+                assert_eq!(state.jit_names.len(), 2);
+                assert!(
+                    state.requests[before..].iter().all(|(_, path, _)| {
+                        !path.ends_with("registration-token")
+                            && !path.ends_with("generatejitconfig")
+                    }),
+                    "{:?}",
+                    &state.requests[before..]
+                );
+            }
+            assert_eq!(containers(rig).len(), 2);
+            assert!(ended_by_name(rig).is_empty(), "{:?}", ended_by_name(rig));
+            assert_eq!(conn.status().await.runners_up, 2);
+            rig.end_jobs().await;
+            conn.until("both jobs ended", |snapshot| snapshot.runners_up == 0)
+                .await;
+            assert!(
+                rig.log
+                    .lines()
+                    .iter()
+                    .all(|line| !line.contains("container exited")),
+                "{:#?}",
+                rig.log.lines()
+            );
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+const SIDE: &str = "\n[[pool]]\nname = \"side\"\nrepository = \"o/s\"\nrunners = 1\n";
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_aliased_pool_prepared_late_or_reloaded_never_ends_another_running_pools_container() {
+    let service = Service::start(1).await;
+    let rig = rig_without_token(&service);
+    rig.write_toml(&format!("{CONFIG}{SIDE}"));
+    rig.store_token("o", "s", TOKEN);
+    rig.backend.state.borrow_mut().hold_runs_by_name = true;
+    let stale = [
+        "logical-3-20261117000000000",
+        "axpc-jobs-4-20261117000000001",
+    ];
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the side pool running", |snapshot| {
+                snapshot
+                    .pools
+                    .iter()
+                    .any(|pool| pool.name == "side" && pool.runners_up == 1)
+            })
+            .await;
+            let side = containers(rig).remove(0);
+            assert!(side.starts_with("side-"), "{side}");
+            rig.backend.state.borrow_mut().containers.extend(
+                [side.as_str()]
+                    .into_iter()
+                    .chain(stale)
+                    .map(|name| FakeContainer {
+                        name: name.to_string(),
+                        diagnostic: false,
+                    }),
+            );
+            rig.mark_running();
+            // the late pool is prepared only now, when its token arrives
+            conn.set_token("o/r", TOKEN).await.unwrap();
+            conn.until("the late pool's runner", |snapshot| {
+                snapshot
+                    .pools
+                    .iter()
+                    .any(|pool| pool.name == "logical" && pool.runners_up == 1)
+            })
+            .await;
+            let removed: BTreeSet<String> = rig
+                .backend
+                .calls()
+                .into_iter()
+                .filter_map(|call| match call {
+                    Call::RemoveContainers(names) => Some(names),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+            assert_eq!(removed, stale.map(str::to_string).into());
+            assert!(
+                rig.backend
+                    .state
+                    .borrow()
+                    .containers
+                    .iter()
+                    .any(|container| container.name == side)
+            );
+            // a reload that restarts only the on-demand pool
+            rig.mark_running();
+            let before = rig.backend.calls().len();
+            rig.write_toml(&format!(
+                "{}{SIDE}",
+                CONFIG.replace("runners = 2", "runners = 2\ncpus = 3")
+            ));
+            let revision = conn.ok("config_read").await["revision"].clone();
+            conn.call("config_reload", json!({"revision": revision}))
+                .await
+                .unwrap();
+            conn.eventually("the on-demand pool restarted", || {
+                containers(rig)
+                    .iter()
+                    .filter(|name| name.starts_with("axpc-jobs-"))
+                    .count()
+                    == 2
+            })
+            .await;
+            let snapshot = conn
+                .until("both pools running again", |snapshot| {
+                    snapshot.pools.iter().all(|pool| pool.runners_up == 1)
+                })
+                .await;
+            assert_eq!(snapshot.pools.len(), 2);
+            let ended = ended_by_name(rig);
+            assert!(
+                ended.iter().all(|name| !name.starts_with("side-")),
+                "{ended:?}"
+            );
+            assert!(rig.backend.calls().len() > before);
+            assert_eq!(
+                containers(rig)
+                    .iter()
+                    .filter(|name| name.starts_with("side-"))
+                    .count(),
+                1
+            );
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_on_demand_job_runs_under_the_per_runner_limits_an_always_on_one_gets() {
+    const LIMITS: &str = "runners = 1\ncpus = 3\nmemory_gb = 10";
+    let service = Service::start(1).await;
+    let rig = rig(&service);
+    rig.write_toml(&format!(
+        "{}{}",
+        CONFIG.replace("runners = 2", LIMITS),
+        SIDE.replace("runners = 1", LIMITS)
+    ));
+    rig.store_token("o", "s", TOKEN);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("each pool running its job", |snapshot| {
+                snapshot.runners_up == 2
+            })
+            .await;
+            let specs = run_specs(rig);
+            let of = |prefix: &str| {
+                specs
+                    .iter()
+                    .find(|spec| spec.name.starts_with(prefix))
+                    .unwrap()
+            };
+            let (on_demand, always_on) = (of("axpc-jobs-"), of("side-"));
+            assert_eq!(
+                (&on_demand.cpus, on_demand.memory_gb),
+                (&"3".to_string(), 10)
+            );
+            assert_eq!(on_demand.cpus, always_on.cpus);
+            assert_eq!(on_demand.cpuset, always_on.cpuset);
+            assert_eq!(on_demand.memory_gb, always_on.memory_gb);
+            assert_eq!(on_demand.image, always_on.image);
+            assert_eq!(on_demand.run_command, always_on.run_command);
+            assert_eq!(service.state.lock().unwrap().jit_names.len(), 1);
+            rig.mark_running();
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+/// what no response, push or log line of an on-demand run may hold.
+const PRIVATE: [&str; 7] = [
+    TOKEN,
+    OTHER_TOKEN,
+    JIT,
+    "<queue-placeholder>",
+    "<registration-placeholder>",
+    "fake.eyJleHAiOjQxMDI0NDQ4MDB9.signature",
+    "/tenant",
+];
+
+#[tokio::test(flavor = "current_thread")]
+async fn no_credential_reaches_a_github_topic_push_or_the_log_during_an_on_demand_run() {
+    let service = Service::start(2).await;
+    let rig = rig(&service);
+    let (rig, service) = (&rig, &service);
+    let (_, mut exposed) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            conn.client.subscribe().await.unwrap();
+            let mut watcher = conn.another().await;
+            watcher.client.subscribe_github().await.unwrap();
+            conn.until("both seats running", |snapshot| snapshot.runners_up == 2)
+                .await;
+            let session = service
+                .state
+                .lock()
+                .unwrap()
+                .active_session
+                .clone()
+                .expect("a listening pool holds a session");
+            let mut seen = Vec::new();
+            let scale_sets = loop {
+                if let Push::Github { status, .. } = watcher.push().await {
+                    seen.push(format!("{status:?}"));
+                    if status.scale_sets.iter().any(|set| set.assigned == Some(2)) {
+                        break status.scale_sets;
+                    }
+                }
+            };
+            assert_eq!(scale_sets[0].pool, "logical");
+            conn.set_token("o/r", OTHER_TOKEN).await.unwrap();
+            let mut seen_state = vec![format!("{:?}", conn.status().await)];
+            let config = conn.ok("config_read").await.to_string();
+            watcher.client.renew_github().await.unwrap();
+            rig.mark_running();
+            conn.ok("stop_all").await;
+            conn.until("the pool stopped", |snapshot| {
+                snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .is_some_and(|info| info.state == "stopped")
+            })
+            .await;
+            seen_state.push(format!("{:?}", conn.status().await));
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            while let Ok(push) = watcher.pushes.try_recv() {
+                seen.push(format!("{push:?}"));
+            }
+            while let Ok(push) = conn.pushes.try_recv() {
+                seen_state.push(format!("{push:?}"));
+            }
+            assert!(seen_state.len() > 2, "the state topic pushed nothing");
+            conn.ok("quit").await;
+            let mut exposed = [seen, seen_state, vec![config]].concat();
+            exposed.push(session);
+            exposed
+        })
+        .await;
+    let session = exposed.pop().unwrap();
+    let everything = format!("{}\n{}", exposed.join("\n"), rig.log.lines().join("\n"));
+    for private in PRIVATE.iter().copied().chain([session.as_str()]) {
+        assert!(
+            !everything.contains(private),
+            "{private} escaped into the github topic, a state response or the log"
+        );
+    }
 }
