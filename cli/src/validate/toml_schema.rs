@@ -56,9 +56,11 @@ const ROOT: [Member; 6] = [
     member(Key::Repositories, Child::Tables(Table::Pool)),
 ];
 
-const POOL: [Member; 12] = [
+const POOL: [Member; 14] = [
     member(Key::Name, Child::Leaf),
     member(Key::Repository, Child::Leaf),
+    member(Key::Organization, Child::Leaf),
+    member(Key::RunnerGroup, Child::Leaf),
     member(Key::Slots, Child::Leaf),
     member(Key::Labels, Child::Leaf),
     member(Key::Os, Child::Leaf),
@@ -156,6 +158,8 @@ pub(crate) fn key_name(key: Key) -> &'static str {
         Key::Repositories => "pool",
         Key::Budget => "budget",
         Key::Owner | Key::Repository => "repository",
+        Key::Organization => "organization",
+        Key::RunnerGroup => "runner_group",
         Key::Name => "name",
         Key::Slots => "runners",
         Key::TokenPath => "token_path",

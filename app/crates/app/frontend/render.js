@@ -4,6 +4,12 @@
 
 import { controlButton, keyOf } from "./controls.js";
 import { h } from "./dom.js";
+import {
+  editorBar,
+  editorFooter,
+  editorNotice,
+  editorReview,
+} from "./editor.js";
 import { icon } from "./icons.js";
 import { DRAG_REGION } from "./platform.js";
 import { banners, footer, poolsPanel } from "./pools.js";
@@ -114,7 +120,13 @@ function listWindow(list, ctx) {
         "data-key": "scroller",
       },
       banners(list.banners, ctx),
-      panel("pools", ctx, poolsPanel(list, ctx)),
+      panel(
+        "pools",
+        ctx,
+        ctx.editor?.access ? editorNotice(ctx.editor) : null,
+        poolsPanel(list, ctx),
+        ctx.editor?.access ? editorReview(ctx.editor) : null,
+      ),
       panel("tokens", ctx, tokensPanel(list.tokens, list.stale, ctx)),
     ),
   ];
@@ -157,5 +169,16 @@ export function renderWindow(view, ctx) {
   const body = view.window.body;
   const content =
     body.kind === "full" ? [fullWindow(body, ctx)] : listWindow(body, ctx);
-  return [...content, footer(view.window.footer)];
+  const foot = footer(
+    view.window.footer,
+    ctx.editor?.access
+      ? editorFooter(ctx.editor, view.window.footer.configuration)
+      : null,
+    ctx.editor?.hostOpen,
+  );
+  return [
+    ...content,
+    ctx.editor?.access ? editorBar(ctx.editor) : null,
+    foot,
+  ].filter(Boolean);
 }

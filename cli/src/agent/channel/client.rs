@@ -16,6 +16,7 @@ use tokio::time::timeout;
 
 use crate::instance::roots::Roots;
 
+use super::super::config::{ConfigChange, ConfigRead};
 use super::super::snapshot::Snapshot;
 use super::super::wire::{
     AgentMessage, ClientInfo, ClientMessage, ErrorBody, MAX_AGENT_MESSAGE_BYTES,
@@ -288,6 +289,63 @@ impl Client {
         .await
         .map(|_| ())
     }
+
+    /// reads `config.toml` now: its revision, status, editable values and problems.
+    pub async fn config_read(&self) -> Result<ConfigRead, CallError> {
+        let value = self.call("config_read", serde_json::json!({})).await?;
+        answer(value)
+    }
+
+    /// checks `edits`, the write path's operations as `config_edit` takes them,
+    /// against the file at `revision`, and with `check` false writes and applies them.
+    pub async fn config_edit(
+        &self,
+        revision: &str,
+        edits: serde_json::Value,
+        check: bool,
+    ) -> Result<ConfigChange, CallError> {
+        let params = serde_json::json!({ "revision": revision, "edits": edits, "check": check });
+        answer(self.call("config_edit", params).await?)
+    }
+
+    /// checks the file as it is at `revision`, and with `check` false applies it.
+    pub async fn config_reload(
+        &self,
+        revision: &str,
+        check: bool,
+    ) -> Result<ConfigChange, CallError> {
+        let params = serde_json::json!({ "revision": revision, "check": check });
+        answer(self.call("config_reload", params).await?)
+    }
+
+    /// stores the organization's token; the token is sent once, in this call.
+    pub async fn organization_token_set(
+        &self,
+        organization: &str,
+        token: &str,
+    ) -> Result<(), CallError> {
+        self.call(
+            "organization_token_set",
+            serde_json::json!({ "organization": organization, "token": token }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// removes the stored token, not a running job's registration; availability
+    /// comes from this connection's welcome, as for every optional method.
+    pub async fn organization_token_remove(&self, organization: &str) -> Result<(), CallError> {
+        self.call(
+            "organization_token_remove",
+            serde_json::json!({ "organization": organization }),
+        )
+        .await
+        .map(|_| ())
+    }
+}
+
+fn answer<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Result<T, CallError> {
+    serde_json::from_value(value).map_err(|error| CallError::BadAnswer(error.to_string()))
 }
 
 fn lock(
@@ -649,7 +707,7 @@ mod tests {
             let mut hello = String::new();
             reader.read_line(&mut hello).await.unwrap();
             write
-                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\"],\"topics\":[\"state\"],\"later\":1}\n")
+                .write_all(b"{\"type\":\"welcome\",\"version\":2,\"methods\":[\"status\",\"token_set\",\"token_remove\"],\"topics\":[\"state\"],\"later\":1}\n")
                 .await
                 .unwrap();
             let mut next = String::new();
@@ -660,6 +718,18 @@ mod tests {
         assert_eq!(
             client.call("quit", serde_json::Value::Null).await,
             Err(CallError::NotServed("quit".to_string()))
+        );
+        assert_eq!(
+            client
+                .organization_token_set("example-org", "fake-token")
+                .await,
+            Err(CallError::NotServed("organization_token_set".to_string()))
+        );
+        assert_eq!(
+            client.organization_token_remove("example-org").await,
+            Err(CallError::NotServed(
+                "organization_token_remove".to_string()
+            ))
         );
         drop(client);
         assert_eq!(agent.await.unwrap(), "", "nothing was sent");

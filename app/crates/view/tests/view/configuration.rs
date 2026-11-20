@@ -173,3 +173,117 @@ fn a_config_json_refused_at_its_migration_is_named_with_its_problems() {
         ]
     );
 }
+
+#[test]
+fn editing_is_offered_only_with_the_methods_and_reports_transition_and_migration_limits() {
+    use marshal_view::{Connection, Input, build};
+    let running = load("running");
+    let input = Input::new(Connection::Connected, Some(&running), now());
+    assert!(build(&input).window.editor.is_none());
+    let available = build(&input.editor(true)).window.editor.unwrap();
+    assert!(available.reason.is_none());
+    assert!(available.read_reason.is_none());
+    for name in ["resuming", "stopping", "building", "quitting", "restarting"] {
+        let snapshot = load(name);
+        let editor = build(&Input::new(Connection::Connected, Some(&snapshot), now()).editor(true))
+            .window
+            .editor
+            .unwrap();
+        assert!(editor.reason.is_some(), "{name}");
+        assert!(editor.read_reason.is_none(), "{name}");
+    }
+    let snapshot = running_with(json!({
+        "status": "valid", "migration": {"state": "pending"}
+    }));
+    let editor = build(&Input::new(Connection::Connected, Some(&snapshot), now()).editor(true))
+        .window
+        .editor
+        .unwrap();
+    assert!(editor.reason.unwrap().contains("migration"));
+    let invalid = running_with(json!({
+        "status": "invalid",
+        "problems": ["line 9: pool[0].runners: must be an integer from 1 to 16"],
+        "in_use": { "source": "last_valid", "read_at": at(1, 5, 0) }
+    }));
+    let view = build(&Input::new(Connection::Connected, Some(&invalid), now()).editor(true));
+    assert_eq!(
+        configuration_warnings(&view),
+        [
+            "Warning: config.toml is not valid (line 9: pool[0].runners: must be an integer \
+         from 1 to 16), so Marshal runs the configuration it read today 01:05. Fix the \
+         file, then choose Reload config.toml."
+        ]
+    );
+}
+
+#[test]
+fn the_editor_fields_follow_each_hosts_schema_without_tokens_or_lifecycle() {
+    use marshal_cli::profile::Profile;
+    use marshal_view::{Connection, editor_access};
+    let running = load("running");
+    let windows = editor_access(Profile::Axpc, Connection::Connected, Some(&running));
+    let mac = editor_access(Profile::Axmc, Connection::Connected, Some(&running));
+    assert!(
+        windows
+            .settings
+            .iter()
+            .all(|f| !f.key.starts_with("budget"))
+    );
+    assert!(mac.settings.iter().any(|f| f.key == "budget.disk_gb"));
+    assert!(windows.pool.iter().all(|f| f.key != "disk_gb"));
+    assert!(mac.pool.iter().any(|f| f.key == "disk_gb"));
+    assert_eq!(
+        windows
+            .volume
+            .iter()
+            .map(|f| f.key.as_str())
+            .collect::<Vec<_>>(),
+        ["suffix", "mount_path"]
+    );
+    assert!(mac.volume.is_empty());
+    for model in [windows, mac] {
+        assert!(
+            model
+                .settings
+                .iter()
+                .chain(&model.pool)
+                .all(|f| !f.key.contains("token")
+                    && !f.key.contains("lifecycle")
+                    && f.key != "schema_version")
+        );
+    }
+}
+
+#[test]
+fn an_unset_pool_value_says_what_the_agent_reads_it_as_on_each_host() {
+    use marshal_cli::profile::Profile;
+    use marshal_view::{Connection, EditorField, editor_access};
+    let running = load("running");
+    let absent = |profile, key: &str| {
+        let access = editor_access(profile, Connection::Connected, Some(&running));
+        let field: &EditorField = access
+            .pool
+            .iter()
+            .find(|field| field.key == key)
+            .expect("the host offers the field");
+        field.absent.clone()
+    };
+    // a Windows pool is Linux only, and requires its runners
+    assert_eq!(absent(Profile::Axpc, "runners"), "Not set — required");
+    assert_eq!(absent(Profile::Axpc, "cpus"), "Not set — 2");
+    assert_eq!(absent(Profile::Axpc, "memory_gb"), "Not set — 8");
+    // a Mac pool is macOS or Linux, which default differently
+    assert_eq!(
+        absent(Profile::Axmc, "runners"),
+        "Not set — 1 for macOS, 2 for Linux"
+    );
+    assert_eq!(
+        absent(Profile::Axmc, "cpus"),
+        "Not set — 4 for macOS, 2 for Linux"
+    );
+    assert_eq!(absent(Profile::Axmc, "memory_gb"), "Not set — 8");
+    assert_eq!(
+        absent(Profile::Axmc, "disk_gb"),
+        "Not set — 50 for macOS, required for Linux"
+    );
+}

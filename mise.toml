@@ -117,6 +117,15 @@ run = "cargo test --locked --package marshal-modes --package marshal-view --pack
 description = "Run the main window page's own tests with Node, which check the order it draws views in and that it clears a typed token"
 run = "node --test app/crates/app/tests/frontend/*.test.mjs"
 
+[tasks."prepare:app-render"]
+description = "Install the locked, test-only browser controller and checksum-verified Chromium under this worktree; no OS packages"
+run = "npm ci --ignore-scripts --omit=optional --prefix app/crates/app/tests/render && node app/crates/app/tests/render/install-browser.mjs"
+
+[tasks."test:app-render"]
+description = "Render recorded editor states in pinned Chromium and check layout, contrast, focus and accessibility; requires prepare:app-render"
+depends = ["rust:require"]
+run = "node app/crates/app/tests/render/editor.mjs"
+
 [tasks."deny:app"]
 description = "Check the crates the app's executable links for banned versions, unreviewed licences, and other sources, for the Windows and macOS builds; the advisory check runs in its own workflow"
 depends = ["rust:require", "fetch:app"]
@@ -409,12 +418,35 @@ description = "Check the script that writes SHA256SUMS for the release's app exe
 run = "bash .github/scripts/tests/test-assemble-release.sh"
 
 [tasks."check:release-shape"]
-description = "Check that the release workflows keep the shape the release record describes: no job in an Environment or reading a signing secret, and each job's place in the chain"
+description = "Check the temporary seven-stage CLI release boundary and retained unprivileged app dry run; only inline sign-macos reaches the release Environment"
 run = "node .github/scripts/check-release-shape.mjs"
 
 [tasks."test:release-shape"]
 description = "Run the release shape check against altered copies of the workflows, one change at a time, and expect each to fail"
 run = "bash .github/scripts/tests/test-release-shape.sh"
+
+[tasks."test:cli-recovery"]
+description = "Check historical source and version binding, legacy release tooling and the actual signed-output assembly and publication checks with stand-ins"
+run = '''
+bash .github/scripts/cli-recovery/tests/test-recovery.sh
+node --test .github/scripts/cli-recovery/tests/test-build-version.mjs
+bash .github/scripts/tests/test-cli-recovery-release.sh
+'''
+
+[tasks."test:sign-macos"]
+description = "Run the actual inline signing scripts against recording stand-ins, including secret masking, refusal and cleanup paths; no signing takes place"
+run = "bash .github/scripts/tests/test-sign-macos.sh"
+
+[tasks."test:signed-pkg-refusals"]
+description = "Exercise signed CLI/package verification and cleanup with stand-ins, including both designated-requirement forms and invalid signature or payload refusals"
+run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
+
+[tasks."test:cli-recovery-install-blocks"]
+description = "Run the recovery document's CLI install/check/migrate/uninstall/rollback blocks against stand-ins, not native hosts"
+run = '''
+bash .github/scripts/cli-recovery-install-tests/test-install-blocks.sh bash
+pwsh -NoProfile -File .github/scripts/cli-recovery-install-tests/test-install-blocks.ps1
+'''
 
 [tasks.check]
 description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin test, release script tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
@@ -430,6 +462,10 @@ depends = [
   "test:assemble-release",
   "check:release-shape",
   "test:release-shape",
+  "test:cli-recovery",
+  "test:sign-macos",
+  "test:signed-pkg-refusals",
+  "test:cli-recovery-install-blocks",
   "test:installer-version",
   "test:fetch-wix",
   "test:rust",

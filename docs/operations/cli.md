@@ -17,20 +17,28 @@ export, the toolchain and the gates that cover it, the app's workspace that buil
 the library and the gates it adds, how a release is built
 and installed, and why its name is fixed.
 
-There is no command line. Since W1's installer pull request no `marshal` executable is
-built on any operating system, and the app,
-[App](./app.md) and its executable `marshal-app.exe`, is the only way to run a host:
-its resident agent runs the pools, builds the image and serves protocol version 2.
+The current `marshal-cli` package has no command-line target. Since W1's installer
+pull request its normal builds produce no `marshal` executable on any operating
+system. [App](./app.md) and its executable `marshal-app.exe` run the current
+library: the resident agent runs the pools, builds the image and serves protocol
+version 2.
 The sections below that name `validate`, `build`, `start` and the clients `stop`,
 `restart`, `status` and `diagnostics` describe the library's entry points of those
 names, which the agent shares, and the foreground instance and its protocol version 1,
-which no shipped executable runs: the tests run them through a test-only helper, as
+which the app does not run: the tests run them through a test-only helper, as
 the Running It section says. The command-line procedures, with their commands,
 are at the last command-line release's tag, identified in The Last Command-Line
 Release section.
-[Windows Runner Host](./windows-runner-host.md) describes axpc with the app. axmc has
-no supported way to run its Linux and macOS pools from W1's installer pull request until M2's
-Mac app, as [macOS Runner Host](./macos-runner-host.md) says.
+
+During the bounded F0 recovery, the release workflow temporarily builds a fixed
+historical CLI instead of the app, not a command-line target for this current
+library. The Temporary CLI Recovery section of
+[Security](../conventions/security.md) governs that route, and
+[CLI Recovery](./cli-recovery.md) owns its operator procedure and actual-version
+installation and runtime procedures. The recovery is not a supported parallel CLI
+product. [Windows Runner Host](./windows-runner-host.md) describes axpc with the app.
+Outside that recovery, axmc has no supported release route until M2's Mac app, as
+[macOS Runner Host](./macos-runner-host.md) says.
 
 ## Running It
 
@@ -177,8 +185,11 @@ change may be rejected now; the last column says how to change it.
 ### Labels
 
 `validate` rejects two entries for the same repository that share a non-platform
-label and have the same `os`, and accepts them when `os` differs. On axpc every
-entry is Linux, so the existing rule and message stand.
+label and have the same `os`, and accepts them when `os` differs. In a TOML file it
+also rejects an organisation pool and another pool of the same organisation, or of
+one of its repositories, under the same condition; the TOML Configuration section
+states that rule. On axpc every entry is Linux, so the existing rule and message
+stand for JSON.
 [Security](../conventions/security.md) owns the rule, including what a consumer
 names in `runs-on` and the cross-host case that `validate` cannot see.
 
@@ -262,21 +273,24 @@ Otherwise the errors come in the order the checks find them:
    checks bullet under
    [Behaviour That Is Easy to Miss](#behaviour-that-is-easy-to-miss) states. For
    each entry after the first, in file order, against each earlier entry in file
-   order: a colliding `name`, then for the same repository a different token file
-   or an ambiguous routing label, or for another repository a reused token file.
+   order: a colliding `name`, then for the same repository a different token file,
+   or for another repository a reused token file, then an ambiguous routing label
+   for the same repository. A JSON configuration has no organisation pools, so it has
+   no organisation routing check.
 5. On axmc, the budget checks, over the same entries as step 4.
 
 The exit code is 1 and standard output is empty whenever there is an error. A valid
 configuration prints its summary on standard output, with lines ending in `\n`:
 
 - **axpc.** The header `Host configuration is valid: <n> entries, image <name>`, a
-  CPU policy line that only the axpc summary has, and for each entry its
-  repository, slots, labels, token file, name, container name pattern, CPU and
+  CPU policy line that only the axpc summary has, and for each entry its target
+  (`Repository owner/name`, or `Organization X, runner group Y` for an organisation
+  pool), slots, labels, token file, name, container name pattern, CPU and
   memory limits, planned affinity count and position, diagnostic settings, and
   volumes.
 - **axmc.** The header `Host configuration is valid: <n> entries, profile axmc`,
   followed by `, image <name>` when the configuration names an image, and no CPU
-  policy line. Each entry has its repository, `os`, slots, labels, token file,
+  policy line. Each entry has its target as on axpc, `os`, slots, labels, token file,
   name, CPU and memory limits, `disk`, and diagnostic settings, but no container
   name pattern, affinity, or volume lines. A `Budget use` block ends the summary,
   with the macOS VMs, CPUs, memory, and disk used against the limit.
@@ -374,20 +388,22 @@ tables, an inline array of tables, and hexadecimal integers.
 | `[lifecycle]`    | table                                   | Optional. Four optional booleans, below.                                                                                                                                                                                                              |
 | `[[pool]]`       | array of tables                         | At least one. Each table is one entry of today's `repositories`.                                                                                                                                                                                      |
 
-| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                                            |
-| ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                   | string                              | `name`                           | Required.                                                                                                                                                       |
-| `repository`             | string                              | `owner` and `repository`         | Required, `"owner/name"`. Anything that is not one owner, a slash, and one name is `must be "owner/name"`; each part then follows the owner or repository rule. |
-| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                                                       |
-| `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                                                       |
-| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`.                         |
-| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                                                |
-| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                                                |
-| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                                        |
-| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                                                     |
-| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                                                       |
-| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                                            |
-| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                                           |
+| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                    |
+| ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                   | string                              | `name`                           | Required.                                                                                                                               |
+| `repository`             | string                              | `owner` and `repository`         | Exactly one of this and `organization` is required. Its value is `"owner/name"`; each part follows the owner or repository rule.        |
+| `organization`           | string                              | none                             | The organisation's login, under the owner rule. TOML only.                                                                              |
+| `runner_group`           | string                              | none                             | Required with `organization`, rejected without it. The exact group name in GitHub, not blank and without control characters.            |
+| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                               |
+| `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                               |
+| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`. |
+| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                        |
+| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                        |
+| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                |
+| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                             |
+| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                               |
+| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                    |
+| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                   |
 
 Every key follows the rule of the JSON key it renames on the host's profile:
 whether it is required, its default, and its range. The shared rule set applies
@@ -400,6 +416,21 @@ changes:
   axpc. A TOML pool without them is a Linux pool without volumes.
 - **One `repository` key.** The owner is part of it, so a missing owner is a problem
   on `repository`.
+- **Organisation pools.** `organization` and `runner_group` select an organisation
+  runner group instead of one repository. Such a pool rejects `volumes`, including an
+  empty list, with `not allowed with organization`. `scale_set` is not a known key of
+  this configuration, so it is reported as an undefined key, except on an organisation
+  pool, where it is reported as `not allowed with organization`. JSON gains no
+  organisation keys. With the same OS, an organisation pool must not share a
+  non-platform label with another pool of that organisation or any of its repositories,
+  comparing logins and labels without case. This includes the default `routing_label`,
+  so overlapping pools need distinct explicit labels. Repository-only files retain their
+  validation rules. A pool naming neither target reports
+  `pool[i]: names neither repository nor organization`, and one naming both reports
+  `pool[i]: names both repository and organization`. An organisation pool without
+  `runner_group` reports `pool[i].runner_group: required with organization`, and a pool
+  with `runner_group` and no `organization` reports
+  `pool[i].runner_group: only with organization`.
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
@@ -476,13 +507,14 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
 5. `pool` itself: missing, not an array of tables, or empty.
 6. Each pool in file order, all of one pool's problems before the next pool's, in the
    order of the JSON keys they rename, after the pool's own unknown keys:
-   `repository`, `os`, `labels`, `volumes`, `runners`, `name`, `cpus`, `memory_gb`,
-   on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
+   `repository`, `organization`, `runner_group`, `os`, `labels`, `volumes`,
+   `runners`, `name`, `cpus`, `memory_gb`, on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
    not booleans, `diagnostic_directory`, and last `diagnostic_raw_records` when it
    requires `diagnostics`.
 7. The checks across pools, for each pool after the first against each pool before
-   it: a colliding `name`, then an ambiguous routing label. Then on macOS the budget
-   totals.
+   it: a colliding `name`, then an ambiguous routing label, which for an organisation
+   pool is the organisation routing overlap in the Organisation pools bullet. Then on
+   macOS the budget totals.
 
 **Key paths and lines.** A key path is in TOML form, such as `pool[1].runners` or
 `pool[0].volumes[2].mount_path`, with pools and volumes counted from 0, as the JSON
@@ -1368,7 +1400,7 @@ inventories the selection refuses.
 
 ### Registration
 
-A registration is `POST /repos/<owner>/<repo>/actions/runners/generate-jitconfig`
+A repository registration is `POST /repos/<owner>/<repo>/actions/runners/generate-jitconfig`
 to `https://api.github.com`, with these headers
 (`Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
 `X-GitHub-Api-Version: 2022-11-28`, `Content-Type: application/json`) and this body
@@ -1379,6 +1411,11 @@ a response without one is a failure. The client also:
 - it follows no redirect, so a redirect is a failure;
 - it fails a connection after 10 s and a whole request after 30 s;
 - it fails a response larger than 1 MiB, whether the size is declared or streamed.
+
+The repository's owner may be a personal account or an organisation; the request and
+the pool's one-repository token are the same for both. The Fine-Grained Token section
+of [Windows Runner Host](./windows-runner-host.md) gives the token steps for an
+organisation-owned repository.
 
 Each failure goes into the slot's backoff. The error text has the token replaced by
 `<token>`, whitespace collapsed, and is cut to 500 characters followed by `...`.
@@ -1403,6 +1440,26 @@ The base address can be overridden only by a debug build, and only to
 value. A release build ignores the request and always uses GitHub, so a release
 binary cannot send a token anywhere else. `tests/base_address.rs` shows both halves,
 and CI runs it again in the release profile.
+
+An organisation registration first reads
+`GET /orgs/<org>/actions/runner-groups?per_page=100` and finds the configured
+`runner_group` by exact name. Every required page must succeed. It accepts only a
+non-default, non-inherited group with `visibility: selected` and
+`allows_public_repositories: false`; `restricted_to_workflows` may be either
+value. It does not read the group's selected repositories, so an empty group is
+accepted. Missing, renamed, ambiguous or refused groups fail registration with
+their cause and enter the slot's backoff.
+
+The group check uses each page's last `ETag`, and a cached page is usable only
+after an authorised `304` for that request. A failed read never reuses an old
+permission. Next pages must have the first request's origin and either its exact path
+or GitHub's `/organizations/<id>/actions/runner-groups` form of it, with one id for
+the whole read; cycles, more than ten pages, missing flags and invalid responses fail closed.
+The check repeats before every registration, outside the display queue and its
+budget. A group fixed in GitHub is accepted at the next attempt, without a
+restart. Only then does the registrar send
+`POST /orgs/<org>/actions/runners/generate-jitconfig` with that check's group id.
+Both the reads and the POST keep the outbound limits and secret handling above.
 
 ### Names and the Slot Loop
 
@@ -2305,7 +2362,13 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   kind, a repository's and an organization's, checks its name with `cmdkey`, reads
   its persistence back from the store's `persistence` attribute, round-trips a token of 1280 UTF-16 units and
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
-  the Credential Manager to a registration; only the Windows CI job runs it.
+  the Credential Manager to a registration; only the Windows CI job runs it. Its tests
+  take turns at the Credential Manager, as a precaution, because the crate's upstream
+  reports it losing updates under concurrent use; the cause of the CI misses is not
+  established, and [#148](https://github.com/axross/runners/issues/148) holds the
+  investigation and the probe's result. The tests neither retry a read nor warm the
+  Credential Manager up first, since either would hide a miss rather than remove
+  its cause.
 - **macOS.** The user's login keychain, through `security-framework`, as one generic
   password per key with the service `app.axross.marshal`. A repository's item has the
   account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
@@ -2393,25 +2456,27 @@ opens two connections; a `subscribe` to another topic on a connection that holds
 is answered with `invalid_request`, and one to the same topic again changes nothing
 but, for `github`, counts as a renewal.
 
-| Method             | Params                                              | Result                                                             |
-| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------ |
-| `status`           | none                                                | The snapshot                                                       |
-| `subscribe`        | `topic`: `state`, `github`                          | `{topic}`; the first event follows at once                         |
-| `renew`            | `topic`: `github`                                   | `{topic}`; keeps the connection's `github` subscription            |
-| `start_all`        | none                                                | `{state}`, `resuming` while the pools are admitted                 |
-| `stop_all`         | none                                                | `{state}`                                                          |
-| `build`            | none                                                | `{state, started}`, `started` in milliseconds since the Unix epoch |
-| `quit`             | none                                                | `{state}`                                                          |
-| `token_set`        | `repository`, `token`                               | `{repository}`, the key it was stored under                        |
-| `token_remove`     | `repository`                                        | `{repository}`                                                     |
-| `drain_for_update` | `version`                                           | `{state, update}`; see The Update Drain                            |
-| `config_read`      | none                                                | `{revision, status, settings, pools, problems, too_large}`         |
-| `config_edit`      | `revision`, `edits`, `check`                        | `{revision, effects, repositories_released, applies}`              |
-| `config_reload`    | `revision`, `check`                                 | `{revision, effects, repositories_released, applies}`              |
-| `launch`           | none                                                | `{state}`, with `reason` when it stays stopped                     |
-| `lifecycle_set`    | `key`, `value` (`true`, `false` or `null` to unset) | `{lifecycle}`, the snapshot's part                                 |
+| Method                      | Params                                              | Result                                                             |
+| --------------------------- | --------------------------------------------------- | ------------------------------------------------------------------ |
+| `status`                    | none                                                | The snapshot                                                       |
+| `subscribe`                 | `topic`: `state`, `github`                          | `{topic}`; the first event follows at once                         |
+| `renew`                     | `topic`: `github`                                   | `{topic}`; keeps the connection's `github` subscription            |
+| `start_all`                 | none                                                | `{state}`, `resuming` while the pools are admitted                 |
+| `stop_all`                  | none                                                | `{state}`                                                          |
+| `build`                     | none                                                | `{state, started}`, `started` in milliseconds since the Unix epoch |
+| `quit`                      | none                                                | `{state}`                                                          |
+| `token_set`                 | `repository`, `token`                               | `{repository}`, the key it was stored under                        |
+| `token_remove`              | `repository`                                        | `{repository}`                                                     |
+| `organization_token_set`    | `organization`, `token`                             | `{organization}`, the lower-case key it was stored under           |
+| `organization_token_remove` | `organization`                                      | `{organization}`                                                   |
+| `drain_for_update`          | `version`                                           | `{state, update}`; see The Update Drain                            |
+| `config_read`               | none                                                | `{revision, status, settings, pools, problems, too_large}`         |
+| `config_edit`               | `revision`, `edits`, `check`                        | `{revision, effects, repositories_released, applies}`              |
+| `config_reload`             | `revision`, `check`                                 | `{revision, effects, repositories_released, applies}`              |
+| `launch`                    | none                                                | `{state}`, with `reason` when it stays stopped                     |
+| `lifecycle_set`             | `key`, `value` (`true`, `false` or `null` to unset) | `{lifecycle}`, the snapshot's part                                 |
 
-`token_set` is the one message that carries a secret: the token travels only in its
+`token_set` and `organization_token_set` carry a secret: the token travels only in the
 `token` param, from the client to the agent, and the agent never sends, logs or
 repeats it. Its error text never quotes the params. A method a later slice adds
 under the version rules above that carries a secret is handled as `token_set` is.
@@ -2549,7 +2614,8 @@ methods, at its start and at `start_all`, and never watches it.
   `runners_after` and `stops_runners`, true when the change stops runners the pool has, which fails
   the jobs on them, on a running agent only. `repositories_released` lists the
   repositories no pool names after the change, whose tokens the client may offer to
-  remove; the agent removes none. `applies` is true when the change applies now.
+  remove; it never lists organisation keys, and the agent removes no token.
+  `applies` is true when the change applies now.
 - **A reload of a file with problems** answers `config_invalid` or
   `config_unusable` and records the problems in the snapshot; the configuration in use
   stays, as `last_valid` when it came from the file.
@@ -2598,24 +2664,26 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                          | Holds                                                                                                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
-| `agent.update`                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
-| `agent.build`                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
-| `configuration`                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
-| `configuration.last_apply`     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
-| `configuration.status`         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
-| `configuration.in_use`         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
-| `configuration.migration`      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
-| `runners_up`, `runners_wanted` | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
-| `repositories`                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
-| `pools`                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
-| `pools[].runners`              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
-| `pools[].diagnostics`          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
-| `leftovers`                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
-| `images`                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
-| `omitted`                      | How many `runners`, `problems`, `pools`, `repositories`, `leftovers` and `images` it left out                                                               |
+| Field                                          | Holds                                                                                                                                                       |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
+| `agent.update`                                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
+| `agent.build`                                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
+| `configuration`                                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
+| `configuration.last_apply`                     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
+| `configuration.status`                         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
+| `configuration.in_use`                         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
+| `configuration.migration`                      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
+| `runners_up`, `runners_wanted`                 | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
+| `repositories`                                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
+| `organizations`                                | Each organisation login in lower case, `has_token` and its pools                                                                                            |
+| `pools`                                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
+| `pools[].organization`, `pools[].runner_group` | Present only for an organisation pool, which has no `repository` field                                                                                      |
+| `pools[].runners`                              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
+| `pools[].diagnostics`                          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
+| `leftovers`                                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
+| `images`                                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
+| `omitted`                                      | How many `runners`, `problems`, `pools`, `repositories`, `organizations`, `leftovers` and `images` it left out                                              |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the
@@ -2659,7 +2727,7 @@ client shows an event with a state and a warning from a later agent.
 A snapshot is cut to at most 64 KiB less the message's envelope. When it is larger
 it first lists no more than 100 configuration problems, then leaves out runner rows
 from the end, as many as it must and no more, then pools from the end, then
-leftovers, repositories, images and configuration problems from their ends, and says
+leftovers, repositories, organisations, images and configuration problems from their ends, and says
 how many in `omitted`. Last of all the long texts, the configuration path, the
 migration's reason and the agent's version, reason and build message, are cut to 512
 characters. `runners_up`
@@ -2671,9 +2739,22 @@ GitHub status is what GitHub says about this host's runners, for the window only
 whether each is offline, idle or busy, the job a busy runner runs, and the request
 budget. It lives in the library's `github_status` module beside registration, and the
 agent runs it and publishes it as the `github` topic. It owns the busy flag, the job
-lookup, the request budget and the back-off; a repository is one kind of scope, and a
-later scope, such as an organisation's, adds its own fields under the version rules
-above, so no field here changes meaning.
+lookup, the request budget and the back-off. Repositories and organisations are
+separate scopes in the same queue; organisation status adds fields without
+changing the repository fields' meaning.
+
+The `github` value's `organizations` lists `organization`, `runner_group`,
+`checked_at`, `status` and `runners`; each runner has only `name` and `github`
+(`offline`, `idle` or `busy`), never `job` or `job_names`. An organisation is read
+only while a configured pool has a registered runner on this host and its token
+is present, through `GET /orgs/<org>/actions/runners?per_page=100`. Only this host's
+runner names are shown. Pools and groups of one organisation share a conditional,
+paged read and check time, with the same 15 s minimum, budget, subscription and
+backoff rules as repositories. Group rows reflect configured pools, not detection
+of a runner moved in GitHub. Organisation tokens never trigger repository job
+lookups. Message cutting drops organisation runners, then repository runners, then
+organisation group rows; `omitted_runners` counts dropped runners and
+`omitted_organizations` counts dropped group rows.
 
 **Collection follows the subscription.** The agent reads GitHub only while at least
 one connection holds a `github` subscription that was subscribed or renewed in the
@@ -2703,14 +2784,17 @@ budget.
 
 **Next pages.** For every paged read, each address in a `link` header's `next` is
 compared with the read's first request. It is followed only when it has that request's
-origin and its path is either that request's path or `/repositories/<id>` followed by
-exactly the rest of that path after `/repos/<owner>/<repo>`, where `<id>` is one or
+origin and its path is either that request's path, or `/repositories/<id>` followed by
+exactly the rest of that path after `/repos/<owner>/<repo>`, or, for the runner list
+of an organisation, `/organizations/<id>/actions/runners`, where `<id>` is one or
 more ASCII digits and the same on every page of the read, and only its query differs.
-GitHub names next pages in the `/repositories/<id>` form. Any other address reads as
-`error` and is not requested, so no response can send the token to another origin or
-another endpoint path. The agent does not check that `<id>` is the configured
-repository's, which would cost another request; the address comes only from GitHub's
-response over TLS, with no redirect followed.
+GitHub names next pages in those id forms. A repository read never follows the
+`/organizations/` form, and an organisation read never follows the `/repositories/`
+form. Any other address reads as `error` and is not requested, so no response can
+send the token to another origin or another endpoint path. The agent does not check
+that `<id>` is the configured repository's or organisation's, which would cost
+another request; the address comes only from GitHub's response over TLS, with no
+redirect followed.
 
 The requests use the registration client: `https://api.github.com` only in a release
 build, no redirect, 10 s to connect, 30 s a request, 1 MiB a response, the token in a
@@ -3389,11 +3473,14 @@ and `base_old` with `days`, and `leftovers` of kind `vm_unconfigured_pool`.
 ## Running a Host
 
 This section describes the library's foreground instance, its `build` and its version
-1 clients. Since W1's installer pull request no shipped executable runs them: the
+1 clients. The normal app executable does not run them: the
 app's agent runs a host instead, as The Agent section describes, with the
 runtime layer, the image check, the log and containment that this section shares
 with it. The tests run them through `commands-helper`, and the last command-line
 release's tag documents them as commands.
+
+The temporary recovery CLI uses its fixed historical program tree, not this
+current library. Use [CLI Recovery](./cli-recovery.md) for that release's procedures.
 
 `start` runs the host's pools in the foreground through the instance layer and the
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
@@ -4257,7 +4344,8 @@ need CRLF build it from the stored text.
 - **Hand-written TOML.** [`tests/host-configuration/toml/`](../../tests/host-configuration/toml)
   holds `accepted/` and `rejected/` documents and one `expectations.json`, read by
   `cli/tests/toml_fixtures.rs`. These are the cases only TOML has: syntax errors,
-  `schema_version`, `routing_label`, `[lifecycle]`, letter case, duplicates, wrong
+  `schema_version`, `routing_label`, `[lifecycle]`, the organisation keys and their
+  rules, letter case, duplicates, wrong
   types including a date, nesting deeper than the parser allows, in an array, an
   inline table, a dotted key and a table header, each placed on its line, the
   problem order, the lines, and a token-shaped value or key. Each expectation names the profile
@@ -4396,6 +4484,12 @@ the gates that cover it, so a change to the library knows what the app relies on
   log folder and file mode (`private::current_uid`, `ensure_private_directory` and
   `FILE_MODE`), and the log's timestamp (`runtime::name::stamp`). It adds no message to
   the protocol: a new message follows [Version Rules](#version-rules).
+- The client exposes `config_read`, `config_edit` and `config_reload`, with typed
+  `ConfigRead`, `ConfigChange` and `PoolEffect` answers. Their status and effect
+  names remain strings, so an unknown future name does not break decoding.
+  The session preserves structured configuration problems and passes each request
+  through the same connection as its other actions. Method negotiation controls
+  whether the window offers editing.
 - `cli/helpers/fake_docker.rs` is also built as the `fake-docker` binary of the app's
   executable package, so the app's tests can run the exporter child against a fake
   engine. The source stays under `cli/`; the CLI's own tests build it as before.
@@ -4453,11 +4547,21 @@ build tool has.
 
 ## Releases
 
+The active dispatch route is temporarily the fixed historical CLI, not the app.
+The Temporary CLI Recovery section of [Security](../conventions/security.md)
+governs that release route. [CLI Recovery](./cli-recovery.md) owns its operator
+procedure, both source identities, actual-version CLI procedures and the
+successful native-evidence prerequisite for a separate app-path restoration.
+App source and normal builds remain. The app release descriptions below are the
+suspended baseline to reconcile on restoration, not a second active release
+graph. No recovery-code PR, dry run or app merge completes F0 or changes its
+dependency gates.
+
 A release is a `v<version>` tag on the default branch and the GitHub release that
 carries its files, such as `v0.1.0`. The maintainer starts one by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main, and semantic-release
 works out the version from the commits since the last `v*` tag. Releases are never
-prereleases. The run has five jobs, and none of them declares an Environment or
+prereleases. The suspended app baseline has five jobs, and none declares an Environment or
 reads a signing secret: from W1's installer pull request until the next signing job,
 M2's or W4's, joins the chain, the maintainer's dispatch is the only decision.
 [Development Workflow](./development-workflow.md#cutting-a-release) gives the
@@ -4465,7 +4569,7 @@ maintainer's steps and the version rules, and
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records the controls around it.
 
-Since W1's installer pull request a release carries the Windows app, Marshal, and its
+The suspended app baseline carries the Windows app, Marshal, and its
 installer, and no command line and no macOS file. The releases before it carry the
 command line; The Last Command-Line Release section says
 where their procedures are.
@@ -4705,21 +4809,20 @@ an update.
 
 ### The Last Command-Line Release
 
-The last command-line release is the newest `v*` release made before W1's installer
-pull request merged: the newest release whose files hold no `marshal-app.exe`. It is
-not `v0.1.0`, which has only the bare binaries. The maintainer cuts it from `main`
-before W1's installer pull request merges, since that pull request waits for F0's
-issue to close and F0's issue closes only after that release's host checks. It
-carries F0's MSI, the signed macOS package and the axmc runtime, and is expected to
-be `1.0.0`, since `main` holds breaking changes since `v0.1.0`. Its tag's
-`docs/operations/cli.md`, `docs/operations/windows-runner-host.md` and
-`docs/operations/macos-runner-host.md` hold every command-line procedure, with their
-blocks: installing and checking the command line on Windows and macOS, migrating
-from a manual install, updating it, uninstalling it, rolling back, and reading the
-macOS package's signature. Open that tag's documents on GitHub, at
-`https://github.com/axross/runners/blob/v<version>/docs/operations/cli.md`, and use
-the procedures there. The commit before W1's installer pull request on main, its
-first parent, holds the command line and everything that pull request removed.
+The required last CLI installer release did not precede W1's installer merge.
+That missed ordering is not satisfied by the app merges. The temporary recovery
+instead releases the fixed complete program tree at
+`dc8e1ebcc0722997206487f3dcca2ae7e519cf02`, W1's first parent, through main's
+current workflow. Semantic-release selects the actual version from main history;
+it is not a hard-coded next version. Its five files include the legacy CLI MSI
+and signed/notarized pkg, not an app or test helper.
+
+Use the recovery tag's `docs/operations/cli-recovery.md` for its executable
+CLI procedures, not this file's app blocks. That guide distinguishes the workflow/tag
+commit from the historical program input and preserves the optional verifier pins.
+The historical tree keeps the CLI runtime documentation and embedded inputs.
+No public recovery signing measurement or native outcome is implied by these
+instructions; the final record stays pending until the actual evidence exists.
 
 Moving a host from the command line to the app is that release's uninstall procedure
 for the command line, then the Installing section here. The command line's MSI and
@@ -4729,7 +4832,11 @@ Marshal's files, and `where.exe marshal` then finds nothing.
 
 ### Signing, Held for M2 and W4
 
-No job of `release.yaml` signs anything from W1's installer pull request until the
+The temporary recovery reinstates bare-CLI/pkg signing under CLI Recovery's
+bounded exception. The following held contract concerns the app path after
+restoration, not that temporary CLI job.
+
+No job of the suspended app baseline signs anything from W1's installer pull request until the
 next signing job joins the chain: M2's disk-image pull request brings back
 `sign-macos` and `verify-macos`, rewritten for the app and the disk image, and W4's
 feed pull request adds `update-tool` and `sign-update`. Each joins before
@@ -4747,8 +4854,8 @@ The contracts below stay in force through the gap.
 
 ### The Signing Contracts
 
-These are held for M2 and W4: no job uses them until M2's or W4's signing job
-joins the chain, and they stay in force through the gap. F0 owns these. W1, W4, M2
+The temporary recovery uses these contracts for the bare CLI/pkg. They also remain
+held for M2 and W4's app-signing jobs after restoration. F0 owns these. W1, W4, M2
 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
@@ -4805,7 +4912,7 @@ The contracts F0 owns are these:
   team ID, the form that matched, and the exact requirement printed for the bare
   binary here, as the text that M2 consumes.
 
-- **The team** is pinned by the Environment variable `MACOS_TEAM_ID`. `sign-macos`
+- **The team** is pinned by the Environment variable `APPLE_TEAM_ID`. `sign-macos`
   refuses a certificate of another team, and `verify-macos` refuses a designated
   requirement that is neither form A nor form B above, each built from the identifier
   and the team ID that `sign-macos` output after checking it.
@@ -4820,14 +4927,14 @@ The contracts F0 owns are these:
 
   | Secret                         | Holds                                                             |
   | ------------------------------ | ----------------------------------------------------------------- |
-  | `MACOS_APPLICATION_P12_BASE64` | The Developer ID Application identity as a `.p12`, base64-encoded |
-  | `MACOS_INSTALLER_P12_BASE64`   | The Developer ID Installer identity as a `.p12`, base64-encoded   |
-  | `MACOS_P12_PASSWORD`           | The password of both `.p12` files                                 |
-  | `MACOS_NOTARY_KEY_P8`          | The App Store Connect team API key's `.p8` text                   |
-  | `MACOS_NOTARY_KEY_ID`          | The key's ID                                                      |
-  | `MACOS_NOTARY_ISSUER_ID`       | The issuer ID                                                     |
+  | `APPLE_APPLICATION_P12_BASE64` | The Developer ID Application identity as a `.p12`, base64-encoded |
+  | `APPLE_INSTALLER_P12_BASE64`   | The Developer ID Installer identity as a `.p12`, base64-encoded   |
+  | `APPLE_P12_PASSWORD`           | The password of both `.p12` files                                 |
+  | `APPLE_NOTARY_KEY_P8`          | The App Store Connect team API key's `.p8` text                   |
+  | `APPLE_NOTARY_TEAM_KEY_ID`     | The key's ID                                                      |
+  | `APPLE_NOTARY_ISSUER_ID`       | The issuer ID                                                     |
 
-  The team ID is the Environment variable `MACOS_TEAM_ID`, not a secret.
+  The team ID is the Environment variable `APPLE_TEAM_ID`, not a secret.
 
 - **A missing Environment.** A dispatch that finds no `release` Environment makes
   GitHub create one with no protection rules and no secrets. `sign-macos` then
@@ -4844,11 +4951,25 @@ The contracts F0 owns are these:
 
 ### Reading a Signature
 
-No file of a release is signed until M2's disk-image pull request. The commands that
-read the command line's signed macOS package are in this document at the
-last command-line release's tag, under the same heading; The Last Command-Line
-Release section identifies that tag. M2's pull request brings this section back, rewritten for the app and the
-disk image.
+For the temporary CLI recovery, these read-only commands inspect the actual
+release package and installed CLI. Replace `<version>` with its real version.
+They do not install or sign anything, and expected output is not measured evidence:
+
+```bash
+pkgutil --check-signature marshal-<version>-macos-arm64.pkg
+spctl --assess --type install -vv marshal-<version>-macos-arm64.pkg
+xcrun stapler validate marshal-<version>-macos-arm64.pkg
+codesign --verify --strict -vv /usr/local/bin/marshal
+codesign -d -r- /usr/local/bin/marshal
+```
+
+The package is expected to show a Developer ID Installer chain of the same team
+as the CLI, a notarized Developer ID assessment and a valid staple. The bare or
+installed CLI's designated requirement must match the existing identifier/team
+contract; its notarization is read from the CDHash in the notary log, not
+`spctl --type execute`. The actual team, requirement form and native outcomes remain
+pending for F0's measured record. App/dmg signature instructions remain M2's work
+after restoration, not substitutes for these CLI/pkg subjects.
 
 ### Extending the Release Workflows
 
@@ -5028,7 +5149,7 @@ shape-check rules and test cases from the restoration point. It leaves out the
 command-line signing and package steps, the Installer identity's check, import
 and exported name, the `pkgbuild` argument and `build-pkg.sh` existence rules,
 and package-only tools such as `pkgbuild`, `pkgutil`, `lsbom` and `installer`.
-The restored job MUST NOT read `MACOS_INSTALLER_P12_BASE64`.
+The restored job MUST NOT read `APPLE_INSTALLER_P12_BASE64`.
 
 Its app job in `release-build.yaml` MUST run on `macos-latest` with a 45-minute
 timeout, install `tauri-cli` by the Windows leg's route, build the unsigned app,
@@ -5102,61 +5223,23 @@ archive commands, and its `darwin-aarch64` feed entry follows W4's contract.
 
 #### Extending the Shape Check
 
-An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
-own pull request, under REVIEW.md's release lens and the maintainer's review, and
-allows its signing job the Environment there. The shape check guards against
-mistakes. A pull request can edit it, so it is not the control against a hostile
-one: what keeps pull requests away from the Environment is the maintainer's branch
-rule and that `release.yaml` runs only on a dispatch. It does not see a write to
-`SHA256SUMS` in `release-build.yaml`'s `assemble` job other than by a redirection,
-`tee`, `cp` or `mv`, or a step condition in `attest` or `release` that skips a step,
-such as `if: false`.
+An extension MUST add its jobs or steps to `check-release-shape.mjs` and its
+mutation tests in the same pull request, under REVIEW.md's release lens and the
+maintainer's review. [Security](../conventions/security.md) owns the active release
+boundary, including the permitted signing Environment. The check guards against
+mistakes, not a hostile pull request that edits the check itself. It does not see
+a write to `SHA256SUMS` in either build's `assemble` job other than by a
+redirection, `tee`, `cp` or `mv`.
 
 ### What the Release Tests Cover
 
-Each of these runs in `mise run check`, on Linux, with no signing identity and no
-secret:
-
-| Task                                | What it covers                                                                                                                                                                                                           |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mise run check:release-shape`      | Reads the `.yaml` and `.yml` workflows and fails unless the rules listed under this table hold.                                                                                                                          |
-| `mise run test:release-shape`       | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                             |
-| `mise run test:assemble-release`    | Runs `assemble-release.sh` against temporary directories: the two lines in order, and a refusal for another file set or a changed file.                                                                                  |
-| `mise run test:verify-release`      | Runs the release gate against temporary directories, and checks that `.releaserc.json`'s asset globs match exactly the three files the gate passes.                                                                      |
-| `mise run test:set-release-version` | Runs the version stamp against copies of the CLI's and the app's manifests and lockfiles, and the committed ones: only the versions they own change, and a file that does not hold the placeholder is refused unchanged. |
-
-`mise run check:release-shape` enforces these rules. They apply to every `.yaml` and
-`.yml` workflow, unless a rule names a file or job. Each failure names its rule, and
-a workflow that cannot be read or a missing `release.yaml` or `release-build.yaml`
-fails it too.
-
-- **The Environment.** No job and no step declares an `environment`, until the next
-  signing job's pull request allows its own.
-- **Triggers.** `release.yaml` is triggered by `workflow_dispatch` alone. A workflow
-  that `pull_request` or `pull_request_target` triggers calls only local workflows
-  (`./.github/workflows/...`), so the rule above covers what it calls.
-- **The signing secrets.** No workflow reads one, whether by `secrets.MACOS_*`,
-  `secrets[...]`, `toJSON(secrets)` or `secrets: inherit`.
-- **The chain.** Every job of `release.yaml` but `plan` needs `plan` directly and
-  carries `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`.
-  `assemble-signed` needs `plan` and `build`, `attest` needs `plan` and
-  `assemble-signed`, and `release` needs `plan` and `attest`.
-- **`assemble-signed`.** It runs on `ubuntu-latest`, holds exactly `contents: read`,
-  sets `timeout-minutes` to at most 10, checks out with `persist-credentials: false`,
-  calls `assemble-release.sh`, and no step of it carries an `if`.
-- **`attest` and `release`.** `attest` holds exactly `id-token: write` and
-  `attestations: write`. Each downloads exactly one artifact,
-  `marshal-release-signed`, and no step of `release` reads `needs.build`.
-- **No way past a failure.** No job or step of `release.yaml` sets
-  `continue-on-error`, and no job-level or step `if` uses `always()`, `failure()` or
-  `cancelled()`, whatever their case and inner spaces. A step condition of `attest`
-  or `release` that skips a step, such as `if: false`, is not seen.
-- **The environment of `release.yaml`.** None of `PATH`, `BASH_ENV` and `ENV` is an
-  `env:` key at any level.
-- **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
-  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means
-  a `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
-  reading it, as `cat` or `sha256sum -c` does, is not a write.
+[Testing](../conventions/testing.md) owns the release-check commands, their current
+coverage and CI routes for both the temporary CLI recovery and the retained app
+tooling. `mise run test:verify-release` tests the retained app publication gate;
+`mise run test:cli-recovery` checks the active five-file CLI publication globs in
+`release/.releaserc.json`. The shape check and its mutation tests cover the
+temporary seven-stage CLI route and the retained unsigned app builds. Signing
+stand-ins and unsigned dry runs are not real signing or native-host evidence.
 
 ## Installing, Updating and Rolling Back
 
@@ -5177,12 +5260,15 @@ replaced one.
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that risk.
 
-The first release expected to carry the app is `2.0.0`: the last command-line
-release is expected to be `1.0.0`, and W1's installer pull request is a breaking
-change after it. The check block below names `2.0.0`. To check another release,
-change the block's `version` and `file` assignment lines. If the first release of the
-app gets another version, a later change corrects the lines. A host that runs the
-command line moves to the app as
+The last command-line release is the F0 recovery release, expected to be `0.2.0`,
+and every release after #132's restoration carries the app. The maintainer decided
+to keep releases on `0.x`, as
+[Version Rules](./development-workflow.md#version-rules) describes, so no major
+version marks the change. The check block below names `0.3.0` as an example. To
+check another release, change the block's `version` and `file` assignment lines. If
+the recovery release or the first release of the app gets another version, a later
+change corrects this paragraph and those lines. A host that runs the command line
+moves to the app as
 The Last Command-Line Release section says.
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
@@ -5206,7 +5292,7 @@ adds the configuration and the image around this one.
 
 ### Installing
 
-`<version>` is the release's version without the `v`, such as `2.0.0`.
+`<version>` is the release's version without the `v`, such as `0.3.0`.
 
 1. Download `marshal-<version>-windows-x64.msi` from the
    [release page](https://github.com/axross/runners/releases). If the browser warns
@@ -5265,8 +5351,8 @@ In PowerShell 5.1 or 7:
 
 ```powershell
 & {
-  $version = '2.0.0'
-  $file = "$env:USERPROFILE\Downloads\marshal-2.0.0-windows-x64.msi"
+  $version = '0.3.0'
+  $file = "$env:USERPROFILE\Downloads\marshal-0.3.0-windows-x64.msi"
   $ErrorActionPreference = 'Stop'
   function Refuse([string]$Why) { throw "refused: $Why" }
   $name = "marshal-$version-windows-x64.msi"

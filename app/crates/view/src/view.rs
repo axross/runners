@@ -72,6 +72,8 @@ pub enum Body {
 pub struct Window {
     pub body: Body,
     pub footer: Footer,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor: Option<crate::EditorAccess>,
 }
 
 /// something that needs the user's eye, which the live region says when it appears.
@@ -287,6 +289,17 @@ fn github_attention(context: &Context<'_>, cards: &[PoolCard]) -> Vec<Attention>
 #[must_use]
 pub fn build(input: &Input<'_>) -> View {
     let context = Context::new(input);
+    let editor = input.editor.then(|| {
+        crate::editor_access(
+            if cfg!(target_os = "macos") {
+                marshal_cli::profile::Profile::Axmc
+            } else {
+                marshal_cli::profile::Profile::Axpc
+            },
+            input.connection,
+            input.snapshot,
+        )
+    });
     let summary = summary(&context);
     let footer = footer(&context);
     let menu = menu(&context, &summary.menu_line);
@@ -300,6 +313,7 @@ pub fn build(input: &Input<'_>) -> View {
             window: Window {
                 body: Body::Full(full_window(&context)),
                 footer,
+                editor,
             },
             summary,
             attention: Vec::new(),
@@ -328,6 +342,7 @@ pub fn build(input: &Input<'_>) -> View {
                 stale: context.is_stale(),
             }),
             footer,
+            editor,
         },
         summary,
     }
