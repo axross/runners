@@ -390,6 +390,14 @@ the dry run's real MSI with only `gh` stubbed. A standard local user without
 administrator rights also runs the check block, installs the MSI and runs the
 uninstall block. A pull request from a fork runs without
 repository secrets.
+The `Update Feed Round Trip` and `Update Feed In The App On Windows` jobs each hold
+`contents: read` and run without an Environment or a secret. The first needs the
+release build's dry run, and one of its steps decides from the changed files whether to
+build: it builds on a push to main and on a pull request that changes the files its
+`Decide Whether The Round Trip Runs` step names, and reports success without building
+on any other pull request. The second needs the first and runs only when it built;
+otherwise it is skipped. The Update Feed in the Release section of [CLI](./cli.md)
+owns the procedure.
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
 CLI's locked crates and, in a second step, the app's, against the RustSec advisory
 database every week, on manual dispatch, and on a pull request that changes

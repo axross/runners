@@ -528,14 +528,14 @@ record a change to either workflow, to the build call in
     crate archive whose SHA-256 equals one committed in the repository. The signing
     job checks the binary it receives against the SHA-256 that the tool job outputs,
     before it runs it.
-    These are contracts for later pull requests, not jobs already implemented,
-    except W4's `update-tool` and `sign-update`.
-    W1's installer pull request comes first; M2's disk-image and W4's feed
-    pull requests may then merge in either order. From W1's installer pull request
-    until the next signing job, M2's or W4's, no job declares `release` and no
-    signing approval step runs. The maintainer's dispatch remains the decision;
-    the Environment and its secrets stay in place. W4's pull request MUST allow
-    `release` on `sign-update` as well as `sign-macos` when present. The release
+    Of these extensions only W4's `update-tool` and `sign-update` exist; M2's
+    signing jobs are still to come.
+    W1's installer pull request came first, and M2's disk-image and W4's feed
+    pull requests could merge in either order. From W1's installer pull request
+    until W4's `sign-update`, the first signing job, no job declared `release` and no
+    signing approval step ran. The maintainer's dispatch remains the decision;
+    the Environment and its secrets stay in place. `release` is allowed on
+    `sign-update` and, when M2's pull request restores it, on `sign-macos`. The release
     build's exact-pin `cargo install --locked` use of `tauri-cli` is an exception
     under the Pinning Convention, with no cache and Cargo's checks against the
     crates.io index checksums.
