@@ -376,10 +376,12 @@ not check that a pool has a token; the Tokens tab shows which have none.
 
 ### On-Demand Pools in the Resident Agent
 
-On-demand pools run in the resident agent of the Marshal you installed under
-[Installing Marshal](#installing-marshal), from its TOML configuration. Build the
-runner image and meet the same Docker Desktop prerequisites before starting these
-pools.
+On-demand pools run in the resident agent of a Marshal that contains them, from its
+TOML configuration. No published release does yet: app publication is suspended, as
+[Installing Marshal](#installing-marshal) says, and the temporary recovery release
+builds the fixed historical command line, which predates on-demand pools
+([CLI Recovery](./cli-recovery.md)). Build the runner image and meet the same Docker
+Desktop prerequisites before starting these pools.
 
 In `%LOCALAPPDATA%\marshal\config.toml`, add `scale_set` to the intended pool and
 leave `labels` absent or empty. For example, with `routing_label = "axpc"`, a pool
@@ -400,7 +402,9 @@ schema chapter of [CLI](./cli.md) gives name, collision and editor rules.
 remains the pool's logical identity. Other pool settings, including each
 container's resource limits and the cache boundaries, keep their meanings.
 
-1. Enter the repository-scoped fine-grained token in the window's **Tokens** tab.
+1. Enter the repository-scoped fine-grained token in the window's **Tokens** tab,
+   created as [The Fine-Grained Token](#the-fine-grained-token) describes, with its
+   resource-owner and approval steps for an organisation-owned repository.
    Use Administration: Read and write; Actions: read is optional for job names.
    The agent imports no token file; [Token Files of the Command Line](#token-files-of-the-command-line)
    says why.

@@ -2561,7 +2561,9 @@ incomplete; Start all is required before another listener starts`.
 
 **Tokens and requests.** On-demand pools use the same repository-scoped
 fine-grained token, Administration: Read and write, with Actions: read optional for
-job names. The agent rereads the store before every JIT registration. Replacement
+job names; the Fine-Grained Token section of
+[Windows Runner Host](./windows-runner-host.md#the-fine-grained-token) gives its
+steps, including those for an organisation-owned repository. The agent rereads the store before every JIT registration. Replacement
 invalidates credentials derived from the old token even while those credentials
 are unexpired; removal or a store failure blocks registration rather than falling
 back to cached credentials. Running jobs keep their original JIT configuration
