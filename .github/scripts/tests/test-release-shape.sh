@@ -11,14 +11,14 @@
 # script or a `${{ }}` in one, or a signer run another way; a feed checked
 # against another key, by a checker that is used in any way before its SHA-256
 # is compared with update-tool's, or whose SHA-256 is compared with another
-# value than update-tool's output, whose `check` is assigned or whose path is
-# written outside its one `check=` line, whose FEED_CHECK_SHA256 is assigned in
-# the script, whose `line` is reassigned between its hash and the comparison, or
-# without unsigned/SHA256SUMS; a step condition that could skip a check; a write
-# to SHA256SUMS in the build's assemble job; PATH, BASH_ENV, ENV or SYSTEM_BIN
-# set in release.yaml; and a way past a failed job, whatever the case of its
-# status function. a change the test cannot find in the files fails the test, so
-# it cannot go stale and pass.
+# value than update-tool's output, whose `check` is assigned or whose path or
+# directory is written outside its one `check=` line, whose FEED_CHECK_SHA256 is
+# assigned in the script, whose `line` is reassigned between its hash and the
+# comparison, or without unsigned/SHA256SUMS; a step condition that could skip a
+# check; a write to SHA256SUMS in the build's assemble job; PATH, BASH_ENV, ENV
+# or SYSTEM_BIN set in release.yaml; and a way past a failed job, whatever the
+# case of its status function. a change the test cannot find in the files fails
+# the test, so it cannot go stale and pass.
 # shellcheck disable=SC2016 # the texts the changes find and replace are literal, not expansions.
 set -euo pipefail
 
@@ -257,12 +257,27 @@ expect_fail "assemble-signed that reassigns check after the comparison" "assigns
   "$release" 'chmod 0755 "$check"'$'\n' $'check=/tmp/evil\n          chmod 0755 "$check"\n'
 expect_fail "assemble-signed that reassigns check to another tool after the hash" "assigns check other than once" \
   "$release" "$hash_line" "$(after_hash 'check="${RUNNER_TEMP}/update-tools/cargo-tauri"')"$'\n'
-for assignment in 'check+=x' 'export check=x' 'declare -r check=x' 'local check=x' 'read -r check <<< x' 'printf -v check %s x' 'for check in /tmp/evil; do' ': "${check:=x}"'; do
+for assignment in 'check+=x' 'export check=x' 'declare -r check=x' 'local check=x' 'read -r check <<< x' 'mapfile -t check <<< x' 'readarray check <<< x' 'readonly check=x' 'getopts "a" check' 'IFS= read -r check <<< x' 'if true; then read check; fi' 'printf -v check %s x' 'for check in /tmp/evil; do' ': "${check:=x}"'; do
   expect_fail "assemble-signed that assigns check with ${assignment}" "assigns check other than once" \
     "$release" 'chmod 0755 "$check"'$'\n' "${assignment}"$'\n          chmod 0755 "$check"\n'
 done
-expect_fail "assemble-signed that makes the feed checker executable by path before hashing it" "names the feed checker's path outside the check= line" \
+expect_fail "assemble-signed that makes the feed checker executable by path before hashing it" "names the feed checker's path or directory outside the check= line" \
   "$release" "$hash_line" $'          chmod 0755 "${RUNNER_TEMP}/update-tools/marshal-feed-check"\n'"$hash_line"
+expect_fail "assemble-signed that makes the feed checker executable by glob before hashing it" "names the feed checker's path or directory outside the check= line" \
+  "$release" "$hash_line" $'          chmod 0755 "${RUNNER_TEMP}"/update-tools/*\n'"$hash_line"
+expect_fail "assemble-signed that makes the feed checker executable by a split word before hashing it" "names the feed checker's path or directory outside the check= line" \
+  "$release" "$hash_line" $'          chmod 0755 "${RUNNER_TEMP}/update-tools/marshal-feed-"check\n'"$hash_line"
+check_line=$'          check="${RUNNER_TEMP}/update-tools/marshal-feed-check"\n'
+expect_fail "assemble-signed that hashes the feed check before setting check" "does not set check to the feed checker's path before hashing it" \
+  "$release" "${check_line}${hash_line}" "${hash_line}${check_line}"
+expect_pass_with "assemble-signed with a message that says read the check" \
+  "$release" 'chmod 0755 "$check"'$'\n' $'echo "cannot read the check" >&2 || true\n          chmod 0755 "$check"\n'
+expect_pass_with "assemble-signed with a trailing comment that says read check" \
+  "$release" 'chmod 0755 "$check"'$'\n' $'chmod 0755 "$check" # read check\n'
+expect_pass_with "assemble-signed with a message that says check=ok" \
+  "$release" 'chmod 0755 "$check"'$'\n' $'echo "check=ok"\n          chmod 0755 "$check"\n'
+expect_pass_with "assemble-signed with a message that says read this line between the hash and the comparison" \
+  "$release" "$hash_line" "$(after_hash 'echo "could not read this line"')"$'\n'
 expect_fail "assemble-signed that never sets check before hashing" "does not set check to the feed checker's path before hashing it" \
   "$release" $'          check="${RUNNER_TEMP}/update-tools/marshal-feed-check"\n' $'          check=/tmp/evil\n'
 expect_fail "assemble-signed that runs the feed check without unsigned/SHA256SUMS" "does not run the feed check with unsigned/SHA256SUMS among its arguments" \

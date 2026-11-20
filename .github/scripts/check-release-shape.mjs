@@ -859,29 +859,71 @@ function checkPlainJob(id, script) {
 }
 
 const FEED_CHECK_NAME = "marshal-feed-check";
-const CHECK_LINE = `check="\${RUNNER_TEMP}/update-tools/${FEED_CHECK_NAME}"`;
+const FEED_CHECK_DIRECTORY = "update-tools";
+const CHECK_LINE = `check="\${RUNNER_TEMP}/${FEED_CHECK_DIRECTORY}/${FEED_CHECK_NAME}"`;
 const HASH_LINE = 'line="$(sha256sum "$check")"';
 
 /**
- * whether a shell line gives the variable a value: `name=` and `name+=` (with
- * or without an export, declare, local or readonly prefix), a `${name=}` or
- * `${name:=}` expansion, and read, mapfile, readarray, `printf -v` and `for`
- * that name it. it does not follow eval, a sourced file or an indirect name.
+ * a shell line without its unquoted trailing comment, as `raw`, and with the
+ * contents of its quoted strings emptied, as `bare`, so that words inside an
+ * echoed message are not read as commands.
+ */
+function shellLine(line) {
+  let raw = "";
+  let bare = "";
+  let quote = "";
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+    if (quote === "") {
+      if (char === "#" && (index === 0 || /\s/.test(line[index - 1]))) break;
+      if (char === '"' || char === "'") quote = char;
+      bare += char;
+    } else if (char === quote) {
+      quote = "";
+      bare += char;
+    } else if (char === "\\" && quote === '"') {
+      raw += char + (line[index + 1] ?? "");
+      index++;
+      continue;
+    }
+    raw += char;
+  }
+  return { raw, bare };
+}
+
+/**
+ * whether a shell line gives the variable a value, in the forms the shape
+ * check knows: `name=` and `name+=`, with or without an export, declare, local
+ * or readonly prefix; a `${name=}` or `${name:=}` expansion; read, mapfile,
+ * readarray or getopts in command position naming it; `printf -v`; and `for`.
+ * FEED_CHECK_SHA256 is also read in a quoted `"FEED_CHECK_SHA256=..."`, which
+ * is how it would reach a later step through GITHUB_ENV. it does not follow
+ * eval, a sourced file or an indirect name, and ignores words inside quotes
+ * and an unquoted trailing comment.
  */
 function assignsVariable(line, name) {
-  return [
-    new RegExp(`(^|[\\s;&|({"'])${name}\\+?=`),
-    new RegExp(`\\$\\{${name}:?=`),
-    new RegExp(`\\b(read|mapfile|readarray)\\b[^;&|]*\\b${name}\\b`),
-    new RegExp(`\\bprintf\\s+-v\\s+${name}\\b`),
-    new RegExp(`\\bfor\\s+${name}\\s+in\\b`),
-  ].some((pattern) => pattern.test(line));
+  const { raw, bare } = shellLine(line);
+  const named = `(?<![$\\w{])${name}\\b`;
+  const command = "(^|[;&|({]|\\b(then|do|while|else))\\s*(IFS=\\S*\\s+)?";
+  return (
+    [
+      new RegExp(`(^|[\\s;&|({])${name}\\+?=`),
+      new RegExp(
+        `${command}(read|mapfile|readarray|getopts)\\b[^;&|]*${named}`,
+      ),
+      new RegExp(`\\bprintf\\s+-v\\s+${name}\\b`),
+      new RegExp(`\\bfor\\s+${name}\\s+in\\b`),
+    ].some((pattern) => pattern.test(bare)) ||
+    new RegExp(`\\$\\{${name}:?=`).test(raw) ||
+    (name === "FEED_CHECK_SHA256" && /["']FEED_CHECK_SHA256\+?=/.test(raw))
+  );
 }
 
 /**
  * records a feed checker whose guard can be undone from inside the script:
  * `check` assigned anywhere but once, as the pinned `check=` line before the
- * hash; the checker's path written anywhere else; FEED_CHECK_SHA256 assigned;
+ * hash; the checker's path or directory written anywhere else;
+ * FEED_CHECK_SHA256 assigned;
  * `line` reassigned between the hash and the comparison; the checker referred
  * to before the comparison, whether made executable, run or read; or a
  * mismatch that does not exit 1.
@@ -891,6 +933,7 @@ function checkFeedCheckHash(scripts, where) {
   const code = [...lines.keys()].filter(
     (index) => !lines[index].startsWith("#"),
   );
+  const raw = (index) => shellLine(lines[index]).raw;
   const checkAt = lines.indexOf(CHECK_LINE);
   if (
     code.some(
@@ -907,10 +950,15 @@ function checkFeedCheckHash(scripts, where) {
   if (
     code.some(
       (index) =>
-        index !== checkAt && lines[index].includes(`/${FEED_CHECK_NAME}`),
+        index !== checkAt &&
+        [`/${FEED_CHECK_NAME}`, `/${FEED_CHECK_DIRECTORY}`].some((text) =>
+          raw(index).includes(text),
+        ),
     )
   )
-    problem(`${where} names the feed checker's path outside the check= line`);
+    problem(
+      `${where} names the feed checker's path or directory outside the check= line`,
+    );
   const hashed = lines.indexOf(HASH_LINE);
   const compared = lines.findIndex(
     (line, index) =>
@@ -945,7 +993,9 @@ function checkFeedCheckHash(scripts, where) {
     );
   const used = lines.findIndex(
     (line, index) =>
-      index !== hashed && !line.startsWith("#") && /\$\{?check\b/.test(line),
+      index !== hashed &&
+      !line.startsWith("#") &&
+      /\$\{?check\b/.test(shellLine(line).raw),
   );
   if (used !== -1 && used < closing)
     problem(`${where} uses the feed check before comparing its SHA-256`);
