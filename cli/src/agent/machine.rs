@@ -38,6 +38,7 @@ use crate::runtime::log::Log;
 use crate::runtime::pool::image_name;
 use crate::runtime::registration::Registrar;
 use crate::runtime::scrub::scrub_error_text;
+use crate::runtime::secret::Secret;
 use crate::runtime::worker::sleep_or_stop;
 use crate::token_store::TokenKey;
 use crate::validate::{CheckoutRule, Plan};
@@ -459,42 +460,37 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
         match method {
             Method::Status => Ok(Ok(self.snapshot_value())),
             Method::TokenSet { key, token } => {
-                self.log.mask(&token);
-                Ok(match self.tokens.set(&key, &token) {
-                    Ok(()) => {
-                        self.publish();
-                        Ok(json!({ "repository": key.as_str() }))
-                    }
-                    Err(error) => Err(ApiError::store_failed("saved", &error)),
-                })
+                Ok(self.token_change(&key, Some(&token), "repository"))
             }
             Method::ConfigRead => Ok(Ok(self.config_read())),
             Method::LifecycleSet { setting, value } => Ok(self.lifecycle_set(setting, value)),
-            Method::TokenRemove { key } => Ok(match self.tokens.remove(&key) {
-                Ok(()) => {
-                    self.publish();
-                    Ok(json!({ "repository": key.as_str() }))
-                }
-                Err(error) => Err(ApiError::store_failed("removed", &error)),
-            }),
+            Method::TokenRemove { key } => Ok(self.token_change(&key, None, "repository")),
             Method::OrganizationTokenSet { key, token } => {
-                self.log.mask(&token);
-                Ok(match self.tokens.set(&key, &token) {
-                    Ok(()) => {
-                        self.publish();
-                        Ok(json!({ "organization": key.as_str() }))
-                    }
-                    Err(error) => Err(ApiError::store_failed("saved", &error)),
-                })
+                Ok(self.token_change(&key, Some(&token), "organization"))
             }
-            Method::OrganizationTokenRemove { key } => Ok(match self.tokens.remove(&key) {
-                Ok(()) => {
-                    self.publish();
-                    Ok(json!({ "organization": key.as_str() }))
-                }
-                Err(error) => Err(ApiError::store_failed("removed", &error)),
-            }),
+            Method::OrganizationTokenRemove { key } => {
+                Ok(self.token_change(&key, None, "organization"))
+            }
             other => Err(other),
+        }
+    }
+
+    /// saves `token` under `key`, or removes the key's token when it is `None`, and
+    /// answers with the key under `field`.
+    fn token_change(&self, key: &TokenKey, token: Option<&Secret>, field: &str) -> ApiResult {
+        let (outcome, past) = match token {
+            Some(token) => {
+                self.log.mask(token);
+                (self.tokens.set(key, token), "saved")
+            }
+            None => (self.tokens.remove(key), "removed"),
+        };
+        match outcome {
+            Ok(()) => {
+                self.publish();
+                Ok(json!({ field: key.as_str() }))
+            }
+            Err(error) => Err(ApiError::store_failed(past, &error)),
         }
     }
 
