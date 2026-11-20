@@ -72,7 +72,10 @@ the default, so no host's label is built in. See
 lists beside `self-hosted`, `linux`, and `x64`. A workflow
 can use a custom label to select that pool for its **Target Repository**.
 
-**Slot** - one concurrent runner position on a runner host.
+**Slot** - one concurrent runner position on a runner host. A host with two slots
+can run two jobs at once. In an always-on pool, each slot starts a fresh ephemeral
+runner when its previous one exits; in an **On-Demand Pool**, a slot starts a
+runner only for demand a **Runner Scale Set** reports, up to the pool's `runners`.
 
 **Supervisor** - the host-side process that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,
