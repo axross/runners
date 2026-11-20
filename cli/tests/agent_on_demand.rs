@@ -2154,6 +2154,129 @@ async fn an_update_drain_does_not_wait_for_a_failed_jobs_back_off() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_stop_does_not_wait_for_a_failed_jobs_back_off() {
+    let service = Service::start(1).await;
+    let rig = rig(&service);
+    rig.write_toml(&CONFIG.replace("runners = 2", "runners = 1"));
+    {
+        let mut engine = rig.backend.state.borrow_mut();
+        engine.hold_runs = false;
+        engine
+            .exits
+            .push_back(Err(BackendError::new("the engine refused the container")));
+    }
+    let (rig, service) = (&rig, &service);
+    let (_, sent) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the slot backing off after the failed job", |snapshot| {
+                snapshot.pools[0].runners.iter().any(|runner| {
+                    runner.state == "backing_off"
+                        && runner
+                            .reason
+                            .as_deref()
+                            .is_some_and(|reason| !reason.contains("cleanup"))
+                })
+            })
+            .await;
+            let sent = std::time::Instant::now();
+            conn.ok("quit").await;
+            sent
+        })
+        .await;
+    // the first back-off is 5 s
+    let ended_in = rig.ended_within(sent);
+    assert!(
+        ended_in < NOT_WAITING_ON_SERVICE,
+        "the stop took {ended_in:?}"
+    );
+    assert!(service.state.lock().unwrap().registrations.is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_job_that_fails_while_the_agent_drains_does_not_lengthen_the_next_back_off() {
+    let service = Service::start(0).await;
+    service.state.lock().unwrap().offers = vec![11, 12, 13];
+    let rig = rig(&service);
+    {
+        let mut engine = rig.backend.state.borrow_mut();
+        engine.hold_runs_by_name = true;
+        for _ in 0..2 {
+            engine
+                .exits
+                .push_back(Err(BackendError::new("the engine refused the container")));
+        }
+    }
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("both seats busy", |snapshot| snapshot.runners_up == 2)
+                .await;
+            let names = containers(rig);
+            for name in &names {
+                rig.backend.print(name, LISTENING);
+                rig.backend.print(name, JOB);
+            }
+            // the second job keeps the drain open while the first one fails inside it
+            let requester = conn.another().await;
+            requester
+                .call("drain_for_update", json!({ "version": "1.4.0" }))
+                .await
+                .unwrap();
+            conn.until("the drain waiting for both jobs", |snapshot| {
+                snapshot
+                    .agent
+                    .update
+                    .as_ref()
+                    .is_some_and(|update| update.waiting == 2)
+            })
+            .await;
+            end_container(rig, &names[0]).await;
+            conn.until("the drain waiting for the second job alone", |snapshot| {
+                snapshot
+                    .agent
+                    .update
+                    .as_ref()
+                    .is_some_and(|update| update.waiting == 1)
+            })
+            .await;
+            drop(requester);
+            conn.until("the drain cancelled", |snapshot| {
+                snapshot.agent.update.is_none()
+            })
+            .await;
+            conn.eventually("the failed job's seat running another job", || {
+                containers(rig).len() == 3
+            })
+            .await;
+            let failed = containers(rig)[2].clone();
+            let began = tokio::time::Instant::now();
+            end_container(rig, &failed).await;
+            // the first back-off is 5 s and the drain spent none of it, so the retry is not 10 s away
+            conn.eventually("the retry after the back-off", || {
+                containers(rig).len() == 4 || began.elapsed() > Duration::from_secs(9)
+            })
+            .await;
+            assert_eq!(containers(rig).len(), 4, "waited {:?}", began.elapsed());
+            rig.end_jobs().await;
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+/// ends one job container by name, as a job that ends while others run.
+async fn end_container(rig: &Rig, name: &str) {
+    use marshal_cli::runtime::backend::{Backend, StopRequest};
+    rig.backend
+        .stop_containers(&StopRequest {
+            names: vec![name.to_owned()],
+            grace: Duration::ZERO,
+            budget: Duration::from_secs(1),
+        })
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn a_settled_cleanup_restores_the_failed_jobs_reason_for_the_rest_of_the_back_off() {
     let service = Service::start(1).await;
     let rig = rig_with_failing_deletion(&service);

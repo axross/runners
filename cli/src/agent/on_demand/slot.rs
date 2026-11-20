@@ -81,11 +81,14 @@ pub(crate) async fn run_on_demand_slot<B: Backend, K: Clock, R, T: TokenSource>(
             services
                 .board
                 .set_slot(&slot.label(), SlotState::BackingOff(reason));
-            // a drain ends the back-off too: the loop top reports the slot drained
-            tokio::select! {
-                () = services.clock.sleep(backoff.fail()) => {},
-                () = wait_for_stop(&mut stopping) => break,
-                () = drain_begins(&mut draining) => {},
+            // a drain ends the back-off too, and an active one leaves nothing to wait or to lengthen:
+            // the loop top reports the slot drained
+            if !is_draining(&draining) {
+                tokio::select! {
+                    () = services.clock.sleep(backoff.fail()) => {},
+                    () = wait_for_stop(&mut stopping) => break,
+                    () = drain_begins(&mut draining) => {},
+                }
             }
         } else {
             backoff.reset();
