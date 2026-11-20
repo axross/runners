@@ -869,6 +869,14 @@ mod http {
         ]
     }
 
+    /// the pause between the attempts of a refused exchange: a stop that is ignored ends nothing
+    /// before it passes, far past the time a stop that is honoured takes.
+    const EXCHANGE_PAUSE: Duration = Duration::from_secs(5);
+
+    /// the longest a stop may take to end a pool that waits in that pause, with room for a loaded
+    /// machine, and well short of the pause.
+    const STOP_WITHIN: Duration = Duration::from_secs(2);
+
     /// waits until the refused exchange is in its pause between attempts, then asks for the stop.
     async fn stop_during_the_exchange_pause(
         seen: &watch::Sender<bool>,
@@ -883,7 +891,7 @@ mod http {
     #[tokio::test(flavor = "current_thread")]
     async fn a_stop_ends_the_listener_while_its_exchange_waits_to_retry() {
         let fake = Fake::new().await;
-        let client = fake.client_retrying(Duration::from_secs(1));
+        let client = fake.client_retrying(EXCHANGE_PAUSE);
         let tokens = Tokens::new();
         let channels = Channels::new(1);
         let log = MemoryLog::default();
@@ -905,7 +913,7 @@ mod http {
             stop_during_the_exchange_pause(&seen, &channels.stop)
         );
         assert!(
-            ended.duration_since(stopped) < Duration::from_millis(500),
+            ended.duration_since(stopped) < STOP_WITHIN,
             "the stop waited {:?} for the connection",
             ended.duration_since(stopped)
         );
@@ -914,7 +922,7 @@ mod http {
     #[tokio::test(flavor = "current_thread")]
     async fn a_stop_ends_a_registration_while_its_exchange_waits_to_retry() {
         let fake = Fake::new().await;
-        let client = fake.client_retrying(Duration::from_secs(1));
+        let client = fake.client_retrying(EXCHANGE_PAUSE);
         let tokens = Tokens::new();
         let channels = Channels::new(1);
         let log = MemoryLog::default();
@@ -953,7 +961,7 @@ mod http {
         );
         assert!(outcome.unwrap_err().to_string().contains("halted"));
         assert!(
-            ended.duration_since(stopped) < Duration::from_millis(500),
+            ended.duration_since(stopped) < STOP_WITHIN,
             "the stop waited {:?} for the connection",
             ended.duration_since(stopped)
         );
