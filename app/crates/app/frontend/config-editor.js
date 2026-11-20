@@ -475,6 +475,7 @@ export class ConfigEditor {
         "cancel-config",
       );
     } catch (error) {
+      if (!error?.problems) this.problemsInResult = false;
       this.refused(error);
     } finally {
       this.busy = false;

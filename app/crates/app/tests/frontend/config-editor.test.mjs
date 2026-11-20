@@ -763,6 +763,34 @@ test("a refused check's volume problem stays with the volume that was checked wh
   assert.equal(invalidField(model, second, "suffix"), null);
 });
 
+for (const code of ["lost_contact", "not_answered", "busy"]) {
+  test(`a check refused with ${code} keeps the problems the read listed`, async () => {
+    installDocument();
+    const { model } = editor(() => {
+      throw { code, message: "Not now." };
+    });
+    const problem = { path: "pool[1].runners", message: "must be at most 64" };
+    model.loaded({
+      ...structuredClone(doc),
+      status: "invalid",
+      problems: [problem],
+    });
+    const [first, second] = model.pools;
+    model.removePool(first);
+    model.editing = second.id;
+    const shown = () =>
+      [...editorNotice(model).descendants()].some((node) =>
+        node.textContent?.includes("pool[1].runners: must be at most 64"),
+      );
+    assert.equal(shown(), true);
+    assert.equal(invalidField(model, second, "runners"), "true");
+    await model.check();
+    assert.equal(model.error.code, code);
+    assert.equal(shown(), true);
+    assert.equal(invalidField(model, second, "runners"), "true");
+  });
+}
+
 test("a removed pool remains visible until its runners leave the live snapshot", () => {
   installDocument();
   const { model } = editor();
