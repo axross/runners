@@ -465,9 +465,9 @@ local lookup or when the host prohibits that delegation purpose.
 
 Each of these exists to keep some context out of the main actor's own: the
 implementer so it does not inherit the planning phase's accumulated context, the
-reviewer so it does not inherit the implementer's reasoning state and, as the
-independent review, the author's conversation, and the
-investigator so a large payload never enters the main actor's context at all.
+reviewer so it does not inherit the implementer's reasoning state or, as the
+independent review, the author's conversation; and the investigator so a large
+payload never enters the main actor's context at all.
 All three run Sonnet at `effort: high`. The investigator runs at `high` rather
 than a lower level because its output is a judgment the main actor cannot check
 without re-reading the payload it delegated away; the maintainer approved that
@@ -480,13 +480,13 @@ These are configured candidates, not a permission grant. A session MUST check
 the capabilities its host actually permits before using one. Delegating to the
 matching configured actor is the default; parent implementation is valid only
 when delegation is unavailable or disallowed, and mandatory verification and
-external review remain unchanged. Deleting any of the three files degrades
-gracefully rather than breaking the loop. Without the implementer, the loop
-delegates to a generic agent or runs single-agent; without the reviewer, the
-pre-flight stage is skipped rather than performed by the main actor, which is
-what keeps it from collapsing into self-review, and the Claude Code
-independent-review gate stays unmet because no other subagent substitutes;
-without the investigator, the main actor reads the payload itself.
+external review remain unchanged. Deleting a file never lets the loop skip a
+gate. Without the implementer, the loop delegates to a generic agent or runs
+single-agent. Without the reviewer, the pre-flight stage is skipped rather than
+performed by the main actor, which is what keeps it from collapsing into
+self-review, and the Claude Code independent-review gate stays unmet because no
+other subagent substitutes. Without the investigator, the main actor reads the
+payload itself.
 
 The advisory pre-flight review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the
@@ -550,8 +550,9 @@ explicit assignment and boundaries. Otherwise the caller reads or implements
 directly where permitted; an unavailable advisory reviewer is recorded rather
 than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
 or whose spawn the host refuses, is also an unavailable independent-review
-route: that gate stays unmet, and no other subagent, provider, or session
-replaces it. A CLI agent or persistent thread MUST NOT be
+route: that gate stays unmet, and no other subagent, provider, or session the
+run chooses replaces it; the Claude CI alternative applies only when the
+maintainer selects it for the run. A CLI agent or persistent thread MUST NOT be
 used to bypass a missing role or a prohibited purpose. For unavailable research,
 plan, or design review, the driver MUST use
 [Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).

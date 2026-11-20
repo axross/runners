@@ -166,17 +166,17 @@ route selected for the authoring host:
 - **Codex, and changes made without an agent:** the Codex review.
 
 The Amp child thread and the Claude Code review subagent MUST each have a fresh
-non-author context, not a fork of the author's conversation, a resumed or reused
-instance, or a `reviewer` instance that is not assigned as the round's
-independent review or that carries advisory pre-flight findings. The actor
+non-author context, not a fork of the author's conversation or a resumed or
+reused instance, and each `reviewer` instance MUST be assigned as the round's
+independent review and carry no advisory pre-flight findings. The actor
 assigned an independent review reviews and posts its review itself and does not
 delegate; the subagent-delegation rule above does not apply to it. Advisory
 pre-flight remains a separate checkpoint and does not satisfy independent
 review. Follow
 [The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
-for qualification, review rounds, publication verification, review-actor
-cleanup, and
-the comment-triggered Claude CI review the maintainer can select instead.
+for qualification, review rounds, publication verification, how a round's
+reviewer is ended or handed over, and the comment-triggered Claude CI review the
+maintainer can select instead.
 Current host and tool restrictions still apply; an unavailable selected route
 leaves the independent-review gate unmet rather than authorizing a substitute.
 

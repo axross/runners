@@ -134,8 +134,9 @@ The independent-review gate remains mandatory.
 On Claude Code, a missing `reviewer` subagent leaves both gates unmet under this
 exception: it is the pre-flight reader whose absence the exception covers, and
 it is also the independent-review route, which no other subagent, provider, or
-session replaces. The pull request stays draft and the run reports both gates
-as unmet.
+session the run chooses replaces; the Claude CI alternative applies only when
+the maintainer selects it for the run. The pull request stays draft and the run
+reports both gates as unmet.
 
 ## Tracking Issue Completion
 
@@ -209,11 +210,12 @@ request, authored by an Amp run, is reviewed under the grant as merged before it
 The amendment for [issue #151](https://github.com/axross/runners/issues/151),
 which replaces the Claude Code review child session route those amendments added
 with the Claude Code review subagent, and rewrites the targets, covered effects,
-and accepted consequences below to match, was adopted by the maintainer's
-approval of the plan in that issue
+and accepted consequences below to match, follows the plan the maintainer
+approved in that issue
 ([recorded here](https://github.com/axross/runners/issues/151#issuecomment-7049089352))
-and takes effect only on the maintainer's merge of the pull request that closes
-it; that pull request is reviewed under the grant as merged before it. Agent
+and, like the earlier ones, takes effect only on the maintainer's merge of the
+pull request that closes it; that pull request is reviewed under the grant as
+merged before it. Agent
 runs share the maintainer's operator identity, so the signal that
 distinguishes such a merge as a human act is that agents never merge on their
 own: merge is excluded from this grant, and it is the maintainer's
@@ -456,8 +458,8 @@ A Claude Code review subagent can:
   settings, without changing payment policy, providers, or configuration
 - read the repository, the pull request, and files outside the diff
 - hold the authoring session's GitHub write access and tools other than the
-  four its definition denies, so the limits listed after this one bind only as
-  far as the assignment and the definition instruct
+  four its definition denies, so the limits listed below bind only as far as the
+  assignment and the definition instruct
 - work in a separate worktree of this repository, which the run confirms is
   distinct from the author's checkout before relying on the round, and which
   can remain on disk afterwards; whether it does is inspected and reported, not
@@ -475,9 +477,11 @@ A Claude Code review subagent can:
   session's GitHub access: the operator account through the operator's
   credentials, or `claude[bot]` through the installed Claude GitHub App
 
-The host enforces one set of limits on a `reviewer` instance: its definition
-denies the Edit, Write, NotebookEdit, and Agent tools. Every other limit is
-instruction-only, whether the instance is the advisory pre-flight reader or a
+The definition declares, and Claude Code documents enforcing, one set of limits
+on a `reviewer` instance: it denies the Edit, Write, NotebookEdit, and Agent
+tools. That enforcement is first confirmed on the first live round, which
+[#155](https://github.com/axross/runners/issues/155) tracks. Every other limit
+is instruction-only, whether the instance is the advisory pre-flight reader or a
 round's independent review:
 
 - no shell write and no commit;
@@ -1244,9 +1248,9 @@ never a fork of the authoring conversation.
 2. Spawn the instance with `isolation: worktree` on the call, never as a fork
    and never by resuming an earlier instance, and without overriding the
    definition's pinned model or effort. Give it a neutral assignment that names
-   the repository, the pull request, the reviewed head commit,
-   [`REVIEW.md`](../../REVIEW.md), the pull request body's acceptance criteria,
-   and the round token: the tracking issue number, or the pull request number
+   the repository, the pull request, the reviewed head commit, the author's
+   checkout path, [`REVIEW.md`](../../REVIEW.md), the pull request body's
+   acceptance criteria, and the round token: the tracking issue number, or the pull request number
    when there is no issue, plus the round number. The assignment names the
    instance as that round's independent review. Beyond what Loop Engineering's
    review workflow excludes, which includes the author's conversation, the
@@ -1267,11 +1271,15 @@ never a fork of the authoring conversation.
    subagents work within a single session, so the agent ID is a handle only the
    spawning session can use.
 4. Before relying on the round, confirm from the spawn result that the
-   instance's worktree path differs from the author's checkout. A spawn result
-   that gives no worktree path or gives the author's checkout, and an instance
-   that reports its working directory is the author's checkout, each fail the
-   isolation check: record the failure, stop the instance if it is still
-   running, and keep the gate unmet.
+   instance's worktree path differs from the author's checkout. When the spawn
+   result does not report the worktree path, confirm it from the instance's
+   returned report, which is not yet exercised
+   ([#155](https://github.com/axross/runners/issues/155)); the round counts only
+   once the path is confirmed. A spawn result or report that gives the author's
+   checkout, and an instance that reports its working directory is the author's
+   checkout, each fail the isolation check: record the failure, stop the
+   instance if it is still running, and keep the gate unmet. A review that an
+   instance posted despite failing the check does not count; report it.
 5. The instance posts its review on the pull request in the form REVIEW.md's
    Claude Code review subagent arrangement sets.
 6. Wait for the instance as Agent Sessions' Waiting on CI and Review describes,
@@ -1302,7 +1310,8 @@ An instance that cannot post, a review that does not appear, a review that does
 not correlate, and a failed isolation check are failures of the selected route,
 which block the review gate as The Independent Review, above, states. A missing
 or refused `reviewer` is one too, and no other subagent, provider, or session
-substitutes for it. Record the incomplete evidence. Stop any round's instance
+the run chooses substitutes for it; the Claude CI alternative applies only when
+the maintainer selects it for the run. Record the incomplete evidence. Stop any round's instance
 that is still running after its result is verified or its round has failed with
 `TaskStop`, and record it as stopped.
 
@@ -1316,14 +1325,12 @@ state: record whether it completed or was stopped as unknown and hand it over
 with its agent ID as an instance the run cannot stop, before starting another
 instance or counting another round.
 
-One `reviewer.md` serves both the advisory pre-flight and this route, because
-the maintainer chose one definition with an assignment-keyed posting exception
-over a second, posting-capable definition: two definitions would state the
-review standard and the tool limits twice and have to be kept in step. The cost
-is the accepted instruction-only exposure listed with the grant, above. The
-definition's `sonnet` and `high` pin is kept for both uses and never overridden
-at spawn time, so the round runs the declared configuration the pre-flight
-reader runs.
+One `reviewer.md` serves both the advisory pre-flight and this route, with an
+assignment-keyed posting exception, and its `sonnet` and `high` pin is kept and
+not overridden at spawn time. Both are the maintainer's decisions of 2026-11-20,
+recorded in [issue #151](https://github.com/axross/runners/issues/151). The cost
+of the shared definition is the accepted instruction-only exposure listed with
+the grant, above.
 
 A review session that another session starts for a run is not a route. Earlier
 runs used one on a decision relayed for a single run, but no document described

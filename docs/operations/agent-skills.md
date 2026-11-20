@@ -247,19 +247,17 @@ The Claude Code review subagent in
 bounded ways, each the maintainer's choice:
 
 - The instance is the project's `reviewer` subagent, spawned with
-  `isolation: worktree`. The host enforces its denial of the Edit, Write,
-  NotebookEdit, and Agent tools, and the run confirms its worktree is distinct
-  from the author's checkout. The other limits are instructions the host does
-  not enforce: no shell write or commit, no push or merge, no approve or
-  request-changes verdict, no GitHub write beyond the round's one review, no
-  starting or messaging of other actors through a route other than the Agent
-  tool, and no posting by an instance not assigned as the round's independent
-  review. The definition leaves available restrictions on GitHub write tools and
-  on session-starting and messaging tools unused: a reader needs the shell and
-  the tracker to read, and a deny-list naming one host's connector tools would
-  not travel. The same `reviewer.md` still serves as the advisory pre-flight
-  reader, and its prose permits posting only under an independent-review
-  assignment that carries a round token.
+  `isolation: worktree`. Its definition declares, and Claude Code documents
+  enforcing, the denial of the Edit, Write, NotebookEdit, and Agent tools; the
+  first live round confirms it, as
+  [#155](https://github.com/axross/runners/issues/155) tracks. The other limits
+  are instruction-only, as the accepted-consequences list in Development
+  Workflow's grant section gives them. The definition leaves available
+  restrictions on GitHub write tools and on session-starting and messaging tools
+  unused: a reader needs the shell and the tracker to read, and a deny-list
+  naming one host's connector tools would not travel. The same `reviewer.md`
+  still serves as the advisory pre-flight reader, and its prose permits posting
+  only under an independent-review assignment that carries a round token.
 - The host documentation describes no operation that makes a completed subagent
   non-resumable, so a completed instance is recorded as completed in run state
   rather than closed, and that record ends the round without a per-round
@@ -288,10 +286,12 @@ The deviation described before this amendment, a general-purpose subagent child
 whose limits beyond the worktree were all instructions, was adopted by the
 maintainer's merge of the pull request that closes
 [issue #127](https://github.com/axross/runners/issues/127), together with the
-review route and grant amendments it served. This amendment was adopted by the
-maintainer's approval of the plan in
-[issue #151](https://github.com/axross/runners/issues/151) and takes effect on
-the maintainer's merge of the pull request that closes it. It changes no
+review route and grant amendments it served. This amendment follows the plan the
+maintainer approved in
+[issue #151](https://github.com/axross/runners/issues/151), recorded at
+[this comment](https://github.com/axross/runners/issues/151#issuecomment-7049089352),
+which is its adoption-evidence locator, and, like the earlier ones, is adopted
+by the maintainer's merge of the pull request that closes that issue. It changes no
 installed skill, host restriction, or plan and review gate, and authorizes no
 upstream publication. Reassess it when the installed review-workflow rules
 change, when Claude Code documents an operation that ends a completed
