@@ -11,27 +11,38 @@
     which is an interactive logon with the user's profile loaded, as a person's
     logon is. that process refuses to run as an administrator or without the
     INTERACTIVE group in its token, runs the documented check block from
-    docs/operations/cli.md against the dry run's real MSI, with only gh stubbed,
-    then installs the MSI with msiexec /i, checks the installed app's hash, and runs the
+    the supplied guide against the dry run's real MSI, with only gh stubbed,
+    then installs the MSI with msiexec /i, verifies the installed product, and runs the
     documented uninstall block. the outcome is printed on lines that start with
     MEASURED, and the script throws unless every step succeeded. the hosted
     Windows Server image blocks a non-elevated per-user install (msiexec exits
     1625), so the script prints the Windows Installer policy as found, sets the
     DisableMSI policy value to 0 for the run, and restores it at the end. it needs
-    an elevated shell to create the user, and removes the user at the end. it refuses
-    to run anywhere but a GitHub Actions runner, because it creates and deletes a
-    local user and a folder under Public.
+    an elevated shell on a disposable GitHub-hosted Windows runner. an existing
+    test account or staging path is a refusal, not permission to replace it;
+    cleanup removes only the account and staging folder this invocation created.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
     [Parameter(Mandatory = $true)][string]$Version,
-    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli.md')
+    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli.md'),
+    [string]$InstalledName = 'marshal-app.exe',
+    [string]$LogSubdirectory = 'install-block-logs',
+    [scriptblock]$AssertInstalled = {
+        param([string]$Installed, [string]$Version)
+        $appName = "marshal-$Version-windows-x64.exe"
+        $listed = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'SHA256SUMS') | Where-Object { ($_ -split '\s+')[1] -eq $appName })
+        $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Installed).Hash.ToLowerInvariant()
+        if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $installedHash) { throw "the installed app does not match the $appName line of SHA256SUMS" }
+        "installed app: $installedHash"
+    }
 )
 
 $ErrorActionPreference = 'Stop'
 
-if ($env:GITHUB_ACTIONS -ne 'true') {
-    [Console]::Error.WriteLine('error: this test creates and deletes a local user and a folder under Public, so it runs only on a GitHub Actions runner (GITHUB_ACTIONS=true).')
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
+    $env:RUNNER_OS -ne 'Windows' -or [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    [Console]::Error.WriteLine('error: this test creates a local user and a folder under Public and temporarily changes Windows Installer policy, so it requires a disposable GitHub-hosted Windows runner (GITHUB_ACTIONS=true, RUNNER_ENVIRONMENT=github-hosted, RUNNER_OS=Windows).')
     exit 2
 }
 
@@ -43,7 +54,7 @@ if ($null -eq (Get-Command -Name jq -CommandType Application -ErrorAction Silent
 $ReleaseDirectory = (Resolve-Path -LiteralPath $ReleaseDirectory).Path
 $UserName = 'marshalstd'
 $Staging = Join-Path $env:PUBLIC 'marshal-standard-user'
-$LogDirectory = Join-Path $env:RUNNER_TEMP 'install-block-logs'
+$LogDirectory = Join-Path $env:RUNNER_TEMP $LogSubdirectory
 $MsiName = "marshal-$Version-windows-x64.msi"
 $InstallerAppId = '{000C101C-0000-0000-C000-000000000046}'
 $InstallerPolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
@@ -338,23 +349,20 @@ try {
     }
 
     $installDirectory = Join-Path $env:LOCALAPPDATA 'Programs\marshal'
-    $installed = Join-Path $installDirectory 'marshal-app.exe'
+    $installedName = (Get-Content -LiteralPath (Join-Path $here 'installed-name.txt') -TotalCount 1).Trim()
+    $installed = Join-Path $installDirectory $installedName
     $logFile = Join-Path $here 'install.log'
     $process = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$logFile`"") -Wait -PassThru -NoNewWindow
     $null = $process.Handle
     Write-Step "msiexec /i exit code: $($process.ExitCode)"
     if ($process.ExitCode -ne 0) { throw "msiexec /i exited $($process.ExitCode)" }
     if (-not (Test-Path -LiteralPath $installed)) { throw "$installed does not exist after the install" }
-    $appName = "marshal-$version-windows-x64.exe"
-    $listed = @(Get-Content -LiteralPath (Join-Path $here 'SHA256SUMS') | Where-Object { ($_ -split '\s+')[1] -eq $appName })
-    $installedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installed).Hash.ToLowerInvariant()
-    Write-Step "installed app: $installedHash"
-    if ($listed.Count -ne 1 -or ($listed[0] -split '\s+')[0] -ne $installedHash) { throw "the installed app does not match the $appName line of SHA256SUMS" }
+    Write-Step (& (Join-Path $here 'assert-installed.ps1') -Installed $installed -Version $version)
 
     $block = Get-InstallBlock -Document $script:Document -Id 'windows-uninstall'
     $output = @(& ([scriptblock]::Create($block)) *>&1 | ForEach-Object { "$_" })
     Write-Step "uninstall block: $($output -join ' | ')"
-    if (Test-Path -LiteralPath $installed) { throw 'the uninstall block left marshal-app.exe' }
+    if (Test-Path -LiteralPath $installed) { throw "the uninstall block left $installedName" }
     Write-Step 'RESULT: ok'
 } catch {
     Write-Step "RESULT: failed: $($_.Exception.Message)"
@@ -368,23 +376,29 @@ foreach ($character in $password.ToCharArray()) { $secure.AppendChar($character)
 $secure.MakeReadOnly()
 $policyBefore = $null
 $policyTouched = $false
+$userCreated = $false
+$stagingCreated = $false
 $runFailure = $null
 $restoreFailure = $null
 try {
-    if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
+    if (Get-LocalUser -ErrorAction Stop | Where-Object { $_.Name -eq $UserName }) { throw "refused: the local user $UserName already exists" }
+    if (Test-Path -LiteralPath $Staging -ErrorAction Stop) { throw "refused: the staging path $Staging already exists" }
     $null = New-LocalUser -Name $UserName -Password $secure -AccountNeverExpires -PasswordNeverExpires -Description 'standard user for the marshal install test'
+    $userCreated = $true
     $users = Get-LocalGroup -SID 'S-1-5-32-545'
     Add-LocalGroupMember -Group $users -Member $UserName
     $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
     $members = @(Get-LocalGroupMember -Group $administrators | ForEach-Object { $_.Name })
     if (@($members | Where-Object { $_ -like "*\$UserName" }).Count -ne 0) { throw "$UserName is an administrator" }
 
-    if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $Staging | Out-Null
+    New-Item -ItemType Directory -Path $Staging -ErrorAction Stop | Out-Null
+    $stagingCreated = $true
     foreach ($name in $MsiName, 'SHA256SUMS') { Copy-Item -LiteralPath (Join-Path $ReleaseDirectory $name) -Destination $Staging }
     Copy-Item -LiteralPath $Document -Destination (Join-Path $Staging 'cli.md')
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'install-block-helpers.ps1') -Destination $Staging
     Set-Content -LiteralPath (Join-Path $Staging 'version.txt') -Value $Version
+    Set-Content -LiteralPath (Join-Path $Staging 'installed-name.txt') -Value $InstalledName
+    Set-Content -LiteralPath (Join-Path $Staging 'assert-installed.ps1') -Value $AssertInstalled.ToString()
     $runScript = Join-Path $Staging 'run.ps1'
     Set-Content -LiteralPath $runScript -Value $userScript
     & icacls.exe $Staging /grant "*S-1-5-32-545:(OI)(CI)M" | Out-Null
@@ -428,7 +442,7 @@ try {
     Write-Output "process exit code: $exitCode"
     Write-LogonTypeDiagnostic -Account $UserName -Since $testStart
     $ok = ($null -eq $failure) -and $logText.Contains('RESULT: ok')
-    Write-Measured "a standard local user without administrator rights ($UserName, secondary logon with the interactive logon type, not elevated, with DisableMSI set to 0) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, found the installed app matching its SHA256SUMS line, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); process exit code $exitCode"
+    Write-Measured "a standard local user without administrator rights ($UserName, secondary logon with the interactive logon type, not elevated, with DisableMSI set to 0) $(if ($ok) { 'ran the check block, installed the MSI with msiexec /i, verified the installed product, and ran the uninstall block' } else { 'did not complete the check block, the install, and the uninstall' }); process exit code $exitCode"
     if ($null -eq $failure -and -not $ok) { $failure = 'the standard user run failed; the check block or the install needs more than a standard user, or the run could not be set up' }
     if ($null -ne $failure) {
         Write-FailureDiagnostic -Account $UserName -Since $testStart
@@ -446,9 +460,11 @@ try {
             Write-Output "could not restore the Windows Installer policy DisableMSI: $($_.Exception.Message)"
         }
     }
-    Save-InstallerLog -Source $Staging -Destination $LogDirectory
-    if (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue) { Remove-LocalUser -Name $UserName }
-    if (Test-Path -LiteralPath $Staging) { Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($userCreated) { Remove-LocalUser -Name $UserName }
+    if ($stagingCreated) {
+        Save-InstallerLog -Source $Staging -Destination $LogDirectory
+        Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
     # a throw here replaces the failure in flight, so the message carries both.
     if ($null -ne $restoreFailure) {
         $original = if ($null -ne $runFailure) { "; the run had failed first: $($runFailure.Exception.Message)" } else { '' }
