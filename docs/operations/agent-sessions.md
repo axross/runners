@@ -434,17 +434,20 @@ go through the session's git remote instead of this path; that was not tested
 either.
 
 The probe wrote issue bodies with `issue_write`, both creating and updating, and
-one issue comment. One pull request body has since been written by create, and
-one update to a pull request body was read back through REST. Reviews, review
-comments and replies, comment edits, and URLs already inside code remain
-untested. The rules and the read-back below still apply to those surfaces.
+one issue comment. The Rewrites Observed lists the writes checked since.
+Reviews, review replies, comment edits, and URLs already inside code remain
+untested, and one review comment was checked through MCP only, as The Rewrites
+Observed records. The rules and the read-back below still apply to those
+surfaces.
 
 ### The Rewrites Observed
 
 A probe on a scratch issue, run on 2026-11-19 (PST) with the maintainer's
 approval, wrote URLs of known lengths and read back what GitHub stored. Each
 cell lists the lengths tested, how many URLs were written at them, and in how
-many probe writes. The counts cover issue bodies only.
+many probe writes. The counts cover issue bodies only. Each distinct body is
+counted once; a body re-sent unchanged to test determinism stored the same
+result and is not counted twice.
 
 | Form                              | Stored intact                                                                                                                                       | Stored wrapped in a code span                                                                                             |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -476,11 +479,13 @@ Three more rewrites were observed:
   (PST), was stored with that attribution replaced by the comment footer, and
   every other byte matched what was sent
   ([comment 7046296956](https://github.com/axross/runners/issues/144#issuecomment-7046296956)).
-  That is one write, by create. The one write by `update_pull_request`, to
-  #150's description on 2026-11-20 (PST), was read back through REST search at
-  its update time and was byte-identical to the sent file, attribution included,
-  with no footer
-  ([comment 7047943100](https://github.com/axross/runners/issues/144#issuecomment-7047943100)).
+  That is one write, by create. The first two writes by `update_pull_request`,
+  to #150's description on 2026-11-20 (PST), were read back through REST search
+  at their update times and were byte-identical to the sent files, attribution
+  included, with no footer
+  ([comment 7047943100](https://github.com/axross/runners/issues/144#issuecomment-7047943100)
+  and
+  [comment 7048354239](https://github.com/axross/runners/issues/144#issuecomment-7048354239)).
   Another session reported that `update_pull_request` kept the attribution on
   #138 (three writes) and #139, compared byte for byte with what MCP's get
   returned, with no REST read, so the replacement may be specific to creating a
@@ -496,6 +501,17 @@ references `&amp;`, `&#x27;`, `&lt;`, `&gt;`, `&quot;`, and `&#39;`; raw
 `& < > ' "`; angle-bracket placeholders; HTML comments; `<details>`; and fence
 info strings. The three sanitized-read stages that GitHub Operation's Body
 Integrity describes were not reproduced.
+
+Those constructs were tested in issue bodies, so the list does not carry over to
+review comments. On 2026-11-20 (PST), an independent review child for #150
+posted an inline review comment through the MCP pending-review tool
+([review comment 4646748901](https://github.com/axross/runners/pull/150#discussion_r4646748901)).
+It sent a single-backtick code span containing the literal placeholder
+`<149-character URL>`, not a real URL. MCP's review-comments read returned the
+placeholder's angle brackets as `&lt;` and `&gt;`, set in a double-backtick code
+span of its own, which splits the original span. The comment was checked only
+through MCP, so its exact stored content is unverified, and whether the write
+path or the read path changed it is not established.
 
 An open report, `github/github-mcp-server#3299`, was still open on 2026-11-19
 (PST), as read through a model-summarized fetch of its public page. It reports
@@ -546,8 +562,10 @@ diff command uses. `node` and `jq` are pinned in
 
 The URL check lists every `http` or `https` URL of 150 or more characters with
 its line number and length. It does not count a closing `)` that belongs to the
-link syntax. It may count trailing punctuation, which errs on the safe side. It
-does not check relative or non-`http` destinations, which were not tested.
+link syntax when that `)` ends the match. When punctuation follows the `)`, as
+in `[text](URL),`, it counts both the `)` and the punctuation, which errs on the
+safe side. It does not check relative or non-`http` destinations, which were not
+tested.
 
 ```sh
 node -e '
@@ -665,10 +683,10 @@ fs.writeFileSync("expected.md", sent.replace(tail, "\n\n---\n_Generated by [Clau
 
 ### Reading Back a Comment
 
-Where the session may use the direct REST read of a comment, under
-[GitHub Operation](../../.claude/skills/github-operation/references/channel-selection.md)'s
-channel qualification, compare an issue or pull request conversation comment by
-command, as a body is. Here `body.md` is the composed comment, footer included.
+An issue or pull request conversation comment can be checked in two ways; the
+guidelines below say which applies. The first compares the comment by
+command through the direct REST read of it, as a body is compared. Here
+`body.md` is the composed comment, footer included.
 
 ```sh
 gh api repos/axross/runners/issues/comments/<comment id> > stored.json
@@ -676,16 +694,17 @@ jq -r .updated_at stored.json
 jq -j .body stored.json | cmp - body.md && echo "ok: stored comment is identical"
 ```
 
-Otherwise the agent checks the comment as MCP's comments read returns it: each
-URL is unwrapped, and the footer appears exactly once, at the end. This check
-does not establish the stored content, for the reason given under Reading Back a
-Body.
+The second checks the comment as MCP's comments read returns it: each URL is
+unwrapped, and the footer appears exactly once, at the end. This check does not
+establish the stored content, for the reason given under Reading Back a Body.
 
 **Guidelines:**
 
 - MUST check each issue or pull request conversation comment after writing it,
-  by the exact read above where the session may use it, and otherwise as MCP
-  returns it.
+  by the command above where the session may use the direct REST read of a
+  comment, under
+  [GitHub Operation](../../.claude/skills/github-operation/references/channel-selection.md)'s
+  channel qualification, and otherwise as MCP returns it.
 - MUST report a comment checked only through MCP as checked through MCP only,
   with its exact stored content unverified, as GitHub Operation requires.
 - MUST check each review and review reply as MCP returns it, and report it as
