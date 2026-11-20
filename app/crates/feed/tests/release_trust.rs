@@ -234,7 +234,11 @@ fn the_default_cli_trust_rotates_independently_of_the_app_key() {
     );
     std::fs::write(&trust, fixture("other-key.pub")).unwrap();
     assert_build(root);
-    for signature in ["signed-1.4.0.sig", "rotation-1.4.0.sig"] {
+    for signature in [
+        "signed-1.4.0.sig",
+        "rotation-1.4.0.sig",
+        "unrelated-1.4.0.sig",
+    ] {
         checked(
             root,
             signature,
