@@ -260,6 +260,8 @@ expect_fail "assemble-signed that runs the feed check twice" "runs the feed chec
   "$release" "$guarded_feed_check" "${guarded_feed_check}"$'\n          '"${guarded_feed_check}"
 expect_fail "assemble-signed that compares with another update-tool output" "FEED_CHECK_SHA256 is not \`\${{ needs.update-tool.outputs.feed_check_sha256 }}\`" \
   "$release" 'FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.feed_check_sha256 }}' 'FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.tauri_cli_sha256 }}'
+expect_fail "assemble-signed without the comparing step's FEED_CHECK_SHA256 entry" "FEED_CHECK_SHA256 is not" \
+  "$release" $'          FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.feed_check_sha256 }}\n' ""
 
 echo "-- the words the rest of the job does not hold --"
 # outside <command> <word>: the command after the block must fail naming the word.
