@@ -1,5 +1,5 @@
 //! the update feed: the rules that decide whether the app takes a release, and the
-//! check the release run makes of `latest.json` before it publishes it. The app
+//! check the release run makes of `latest.json` before it publishes it. the app
 //! downloads and verifies through Tauri's updater plugin; this crate holds what the
 //! plugin does not, the download address rule and the committed public key, and the same
 //! signature rules the plugin applies. the release CLI supplies its own embedded key,
