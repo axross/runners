@@ -1195,10 +1195,28 @@ impl<D: Dial> Session<D> {
             )));
             return;
         }
+        let released = match &request {
+            ConfigRequest::RemoveReleasedToken { repository } => Some(repository.clone()),
+            _ => None,
+        };
+        let within = if released.is_some() {
+            TOKEN_WITHIN
+        } else {
+            CALL_WITHIN
+        };
+        let log = Arc::clone(&self.log);
         tokio::spawn(async move {
-            let answer = tokio::time::timeout(CALL_WITHIN, link.config(request))
+            let answer = tokio::time::timeout(within, link.config(request))
                 .await
-                .unwrap_or(Err(Failure::TimedOut));
+                .unwrap_or_else(|_| {
+                    if let Some(repository) = released {
+                        log.warn(&format!(
+                            "The agent did not answer the removal of the released token for {repository} in {} s; it may still do it.",
+                            TOKEN_WITHIN.as_secs()
+                        ));
+                    }
+                    Err(Failure::TimedOut)
+                });
             let _ = reply.send(answer);
         });
     }

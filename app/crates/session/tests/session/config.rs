@@ -5,7 +5,7 @@
 use marshal_cli::agent::config::{ConfigRead, Problem};
 use marshal_session::{AgentInfo, ConfigAnswer, ConfigRequest, Failure};
 
-use crate::support::{Agent, Answer, Called, World, fixture, start};
+use crate::support::{Agent, Answer, Called, World, fixture, secs, start};
 
 fn read() -> ConfigRead {
     serde_json::from_value(serde_json::json!({
@@ -108,4 +108,54 @@ async fn released_token_removal_returns_the_store_cause_and_a_retry_can_succeed(
         session.handle.config(request).await,
         Ok(ConfigAnswer::TokenRemoved)
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_released_token_removal_waits_as_long_as_any_token_call_and_logs_the_overrun() {
+    let (agent, link) = Agent::new();
+    let world = World::default();
+    world.then(Answer::Agent(link));
+    let session = start(world);
+    agent.push(fixture("running"));
+    session.settle().await;
+    let gate = agent.hold("config");
+    let handle = session.handle.clone();
+    let call = tokio::spawn(async move {
+        handle
+            .config(ConfigRequest::RemoveReleasedToken {
+                repository: "owner/released".into(),
+            })
+            .await
+    });
+    session.settle().await;
+    session.wait(secs(11)).await;
+    assert!(call.is_finished());
+    assert_eq!(call.await.unwrap(), Err(Failure::TimedOut));
+    assert!(
+        session.log.lines().iter().any(|line| line.contains(
+            "The agent did not answer the removal of the released token for owner/released in 10 s"
+        )),
+        "{:?}",
+        session.log.lines()
+    );
+    drop(gate);
+}
+
+#[tokio::test(start_paused = true)]
+async fn any_other_request_still_waits_for_the_longer_call_bound() {
+    let (agent, link) = Agent::new();
+    let world = World::default();
+    world.then(Answer::Agent(link));
+    let session = start(world);
+    agent.push(fixture("running"));
+    session.settle().await;
+    let gate = agent.hold("config");
+    let handle = session.handle.clone();
+    let call = tokio::spawn(async move { handle.config(ConfigRequest::Read).await });
+    session.settle().await;
+    session.wait(secs(11)).await;
+    assert!(!call.is_finished());
+    session.wait(secs(30)).await;
+    assert_eq!(call.await.unwrap(), Err(Failure::TimedOut));
+    drop(gate);
 }

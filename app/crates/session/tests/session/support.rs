@@ -113,12 +113,24 @@ fn name(method: &Method) -> &'static str {
 
 impl Link for FakeLink {
     async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
-        let mut state = locked(&self.state);
-        state.calls.push(Called::Config(format!("{request:?}")));
-        state
-            .config
-            .pop_front()
-            .unwrap_or_else(|| Err(Failure::Other("no answer queued".into())))
+        let (answer, held) = {
+            let mut state = locked(&self.state);
+            state.calls.push(Called::Config(format!("{request:?}")));
+            let answer = state
+                .config
+                .pop_front()
+                .unwrap_or_else(|| Err(Failure::Other("no answer queued".into())));
+            let held = state
+                .held
+                .iter()
+                .find(|(named, _)| *named == "config")
+                .map(|(_, gate)| Arc::clone(gate));
+            (answer, held)
+        };
+        if let Some(gate) = held {
+            gate.notified().await;
+        }
+        answer
     }
 
     async fn subscribe(&self) -> Result<(), Failure> {
