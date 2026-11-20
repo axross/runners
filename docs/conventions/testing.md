@@ -78,9 +78,11 @@ passing test is captured, so it shows only with `--nocapture`.
 The test MUST try the access instead of reading the user ID, because the user ID
 does not say what the process may do: a root process that has dropped
 `CAP_DAC_OVERRIDE` is refused, and a non-root process can hold it. An attempt
-that creates a file MUST run in a folder the test creates for it, never in one
-the code under test reads, and MUST remove that folder afterwards: under root,
-a file created there would appear where the code under test is reading.
+that would change the file system if it succeeded, such as creating, replacing,
+or removing a file, MUST run in a folder the test creates for it, never in one
+the code under test reads, and MUST remove that folder afterwards: under root
+the attempt succeeds, and its change would appear where the code under test is
+reading.
 
 The `Stop` hook does not drop `CAP_DAC_OVERRIDE` for its check instead, for
 example by running it through `setpriv`: that would fix only the hook, and a
