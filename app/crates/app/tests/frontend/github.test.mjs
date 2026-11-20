@@ -270,7 +270,7 @@ test("the budget is the footer's first line", () => {
 
 test("on-demand text uses the existing card, adds no control and never parses markup", () => {
   const before = tabStops().map((element) => element.getAttribute("data-key"));
-  const line = "On demand · axpc-linux · Rejected by GitHub";
+  const line = "On demand · axpc-linux · Rejected";
   const detail =
     "scale-set label mismatch <b>unchanged</b> · Cleanup incomplete";
   handlers.get("marshal:view")({
