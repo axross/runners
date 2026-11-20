@@ -156,6 +156,67 @@ tokn = "ghp_undefined00000000000000000000000"
         .await;
 }
 
+/// removing an organisation pool leaves a repository pool and its token in place,
+/// and does not report the organisation key as a released repository.
+#[tokio::test(flavor = "current_thread")]
+async fn removing_an_organization_pool_reports_no_released_repository() {
+    let rig = Rig::new(ONE_POOL);
+    rig.write_toml(
+        r#"schema_version = 1
+routing_label = "axpc"
+image_name = "actions-runner:local"
+[[pool]]
+name = "r"
+repository = "o/r"
+runners = 1
+[[pool]]
+name = "org"
+organization = "O"
+runner_group = "private-workers"
+labels = ["org-route"]
+runners = 1
+"#,
+    );
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_runner_runs().await;
+        conn.client
+            .organization_token_set("o", TOKEN)
+            .await
+            .unwrap();
+        conn.until("both pools running", |snapshot| snapshot.runners_up == 2)
+            .await;
+        rig.mark_running();
+        let read = conn.ok("config_read").await;
+        assert_eq!(read["pools"][1]["organization"], "O");
+        assert_eq!(read["pools"][1]["runner_group"], "private-workers");
+        assert!(read["pools"][1].get("repository").is_none());
+        let applied = conn
+            .call(
+                "config_edit",
+                json!({
+                    "revision": read["revision"],
+                    "edits": [{"op":"remove_entry", "path":"pool[1]"}],
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(applied["repositories_released"], json!([]));
+        let snapshot = conn
+            .until("only the repository pool remains", |snapshot| {
+                snapshot.pools.len() == 1 && snapshot.pools[0].name == "r"
+            })
+            .await;
+        assert!(snapshot.organizations.is_empty());
+        assert_eq!(snapshot.repositories[0].repository, "o/r");
+        assert!(snapshot.repositories[0].has_token);
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn raising_runners_starts_the_new_slot_alone_and_keeps_the_comments() {
     let rig = rig();
@@ -349,6 +410,47 @@ async fn an_edit_on_a_stopped_agent_is_written_and_used_at_the_next_start() {
                     .iter()
                     .any(|call| matches!(call, Call::RunContainer(_)))
             );
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_clients_config_methods_read_the_agents_answers() {
+    let rig = rig();
+    let rig = &rig;
+    let (_, ()) = rig
+        .drive(Launch::Stopped, |conn| async move {
+            let read = conn.client.config_read().await.unwrap();
+            assert_eq!(read.status, "valid");
+            assert_eq!(read.settings["routing_label"], "axpc");
+            assert_eq!(read.pools.len(), 2);
+            assert!(read.problems.is_empty() && !read.too_large);
+            let before = file(rig);
+            let checked = conn
+                .client
+                .config_edit(
+                    &read.revision,
+                    json!([{"op": "remove_entry", "path": "pool[1]"}]),
+                    true,
+                )
+                .await
+                .unwrap();
+            let d = checked.effects.iter().find(|e| e.pool == "d").unwrap();
+            assert_eq!((d.change.as_str(), d.runners_before), ("removed", 1));
+            assert_eq!(checked.repositories_released, ["o/d"]);
+            assert!(!checked.applies);
+            assert_eq!(file(rig), before);
+            let reload = conn
+                .client
+                .config_reload(&read.revision, true)
+                .await
+                .unwrap();
+            assert!(reload.effects.iter().all(|e| e.change == "unchanged"));
+            match conn.client.config_reload("stale", true).await {
+                Err(CallError::Agent(body)) => assert_eq!(body.code, "config_changed"),
+                other => panic!("a stale revision was not refused: {other:?}"),
+            }
             conn.ok("quit").await;
         })
         .await;

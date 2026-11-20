@@ -1,8 +1,8 @@
 # Windows with Docker Desktop
 
 The host configuration for running ephemeral GitHub Actions runners for several
-repositories from one Windows machine with Docker Desktop. Marshal's agent reads a
-machine-local host configuration, and for each target repository keeps its slots
+repositories or organisations from one Windows machine with Docker Desktop.
+Marshal's agent reads a machine-local host configuration and keeps each pool's slots
 filled with single-job containers built from
 [`images/actions-runner/`](../../images/actions-runner/README.md).
 
@@ -55,6 +55,16 @@ The resident agent does not take `--config`. It reads `config.toml` in
 snake_case keys, `repository = "owner/name"` in place of `owner` and `repository`,
 `runners` in place of `slots`, a required `routing_label`, and no `tokenPath`: it
 reads each pool's token from the Credential Manager.
+
+A TOML pool can instead select `organization` with a required `runner_group`,
+without `repository`. JSON remains repository-only. Organisation and repository
+pools use separate tokens. [CLI](../../docs/operations/cli.md) owns the target
+exclusivity, forbidden settings, and routing-label rules;
+[Windows Runner Host](../../docs/operations/windows-runner-host.md) owns the
+organisation token steps;
+[Security](../../docs/conventions/security.md#organisation-pools-share-a-runner-groups-trust-boundary)
+states the runner-group and private-repository fork-policy requirements.
+
 [`config.example.toml`](./config.example.toml) is the example above in that form.
 When only `config.json` is in that folder, the agent's first start migrates it to
 `config.toml` and leaves `config.json` in place. The keys, the problems it reports,

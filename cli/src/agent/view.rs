@@ -14,14 +14,14 @@ use crate::runtime::board::{Board, PoolState, Row, SlotState};
 use crate::runtime::diagnostic::BUNDLE_QUOTA;
 use crate::runtime::retained::Retained;
 use crate::token_store::TokenKey;
-use crate::validate::Entry;
+use crate::validate::{Entry, PoolTarget};
 
 use super::config::Change;
 use super::core::LEAVING;
 use super::snapshot::{
     AgentInfo, ConfigurationInfo, DiagnosticContainer, DiagnosticFinding, DiagnosticsInfo,
-    ImageInfo, ImageLine, ImageWarning, InUseInfo, Leftover, MigrationInfo, PoolInfo,
-    RepositoryInfo, RunnerInfo, Snapshot, UpdateInfo,
+    ImageInfo, ImageLine, ImageWarning, InUseInfo, Leftover, MigrationInfo, OrganizationInfo,
+    PoolInfo, RepositoryInfo, RunnerInfo, Snapshot, UpdateInfo,
 };
 use super::state::{Inner, Phase};
 use super::tokens::StoreTokens;
@@ -203,7 +203,7 @@ impl View<'_> {
             ..Snapshot::default()
         };
         if let Some(plan) = inner.plan() {
-            snapshot.repositories = self.repositories(&plan.entries);
+            self.token_rows(&plan.entries, &mut snapshot);
             if inner.restart_due.is_none() {
                 let pool_rows = self.board.pool_rows();
                 let slot_rows = self.board.slot_rows();
@@ -237,31 +237,45 @@ impl View<'_> {
         snapshot
     }
 
-    fn repositories(&self, entries: &[Entry]) -> Vec<RepositoryInfo> {
-        let mut by_key: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
+    /// joins credential rows across pools without merging an organisation key with
+    /// a repository key, even when both begin with the same login.
+    fn token_rows(&self, entries: &[Entry], snapshot: &mut Snapshot) {
+        let mut repositories: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
+        let mut organizations: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
         for entry in entries {
+            let by_key = match entry.target {
+                PoolTarget::Repository { .. } => &mut repositories,
+                PoolTarget::Organization { .. } => &mut organizations,
+            };
             by_key
-                .entry(TokenKey::of(&entry.owner, &entry.repository))
+                .entry(TokenKey::for_pool(&entry.target))
                 .or_default()
                 .push(entry.name.clone());
         }
-        by_key
-            .into_iter()
-            .map(|(key, pools)| RepositoryInfo {
+        for (key, pools) in repositories {
+            snapshot.repositories.push(RepositoryInfo {
                 has_token: self.tokens.has_token(&key),
                 repository: key.to_string(),
                 pools,
-            })
-            .collect()
+            });
+        }
+        for (key, pools) in organizations {
+            snapshot.organizations.push(OrganizationInfo {
+                has_token: self.tokens.has_token(&key),
+                organization: key.to_string(),
+                pools,
+            });
+        }
     }
 
+    /// exposes local lifecycle state, not proof of GitHub registration or group policy.
     fn pool(
         &self,
         entry: &Entry,
         pools: &RowsByName<'_, PoolState>,
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
-        let key = TokenKey::of(&entry.owner, &entry.repository);
+        let key = TokenKey::for_pool(&entry.target);
         let restarting = self.inner.applying.as_ref().is_some_and(|applying| {
             applying
                 .effects
@@ -337,9 +351,19 @@ impl View<'_> {
                 }
             })
             .collect();
+        let (repository, organization, runner_group) = match &entry.target {
+            PoolTarget::Repository { .. } => (key.to_string(), None, None),
+            PoolTarget::Organization { runner_group, .. } => (
+                String::new(),
+                Some(key.to_string()),
+                Some(runner_group.clone()),
+            ),
+        };
         PoolInfo {
             name: entry.name.clone(),
-            repository: key.to_string(),
+            repository,
+            organization,
+            runner_group,
             state: state.to_string(),
             reason,
             has_token: self.tokens.has_token(&key),
@@ -479,8 +503,10 @@ mod tests {
         Entry {
             path: String::new(),
             index: 0,
-            owner: "owner".to_string(),
-            repository: "repository".to_string(),
+            target: PoolTarget::Repository {
+                owner: "owner".to_string(),
+                repository: "repository".to_string(),
+            },
             name: "pool".to_string(),
             slots: 2,
             token_path: None,

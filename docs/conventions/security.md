@@ -2,7 +2,7 @@
 
 This project's supply-chain and runner-trust conventions: how a `uses:` reference
 under [`.github/`](../../.github) is pinned, what a workflow may be granted, how a
-release of the app is published and how signing is held for its next signing job,
+release is published during temporary CLI recovery and after app-path restoration,
 where
 a self-hosted runner may and may not run, what a runner's shared storage exposes,
 what the Windows app's web view and process may do, and what is never committed. It
@@ -117,6 +117,19 @@ release, with its download URL and checksum in `mise.lock`, so it needs no compi
 in CI and no exception here. [App](../operations/app.md#licence-notices) describes how
 the notices check holds that version.
 
+The Linux x64 editor rendering gate adds only the test controller `playwright-core`
+under `app/crates/app/tests/render/`, not a dependency of the bundled page or the
+app's Rust workspaces. Its npm lock records the package integrity; preparation
+uses `npm ci --ignore-scripts`. `browser.json` in that directory pins the Chromium
+archive's version, HTTPS URL and SHA-256, computed from the real download.
+Preparation MUST verify that checksum before extracting or running the browser.
+Refresh the controller, browser pin and lock together, then rerun the render gate.
+To regenerate the lock after changing the manifest, use
+`npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
+OS libraries are prepared only on the disposable GitHub-hosted Check runner;
+the worktree preparation task installs no system package and the gate downloads
+nothing. The fake bridge has no credential, live agent or configuration-file access.
+
 The Windows installer's tool is pinned the same way. Besides the Rust toolchain and
 `tauri-cli`, whose exceptions are recorded below, WiX is the one tool the release
 build fetches.
@@ -151,9 +164,8 @@ WiX. To bump it:
 The change needs the maintainer's review, since it changes the supply-chain
 surface (see [REVIEW.md](../../REVIEW.md)).
 
-The macOS signing job pins the one certificate it embeds. This pin is held for M2
-and W4: W1's installer pull request removed the job that embeds it, and M2's
-disk-image pull request brings the job back with the pin below. Apple's Developer ID
+The temporary CLI signing job uses the existing certificate pin, which also
+remains the contract for M2 and W4 after app restoration. Apple's Developer ID
 G2 intermediate certificate is embedded in `sign-macos` as base64, because the runner
 image's trust in it is unknown and the job fetches nothing. The job refuses it
 unless its SHA-256 is
@@ -381,7 +393,66 @@ is passed into a step through an `env:` variable and quoted, never expanded insi
 
 ## A Release Is Published Only From a Dispatch on Main
 
-[`release.yaml`](../../.github/workflows/release.yaml) releases the app with
+The active release route is the temporary fixed-source CLI recovery below.
+The app source and its unsigned build remain, but the app publication route is
+suspended. The retained app baseline in the following subsection is not a second
+active release graph. [CLI Recovery](../operations/cli-recovery.md) owns the
+operator procedure and the two source identities.
+
+### Temporary CLI Recovery
+
+`release.yaml` remains dispatch-only on main with the existing release concurrency.
+Its seven stages are plan, build, sign-macos, verify-macos, assemble-signed, attest
+and release. Only `sign-macos` declares `release` and reads the six signing secrets
+and `APPLE_TEAM_ID` under the Environment contract retained below. It holds only
+`contents: read`, checks nothing out, and runs inline operating-system tools, no
+repository script, package manager or third-party action. Secret files are 0600,
+notary-key lines are masked, and keychain/files are removed after success or failure.
+The existing G2 certificate, team, identifier, expiry and notarization checks apply.
+The maintainer alone dispatches and approves; no agent performs either operation
+or changes release settings.
+
+`cli-recovery-build.yaml` is unprivileged and reusable by merge checks. It obtains
+the complete historical tree at `dc8e1ebcc0722997206487f3dcca2ae7e519cf02`, disables
+persisted checkout credentials, verifies HEAD/tree/CLI/lock/toolchain identities,
+and allows only its exact version stamp. Build outputs stay outside that tree;
+tracked and untracked input changes, including ignored files, fail revalidation.
+The production CLI and legacy installers come from that tree, not the current app
+or a test helper. Historical dependencies use their pinned policy and lockfile.
+The existing pinned `jdx/mise-action`, with cache disabled and only cargo-deny
+selected, installs the historical checker without a signing Environment. Normal
+app builds and their installer tests still run separately.
+
+`verify-macos`, outside the Environment, checks signed bare CLI/package identity,
+both accepted designated-requirement forms, payload, notarization and stapling.
+Only verified signed macOS output joins the unchanged Windows CLI/MSI in
+`assemble-signed`. Its recovery assembler writes SHA256SUMS; attest and the recovery
+semantic-release gate independently require exactly four payload files plus those
+checksums. The npm jobs retain only contents write; attest alone has OIDC and
+attestations write and checks out no code. No job has both write authorities.
+
+Default provenance identifies the workflow/tag commit from OIDC, not the historical
+secondary checkout's HEAD. Build logs record both identities and checked inputs;
+the optional download checks keep the workflow, main-ref, tag-commit and hosted
+attester pins, without claiming that default provenance proves every fetched input.
+PR dry runs never reach signing, the Environment, attestation or publication.
+Stand-ins and unsigned hosted installer checks are not native evidence.
+The shape checker, mutation suite, inline-signing stand-ins, signed-package refusals
+and CLI install-block suites guard this temporary boundary; they do not defend
+against a hostile PR changing the checks themselves.
+
+After successful public F0 release/signing and native-host evidence, a separate
+reviewed restoration removes the temporary route and reconciles then-current app
+owners. Only restoration completes recovery; neither code PR completes F0, whose
+measured signing record remains a later documents-only change. The recovery tag's
+CLI instructions remain valid. This is not a permanent dual-product selector.
+
+### Retained App Release Baseline (Suspended)
+
+The following describes the app publication baseline to reconcile on restoration,
+not the active recovery dispatch. Its app build and tests remain active.
+
+The app baseline of [`release.yaml`](../../.github/workflows/release.yaml) releases the app with
 semantic-release, and
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the app
 executable and its MSI; [CLI](../operations/cli.md#releases) owns the steps. This is the
@@ -469,10 +540,10 @@ record a change to either workflow, to the build call in
     [the roadmap](https://github.com/axross/runners/issues/72) requires
     self-approval. "Allow administrators to bypass" is off. The maintainer reports
     the settings on the tracking issue, because agents cannot read them.
-  - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
-    `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
-    `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
-    `MACOS_TEAM_ID`, which is not secret. A job reads them only if it declares the
+  - **Its secrets** are the six Environment secrets `APPLE_APPLICATION_P12_BASE64`,
+    `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`, `APPLE_NOTARY_KEY_P8`,
+    `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and its variable is
+    `APPLE_TEAM_ID`, which is not secret. A job reads them only if it declares the
     Environment, and only after the reviewer approves it. No repository secret is
     added for signing.
   - **The signing identifier** `app.axross.marshal` and the team are fixed and
@@ -645,8 +716,8 @@ Residual risks, accepted:
   next dispatch would build that change and attest it as genuine. The control is
   the check in
   [Each Release](../operations/development-workflow.md#each-release), before
-  each dispatch, that every commit on main since the last `v*` tag came from a
-  merged pull request. A stronger option is a rule on main that requires a
+  each dispatch, that every commit on main since the last published release came
+  from a merged pull request. A stronger option is a rule on main that requires a
   pull request, with only the maintainer able to bypass it. That is the
   maintainer's choice, and it is not in place.
 - **The attest job attests whatever passes its checks.** `SHA256SUMS` comes from
@@ -660,8 +731,8 @@ Residual risks, accepted:
   Once a signing job returns, it signs whatever the dispatched commit builds, with the maintainer's Developer ID. The
   control is the check in
   [Each Release](../operations/development-workflow.md#each-release), before each
-  dispatch and before the approval, that every commit on main since the last `v*`
-  tag came from a merged pull request. A stronger option is a rule on main that
+  dispatch and before the approval, that every commit on main since the last
+  published release came from a merged pull request. A stronger option is a rule on main that
   requires a pull request, which is the maintainer's choice and is not in place.
 - **One identity can dispatch and approve (held for M2 and W4).** The Environment allows self-approval,
   because the roadmap requires it and the maintainer is the only reviewer, and agents
@@ -692,9 +763,19 @@ Residual risks, accepted:
   nothing before merge can exercise it. The stand-in suites and the shape check cover the flow,
   not Apple's answers. A failure stops that release before its tag.
 - **Unprotected tags change the next version.** Any account with write access can
-  push, move, or delete a `v*` tag that has no published release, `v0.0.0`
-  included, and that changes the version semantic-release works out next.
-  Immutable releases lock only the tags of published releases.
+  push, move, or delete a `v*` tag that has no published release, `v0.0.0` and
+  `v0.1.1` included, and that changes the version semantic-release works out next.
+  Until the recovery release is published, moving `v0.1.1` to another commit, or
+  deleting it, can make the next plan print `1.0.0`; once a later release exists,
+  `v0.1.1` no longer affects the version. The check in
+  [Each Release](../operations/development-workflow.md#each-release) names such a
+  tag only when the check would start at it, and never `v0.1.1`, which it skips.
+  The version is guarded instead by the read-back of `v0.1.1` in
+  [CLI Recovery](../operations/cli-recovery.md#release-the-fixed-cli) before the
+  recovery dispatch, and by the maintainer cancelling, before approving
+  `sign-macos`, a run whose plan prints a version
+  [Version Rules](../operations/development-workflow.md#version-rules) does not
+  expect. Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
   check still tie the file to one commit on main, but no longer to a version. The
@@ -967,7 +1048,8 @@ later host:
   (see [CLI](../operations/cli.md#github-status)) are `GET`s there through the same
   client; neither follows a redirect, so a redirect cannot carry the token to
   another host, and a status read follows a next page only on the same origin and
-  endpoint path. It fails a connection after
+  endpoint path, or GitHub's numeric-id form of it for the same repository or
+  organisation. It fails a connection after
   10 s, a request after 30 s, and a response over 1 MiB. The token lives in a type
   with no `Display` and a redacted `Debug`, the header that carries it is marked
   sensitive, and error text has the token replaced before it is logged. Only a
@@ -1010,8 +1092,7 @@ is an operator rule and a review rule, not a check.
   rate-limit response means Actions: read is missing; Marshal hides job names for
   that repository rather than failing, and logs GitHub's message and its
   `X-Accepted-GitHub-Permissions` header.
-- Organisation pools are planned (X2) and no release configures one yet. An
-  organisation pool's token is created by an owner of the organisation, has the
+- An organisation pool's token is created by an owner of the organisation, has the
   organisation as its resource owner, and carries the organisation permission
   Self-hosted runners: Read and write. It carries no repository permission, and its
   repository access is public repositories only. One token serves one
@@ -1030,6 +1111,46 @@ is an operator rule and a review rule, not a check.
   publishes them, and a reader shows them as plain text, never as markup or an
   address. A reader builds a job's address itself from its configured repository
   and the two numbers it was given.
+
+## Organisation Pools Share a Runner Group's Trust Boundary
+
+An organisation pool's isolation boundary is its named runner group, not one
+repository. Every repository the group admits can run jobs on those runners.
+Repositories in one group are one trust domain; Marshal does not isolate them
+from each other. The organisation token's permissions and cost if leaked are
+stated in A Token Carries Only Its Pool Kind's Permissions above.
+
+- The group MUST admit selected repositories only and MUST forbid public
+  repositories. Marshal refuses the default group, inherited groups, `all` and
+  `private` visibility, and `allows_public_repositories: true`. It checks every
+  required page before each registration; a failed read never reuses a previous
+  permission. A conditional page counts only after an authorised `304`.
+- An organisation pool MUST NOT have persistent volumes, since jobs from
+  different repositories may use its slots. Its diagnostic bundles may contain
+  evidence from any admitted repository and remain subject to the private-sink
+  rules in Diagnostic Evidence Stays Private.
+- The operator MUST disable fork pull request workflows in private repositories,
+  or require their approval, for every private repository the group admits.
+  Marshal changes no group, repository or organisation policy.
+- An organisation pool and another pool for that organisation or one of its
+  repositories MUST NOT share a custom label when their OS labels match.
+  Validation checks pools on this host. Across hosts this remains an operator
+  and review rule, since no host knows another host's configuration.
+- A registered idle runner may wait indefinitely for a job. The group can be
+  opened, or the runner moved to another group, after a successful check and
+  before that job arrives. Marshal neither deletes such runners nor polls group
+  settings outside registration. The risk is acceptable only while the people who
+  can change a group are trusted: the organisation's owners, members holding the
+  CI/CD admin role or a role that manages runners, and holders of the organisation
+  token.
+- A program running as the host's user can read that user's Credential Manager
+  entry or request the Keychain item. Reading an organisation token reaches the
+  whole organisation rather than one repository. The token is present on each
+  host that serves or has served its organisation: removing the last pool for a
+  login neither removes its token nor lists it in `repositories_released`, and the
+  window then shows no row for it. The same-user store and channel risks also
+  apply to organisation keys; the agent accepts any well-formed login, not just
+  those currently configured.
 
 ## One Instance per Machine, Reached Only by Its User
 
@@ -1159,14 +1280,14 @@ Residual risks, accepted on a single-user host:
 ## The App Surface
 
 The Windows app is a notification-area icon, a menu and a web view that shows the
-runners and takes each repository's token. It runs as the signed-in user, beside an
+runners and takes each repository's or organisation's token. It runs as the signed-in user, beside an
 agent of the same executable that holds the pools' tokens, so the question is what
 the app may do with that reach. [App](../operations/app.md) owns how it works.
 
 - **The app process is a client only.** It never holds the instance lock, reads the
   configuration, touches the token store or runs Docker: it talks to the agent in
-  protocol version 2 and passes a newly entered token to it in `token_set`, then drops
-  it. One executable runs as both, so the operating system cannot enforce the rule
+  protocol version 2 and passes a newly entered token to it in `token_set` or
+  `organization_token_set`, then drops it. One executable runs as both, so the operating system cannot enforce the rule
   for the app mode. Only the `marshal-modes` crate reaches the library's agent entry,
   and only when the executable is started in its agent mode; the app's session
   reaches the agent through the library's client alone. A review checks that no
@@ -1192,9 +1313,15 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
-  again, set a token, remove a token, hide the window and open a runner's job. The
-  confirmation window's
-  grants the two commands that read its question and answer it. On macOS, where the
+  again, set a repository's token, remove a repository's token, set an
+  organisation's token, remove an organisation's token, hide the window, open a
+  runner's job and forward configuration requests. `configuration` accepts a typed
+  request for read, edit, reload or a separately chosen repository-token removal.
+  The three configuration methods keep all file access with the agent; the page
+  supplies no path, token, schema version or lifecycle field. Removal forwards the
+  existing `token_remove` method, returns a store refusal separately from the saved
+  edit, and reads no token. The confirmation window's capability grants the two
+  commands that read its question and answer it. On macOS, where the
   unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants
   the main window `core:window:allow-start-dragging` and
   `core:window:allow-internal-toggle-maximize`, to drag and zoom it by its header
@@ -1213,7 +1340,7 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   the default browser from the Rust side with Tauri's opener plugin. The plugin's
   page script, which sends link clicks to its own command, is off, and no capability
   grants any of the plugin's three commands, which a test shows are refused.
-- **A token passes only through `token_set`.** The window's token field is a password
+- **A token passes only through `token_set` or `organization_token_set`.** The window's token field is a password
   input without autocomplete or spell checking. The page clears it when the token is
   submitted, whatever the outcome, and keeps the token in no variable once it has
   called the command. A token half typed is cleared when the window hides: the app
@@ -1868,15 +1995,15 @@ e-mail address of any other kind, or anywhere else, is still a finding.
 token files, and private keys so that a local working file cannot be committed by
 accident; it is a backstop, not the control. The workflows read one repository
 secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
-maintainer. The `release` Environment keeps six Environment secrets, held for M2's
-and W4's signing jobs and read by no job until one returns,
-`MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`,
-`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
-Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
+maintainer. The `release` Environment keeps six Environment secrets, read only
+by the temporary CLI signing job and retained for M2's and W4's later signing jobs:
+`APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`,
+`APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and one
+Environment variable that is not secret, `APPLE_TEAM_ID`; the maintainer creates
 them, and no value is committed. A secret value is never echoed, passed on a command
 line, or written into an image layer or build cache. Two exceptions for a
-credential on a command line are recorded, both in `sign-macos`, and held with it for
-M2. The password
+credential on a command line are recorded in `sign-macos` for the temporary CLI
+and M2's later app signing. The password
 arguments of `security` were allowed at the plan gate. The `--key-id` and `--issuer`
 arguments of `notarytool`, which carry the API key's ID and issuer ID, were allowed
 by the maintainer on 2026-11-04 PST. Neither tool has a non-interactive alternative:

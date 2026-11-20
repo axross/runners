@@ -218,10 +218,18 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
             _ => format!("is not valid ({})", problems.join("; ")),
         }
     };
+    let after_fix = if context.input.editor
+        && migration_state(configuration) != Some("pending")
+        && migration_state(configuration) != Some("failed")
+    {
+        "Fix the file, then choose Reload config.toml."
+    } else {
+        "Fix the file, then choose Stop All and Start All."
+    };
     match in_use.source.as_str() {
         "last_valid" => warnings.push(format!(
             "Warning: config.toml {}, so Marshal runs the configuration it read {read}. \
-             Fix the file, then choose Stop All and Start All.",
+             {after_fix}",
             file_state()
         )),
         // config.toml appeared after a migration that could not write it

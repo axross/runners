@@ -492,8 +492,20 @@ mod tests {
                     disk_gb: 1,
                 });
             }),
-            ("owner", |plan| plan.entries[1].owner.push('x')),
-            ("repository", |plan| plan.entries[1].repository.push('x')),
+            ("owner", |plan| {
+                if let crate::validate::PoolTarget::Repository { owner, .. } =
+                    &mut plan.entries[1].target
+                {
+                    owner.push('x');
+                }
+            }),
+            ("repository", |plan| {
+                if let crate::validate::PoolTarget::Repository { repository, .. } =
+                    &mut plan.entries[1].target
+                {
+                    repository.push('x');
+                }
+            }),
             ("name", |plan| plan.entries[1].name.push('x')),
             ("runners", |plan| plan.entries[1].slots += 1),
             ("labels", |plan| plan.entries[1].labels.push("x".into())),

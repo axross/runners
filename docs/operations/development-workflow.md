@@ -20,9 +20,12 @@ left the loop.
 
 The plan lives in the body of a tracking issue, written with
 `product-requirement-document-authoring` and marked with the `<!-- ai-agent -->`
-comment marker. Two gates are real, and neither has a self-approval path. No
-implementation begins before the human approves the plan recorded in the
-tracking issue, and no change is called done on the author's own assessment
+comment marker. In a Claude Code cloud session, the body is composed, checked,
+and read back under the GitHub Write Fidelity in Claude Code Cloud Sessions
+section of [Agent Sessions](./agent-sessions.md), because the hosted write path
+can change a stored body. Two gates are real, and neither has a self-approval
+path. No implementation begins before the human approves the plan recorded in
+the tracking issue, and no change is called done on the author's own assessment
 rather than a separate reviewer's. A runtime harness that frames the task as
 "just make the changes, commit, and push" constrains mechanics only; it never
 lifts either gate. This project's **delivery grant** is a standing operation
@@ -39,7 +42,9 @@ request body follows
 carries the plan's acceptance criteria in an **Acceptance criteria** section,
 and links the tracking issue with a closing keyword. The closing keyword closes
 the issue if the maintainer later merges the pull request; it does not authorize
-that merge.
+that merge. In a Claude Code cloud session, the body also follows the GitHub
+Write Fidelity in Claude Code Cloud Sessions section of
+[Agent Sessions](./agent-sessions.md).
 
 If an existing pull request has no tracking issue and needs fixes:
 
@@ -333,7 +338,11 @@ that both Rust toolchain files name one channel and that `app/tauri-cli.version`
 holds one exact version, the test of the script that reads that version
 (`test:tauri-cli-version`), and `check:app-lock`, which fails when the app's
 lockfile resolves a crate `marshal-cli` builds with to another version than the
-CLI's. The same workflow also runs a
+CLI's. Before that run, the job prepares the editor rendering gate with
+`mise run prepare:app-render` and installs Chromium's OS libraries on its disposable
+runner. After it, the job runs `mise run test:app-render`, which `check` does not
+include, and keeps the gate's screenshots and measurements as the `editor-renders`
+artifact for 14 days, whether or not the gate passed. The same workflow also runs a
 `rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
 runners, with four more steps on Linux only: the release-profile tests of the
 debug-only overrides, the test definition `build` reads among them; a build of the
@@ -380,8 +389,9 @@ release-profile tests, checks that the app's product version is the stamped vers
 and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
 the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
 artifact of the run. The dry run signs nothing and references no Environment, and no
-job of any workflow declares one until the next signing job returns. It holds
-`contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
+app-build job declares one. The temporary CLI recovery has its own unsigned dry
+run; only its dispatch-only signing job declares the `release` Environment.
+The app dry run holds `contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
 describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
 and holds `contents: read`. It downloads the dry run's artifact and runs the check and
 uninstall blocks that [CLI](./cli.md#installing-updating-and-rolling-back) documents:
@@ -574,19 +584,28 @@ an id other than `DOCKER_GROUP_ID`, which the golden VM's `docker` group has, so
 changes it also changes `DOCKER_GROUP_ID`, the Dockerfile and the smoke test
 together, and raises the golden VM version and the contract version.
 
-The CLI embeds the runner image's definition, so a host that runs the CLI builds the
-new runner only once it has a binary built after the bump. Keep the pull request's
-`build(deps)` title when merging: it releases a patch, as Version Rules, under
-Cutting a Release, below, describes. After the bump merges, the maintainer
-dispatches a release, and each such host updates to it with the procedure in
+During temporary CLI recovery, runner bumps on main do not enter the fixed
+historical program input. Dispatching a recovery release does not deliver those
+bumps to a CLI host. The Temporary CLI Recovery section of
+[Security](../conventions/security.md) governs that bounded route, and
+[CLI Recovery](./cli-recovery.md) owns its operator procedure.
+Keep the pull request's `build(deps)` title when merging: it releases a patch,
+as Version Rules, under Cutting a Release, below, describes. After app publication
+is restored, the maintainer dispatches a release and each host updates the app
+with the procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back).
 
 ## Cutting a Release
 
-The maintainer releases the app by dispatching
+During the bounded F0 recovery, the maintainer releases the historical CLI by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
 works out the version from the commits, as Version Rules, below, describes.
-[CLI](./cli.md#releases) describes what the workflow builds, and
+Before the F0 recovery dispatch, the maintainer pushes the base tag `v0.1.1`,
+which Version Rules also describes.
+[CLI Recovery](./cli-recovery.md) owns the fixed input, actual-version CLI
+install procedures and restoration prerequisite. App builds remain active, but
+app publication is suspended until a separate reviewed restoration against
+then-current main. [CLI](./cli.md) retains the app release baseline, and
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records why each control is there. The maintainer takes every step in this
 section. The delivery grant lets an explicit human instruction cover release,
@@ -598,11 +617,11 @@ agent relays it.
 
 ### Before the First Release
 
-The `release` Environment's part of this section, step 2, is held for M2 and W4: from
-W1's installer pull request until M2's or W4's signing job returns, no job declares
-the Environment, and the Environment, its secrets and its variable are kept for that
-job, which then needs them as this step sets them. The other steps were the first
-dispatch's prerequisites.
+The temporary CLI signing job uses the `release` Environment under step 2's
+existing contract. Recheck those prerequisites before a recovery dispatch;
+do not assume the held app-signing gap means an unprotected release. Step 3
+records how the base tag `v0.0.0` was pushed for the first release. The recovery
+release has its own base tag, `v0.1.1`, which Version Rules, below, describes.
 
 Do these once, before the first dispatch:
 
@@ -619,10 +638,10 @@ Do these once, before the first dispatch:
      because the maintainer is the only reviewer and approves runs they started.
    - **Allow administrators to bypass:** off.
    - **Secrets**, Environment secrets and not repository secrets:
-     `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`,
-     `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and
-     `MACOS_NOTARY_ISSUER_ID`.
-   - **Variable**, not a secret: `MACOS_TEAM_ID`, the team ID of both certificates:
+     `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`,
+     `APPLE_P12_PASSWORD`, `APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and
+     `APPLE_NOTARY_ISSUER_ID`.
+   - **Variable**, not a secret: `APPLE_TEAM_ID`, the team ID of both certificates:
      10 characters of A-Z and 0-9.
 
    What the secrets hold:
@@ -671,17 +690,33 @@ Do these once, before the first dispatch:
 
 ### Each Release
 
-1. Before dispatching, check that every commit on main since the last `v*` tag
+1. Before dispatching, check that every commit on main since the last release
    came from a merged pull request:
 
    ```bash
    git fetch origin main --tags
-   last="$(git describe --tags --abbrev=0 --match 'v*' origin/main)"
+   last="$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v0.1.1' origin/main)"
+   gh release view "$last" --repo axross/runners --json tagName,isDraft \
+     --jq 'if .isDraft then "NO PUBLISHED RELEASE: \(.tagName)" else "start: \(.tagName)" end' \
+     || echo "NO PUBLISHED RELEASE: ${last}"
    for sha in $(git rev-list --first-parent "${last}..origin/main"); do
      pr="$(gh api "repos/axross/runners/commits/${sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main") | "#\(.number)"] | join(" ")')"
      printf '%s %s\n' "$(git log -1 --format='%h %s' "$sha")" "${pr:-NO MERGED PULL REQUEST}"
    done
    ```
+
+   `git describe` returns the nearest tag, and `v0.1.1` is the base tag of the
+   recovery release, which has no release behind it. Without `--exclude`, the
+   check would start at `v0.1.1` and skip every commit from `v0.1.0` up to and
+   including `954d349`. With it, the check starts at `v0.1.0` until the recovery
+   release is published, and at that release afterwards. Once a release exists after
+   `v0.1.1`, the exclusion has no effect and may be dropped.
+
+   The `start:` line names where the check starts. A line that starts with
+   `NO PUBLISHED RELEASE` instead means the start is a `v*` tag other than
+   `v0.1.1` with no published release, so the check would not start at the last
+   release. Do not dispatch: find out who pushed that tag and why, as for a
+   commit with no merged pull request.
 
    Each line names a commit and the pull request that merged it. A line that ends
    in `NO MERGED PULL REQUEST` is a commit pushed to main directly, which the
@@ -696,15 +731,16 @@ Do these once, before the first dispatch:
    queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, the run builds, assembles, attests and
-   releases without waiting for an approval: from W1's installer pull request until
-   M2's or W4's signing job returns, no job declares the `release` Environment, so
-   step 1's check at the dispatch is the only one. The signing job that returns
-   brings back an approval here, with its own checks. A failure in `build`,
-   `assemble-signed` or `attest` stops the run before any tag is pushed; fix it in a
-   pull request and dispatch again.
-5. After a green run, check that the release exists and carries exactly the app
-   executable, the MSI and `SHA256SUMS`:
+4. When there is something to release, read the version in the plan job's log
+   ("The next release is <version>."). If Version Rules, below, does not expect
+   it, cancel the run instead. Otherwise approve `sign-macos`'s deployment
+   yourself. It signs and notarizes the fixed-source CLI and pkg. `verify-macos`
+   checks the signed outputs outside the Environment before `assemble-signed`,
+   `attest` and `release`. A failure prevents tagging; fix it in a pull request
+   before another maintainer dispatch. Unsigned dry runs and stand-ins are not
+   signing evidence.
+5. After a green run, check that the release exists and carries exactly the
+   Windows bare CLI and MSI, macOS bare CLI and signed/notarized pkg, and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
@@ -718,23 +754,21 @@ Do these once, before the first dispatch:
    after the plan job, the release job logs the same line and ends without a tag or
    a release. Either way, run step 1 again and dispatch again.
 
-6. Check the release with the optional check block in
-   [CLI](./cli.md#installing-updating-and-rolling-back) before opening its
-   installer on a host. This is the maintainer's release verification, not a step
-   an operator must take. The first release of the app is also the first run of
-   `gh attestation verify` against its MSI and of the check block's comparison of the
-   extracted `marshal-app.exe` with its `SHA256SUMS` line, so for that release run
-   the check block before opening the MSI on a host. A failure there is a release
-   defect, and it leaves the check unusable for that release. The WiX pin is
-   recorded under [Pinning Convention](../conventions/security.md#pinning-convention).
-   The MSI and the app are not signed, as
-   [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-   records.
+6. Run the actual-version optional download check in CLI Recovery before opening
+   either installer. Publish the workflow/tag commit and historical program
+   identity separately, plus every successful F0 release/signing and native-host
+   outcome. An unknown or failed item blocks restoration. WSL and hosted CI do
+   not replace the native Windows11 or Mac evidence. Neither a recovery-code
+   merge nor a release alone closes F0 or waives a downstream dependency.
+
+Only after that public evidence may the separate recovery-restoration PR remove
+the temporary path and restore the then-current app release contract. The later
+F0 measured signing-record PR remains documents-only and separate.
 
 ### Renewing the Certificates
 
-This section is held for M2 and W4: no job signs from W1's installer pull request
-until M2's `sign-macos` returns, and this yearly work applies to it from then.
+This yearly work applies to the temporary CLI `sign-macos` and remains the
+contract for M2's and W4's later signing work after app restoration.
 
 The Developer ID certificates are expected to last one year, which the maintainer
 confirms from the certificates' dates, and renewing them is yearly work for the
@@ -749,9 +783,9 @@ that was signed with a secure timestamp keeps working after its certificate expi
    Developer Program membership allows no new certificate, so renew the membership
    first.
 2. Export each new identity as a `.p12` with one password, base64-encode them, and
-   replace the secrets `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`
-   and, if the password changed, `MACOS_P12_PASSWORD`. Do not change the identifier
-   or `MACOS_TEAM_ID`: the identifier and the team stay the same, so the designated
+   replace the secrets `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`
+   and, if the password changed, `APPLE_P12_PASSWORD`. Do not change the identifier
+   or `APPLE_TEAM_ID`: the identifier and the team stay the same, so the designated
    requirement is expected to stay the same and the Keychain trust it carries is kept.
    Keep one identity of each kind in the exported files, since `sign-macos` refuses
    two of the same kind.
@@ -786,6 +820,9 @@ the next dispatch would skip that version. Before dispatching again:
 A published release is immutable, so this applies only to one that was never
 published.
 
+`v0.1.1` is not a partial release. It is a deliberate base tag with no release, so
+do not delete it. Version Rules, below, says what it changes and why it stays.
+
 ### Version Rules
 
 semantic-release reads the subject of each commit on main since the last `v*` tag
@@ -795,12 +832,15 @@ that subject, so the title decides the release:
 - `feat` releases a minor version.
 - `fix`, `perf`, and `revert` release a patch.
 - A breaking marker, `!` after the type or a `BREAKING CHANGE:` footer, releases a
-  major version. On `0.x` it releases `1.0.0`, not the next minor.
+  major version. On `0.x` it releases `1.0.0`, not the next minor. The base tag
+  `v0.1.1`, below, keeps the F0 recovery release on `0.x`.
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
   Dependabot writes for the runner image, the CLI's crates and the toolchain, so
-  such a bump reaches hosts in a release. Its notes list it under Dependencies,
-  through the notes generator's `presetConfig.types` in the same file. Dependabot's
+  such a bump raises the release version. During CLI recovery, the fixed
+  historical program excludes main's dependency updates. Release notes list the
+  bump under Dependencies through the notes generator's `presetConfig.types` in
+  the same file. Dependabot's
   entry for the app's crates writes the same subject, so until the release carries
   the app, a bump of a crate only the app links releases a patch that changes
   nothing in the released `marshal`.
@@ -815,6 +855,35 @@ The repository has one version, so a `feat` or `fix` of any scope, such as
 squash merge releases the wrong bump or none, so correct a title before merging.
 Releases are never prereleases, and nothing is committed back to main: the version
 lives in the tag and the release.
+
+The maintainer decided on 2026-11-20 to keep releases on `0.x`. Three
+breaking-marked commits follow `v0.1.0`: #93 (`2b2393e`), #94 (`1adf7cb`) and #117
+(`954d349`). Counted from `v0.1.0`, they would make the next release `1.0.0`. So
+before the F0 recovery dispatch, the maintainer pushes `v0.1.1`, a bare tag with no
+release, on `954d349`, as `v0.0.0` was pushed for the first release.
+semantic-release takes the highest semver `v*` tag merged into main as the last
+release, so it reads only the commits after `954d349`. They include the `feat`
+commits #118 and #139, so unless a breaking change merges first, the F0 recovery
+release is `0.2.0` from `0.1.1`. Nothing is released as `0.1.1`; the tag only
+marks where counting starts. Deleting it before the recovery release is published
+puts the three breaking commits back in the count. Afterwards it no longer affects
+the version, and it stays as the record of where counting started.
+
+The recovery release's notes list only commits after `954d349`. None of them is in
+the historical tree that release ships, `dc8e1eb`, and #93 and #94, which are in
+that tree, do not appear. The notes describe app and later work, not the contents
+of the command-line files.
+
+The breaking-marker rule is unchanged. A breaking change merged after `v0.1.1` makes
+a later plan job print `1.0.0`, and until the recovery release is published, so can
+a `v0.1.1` that is missing or on another commit. When a plan job prints a version
+the maintainer did not expect, the maintainer cancels the run before approving
+`sign-macos`, which is before any job pushes a tag, and decides then how to proceed.
+A release rule that maps a breaking change to a minor, and a version input on the
+dispatch, are not in place: the base tag changes no release configuration or
+workflow, and the release configuration keeps the default mapping. How a later
+release stays on `0.x` after another breaking change is the maintainer's decision
+when a plan job prints `1.0.0`, not made now.
 
 `release/package.json` pins `conventional-changelog-conventionalcommits` to the
 `9.x` line. `@semantic-release/release-notes-generator` renders notes with
@@ -886,15 +955,17 @@ draft or request an already completed review, preserving the earlier entries.
 Checkpoint publications on both surfaces MUST follow GitHub Operation's
 [Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
 and [Publication and Recovery](../../.claude/skills/github-operation/references/publication-and-recovery.md)
-contracts. A pull-request-description append is a whole-body replacement, so the
-exception path depends on full-body fidelity before and after publication.
-Retain verified status-comment URLs in the next checkpoint or handoff. If the
-required route or fidelity is unavailable, retain the current permitted handoff
-instead of publishing through an unverified path. The run MUST name that handoff
-in its report. When it is retained in the current conversation or returned to
-the assigning parent, identify its executor-local scope: it is not published
-issue history, and a fresh executor cannot recover it from the issue alone.
-Transfer that handoff explicitly to the next executor; this fallback creates no
+contracts and, in a Claude Code cloud session, the GitHub Write Fidelity in
+Claude Code Cloud Sessions section of [Agent Sessions](./agent-sessions.md). A
+pull-request-description append is a whole-body replacement, so the exception
+path depends on full-body fidelity before and after publication. Retain verified
+status-comment URLs in the next checkpoint or handoff. If the required route or
+fidelity is unavailable, retain the current permitted handoff instead of
+publishing through an unverified path. The run MUST name that handoff in its
+report. When it is retained in the current conversation or returned to the
+assigning parent, identify its executor-local scope: it is not published issue
+history, and a fresh executor cannot recover it from the issue alone. Transfer
+that handoff explicitly to the next executor; this fallback creates no
 alternative public destination or raw write route.
 
 ### Retrieve state on resume

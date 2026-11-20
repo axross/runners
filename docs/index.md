@@ -56,8 +56,9 @@ names every other document the change corrects.
   Code and Amp sessions start, their hooks, Amp's and Codex's delivery
   authorization, asking the maintainer (launched sessions and subagents
   included), the plan-gate delivery confirmation, Amp's plan-gate archive
-  confirmation for review child threads, subagents including the Claude Code
-  review child session, and telemetry.
+  confirmation for review child threads, the write-fidelity rules and read-back
+  for GitHub text written from a Claude Code cloud session, subagents including
+  the Claude Code review child session, and telemetry.
 - [operations/development-setup.md](./operations/development-setup.md) - the
   pinned tools a contributor installs, the Rust toolchain, and the hooks.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
@@ -69,7 +70,7 @@ names every other document the change corrects.
   the previous release.
 - [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
   running Linux and macOS runners in Tart VMs on the Mac, the axmc host, with the library's VM
-  runtime, which has no supported way to run until M2's Mac app: installing
+  runtime, the app-release gap until M2's Mac app, and the bounded CLI recovery route: installing
   Tart and Softnet at the tested versions, setting up Softnet's SUID bit, the
   signed-in session, the golden VM contract, building the golden VM, running the
   host, sleep, wake and network changes, the golden macOS VM and macOS pools,
@@ -93,8 +94,8 @@ names every other document the change corrects.
   defaults, the runner and base records, the VM names, the two-VM count, the golden
   macOS VM build, the macOS job VM, and macOS status), the toolchain and Rust
   gates, the app's workspace and what the library gives it, the release build and
-  its dry run, the last command-line release, the signing contracts held for M2 and
-  W4, installing Marshal from its MSI, the optional check of a download, updating,
+  its dry run, the last command-line release, the signing contracts and temporary
+  CLI recovery route, installing Marshal from its MSI, the optional check of a download, updating,
   uninstalling, and rolling back, the tests of those blocks, the allowed
   dependencies, and why the CLI's name is fixed.
 - [operations/app.md](./operations/app.md) - the Windows notification-area app and
@@ -108,6 +109,10 @@ names every other document the change corrects.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
+- [operations/cli-recovery.md](./operations/cli-recovery.md) - the temporary
+  fixed-source CLI release route, its two source identities, actual-version CLI
+  install/check/migrate/uninstall/rollback procedures, evidence boundaries and
+  app-release restoration prerequisite.
 
 ## Glossary
 

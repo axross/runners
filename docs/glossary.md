@@ -21,7 +21,7 @@ so nothing a job leaves behind carries into the next. The opposite is a
 persistent runner, which this project does not use.
 
 **JIT Config** - the just-in-time runner configuration GitHub returns when a
-runner is registered through the API for a single repository. It is an encoded
+runner is registered through the API for a repository or an organisation's runner group. It is an encoded
 credential: it is passed to the runner at start, never stored in the repository,
 and is usable once.
 
@@ -52,6 +52,16 @@ that names a runner host's image and lists its **Execution Pools** for
 **Execution Pool** - one entry of the **Host Configuration**, with its own
 **Slots**, registration labels, and
 container, runner, and cache-volume namespace.
+
+**Organisation Pool** - an **Execution Pool** whose TOML `organization` and
+`runner_group` select one named group in a GitHub organisation instead of one
+repository. Its slots share one organisation token and have no persistent
+volumes.
+
+**Runner Group** - GitHub's admission boundary for organisation-level runners.
+Every repository admitted by one group can send jobs to its runners, so the
+group's repositories form one trust domain. Marshal accepts only a non-default,
+non-inherited group with selected repositories and public access disabled.
 
 **Routing Label** - the label a workflow uses in `runs-on` to select an
 **Execution Pool**. Missing or empty host `labels` default to the host's own
@@ -98,7 +108,7 @@ checks the download first, and the installer's version is the release's `X.Y.Z`,
 [operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
 
 **Release Environment** - the GitHub Environment named `release`, which holds the
-macOS signing secrets and the `MACOS_TEAM_ID` variable. It admits `main` only and
+macOS signing secrets and the `APPLE_TEAM_ID` variable. It admits `main` only and
 needs the maintainer's approval for each run. No job declares it from W1's installer
 pull request until M2's or W4's signing job returns; it and its secrets are kept for
 that job. The maintainer creates and changes it; agents never do. See

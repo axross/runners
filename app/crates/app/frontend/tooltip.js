@@ -29,7 +29,36 @@ function roomAround(wrap) {
   return { top, bottom };
 }
 
-function place(wrap, balloon) {
+function nearestScroller(wrap) {
+  for (let node = wrap.parentElement; node; node = node.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(node).overflowY)) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/**
+ * scrolls a balloon cut off on both sides just far enough to show it whole, when that
+ * keeps its control in view; only for focus, so nothing moves under the pointer.
+ */
+function reveal(wrap, balloon, room) {
+  const box = balloon.getBoundingClientRect();
+  const shift =
+    box.bottom > room.bottom
+      ? box.bottom - room.bottom
+      : Math.min(0, box.top - room.top);
+  const control = wrap.getBoundingClientRect();
+  if (
+    shift !== 0 &&
+    control.top - shift >= room.top &&
+    control.bottom - shift <= room.bottom
+  ) {
+    nearestScroller(wrap)?.scrollBy({ top: shift, behavior: "instant" });
+  }
+}
+
+function place(wrap, balloon, byFocus) {
   const fitsSideways = () => {
     const box = balloon.getBoundingClientRect();
     return box.left >= EDGE && box.right <= window.innerWidth - EDGE;
@@ -53,6 +82,9 @@ function place(wrap, balloon) {
       const above = balloon.getBoundingClientRect();
       if (room.top - above.top > below.bottom - room.bottom) {
         balloon.classList.remove("above");
+      }
+      if (byFocus) {
+        reveal(wrap, balloon, room);
       }
     }
   }
@@ -79,7 +111,7 @@ function show(wrap, text) {
     h("span", { text }),
   );
   wrap.append(balloon);
-  place(wrap, balloon);
+  place(wrap, balloon, focused.has(wrap));
   current = { wrap, balloon };
 }
 

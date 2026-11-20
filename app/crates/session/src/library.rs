@@ -6,7 +6,10 @@ use marshal_cli::agent::{CallError, Client, ConnectError, Push, connect};
 use marshal_cli::instance::roots::Roots;
 use tokio::sync::mpsc;
 
-use crate::seam::{AgentInfo, Connected, Dial, DialError, Failure, Link, Method, Pushed};
+use crate::seam::{
+    AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Link, Method,
+    Pushed,
+};
 
 /// connects to this user's agent at the channel the roots name.
 pub struct Library {
@@ -43,6 +46,7 @@ impl Dial for Library {
                 .methods
                 .iter()
                 .any(|method| method == DRAIN_FOR_UPDATE),
+            edits: offers_editing(&client.welcome.methods),
         };
         Ok(Connected {
             link: Agent { client },
@@ -77,6 +81,16 @@ pub fn failure(error: CallError) -> Failure {
         CallError::Agent(body) => match body.code.as_str() {
             "busy" | "subscription_limit" => Failure::Busy(body.message),
             "not_subscribed" => Failure::NotSubscribed,
+            code if code.starts_with("config_")
+                || code == "runtime_restarting"
+                || code == "image_unusable" =>
+            {
+                Failure::Config {
+                    code: body.code.clone(),
+                    message: body.message,
+                    problems: body.problems.into_vec(),
+                }
+            }
             "store_failed" => Failure::Store {
                 detail: body.store.map(|store| match store.code {
                     Some(code) => format!("kind {}, code {code}", store.kind),
@@ -118,6 +132,32 @@ fn forward(mut pushes: mpsc::UnboundedReceiver<Push>) -> mpsc::UnboundedReceiver
 }
 
 impl Link for Agent {
+    async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        match request {
+            ConfigRequest::Read => self.client.config_read().await.map(ConfigAnswer::Read),
+            ConfigRequest::Edit {
+                revision,
+                edits,
+                check,
+            } => self
+                .client
+                .config_edit(&revision, edits, check)
+                .await
+                .map(ConfigAnswer::Change),
+            ConfigRequest::Reload { revision, check } => self
+                .client
+                .config_reload(&revision, check)
+                .await
+                .map(ConfigAnswer::Change),
+            ConfigRequest::RemoveReleasedToken { repository } => self
+                .client
+                .token_remove(&repository)
+                .await
+                .map(|()| ConfigAnswer::TokenRemoved),
+        }
+        .map_err(failure)
+    }
+
     async fn subscribe(&self) -> Result<(), Failure> {
         self.client.subscribe().await.map_err(failure)
     }
@@ -147,6 +187,19 @@ impl Link for Agent {
                 .token_remove(&repository)
                 .await
                 .map(|()| serde_json::Value::Null),
+            Method::OrganizationTokenSet {
+                organization,
+                token,
+            } => self
+                .client
+                .organization_token_set(&organization, token.expose())
+                .await
+                .map(|()| serde_json::Value::Null),
+            Method::OrganizationTokenRemove { organization } => self
+                .client
+                .organization_token_remove(&organization)
+                .await
+                .map(|()| serde_json::Value::Null),
         };
         called.map(|_| ()).map_err(failure)
     }
@@ -168,3 +221,61 @@ impl Link for Agent {
 
 /// the method that asks the agent to drain for an update.
 const DRAIN_FOR_UPDATE: &str = "drain_for_update";
+
+/// the methods the editor needs, all of which an agent must list.
+const CONFIG_METHODS: [&str; 3] = ["config_read", "config_edit", "config_reload"];
+
+/// whether `methods`, as a `welcome` lists them, hold every method the editor needs.
+fn offers_editing(methods: &[String]) -> bool {
+    CONFIG_METHODS
+        .iter()
+        .all(|wanted| methods.iter().any(|method| method == wanted))
+}
+
+#[cfg(test)]
+mod tests {
+    use marshal_cli::agent::wire::ErrorBody;
+
+    use super::{CONFIG_METHODS, CallError, Failure, failure, offers_editing};
+
+    fn listed(methods: &[&str]) -> Vec<String> {
+        methods.iter().map(|method| (*method).to_string()).collect()
+    }
+
+    #[test]
+    fn a_configuration_refusal_keeps_its_code_and_problems() {
+        let body: ErrorBody = serde_json::from_value(serde_json::json!({
+            "code": "config_invalid",
+            "message": "the result breaks the rules",
+            "problems": [{"path": "pool[0].runners", "line": 9, "message": "must be at least 1"}]
+        }))
+        .unwrap();
+        let Failure::Config {
+            code,
+            message,
+            problems,
+        } = failure(CallError::Agent(body))
+        else {
+            panic!("a config_invalid body is a configuration failure");
+        };
+        assert_eq!(code, "config_invalid");
+        assert_eq!(message, "the result breaks the rules");
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].path.as_deref(), Some("pool[0].runners"));
+        assert_eq!(problems[0].line, Some(9));
+    }
+
+    #[test]
+    fn editing_is_offered_only_when_all_three_methods_are_listed() {
+        assert!(offers_editing(&listed(&[
+            "state",
+            "config_reload",
+            "config_read",
+            "config_edit",
+        ])));
+        assert!(!offers_editing(&listed(&["config_read", "config_edit"])));
+        assert!(!offers_editing(&listed(&["state"])));
+        assert!(!offers_editing(&[]));
+        assert!(offers_editing(&listed(&CONFIG_METHODS)));
+    }
+}
