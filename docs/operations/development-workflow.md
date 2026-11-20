@@ -595,6 +595,8 @@ with the procedure in
 During the bounded F0 recovery, the maintainer releases the historical CLI by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
 works out the version from the commits, as Version Rules, below, describes.
+Before the F0 recovery dispatch, the maintainer pushes the base tag `v0.1.1`,
+which Version Rules also describes.
 [CLI Recovery](./cli-recovery.md) owns the fixed input, actual-version CLI
 install procedures and restoration prerequisite. App builds remain active, but
 app publication is suspended until a separate reviewed restoration against
@@ -612,8 +614,9 @@ agent relays it.
 
 The temporary CLI signing job uses the `release` Environment under step 2's
 existing contract. Recheck those prerequisites before a recovery dispatch;
-do not assume the held app-signing gap means an unprotected release. The tag
-bootstrap in step 3 is historical and must not be repeated for recovery.
+do not assume the held app-signing gap means an unprotected release. Step 3
+records how the base tag `v0.0.0` was pushed for the first release. The recovery
+release has its own base tag, `v0.1.1`, which Version Rules, below, describes.
 
 Do these once, before the first dispatch:
 
@@ -682,17 +685,33 @@ Do these once, before the first dispatch:
 
 ### Each Release
 
-1. Before dispatching, check that every commit on main since the last `v*` tag
+1. Before dispatching, check that every commit on main since the last release
    came from a merged pull request:
 
    ```bash
    git fetch origin main --tags
-   last="$(git describe --tags --abbrev=0 --match 'v*' origin/main)"
+   last="$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v0.1.1' origin/main)"
+   gh release view "$last" --repo axross/runners --json tagName,isDraft \
+     --jq 'if .isDraft then "NO PUBLISHED RELEASE: \(.tagName)" else "start: \(.tagName)" end' \
+     || echo "NO PUBLISHED RELEASE: ${last}"
    for sha in $(git rev-list --first-parent "${last}..origin/main"); do
      pr="$(gh api "repos/axross/runners/commits/${sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main") | "#\(.number)"] | join(" ")')"
      printf '%s %s\n' "$(git log -1 --format='%h %s' "$sha")" "${pr:-NO MERGED PULL REQUEST}"
    done
    ```
+
+   `git describe` returns the nearest tag, and `v0.1.1` is the base tag of the
+   recovery release, which has no release behind it. Without `--exclude`, the
+   check would start at `v0.1.1` and skip every commit from `v0.1.0` up to and
+   including `954d349`. With it, the check starts at `v0.1.0` until the recovery
+   release is published, and at that release afterwards. Once a release exists after
+   `v0.1.1`, the exclusion has no effect and may be dropped.
+
+   The `start:` line names where the check starts. A line that starts with
+   `NO PUBLISHED RELEASE` instead means the start is a `v*` tag other than
+   `v0.1.1` with no published release, so the check would not start at the last
+   release. Do not dispatch: find out who pushed that tag and why, as for a
+   commit with no merged pull request.
 
    Each line names a commit and the pull request that merged it. A line that ends
    in `NO MERGED PULL REQUEST` is a commit pushed to main directly, which the
@@ -707,11 +726,14 @@ Do these once, before the first dispatch:
    queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, approve `sign-macos`'s deployment yourself.
-   It signs and notarizes the fixed-source CLI and pkg. `verify-macos` checks the
-   signed outputs outside the Environment before `assemble-signed`, `attest` and
-   `release`. A failure prevents tagging; fix it in a pull request before another
-   maintainer dispatch. Unsigned dry runs and stand-ins are not signing evidence.
+4. When there is something to release, read the version in the plan job's log
+   ("The next release is <version>."). If Version Rules, below, does not expect
+   it, cancel the run instead. Otherwise approve `sign-macos`'s deployment
+   yourself. It signs and notarizes the fixed-source CLI and pkg. `verify-macos`
+   checks the signed outputs outside the Environment before `assemble-signed`,
+   `attest` and `release`. A failure prevents tagging; fix it in a pull request
+   before another maintainer dispatch. Unsigned dry runs and stand-ins are not
+   signing evidence.
 5. After a green run, check that the release exists and carries exactly the
    Windows bare CLI and MSI, macOS bare CLI and signed/notarized pkg, and `SHA256SUMS`:
 
@@ -793,6 +815,9 @@ the next dispatch would skip that version. Before dispatching again:
 A published release is immutable, so this applies only to one that was never
 published.
 
+`v0.1.1` is not a partial release. It is a deliberate base tag with no release, so
+do not delete it. Version Rules, below, says what it changes and why it stays.
+
 ### Version Rules
 
 semantic-release reads the subject of each commit on main since the last `v*` tag
@@ -802,7 +827,8 @@ that subject, so the title decides the release:
 - `feat` releases a minor version.
 - `fix`, `perf`, and `revert` release a patch.
 - A breaking marker, `!` after the type or a `BREAKING CHANGE:` footer, releases a
-  major version. On `0.x` it releases `1.0.0`, not the next minor.
+  major version. On `0.x` it releases `1.0.0`, not the next minor. The base tag
+  `v0.1.1`, below, keeps the F0 recovery release on `0.x`.
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
   Dependabot writes for the runner image, the CLI's crates and the toolchain, so
@@ -824,6 +850,35 @@ The repository has one version, so a `feat` or `fix` of any scope, such as
 squash merge releases the wrong bump or none, so correct a title before merging.
 Releases are never prereleases, and nothing is committed back to main: the version
 lives in the tag and the release.
+
+The maintainer decided on 2026-11-20 to keep releases on `0.x`. Three
+breaking-marked commits follow `v0.1.0`: #93 (`2b2393e`), #94 (`1adf7cb`) and #117
+(`954d349`). Counted from `v0.1.0`, they would make the next release `1.0.0`. So
+before the F0 recovery dispatch, the maintainer pushes `v0.1.1`, a bare tag with no
+release, on `954d349`, as `v0.0.0` was pushed for the first release.
+semantic-release takes the highest semver `v*` tag merged into main as the last
+release, so it reads only the commits after `954d349`. They include the `feat`
+commits #118 and #139, so unless a breaking change merges first, the F0 recovery
+release is `0.2.0` from `0.1.1`. Nothing is released as `0.1.1`; the tag only
+marks where counting starts. Deleting it before the recovery release is published
+puts the three breaking commits back in the count. Afterwards it no longer affects
+the version, and it stays as the record of where counting started.
+
+The recovery release's notes list only commits after `954d349`. None of them is in
+the historical tree that release ships, `dc8e1eb`, and #93 and #94, which are in
+that tree, do not appear. The notes describe app and later work, not the contents
+of the command-line files.
+
+The breaking-marker rule is unchanged. A breaking change merged after `v0.1.1` makes
+a later plan job print `1.0.0`, and until the recovery release is published, so can
+a `v0.1.1` that is missing or on another commit. When a plan job prints a version
+the maintainer did not expect, the maintainer cancels the run before approving
+`sign-macos`, which is before any job pushes a tag, and decides then how to proceed.
+A release rule that maps a breaking change to a minor, and a version input on the
+dispatch, are not in place: the base tag changes no release configuration or
+workflow, and the release configuration keeps the default mapping. How a later
+release stays on `0.x` after another breaking change is the maintainer's decision
+when a plan job prints `1.0.0`, not made now.
 
 `release/package.json` pins `conventional-changelog-conventionalcommits` to the
 `9.x` line. `@semantic-release/release-notes-generator` renders notes with
