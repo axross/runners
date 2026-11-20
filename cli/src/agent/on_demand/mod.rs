@@ -117,6 +117,15 @@ impl View {
         self.reason = Some(reason);
     }
 
+    /// the stop ends a wait for the next recreation, so what the wait showed no longer holds.
+    pub(crate) fn stopped(&mut self) {
+        self.state = ListenerState::Stopped;
+        if self.reason.as_deref() == Some(RECREATION_WAIT_REASON) {
+            self.status = None;
+            self.reason = None;
+        }
+    }
+
     pub(crate) fn failed(&mut self, error: &Error, recreated: bool) -> bool {
         let fatal = is_permanent(&error.kind) || (error.kind == ErrorKind::NotFound && recreated);
         self.state = if fatal {
@@ -404,7 +413,10 @@ impl<'a, T: TokenSource, K: Clock> Coordinator<'a, T, K> {
     /// reading `listening`; the next `listening` restores it.
     fn awaiting_recreation(&self) {
         let mut state = self.state.borrow_mut();
-        if state.fatal || state.view.reason.as_deref() == Some(RECREATION_WAIT_REASON) {
+        if state.fatal
+            || state.view.state == ListenerState::StoreError
+            || state.view.reason.as_deref() == Some(RECREATION_WAIT_REASON)
+        {
             return;
         }
         state.view.state = ListenerState::BackingOff;

@@ -834,6 +834,89 @@ mod http {
         assert_eq!(fake.count("POST", "sessions"), 3);
     }
 
+    /// the replies of a listener that recovers once, then meets a 404 whose recreation must wait.
+    fn waiting_to_recreate() -> Vec<Reply> {
+        let mut replies = opening();
+        replies.push(gone());
+        replies.extend(recreation());
+        replies.push(Reply::json("GET", "queue", 202, Value::Null));
+        replies.push(gone());
+        replies
+    }
+
+    /// returns once the second 404 has been answered and its recreation waits out the floor.
+    async fn until_waiting_to_recreate(
+        fake: &Fake,
+        coordinator: &Coordinator<'_, Tokens, ControlledClock>,
+    ) {
+        timeout(Duration::from_secs(2), async {
+            while fake.count("GET", "queue") < 3 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        timeout(Duration::from_secs(2), async {
+            while coordinator.view().reason.as_deref() != Some(RECREATION_WAIT_REASON) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_stop_during_the_wait_to_recreate_leaves_no_recreation_status_behind() {
+        let fake = Fake::new().await;
+        let client = fake.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let clock = ControlledClock::new();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
+        let mut replies = waiting_to_recreate();
+        replies.push(Reply::empty("DELETE", "sessions/"));
+        let drive = async {
+            until_waiting_to_recreate(&fake, &coordinator).await;
+            channels.stop.send_replace(true);
+        };
+        tokio::join!(fake.serve(replies), coordinator.run(), drive);
+        let view = coordinator.view();
+        assert_eq!(view.state, ListenerState::Stopped);
+        assert_eq!((view.status, view.reason), (None, None));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_store_error_during_the_wait_to_recreate_is_not_replaced_by_the_wait() {
+        let fake = Fake::new().await;
+        let client = fake.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let clock = ControlledClock::new();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
+        let mut replies = waiting_to_recreate();
+        replies.push(Reply::empty("DELETE", "sessions/"));
+        let drive = async {
+            until_waiting_to_recreate(&fake, &coordinator).await;
+            // a slot's cleanup reads the store without making the error fatal
+            *tokens.0.borrow_mut() = Err("store unreadable".to_owned());
+            assert!(coordinator.token(false).is_err());
+            // a capacity change wakes the wait, which then looks at the view again
+            channels.capacity.send_replace(2);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let view = coordinator.view();
+            assert_eq!(view.state, ListenerState::StoreError);
+            assert_eq!(view.reason.as_deref(), Some("store unreadable"));
+            // closing the session needs the token again
+            *tokens.0.borrow_mut() = Ok("<pat-placeholder>".to_owned());
+            channels.stop.send_replace(true);
+        };
+        tokio::join!(fake.serve(replies), coordinator.run(), drive);
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn a_404_right_after_a_recreation_is_a_rejection() {
         let fake = Fake::new().await;

@@ -12,7 +12,7 @@ use crate::runtime::worker::Backoff;
 use crate::scaleset::{Error, ErrorKind, Message};
 
 use super::{
-    Coordinator, Credentials, ListenerState, MIN_RECREATION_WAIT, MIN_REFRESH_WAIT, PendingSession,
+    Coordinator, Credentials, MIN_RECREATION_WAIT, MIN_REFRESH_WAIT, PendingSession,
     REDELIVERY_WAIT, REFRESH_BEFORE,
 };
 
@@ -126,7 +126,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
         }
         self.state.borrow_mut().closing = true;
         self.close().await;
-        self.state.borrow_mut().view.state = ListenerState::Stopped;
+        self.state.borrow_mut().view.stopped();
         self.publish();
     }
 
