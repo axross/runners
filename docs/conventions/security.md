@@ -1314,9 +1314,10 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
   again, set a repository's token, remove a repository's token, set an
-  organisation's token, remove an organisation's token, hide the window, open a
-  runner's job and forward configuration requests. `configuration` accepts a typed
-  request for read, edit, reload or a separately chosen repository-token removal.
+  organisation's token, remove an organisation's token, set a setting, hide the
+  window, open a runner's job and forward configuration requests. `configuration`
+  accepts a typed request for read, edit, reload or a separately chosen
+  repository-token removal.
   The three configuration methods keep all file access with the agent; the page
   supplies no path, token, schema version or lifecycle field. Removal forwards the
   existing `token_remove` method, returns a store refusal separately from the saved

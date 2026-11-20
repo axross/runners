@@ -357,6 +357,14 @@ function gotoToken(repository) {
   focusKey(`row:${repository}:primary`);
 }
 
+/**
+ * turns a setting on or off. Focus stays on its checkbox, the agent writes the change,
+ * and the next view shows and announces what it came to.
+ */
+function setSetting(key, on) {
+  run("set_setting", { key, on });
+}
+
 const context = {
   editor,
   get tab() {
@@ -373,6 +381,7 @@ const context = {
   cancelForm,
   cancelRemoval,
   removeToken,
+  setSetting,
 };
 
 // ---- keys

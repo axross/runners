@@ -46,6 +46,7 @@ function shown() {
             line: "No runners.",
             controls: [],
             tokens_chip: null,
+            settings_chip: null,
             opens_on: "tokens",
           },
           banners: [],
@@ -58,6 +59,13 @@ function shown() {
             organizations: organisationForm
               ? [{ ...ROW, repository: "", organization: "axross" }]
               : [],
+          },
+          settings: {
+            intro: "Settings.",
+            unavailable: null,
+            reason_in_intro: false,
+            groups: [],
+            chip: null,
           },
         },
         footer: {

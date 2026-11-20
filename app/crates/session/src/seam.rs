@@ -43,6 +43,11 @@ pub enum Method {
     OrganizationTokenRemove {
         organization: String,
     },
+    /// writes one `[lifecycle]` setting, named by its key.
+    LifecycleSet {
+        key: String,
+        on: bool,
+    },
 }
 
 /// what the editor asks of the agent's configuration methods.
@@ -81,8 +86,9 @@ pub enum ConfigAnswer {
 pub enum Failure {
     /// the agent answered `busy`.
     Busy(String),
-    /// a configuration method was refused with one of its own codes, such as
-    /// `config_changed` or `config_invalid`, with the problems the agent named.
+    /// a configuration method, or a `[lifecycle]` setting's write, was refused with one
+    /// of its own codes, such as `config_changed` or `config_invalid`, with the
+    /// problems the agent named.
     Config {
         code: String,
         message: String,

@@ -17,6 +17,7 @@
     "allow-remove-token",
     "allow-set-organization-token",
     "allow-remove-organization-token",
+    "allow-set-setting",
     "allow-hide-window",
     "allow-open-job"
   ]

@@ -63,6 +63,7 @@ pub enum Called {
     TokenRemove { repository: String },
     OrganizationTokenSet { organization: String, token: String },
     OrganizationTokenRemove { organization: String },
+    LifecycleSet { key: String, on: bool },
     Drain { version: String },
     SubscribeGithub,
     RenewGithub,
@@ -108,6 +109,7 @@ fn name(method: &Method) -> &'static str {
         Method::TokenRemove { .. } => "token_remove",
         Method::OrganizationTokenSet { .. } => "organization_token_set",
         Method::OrganizationTokenRemove { .. } => "organization_token_remove",
+        Method::LifecycleSet { .. } => "lifecycle_set",
     }
 }
 
@@ -172,6 +174,7 @@ impl Link for FakeLink {
             Method::OrganizationTokenRemove { organization } => {
                 Called::OrganizationTokenRemove { organization }
             }
+            Method::LifecycleSet { key, on } => Called::LifecycleSet { key, on },
         };
         let (answer, held) = {
             let mut state = locked(&self.state);
