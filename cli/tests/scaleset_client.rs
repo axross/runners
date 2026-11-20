@@ -9,6 +9,16 @@ use marshal_cli::runtime::registration::{GITHUB_API, HttpLimits};
 use marshal_cli::scaleset::Client;
 
 #[test]
+fn the_profile_is_the_one_ci_asked_for() {
+    let debug_profile = cfg!(debug_assertions);
+    match std::env::var("MARSHAL_EXPECT_RELEASE").as_deref() {
+        Ok("1") => assert!(!debug_profile, "this test was built in the debug profile"),
+        Ok("0") => assert!(debug_profile, "this test was built in the release profile"),
+        _ => {}
+    }
+}
+
+#[test]
 fn release_ignores_overrides_and_debug_accepts_only_loopback() {
     for requested in ["http://127.0.0.1:34567", "https://example.invalid", ""] {
         let client = Client::new(Some(requested), HttpLimits::default());
