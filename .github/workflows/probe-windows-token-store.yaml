@@ -1,0 +1,611 @@
+name: Probe Windows Token Store
+
+# TEMPORARY. Issue #148's probe: does making the Windows token store tests take
+# turns remove the Credential Manager read-after-write misses? It runs on pushes
+# to this one working branch and is deleted before the pull request opens.
+# Arm A runs the unchanged tests, arm B the unchanged tests on one thread, and arm
+# C the pushed head, on 15 fresh GitHub-hosted runners each, interleaved A, B, C.
+# Every script is inline because arms A and B check out a commit without any.
+# Hosted runners only, no secrets, read-only token; see docs/conventions/security.md.
+
+on:
+  push:
+    branches: [issue-148-windows-token-store-turns]
+
+permissions:
+  contents: read
+
+env:
+  # main at the branch point; arms A and B test this commit, arm C the pushed head.
+  CONTROL_SHA: 16224e549036774b80cb4978838dbd8f0c26c421
+
+jobs:
+  # the formatting and clippy steps of Merge Checks' rust job, on the pushed head.
+  # when this fails no probe job and no collector runs, so no evidence is spent.
+  lint:
+    name: Lint On windows-latest
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+        working-directory: cli
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Check Formatting
+        run: cargo fmt --check
+      - name: Lint With Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+  probe:
+    name: Probe ${{ matrix.index }} Arm ${{ matrix.arm }}
+    needs: lint
+    runs-on: windows-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      max-parallel: 15
+      matrix:
+        include:
+          - index: 1
+            arm: A
+          - index: 2
+            arm: B
+          - index: 3
+            arm: C
+          - index: 4
+            arm: A
+          - index: 5
+            arm: B
+          - index: 6
+            arm: C
+          - index: 7
+            arm: A
+          - index: 8
+            arm: B
+          - index: 9
+            arm: C
+          - index: 10
+            arm: A
+          - index: 11
+            arm: B
+          - index: 12
+            arm: C
+          - index: 13
+            arm: A
+          - index: 14
+            arm: B
+          - index: 15
+            arm: C
+          - index: 16
+            arm: A
+          - index: 17
+            arm: B
+          - index: 18
+            arm: C
+          - index: 19
+            arm: A
+          - index: 20
+            arm: B
+          - index: 21
+            arm: C
+          - index: 22
+            arm: A
+          - index: 23
+            arm: B
+          - index: 24
+            arm: C
+          - index: 25
+            arm: A
+          - index: 26
+            arm: B
+          - index: 27
+            arm: C
+          - index: 28
+            arm: A
+          - index: 29
+            arm: B
+          - index: 30
+            arm: C
+          - index: 31
+            arm: A
+          - index: 32
+            arm: B
+          - index: 33
+            arm: C
+          - index: 34
+            arm: A
+          - index: 35
+            arm: B
+          - index: 36
+            arm: C
+          - index: 37
+            arm: A
+          - index: 38
+            arm: B
+          - index: 39
+            arm: C
+          - index: 40
+            arm: A
+          - index: 41
+            arm: B
+          - index: 42
+            arm: C
+          - index: 43
+            arm: A
+          - index: 44
+            arm: B
+          - index: 45
+            arm: C
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: cli
+    steps:
+      - name: Checkout The Code Under Test
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.arm == 'C' && github.sha || env.CONTROL_SHA }}
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: Write The Result File Header
+        env:
+          ARM: ${{ matrix.arm }}
+          INDEX: ${{ matrix.index }}
+        run: |
+          $directory = Join-Path $env:RUNNER_TEMP 'probe'
+          New-Item -ItemType Directory -Force $directory | Out-Null
+          $file = Join-Path $directory "probe-$($env:INDEX)-$($env:ARM).txt"
+          $sha = (git rev-parse HEAD).Trim()
+          @(
+            "arm=$env:ARM"
+            "index=$env:INDEX"
+            "image=$env:ImageVersion"
+            "processors=$env:NUMBER_OF_PROCESSORS"
+            "sha=$sha"
+          ) | Set-Content -Path $file -Encoding utf8
+          "RESULT_FILE=$file" >> $env:GITHUB_ENV
+      # only the one test binary is built, and its path is read from cargo's JSON
+      # messages, so the runs step starts the executable itself.
+      - name: Build The Token Store Test Binary
+        timeout-minutes: 10
+        run: |
+          $messages = cargo test --locked --test token_store_windows --no-run --message-format=json
+          $status = $LASTEXITCODE
+          if ($status -ne 0) {
+            foreach ($line in $messages) {
+              if ($line -like '*"compiler-message"*') { ($line | ConvertFrom-Json).message.rendered }
+            }
+            exit $status
+          }
+          $exe = $null
+          foreach ($line in $messages) {
+            if ($line -notlike '*"compiler-artifact"*') { continue }
+            $artifact = $line | ConvertFrom-Json
+            if ($artifact.target.name -eq 'token_store_windows' -and $artifact.target.kind -contains 'test' -and $artifact.executable) {
+              $exe = $artifact.executable
+            }
+          }
+          if (-not $exe) { throw 'the build output names no token_store_windows test executable' }
+          Write-Host "test executable: $exe"
+          "TEST_EXE=$exe" >> $env:GITHUB_ENV
+      # run 0 is the runner's first use of the Credential Manager. runs 1 to 30 follow
+      # while 30 minutes have not passed since run 0 began. a run still going after
+      # 120 s is a hang: its process tree is killed and this job's runs end. the
+      # step limit is the 30 minutes, one 120 s run, and slack.
+      - name: Run The Token Store Tests Repeatedly
+        timeout-minutes: 35
+        env:
+          TEST_ARGS: ${{ matrix.arm == 'B' && '--test-threads=1' || '' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = $env:TEST_EXE
+          $result = $env:RESULT_FILE
+          $culture = [cultureinfo]::InvariantCulture
+          $source = [IO.File]::ReadAllText((Join-Path (Get-Location) 'tests/token_store_windows.rs'))
+          $sourceLines = $source -split "`n"
+          # the same text with each line comment blanked, so offsets still line up and
+          # a comment cannot start or end a statement.
+          $masked = ($sourceLines | ForEach-Object {
+              $slash = $_.IndexOf('//')
+              if ($slash -ge 0) { $_.Substring(0, $slash).PadRight($_.Length) } else { $_ }
+            }) -join "`n"
+
+          # classifies a panic from the checked-out test file, so it holds for both
+          # commits whatever their line numbers. a panic at an assert_eq! of this
+          # file whose arguments call .get( right after a .set( or .set_token( call
+          # is read-after-write; any other assertion macro there is other assertion;
+          # any other panic, or one in another file, is panic elsewhere. an unwrap of
+          # None is reported at the unwrap, so there the statement's start is used.
+          function Get-MissKind([string]$file, [int]$line, [int]$column, [string]$message) {
+            if ($file.Replace('\', '/') -notmatch '(^|/)tests/token_store_windows\.rs$') { return 'panic elsewhere' }
+            $offset = $column - 1
+            for ($i = 0; $i -lt $line - 1; $i++) { $offset += $sourceLines[$i].Length + 1 }
+            if ($offset -lt 0 -or $offset -ge $masked.Length) { return 'panic elsewhere' }
+            if ($message -match 'Option::unwrap\(\)` on a `None` value') {
+              $start = $masked.LastIndexOfAny([char[]]';{}', $offset) + 1
+              while ($start -lt $offset -and [char]::IsWhiteSpace($masked[$start])) { $start++ }
+              $offset = $start
+            }
+            $here = $masked.Substring($offset)
+            if ($here -notmatch '^(?:debug_)?assert(?:_eq|_ne)?!\s*\(') { return 'panic elsewhere' }
+            if ($here -notmatch '^assert_eq!') { return 'other assertion' }
+            $depth = 0
+            $inString = $false
+            $end = $here.Length - 1
+            for ($i = $here.IndexOf('('); $i -lt $here.Length; $i++) {
+              $c = $here[$i]
+              if ($inString) {
+                if ($c -eq '\') { $i++ } elseif ($c -eq '"') { $inString = $false }
+              } elseif ($c -eq '"') {
+                $inString = $true
+              } elseif ($c -eq '(') {
+                $depth++
+              } elseif ($c -eq ')') {
+                $depth--
+                if ($depth -eq 0) { $end = $i; break }
+              }
+            }
+            $invocation = $here.Substring(0, $end + 1)
+            $before = $masked.Substring(0, $offset)
+            if ($invocation -match '\.get\(' -and $before -match '(?s)\.(?:set|set_token)\([^;]*;\s*$') { return 'read-after-write' }
+            return 'other assertion'
+          }
+
+          # the files are read with sharing, since a process a hang left behind may still
+          # hold them open.
+          function Read-Output([string]$path) {
+            try {
+              $stream = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite')
+              try { return [IO.StreamReader]::new($stream).ReadToEnd() } finally { $stream.Dispose() }
+            } catch { return '' }
+          }
+
+          function Invoke-Run([int]$number) {
+            $out = Join-Path $env:RUNNER_TEMP "run-$number.out"
+            $err = Join-Path $env:RUNNER_TEMP "run-$number.err"
+            $start = @{ FilePath = $exe; PassThru = $true; NoNewWindow = $true; RedirectStandardOutput = $out; RedirectStandardError = $err }
+            if ($env:TEST_ARGS) { $start.ArgumentList = $env:TEST_ARGS }
+            $began = Get-Date
+            $process = Start-Process @start
+            # reading the handle keeps the exit code readable after WaitForExit
+            $null = $process.Handle
+            $finished = $process.WaitForExit(120000)
+            $duration = ((Get-Date) - $began).TotalSeconds.ToString('F2', $culture)
+            if (-not $finished) {
+              taskkill /T /F /PID $process.Id | Out-Host
+              $null = $process.WaitForExit(10000)
+              $outText = Read-Output $out
+              $text = $outText + "`n" + (Read-Output $err)
+              # a test libtest named as slow, or one printed with no result yet, never finished
+              $named = @([regex]::Matches($outText, '(?m)^test (\S+) has been running for over')) + @([regex]::Matches($outText, '(?m)^test (\S+) \.\.\. \z'))
+              $unfinished = @($named | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+              $testField = if ($unfinished.Count -gt 0) { $unfinished -join ',' } else { '-' }
+              return @{ Kind = 'hang'; Text = $text; Line = "RUN|$number|miss|hang|$testField|-|$duration" }
+            }
+            $text = (Read-Output $out) + "`n" + (Read-Output $err)
+            # the exit code can read as null; the libtest summary then decides
+            $exitCode = $process.ExitCode
+            $exitLabel = if ($null -eq $exitCode) { 'unknown' } else { "$exitCode" }
+            if ($null -eq $exitCode) { $exitCode = if ($text -match '(?m)^test result: ok\. ') { 0 } else { 1 } }
+            if ($exitCode -eq 0) {
+              return @{ Kind = 'pass'; Text = $text; Line = "RUN|$number|pass|-|-|-|$duration" }
+            }
+            $tests = @([regex]::Matches($text, '(?m)^test (\S+) \.\.\. FAILED') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+            $locations = @()
+            $kinds = @()
+            foreach ($m in [regex]::Matches($text, "(?m)^thread '([^']*)'(?: \(\d+\))? panicked at (.+):(\d+):(\d+):[ \t]*\r?(?:\n([^\r\n]*))?$")) {
+              $locations += "$($m.Groups[1].Value)@$($m.Groups[2].Value.Replace('\', '/')):$($m.Groups[3].Value)"
+              $kinds += Get-MissKind $m.Groups[2].Value ([int]$m.Groups[3].Value) ([int]$m.Groups[4].Value) $m.Groups[5].Value
+            }
+            $locations = @($locations | Select-Object -Unique)
+            $kind = 'panic elsewhere'
+            if ($kinds -contains 'read-after-write') { $kind = 'read-after-write' } elseif ($kinds -contains 'other assertion') { $kind = 'other assertion' }
+            # a crash leaves no failed test and no panic, so the exit code is all there is
+            $testField = if ($tests.Count -gt 0) { $tests -join ',' } elseif ($locations.Count -eq 0) { "exit=$exitLabel" } else { '-' }
+            $locationField = if ($locations.Count -gt 0) { $locations -join ',' } else { '-' }
+            return @{ Kind = $kind; Text = $text; Line = "RUN|$number|miss|$kind|$testField|$locationField|$duration" }
+          }
+
+          $first = Get-Date
+          $number = 0
+          while ($true) {
+            $run = Invoke-Run $number
+            Add-Content -Path $result -Value $run.Line -Encoding utf8
+            Write-Host $run.Line
+            if ($run.Kind -ne 'pass' -and $run.Text) {
+              Write-Host "::group::Output of run $number"
+              Write-Host $run.Text
+              Write-Host '::endgroup::'
+            }
+            if ($run.Kind -eq 'hang') { break }
+            $number++
+            if ($number -gt 30) { break }
+            if (((Get-Date) - $first).TotalMinutes -ge 30) { break }
+          }
+      - name: Print The Result File
+        if: always()
+        run: |
+          if ($env:RESULT_FILE -and (Test-Path -LiteralPath $env:RESULT_FILE)) {
+            Get-Content -LiteralPath $env:RESULT_FILE
+          } else {
+            Write-Host '::warning::no result file'
+          }
+      - name: Upload The Result File
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-${{ matrix.index }}-${{ matrix.arm }}
+          path: ${{ runner.temp }}/probe/probe-${{ matrix.index }}-${{ matrix.arm }}.txt
+          if-no-files-found: warn
+          retention-days: 14
+          overwrite: true
+
+  collect:
+    name: Collect The Results
+    needs: [lint, probe]
+    if: always() && needs.lint.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # the download may find nothing when every probe job was lost; the script then
+      # reports all 45 results as lost instead of this step failing the collector.
+      - name: Download The Result Files
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: probe-*
+          path: results
+          merge-multiple: true
+      - name: Write The Table
+        shell: python3 {0}
+        env:
+          CONTROL_SHA: ${{ env.CONTROL_SHA }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          import os
+          from collections import Counter
+
+          ARMS = "ABC"
+          EXPECTED = [(index, ARMS[(index - 1) % 3]) for index in range(1, 46)]
+          PER_ARM = 15
+          KINDS = ["read-after-write", "other assertion", "panic elsewhere", "hang"]
+          CONTROL_SHA = os.environ["CONTROL_SHA"]
+          HEAD_SHA = os.environ["HEAD_SHA"]
+
+
+          def read_result(index, arm):
+              """the header and the runs of one result file; None when the file is missing."""
+              path = f"results/probe-{index}-{arm}.txt"
+              if not os.path.exists(path):
+                  return None
+              header, runs = {}, {}
+              with open(path, encoding="utf-8-sig") as handle:
+                  for raw in handle:
+                      line = raw.strip()
+                      fields = line.split("|")
+                      if fields[0] == "RUN" and len(fields) == 7 and fields[1].isdigit():
+                          runs[int(fields[1])] = {
+                              "miss": fields[2] == "miss",
+                              "kind": fields[3],
+                              "tests": fields[4],
+                              "locations": fields[5],
+                              "seconds": fields[6],
+                          }
+                      elif "=" in line:
+                          key, value = line.split("=", 1)
+                          header[key] = value
+              return header, runs
+
+
+          results = {key: read_result(*key) for key in EXPECTED}
+          reported = {key: r for key, r in results.items() if r is not None and 0 in r[1]}
+          lost = [
+              (key, "no result file" if results[key] is None else "no run 0")
+              for key in EXPECTED
+              if key not in reported
+          ]
+
+          EXPECTED_SHA = {"A": CONTROL_SHA, "B": CONTROL_SHA, "C": HEAD_SHA}
+          anomalies = []
+          for key, result in results.items():
+              if result is None:
+                  continue
+              found = result[0].get("sha")
+              if found != EXPECTED_SHA[key[1]]:
+                  anomalies.append((key[0], key[1], found or "no sha in the header", EXPECTED_SHA[key[1]]))
+
+          misses = []
+          for (index, arm), (header, runs) in sorted(reported.items()):
+              for number, run in sorted(runs.items()):
+                  if run["miss"]:
+                      misses.append(
+                          {
+                              "arm": arm,
+                              "index": index,
+                              "number": number,
+                              "when": "first" if number == 0 else "warm",
+                              "image": header.get("image", "?"),
+                              **run,
+                          }
+                      )
+
+
+          def table(headings, rows):
+              lines = ["| " + " | ".join(headings) + " |"]
+              lines.append("| " + " | ".join("---" for _ in headings) + " |")
+              lines.extend("| " + " | ".join(str(cell) for cell in row) + " |" for row in rows)
+              return "\n".join(lines)
+
+
+          def count(arm, **wanted):
+              return sum(
+                  1 for m in misses if m["arm"] == arm and all(m[k] == v for k, v in wanted.items())
+              )
+
+
+          out = ["# Probe results for issue 148", ""]
+          out += [
+              f"- Arm C probed commit (the pushed head): `{HEAD_SHA}`",
+              f"- Arms A and B probed commit (main at the branch point): `{CONTROL_SHA}`",
+              "",
+              "## Reported first runs per arm",
+              "",
+              table(
+                  ["Arm", "Expected", "Reported first runs", "Lost"],
+                  [
+                      (
+                          arm,
+                          PER_ARM,
+                          sum(1 for k in reported if k[1] == arm),
+                          sum(1 for k, _ in lost if k[1] == arm),
+                      )
+                      for arm in ARMS
+                  ],
+              ),
+              "",
+              "## Anomalies",
+              "",
+              "A result file whose checked-out commit is not its arm's expected one:",
+              "",
+              table(["Index", "Arm", "Header sha", "Expected sha"], anomalies)
+              if anomalies
+              else "None.",
+              "",
+              "## Lost results",
+              "",
+              table(["Index", "Arm", "Reason"], [(k[0], k[1], why) for k, why in lost])
+              if lost
+              else "None.",
+              "",
+              "## Misses by arm, first and warm run",
+              "",
+              table(
+                  ["Arm", "Jobs reported", "Runs", "Misses", "First-run misses", "Warm-run misses"],
+                  [
+                      (
+                          arm,
+                          sum(1 for k in reported if k[1] == arm),
+                          sum(len(r[1]) for k, r in reported.items() if k[1] == arm),
+                          count(arm),
+                          count(arm, when="first"),
+                          count(arm, when="warm"),
+                      )
+                      for arm in ARMS
+                  ],
+              ),
+              "",
+              "## Misses by kind",
+              "",
+              table(
+                  ["Arm", "Kind", "First run", "Warm runs"],
+                  [
+                      (arm, kind, count(arm, kind=kind, when="first"), count(arm, kind=kind, when="warm"))
+                      for arm in ARMS
+                      for kind in KINDS
+                  ],
+              ),
+              "",
+              "## Misses by test and location",
+              "",
+          ]
+          by_location = Counter()
+          for m in misses:
+              pairs = [p for p in m["locations"].split(",") if p != "-"] or ["-@-"]
+              for pair in pairs:
+                  test, _, location = pair.partition("@")
+                  by_location[(m["arm"], m["kind"], test, location, m["when"])] += 1
+          rows = sorted({key[:4] for key in by_location})
+          out.append(
+              table(
+                  ["Arm", "Kind", "Test", "Location", "First run", "Warm runs"],
+                  [
+                      (*row, by_location[(*row, "first")], by_location[(*row, "warm")])
+                      for row in rows
+                  ],
+              )
+              if rows
+              else "None."
+          )
+          out += ["", "## Misses by runner image", ""]
+          images = sorted({header.get("image", "?") for header, _ in reported.values()})
+          rows = []
+          for image in images:
+              for arm in ARMS:
+                  jobs = [r for k, r in reported.items() if k[1] == arm and r[0].get("image", "?") == image]
+                  if not jobs:
+                      continue
+                  runs = sum(len(r[1]) for r in jobs)
+                  rows.append(
+                      (
+                          image,
+                          arm,
+                          len(jobs),
+                          runs,
+                          sum(1 for m in misses if m["arm"] == arm and m["image"] == image and m["when"] == "first"),
+                          sum(1 for m in misses if m["arm"] == arm and m["image"] == image and m["when"] == "warm"),
+                      )
+                  )
+          out.append(
+              table(["Image", "Arm", "Jobs", "Runs", "First-run misses", "Warm-run misses"], rows)
+              if rows
+              else "None."
+          )
+          out += ["", "## Every miss", ""]
+          out.append(
+              table(
+                  ["Arm", "Index", "Run", "Kind", "Tests", "Locations", "Seconds", "Image"],
+                  [
+                      (m["arm"], m["index"], m["number"], m["kind"], m["tests"], m["locations"], m["seconds"], m["image"])
+                      for m in misses
+                  ],
+              )
+              if misses
+              else "None."
+          )
+          out += ["", "## Counts the decision rule reads", ""]
+          out.append(
+              table(
+                  ["Count", "Value"],
+                  [
+                      (
+                          "A first-run read-after-write misses",
+                          f"{count('A', kind='read-after-write', when='first')} of "
+                          f"{sum(1 for k in reported if k[1] == 'A')} reported first runs",
+                      ),
+                      ("B misses, first or warm", count("B")),
+                      ("B read-after-write misses", count("B", kind="read-after-write")),
+                      ("B hangs", count("B", kind="hang")),
+                      (
+                          "B other-kind misses",
+                          count("B") - count("B", kind="read-after-write") - count("B", kind="hang"),
+                      ),
+                      ("C misses, first or warm", count("C")),
+                      ("C read-after-write misses", count("C", kind="read-after-write")),
+                      ("C hangs", count("C", kind="hang")),
+                      (
+                          "C other-kind misses",
+                          count("C") - count("C", kind="read-after-write") - count("C", kind="hang"),
+                      ),
+                  ],
+              )
+          )
+          text = "\n".join(out) + "\n"
+          print(text)
+          with open("table.md", "w", encoding="utf-8") as handle:
+              handle.write(text)
+      - name: Upload The Table
+        uses: actions/upload-artifact@v7
+        with:
+          name: collected-results
+          path: table.md
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
