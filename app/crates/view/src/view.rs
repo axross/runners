@@ -54,7 +54,7 @@ pub struct Header {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListWindow {
     pub header: Header,
-    /// the first items of the scrolling list, over both tabs.
+    /// the first items of the scrolling list, over every tab.
     pub banners: Vec<Banner>,
     pub pools: Vec<PoolCard>,
     /// what stands where the pools would be when there are none.

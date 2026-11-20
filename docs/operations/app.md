@@ -664,6 +664,12 @@ not watch or poll the file. Availability comes from the negotiated methods and
 the agent's snapshot; a transition, lost contact, migration, update drain,
 pending apply or runtime restart explains why Apply and Reload are unavailable.
 
+**Known limit** ([#164](https://github.com/axross/runners/issues/164)). A change on
+the [Settings tab](#the-settings-tab) rewrites `config.toml` through the agent, which
+moves the revision a draft was made against. A draft started before the change is
+then refused as changed elsewhere (`config_changed`), and Read Again drops its
+unapplied changes, so apply or discard the draft before changing a setting.
+
 The review may offer to remove the tokens of repositories no remaining pool uses.
 Keeping them is the default. Removal uses the existing `token_remove` method only
 after the configuration write succeeds. Its result travels separately through
@@ -976,6 +982,10 @@ design chosen on #82: two groups, "Starting Marshal" (`start_at_login`,
 as a `<label for>`, so the text toggles it too. W1's banners lead the tab as they lead
 the others, and the window never opens on it.
 
+The tab is not the configuration editor's Host Settings. Host Settings holds the
+routing label, the image name and, on a Mac, the budgets; the five `[lifecycle]`
+settings have no field there.
+
 - **State.** Each setting's description ends with its state against its Windows
   default, read from the snapshot's `lifecycle` part: "On (default).", or
   "Off (default: on)." when it differs. A setting the file sets to its default reads
@@ -1016,6 +1026,15 @@ the others, and the window never opens on it.
 The refusal for a changed file departs from the design mock's words, which said the
 tab shows what the file says now: the agent keeps the settings in effect and does not
 read the file again until Start All, so the window says that instead.
+
+**Known limits** ([#164](https://github.com/axross/runners/issues/164)). A change
+here rewrites `config.toml` through the agent, which moves the revision the
+[configuration editor's](#the-configuration-editor) draft was made against. A draft
+started before the change is then refused as changed elsewhere (`config_changed`),
+and the editor's Read Again drops its unapplied changes, so apply or discard the
+draft before changing a setting. The editor's Reload reads the file again but does
+not put `[lifecycle]` changes in effect; only Start All does. After a hand edit of
+`[lifecycle]`, choose Start All, not Reload.
 
 `app/crates/view/tests/view/settings.rs` covers the states, defaults, notes, the chip
 and each unavailable case from recorded snapshots,
