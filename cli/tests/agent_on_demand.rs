@@ -33,11 +33,17 @@ scale_set = "axpc-jobs"
 runners = 2
 "#;
 
-/// the exit deadline of a stop that the slow scale-set cleanup outlasts.
-const EXIT_DEADLINE: Duration = Duration::from_millis(300);
+/// the exit deadline of a stop that the slow scale-set cleanup outlasts. A second long enough
+/// that a stop's slack is a small part of it, short enough to keep the tests quick.
+const EXIT_DEADLINE: Duration = Duration::from_secs(1);
 
-/// the longest a stop may take when it is not waiting on the service, which the tests
-/// delay by 30 s; wide, so a loaded machine does not fail it.
+/// what a stop may take beyond its exit deadline. The service delays those requests by 30 s,
+/// so a stop that waited on one would overrun by far more; a second leaves room for a loaded
+/// shared runner and still fails a stop that the deadline no longer bounds.
+const STOP_SLACK: Duration = Duration::from_secs(1);
+
+/// the longest a stop may take at the default 28 s exit deadline when no request is delayed;
+/// wide, so a loaded machine does not fail it.
 const NOT_WAITING_ON_SERVICE: Duration = Duration::from_secs(3);
 
 /// the budget the fake backend reserves for releasing a job host.
@@ -1339,7 +1345,7 @@ async fn stopping_recovery_does_not_delay_another_pool_or_extend_stop() {
     let service = Service::start(1).await;
     let rig = rig(&service);
     rig.times.set(marshal_cli::instance::lifecycle::StopTimes {
-        exit_deadline: Duration::from_millis(300),
+        exit_deadline: EXIT_DEADLINE,
         ..rig.times.get()
     });
     let (rig, service) = (&rig, &service);
@@ -1374,7 +1380,7 @@ async fn stopping_recovery_does_not_delay_another_pool_or_extend_stop() {
             rig.mark_running();
             let began = tokio::time::Instant::now();
             conn.ok("stop_all").await;
-            assert!(began.elapsed() < NOT_WAITING_ON_SERVICE);
+            assert!(began.elapsed() < EXIT_DEADLINE + STOP_SLACK);
             assert_eq!(
                 conn.status().await.pools[0].on_demand.as_ref(),
                 Some(&pending)
@@ -1472,9 +1478,10 @@ async fn an_on_demand_stop_keeps_the_release_budget_and_the_exit_deadline_of_an_
         on_demand.took
     );
     assert!(
-        on_demand.took < NOT_WAITING_ON_SERVICE,
-        "the stop took {:?}",
-        on_demand.took
+        on_demand.took < always_on.took + EXIT_DEADLINE + STOP_SLACK,
+        "the stop took {:?} against {:?} without the cleanup",
+        on_demand.took,
+        always_on.took
     );
 }
 
@@ -1489,7 +1496,7 @@ async fn session_close_recovery_survives_stop_start_and_uses_the_fresh_token() {
         let service = Service::start(0).await;
         let rig = rig(&service);
         rig.times.set(marshal_cli::instance::lifecycle::StopTimes {
-            exit_deadline: Duration::from_millis(300),
+            exit_deadline: EXIT_DEADLINE,
             ..rig.times.get()
         });
         let (rig, service) = (&rig, &service);
@@ -1514,7 +1521,7 @@ async fn session_close_recovery_survives_stop_start_and_uses_the_fresh_token() {
                 }
                 let began = tokio::time::Instant::now();
                 assert_eq!(conn.ok("stop_all").await["state"], "stopped");
-                assert!(began.elapsed() < NOT_WAITING_ON_SERVICE);
+                assert!(began.elapsed() < EXIT_DEADLINE + STOP_SLACK);
                 if !delay.is_zero() {
                     assert!(service.state.lock().unwrap().close_in_flight);
                 }
@@ -2017,7 +2024,7 @@ async fn an_update_drain_does_not_wait_for_a_failing_cleanup() {
             }
             // the first retry would come after 5 s
             assert!(
-                began.elapsed() < NOT_WAITING_ON_SERVICE,
+                began.elapsed() < Duration::from_secs(3),
                 "the drain took {:?}",
                 began.elapsed()
             );
