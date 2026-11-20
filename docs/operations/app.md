@@ -657,9 +657,9 @@ Prepare it first with `mise run prepare:app-render`; that needs Python 3 to
 extract the verified archive, but installs no OS package. The test-only
 `playwright-core` dependency is locked under `app/crates/app/tests/render/` and
 installs with lifecycle scripts disabled. It is not bundled with the app. Its
-public browser API avoids maintaining a second browser driver; the full Playwright test runner and Puppeteer are not
-needed. The Check job alone prepares Chromium's OS libraries on its disposable
-GitHub-hosted runner.
+public browser API avoids maintaining a second browser driver; the full Playwright
+test runner and Puppeteer are not needed. The Check job alone prepares Chromium's
+OS libraries on its disposable GitHub-hosted runner.
 
 The renderer uses `dump_view --editor-profile axpc|axmc` over recorded running,
 stopped, transition and lost-contact snapshots, and a fake Tauri command bridge
@@ -677,8 +677,8 @@ with an explained reason. Pool heading expectations come from fixture names,
 including pools marked for removal, not from the headings already in the DOM.
 Deliberate overflow, low-contrast, broken-name and missing-heading mutations must fail those
 checks. The job retains screenshots and measurements for 14 days. This is browser
-evidence, not a native Windows/Mac app, IPC, contrast-theme or screen-reader run;
-those checks and Narrator/VoiceOver notes remain required on issue #83 before ready.
+evidence, not a native Windows or Mac app, IPC, contrast-theme or screen-reader
+run; those stay manual checks on a real host.
 
 ## Install Layout
 
