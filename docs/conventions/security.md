@@ -1010,8 +1010,7 @@ is an operator rule and a review rule, not a check.
   rate-limit response means Actions: read is missing; Marshal hides job names for
   that repository rather than failing, and logs GitHub's message and its
   `X-Accepted-GitHub-Permissions` header.
-- Organisation pools are planned (X2) and no release configures one yet. An
-  organisation pool's token is created by an owner of the organisation, has the
+- An organisation pool's token is created by an owner of the organisation, has the
   organisation as its resource owner, and carries the organisation permission
   Self-hosted runners: Read and write. It carries no repository permission, and its
   repository access is public repositories only. One token serves one
@@ -1058,10 +1057,10 @@ stated in A Token Carries Only Its Pool Kind's Permissions above.
 - A registered idle runner may wait indefinitely for a job. The group can be
   opened, or the runner moved to another group, after a successful check and
   before that job arrives. Marshal neither deletes such runners nor polls group
-  settings outside registration. This residual risk is accepted only under the
-  test prerequisite that the maintainer is the organisation's only owner and no
-  other member holds a CI/CD admin or runner-managing role. Owners, those roles,
-  and holders of the organisation token can change the boundary.
+  settings outside registration. The risk is acceptable only while the people who
+  can change a group are trusted: the organisation's owners, members holding the
+  CI/CD admin role or a role that manages runners, and holders of the organisation
+  token.
 - A program running as the host's user can read that user's Credential Manager
   entry or request the Keychain item. Reading an organisation token reaches the
   whole organisation rather than one repository. The token is present on each
@@ -1197,7 +1196,7 @@ Residual risks, accepted on a single-user host:
 ## The App Surface
 
 The Windows app is a notification-area icon, a menu and a web view that shows the
-runners and takes each repository's token. It runs as the signed-in user, beside an
+runners and takes each repository's or organisation's token. It runs as the signed-in user, beside an
 agent of the same executable that holds the pools' tokens, so the question is what
 the app may do with that reach. [App](../operations/app.md) owns how it works.
 
@@ -1230,7 +1229,9 @@ the app may do with that reach. [App](../operations/app.md) owns how it works.
   each works only in a window whose capability grants it. The main window's
   capability grants `core:event:allow-listen` and `core:event:allow-unlisten` and the
   commands that read the view, start all, stop all, build, stop the build, try
-  again, set a token, remove a token, hide the window and open a runner's job. The
+  again, set a repository's token, remove a repository's token, set an
+  organisation's token, remove an organisation's token, hide the window and open a
+  runner's job. The
   confirmation window's
   grants the two commands that read its question and answer it. On macOS, where the
   unified title bar hides the windows' own (M2's option B), `macos-main-drag` grants

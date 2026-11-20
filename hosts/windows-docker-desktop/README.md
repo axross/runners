@@ -60,8 +60,10 @@ A TOML pool can instead select `organization` with a required `runner_group`,
 without `repository`. JSON remains repository-only. Organisation and repository
 pools use separate tokens. [CLI](../../docs/operations/cli.md) owns the target
 exclusivity, forbidden settings, and routing-label rules;
-[Windows Runner Host](../../docs/operations/windows-runner-host.md) owns the token
-and runner-group setup.
+[Windows Runner Host](../../docs/operations/windows-runner-host.md) owns the
+organisation token steps;
+[Security](../../docs/conventions/security.md#organisation-pools-share-a-runner-groups-trust-boundary)
+states the runner-group and private-repository fork-policy requirements.
 
 [`config.example.toml`](./config.example.toml) is the example above in that form.
 When only `config.json` is in that folder, the agent's first start migrates it to

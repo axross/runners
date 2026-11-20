@@ -177,8 +177,11 @@ change may be rejected now; the last column says how to change it.
 ### Labels
 
 `validate` rejects two entries for the same repository that share a non-platform
-label and have the same `os`, and accepts them when `os` differs. On axpc every
-entry is Linux, so the existing rule and message stand.
+label and have the same `os`, and accepts them when `os` differs. In a TOML file it
+also rejects an organisation pool and another pool of the same organisation, or of
+one of its repositories, under the same condition; the TOML Configuration section
+states that rule. On axpc every entry is Linux, so the existing rule and message
+stand for JSON.
 [Security](../conventions/security.md) owns the rule, including what a consumer
 names in `runs-on` and the cross-host case that `validate` cannot see.
 
@@ -262,21 +265,24 @@ Otherwise the errors come in the order the checks find them:
    checks bullet under
    [Behaviour That Is Easy to Miss](#behaviour-that-is-easy-to-miss) states. For
    each entry after the first, in file order, against each earlier entry in file
-   order: a colliding `name`, then for the same repository a different token file
-   or an ambiguous routing label, or for another repository a reused token file.
+   order: a colliding `name`, then for the same repository a different token file,
+   or for another repository a reused token file, then an ambiguous routing label
+   for the same repository. A JSON configuration has no organisation pools, so it has
+   no organisation routing check.
 5. On axmc, the budget checks, over the same entries as step 4.
 
 The exit code is 1 and standard output is empty whenever there is an error. A valid
 configuration prints its summary on standard output, with lines ending in `\n`:
 
 - **axpc.** The header `Host configuration is valid: <n> entries, image <name>`, a
-  CPU policy line that only the axpc summary has, and for each entry its
-  repository, slots, labels, token file, name, container name pattern, CPU and
+  CPU policy line that only the axpc summary has, and for each entry its target
+  (`Repository owner/name`, or `Organization X, runner group Y` for an organisation
+  pool), slots, labels, token file, name, container name pattern, CPU and
   memory limits, planned affinity count and position, diagnostic settings, and
   volumes.
 - **axmc.** The header `Host configuration is valid: <n> entries, profile axmc`,
   followed by `, image <name>` when the configuration names an image, and no CPU
-  policy line. Each entry has its repository, `os`, slots, labels, token file,
+  policy line. Each entry has its target as on axpc, `os`, slots, labels, token file,
   name, CPU and memory limits, `disk`, and diagnostic settings, but no container
   name pattern, affinity, or volume lines. A `Budget use` block ends the summary,
   with the macOS VMs, CPUs, memory, and disk used against the limit.
@@ -404,10 +410,12 @@ changes:
   on `repository`.
 - **Organisation pools.** `organization` and `runner_group` select an organisation
   runner group instead of one repository. Such a pool rejects `volumes`, including
-  an empty list, and `scale_set`. JSON gains no organisation keys. With the same OS,
-  an organisation pool must not share a non-platform label with another pool of
-  that organisation or any of its repositories, comparing logins and labels
-  without case. This includes the default `routing_label`, so overlapping pools
+  an empty list, with `not allowed with organization`. `scale_set` is not a known
+  key of this configuration, so it is reported as an undefined key, except on an
+  organisation pool, where it is reported as `not allowed with organization`. JSON
+  gains no organisation keys. With the same OS, an organisation pool must not share a
+  non-platform label with another pool of that organisation or any of its
+  repositories, comparing logins and labels without case. This includes the default `routing_label`, so overlapping pools
   need distinct explicit labels. Repository-only files retain their validation
   rules; a pool naming neither target reports
   `pool[i]: names neither repository nor organization`.
@@ -487,13 +495,14 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
 5. `pool` itself: missing, not an array of tables, or empty.
 6. Each pool in file order, all of one pool's problems before the next pool's, in the
    order of the JSON keys they rename, after the pool's own unknown keys:
-   `repository`, `os`, `labels`, `volumes`, `runners`, `name`, `cpus`, `memory_gb`,
-   on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
+   `repository`, `organization`, `runner_group`, `os`, `labels`, `volumes`,
+   `runners`, `name`, `cpus`, `memory_gb`, on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
    not booleans, `diagnostic_directory`, and last `diagnostic_raw_records` when it
    requires `diagnostics`.
 7. The checks across pools, for each pool after the first against each pool before
-   it: a colliding `name`, then an ambiguous routing label. Then on macOS the budget
-   totals.
+   it: a colliding `name`, then an ambiguous routing label, which for an organisation
+   pool is the organisation routing overlap in the Organisation pools bullet. Then on
+   macOS the budget totals.
 
 **Key paths and lines.** A key path is in TOML form, such as `pool[1].runners` or
 `pool[0].volumes[2].mount_path`, with pools and volumes counted from 0, as the JSON
@@ -4305,7 +4314,8 @@ need CRLF build it from the stored text.
 - **Hand-written TOML.** [`tests/host-configuration/toml/`](../../tests/host-configuration/toml)
   holds `accepted/` and `rejected/` documents and one `expectations.json`, read by
   `cli/tests/toml_fixtures.rs`. These are the cases only TOML has: syntax errors,
-  `schema_version`, `routing_label`, `[lifecycle]`, letter case, duplicates, wrong
+  `schema_version`, `routing_label`, `[lifecycle]`, the organisation keys and their
+  rules, letter case, duplicates, wrong
   types including a date, nesting deeper than the parser allows, in an array, an
   inline table, a dotted key and a table header, each placed on its line, the
   problem order, the lines, and a token-shaped value or key. Each expectation names the profile
