@@ -295,6 +295,11 @@ then follows the snapshot, since the agent may still do it.
 | `main.css`, `tokens.css`, `fonts.css`               | The window stylesheet; the colour tokens; the one place that names the font files                                                      |
 | `confirmation.html`, `confirmation.js`              | The confirmation window's page, with Cancel focused                                                                                    |
 
+A balloon opens below its control, or above it near the bottom of the window. When
+the scrolling area has room on neither side, a balloon opened by keyboard focus
+scrolls the area just far enough to show it whole, keeping its control in view; one
+opened by the pointer stays where it is, so nothing moves under the pointer.
+
 Esc closes the first of these that is open and does nothing more: a tooltip balloon,
 then a confirmation dialog, then an open token form or removal question, and only then
 hides the window. The page clears a token field as soon as it calls `set_token`,
@@ -659,9 +664,10 @@ with shaped protocol replies, not captured native command executions.
 The bridge retains pool membership edits in memory for read-back, not on disk;
 it does not reproduce other field writes or live runner effects.
 It covers the editor states in both themes, with and without forced colours, at
-880 and 480 px. It measures horizontal overflow, the scroll/footer boundary,
-text contrast (4.5:1), field boundaries and keyboard focus (3:1), and Chromium's
-accessibility tree for field names, problem/reason descriptions and pool headings.
+880 and 480 px. It measures horizontal overflow, the scroll/footer boundary, a
+balloon cut off by the scrolling area, text contrast (4.5:1), field boundaries and
+keyboard focus (3:1), and Chromium's accessibility tree for field names,
+problem/reason descriptions and pool headings.
 Keyboard checks retain focus through held writes, confirmation refusals, token
 removal retries and failed read-back. They keep uneditable Host Settings inert
 with an explained reason. Pool heading expectations come from fixture names,
