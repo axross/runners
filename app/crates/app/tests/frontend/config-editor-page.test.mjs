@@ -141,3 +141,45 @@ test("a view that refuses edits while the confirmed write is outstanding leaves 
   );
   assert.match(spoken().at(-1), /^Saved\./);
 });
+
+/** the reason an unavailable control gives, as its accessible description. */
+function reasonOf(key) {
+  const id = byKey(key).getAttribute("aria-describedby");
+  return [...app.descendants()].find(
+    (element) => element.getAttribute("id") === id,
+  )?.textContent;
+}
+
+test("while a check is in flight the locked controls say they wait for the agent, then point to the review", async () => {
+  handlers.get("marshal:view")({ payload: shown() });
+  document.dispatchEvent({
+    type: "keydown",
+    key: "Escape",
+    preventDefault() {},
+  });
+  const edit = [...app.descendants()].find((element) =>
+    element.dataset.key?.startsWith("edit-pool:"),
+  );
+  await press(edit.dataset.key);
+  const id = edit.dataset.key.split(":")[1];
+  const input = byKey(`config-field:${id}:runners`);
+  input.value = "3";
+  input.dispatchEvent({ type: "input", target: input });
+  const release = holding((request) => request.check === true);
+  await press("check-config");
+  const waiting = "Waiting for the agent's answer.";
+  assert.equal(reasonOf(`remove-pool:${id}`), waiting);
+  assert.equal(reasonOf("reload-config"), waiting);
+  assert.equal(reasonOf("host-settings"), waiting);
+  assert.equal(reasonOf("discard-config"), waiting);
+  assert.equal(
+    byKey(`config-field:${id}:runners`).getAttribute("aria-disabled"),
+    "true",
+  );
+  release();
+  for (let turn = 0; turn < 4; turn += 1) await settle();
+  const review = "Finish or cancel the review first.";
+  assert.equal(reasonOf(`remove-pool:${id}`), review);
+  assert.equal(reasonOf("reload-config"), review);
+  assert.equal(reasonOf("host-settings"), review);
+});

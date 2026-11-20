@@ -170,6 +170,10 @@ export class ConfigEditor {
   get locked() {
     return this.busy || this.review !== null;
   }
+  get lockReason() {
+    if (this.busy) return "Waiting for the agent's answer.";
+    return this.review ? "Finish or cancel the review first." : null;
+  }
   /** a read may succeed while the file's syntax or form cannot be edited here. */
   get fileReason() {
     const doc = this.document;

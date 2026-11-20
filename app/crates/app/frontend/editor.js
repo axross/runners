@@ -53,9 +53,7 @@ function field(model, row, spec, prefixes) {
     prefixes.matched === null
       ? []
       : problems(model).filter((p) => p.path === at(prefixes.matched));
-  const unavailable = model.locked
-    ? "Finish or cancel the check and review first."
-    : null;
+  const unavailable = model.lockReason;
   const props = {
     id,
     class: "field config-input",
@@ -213,7 +211,7 @@ function form(model, pool) {
                   `remove-volume:${volume.id}`,
                   "Remove Volume",
                   () => model.removeVolume(pool, volume),
-                  model.locked ? "Finish or cancel the review first." : null,
+                  model.lockReason,
                   "destructive",
                 ),
               ),
@@ -222,7 +220,7 @@ function form(model, pool) {
             `add-volume:${pool.id}`,
             "Add Volume",
             () => model.addVolume(pool),
-            model.locked ? "Finish or cancel the review first." : null,
+            model.lockReason,
           ),
         )
       : null,
@@ -233,7 +231,7 @@ function form(model, pool) {
         `remove-pool:${pool.id}`,
         "Remove Pool",
         () => model.removePool(pool),
-        model.locked ? "Finish or cancel the review first." : null,
+        model.lockReason,
         "destructive",
       ),
       button(`done-pool:${pool.id}`, "Done", () => {
@@ -246,9 +244,7 @@ function form(model, pool) {
 
 /** draft cards retain the live pool's rows outside Edit and mark unapplied changes. */
 export function editorPools(model, list, ctx, liveCard) {
-  const reason = model.locked
-    ? "Finish or cancel the review first."
-    : model.fileReason;
+  const reason = model.lockReason ?? model.fileReason;
   if (!model.document || model.fileReason)
     return [
       ...list.pools.map((pool) => liveCard(pool, ctx)),
@@ -376,11 +372,7 @@ function tokenRemoval(model, repository, result) {
         : result.state === "unanswered"
           ? `The agent has not answered about removing the token for ${repository}, so it may or may not still be stored. The configuration stays saved.`
           : `The token for ${repository} was not removed. ${result.cause} The configuration stays saved.`;
-  const reason = model.busy
-    ? "Waiting for the agent's answer."
-    : model.review
-      ? "Finish or cancel the check and review first."
-      : (model.reason ?? model.fileReason);
+  const reason = model.lockReason ?? model.reason ?? model.fileReason;
   return h(
     "div",
     { class: "config-token-failure" },
@@ -627,7 +619,7 @@ export function editorBar(model) {
       "discard-config",
       "Discard",
       () => model.discard(),
-      model.locked ? "Waiting for the agent's answer." : null,
+      model.lockReason,
     ),
     button("check-config", "Apply", () => model.check(), reason, "solid"),
   );
@@ -647,7 +639,7 @@ export function editorFooter(model, configuration) {
         "reload-config",
         "Reload config.toml",
         () => model.check(true),
-        model.locked ? "Finish or cancel the review first." : model.reason,
+        model.lockReason ?? model.reason,
       ),
     ),
     h(
@@ -679,10 +671,9 @@ export function editorFooter(model, configuration) {
             model.changed();
           }
         },
-        model.locked
-          ? "Finish or cancel the review first."
-          : ((model.document ? model.fileReason : null) ??
-              model.access.read_reason),
+        model.lockReason ??
+          (model.document ? model.fileReason : null) ??
+          model.access.read_reason,
       ),
     ),
     model.hostOpen && model.host && !model.fileReason
