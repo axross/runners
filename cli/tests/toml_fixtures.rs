@@ -627,17 +627,46 @@ fn on_demand_configuration_preserves_logical_identity_and_has_one_routing_label(
             .iter()
             .any(|problem| problem.contains("pool[0].labels:"))
     );
+    // a routing label that is a valid label but outside the scale-set character set
+    // reaches the on-demand rule, and is reported once however many pools set the key
+    let second = "[[pool]]\nname = \"second\"\nrepository = \"o/other\"\nrunners = 1\nscale_set = \"axpc-other\"\n";
     let found = problems(
-        format!("{base}scale_set = \"axpc-linux\"\n")
-            .replace("routing_label = \"axpc\"", "routing_label = \"host λ\"")
+        format!("{base}scale_set = \"axpc-linux\"\n{second}")
+            .replace("routing_label = \"axpc\"", "routing_label = \"ax:pc\"")
             .as_bytes(),
         Profile::Axpc,
     );
-    assert!(
-        found
-            .iter()
-            .any(|problem| problem.contains("routing_label:"))
+    assert_eq!(
+        found,
+        [
+            "line 2: routing_label: must be ASCII letters, digits, hyphens, underscores or dots for on-demand pools"
+        ]
     );
+    // an always-on pool beside it is unaffected, and a label the general shape rule
+    // refuses never reaches the on-demand rule
+    let always_on =
+        format!("{header}[[pool]]\nname = \"logical\"\nrepository = \"o/r\"\nrunners = 1\n")
+            .replace("routing_label = \"axpc\"", "routing_label = \"ax:pc\"");
+    assert!(
+        validate_toml(always_on.as_bytes(), Profile::Axpc, None)
+            .outcome
+            .is_ok()
+    );
+    let found = problems(
+        format!("{base}scale_set = \"axpc-linux\"\n")
+            .replace(
+                "routing_label = \"axpc\"",
+                "routing_label = \"host \u{3bb}\"",
+            )
+            .as_bytes(),
+        Profile::Axpc,
+    );
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].starts_with("line 2: routing_label: must be "),
+        "{found:?}"
+    );
+    assert!(!found[0].contains("on-demand"), "{found:?}");
 }
 
 #[test]

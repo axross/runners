@@ -410,12 +410,17 @@ changes:
   the same host. It MUST NOT equal another pool's label in the same repository.
   A pool may use its own logical name as its scale-set name or use a distinct,
   non-colliding alias. The scale-set name is its only label; neither the platform
-  labels nor `routing_label` is added. Organization scope is not supported:
-  `scale_set` cannot be combined with `organization`. Mac pools reject the key at
+  labels nor `routing_label` is added. Mac pools reject the key at
   `pool[i].scale_set`, including Linux pools; native macOS always-on pools remain
   supported. Invalid names and collisions also name `pool[i].scale_set`; nonempty
   labels name `pool[i].labels`. Problems keep the existing line/column and
   no-source-value rules.
+- **`organization` is not a key yet.** A runner scale set in an organisation
+  scope is X2's work, and this schema has no `organization` pool key. Until X2
+  adds one, a pool that sets `organization` fails as
+  `pool[i].organization: unknown key`, with or without `scale_set`, and a fixture
+  pins that. X2 MUST keep `scale_set` combined with `organization` rejected when
+  it adds the key: a repository an organisation owns uses a repository pool.
 - **No token key.** The file holds no token and no token path, so `token_path` is an
   undefined key. A pool's token is not a configuration setting, and the token-file
   rules of the JSON profiles do not apply to TOML.
@@ -492,13 +497,37 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
 5. `pool` itself: missing, not an array of tables, or empty.
 6. Each pool in file order, all of one pool's problems before the next pool's, in the
    order of the JSON keys they rename, after the pool's own unknown keys:
-   `repository`, `os`, `labels`, `volumes`, `runners`, `name`, `cpus`, `memory_gb`,
-   on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
-   not booleans, `diagnostic_directory`, and last `diagnostic_raw_records` when it
-   requires `diagnostics`.
+   `repository`, `os`, `scale_set`, `labels`, `volumes`, `runners`, `name`, `cpus`,
+   `memory_gb`, on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records`
+   when they are not booleans, `diagnostic_directory`, and last
+   `diagnostic_raw_records` when it requires `diagnostics`. A pool that sets
+   `scale_set` has one of these problems at that place, the first that applies:
+   - on macOS, the rejection of the key;
+   - on Windows, a `routing_label` that is valid but outside the scale-set name's
+     character set, reported at `routing_label`. It is reported once for the whole file, in the
+     step of the first pool that sets `scale_set`, and no later pool repeats it;
+   - a value that is not a string;
+   - a name that breaks the name rule.
+
+   A valid name makes the pool on-demand, and a `labels` that is not absent or empty
+   is then a problem at `pool[i].labels`. A pool whose `scale_set` is rejected reads
+   `labels` as an always-on pool does and joins step 7 as one.
+
 7. The checks across pools, for each pool after the first against each pool before
-   it: a colliding `name`, then an ambiguous routing label. Then on macOS the budget
-   totals.
+   it, in this order:
+   1. The scale-set collisions. When the later pool has a `scale_set`, its collision
+      with the earlier pool, at the later pool's `scale_set`; then, when the earlier
+      pool has one, its collision with the later pool, at the earlier pool's
+      `scale_set`. A scale-set name collides with the other pool's `name` or
+      `scale_set` when the two are equal or one is the other followed by a hyphen,
+      ignoring ASCII case, and with a label of the other pool when both pools are in
+      the same repository and the two are equal, ignoring ASCII case.
+   2. A colliding `name`, at the later pool's `name`.
+   3. For the same repository, an ambiguous routing label. A pair where either pool
+      is on-demand is not compared here, because an on-demand pool's only label is
+      its scale-set name, which step 7.1 compares.
+
+   Then on macOS the budget totals.
 
 **Key paths and lines.** A key path is in TOML form, such as `pool[1].runners` or
 `pool[0].volumes[2].mount_path`, with pools and volumes counted from 0, as the JSON
@@ -509,6 +538,10 @@ no value to point at:
   `[[pool.volumes]]` header, `[budget]`, or line 1 for the top level.
 - A clash between pools, a name or a routing label, names the line where the later
   pool starts.
+- A scale-set collision is not one of them: it names the line of the `scale_set`
+  value of the pool it is reported on. Two on-demand pools that collide get one
+  problem each, at their own `scale_set` lines. When the other pool is always-on,
+  only the on-demand pool gets one.
 - A budget total names the line where `[budget]` starts, which is its first dotted key
   when the table is written that way.
 
@@ -4407,7 +4440,12 @@ need CRLF build it from the stored text.
   `schema_version`, `routing_label`, `[lifecycle]`, letter case, duplicates, wrong
   types including a date, nesting deeper than the parser allows, in an array, an
   inline table, a dotted key and a table header, each placed on its line, the
-  problem order, the lines, and a token-shaped value or key. Each expectation names the profile
+  problem order, the lines, and a token-shaped value or key. They also pin the
+  on-demand rules: the scale-set name and the routing label's character set, each
+  kind of scale-set collision (an equal or hyphen-extended name, against another
+  scale-set name, a logical `name` or a same-repository label, in both orders and
+  ignoring case), the `organization` key being unknown, the Mac rejection, and the
+  order and lines of the problems. Each expectation names the profile
   (`axpc` for Windows, `axmc` for macOS), the outcome, the problems whole, with their
   lines and in order, and `contains` and `lacks` strings checked against the problems
   and, for an accepted file, a description of its plan. An unknown or misspelled key

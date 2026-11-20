@@ -213,10 +213,14 @@ fn read_scale_set(
     };
     let routing = routing_label?;
     if !permitted(routing) {
-        cx.errors.add(
-            KeyPath::root().key(Key::RoutingLabel),
-            Kind::MustBe("ASCII letters, digits, hyphens, underscores or dots for on-demand pools"),
-        );
+        if !std::mem::replace(&mut cx.routing_label_reported, true) {
+            cx.errors.add(
+                KeyPath::root().key(Key::RoutingLabel),
+                Kind::MustBe(
+                    "ASCII letters, digits, hyphens, underscores or dots for on-demand pools",
+                ),
+            );
+        }
         return None;
     }
     let Value::String(name) = value else {
