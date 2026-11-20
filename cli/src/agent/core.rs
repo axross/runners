@@ -670,8 +670,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
     /// runners starts its new slots alone. A pool that waits for its token takes its
     /// new settings and goes on waiting, and a pool with no slot running, because it
     /// was skipped, is admitted and prepared again. A pool whose listener has
-    /// cleanup left, or has not ended, keeps what it has, and the other pools take
-    /// their effects all the same.
+    /// cleanup left, or has not ended, is stopped and stays stopped, shown as skipped, until
+    /// Start all, and the other pools take their effects all the same.
     async fn apply(
         &self,
         plan: &Plan,
@@ -747,14 +747,16 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             late
         };
         let ((), late) = tokio::join!(self.stop_slots(leaving, running), listeners_ended);
-        // a pool whose listener cannot be replaced yet is left as it is while the
-        // rest of the edit goes on, and the apply reports every such pool at the end
+        // a pool whose listener cannot be replaced yet stays stopped, shown as skipped, while
+        // the rest of the edit goes on, and the apply reports every such pool at the end
         let mut failures = Vec::new();
         let mut skipped = Vec::new();
         for pool in late {
-            failures.push(format!(
-                "pool {pool}: the edit's listener cleanup did not finish within the stop deadline"
-            ));
+            self.skip_stopped(
+                pool,
+                "the edit's listener cleanup did not finish within the stop deadline",
+                &mut failures,
+            );
             skipped.push(pool);
         }
         for (pool, step) in &steps {
@@ -768,9 +770,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                     .or_else(|| self.listeners.borrow().get(*pool).cloned())
                 && view.has_pending_cleanup()
             {
-                failures.push(format!(
-                    "pool {pool}: on-demand cleanup is incomplete; Start all is required before another listener starts"
-                ));
+                self.skip_stopped(pool, "on-demand cleanup is incomplete", &mut failures);
                 skipped.push(pool);
             }
         }
@@ -860,6 +860,15 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         } else {
             Err(failures.join("; "))
         }
+    }
+
+    /// the edit has stopped this pool, and its listener's cleanup keeps it from starting
+    /// again before Start all: the board shows it skipped, and the apply reports it.
+    fn skip_stopped(&self, pool: &str, cause: &str, failures: &mut Vec<String>) {
+        let why = format!("{cause}; Start all is required before another listener starts");
+        self.board
+            .set_pool(pool, PoolState::Skipped(format!("stopped; {why}")));
+        failures.push(format!("pool {pool}: {why}"));
     }
 
     /// what the apply does to a pool, from its effect and whether it runs slots or

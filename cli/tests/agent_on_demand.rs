@@ -710,7 +710,81 @@ async fn an_edit_skips_a_pool_with_incomplete_cleanup_and_still_applies_the_othe
                 .unwrap();
             assert_eq!(logical.repository, "o/r");
             assert!(logical.on_demand.as_ref().unwrap().cleanup_incomplete);
+            // the edit stopped it, so it is not shown as running
+            assert_eq!(logical.state, "skipped");
+            assert!(
+                logical
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("Start all is required")),
+                "{:?}",
+                logical.reason
+            );
+            assert_eq!(logical.runners_up, 0);
             assert_eq!(service.state.lock().unwrap().registrations.len(), 1);
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_whose_listener_outlasts_the_stop_deadline_leaves_the_pool_stopped_until_start_all()
+{
+    let service = Service::start(0).await;
+    service.state.lock().unwrap().close_delay = Duration::from_secs(30);
+    let rig = rig(&service);
+    rig.times.set(StopTimes {
+        exit_deadline: EXIT_DEADLINE,
+        ..StopTimes::default()
+    });
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("the idle listener", |snapshot| {
+                snapshot.pools[0]
+                    .on_demand
+                    .as_ref()
+                    .is_some_and(|listener| listener.state == "listening")
+            })
+            .await;
+            rig.write_toml(&CONFIG.replace("axpc-jobs", "axpc-other"));
+            let revision = conn.ok("config_read").await["revision"].clone();
+            conn.call("config_reload", json!({"revision": revision}))
+                .await
+                .unwrap();
+            let snapshot = conn
+                .until("the edit's failure", |snapshot| {
+                    snapshot
+                        .configuration
+                        .last_apply
+                        .as_ref()
+                        .is_some_and(|apply| apply.outcome == "failed")
+                })
+                .await;
+            let reason = snapshot
+                .configuration
+                .last_apply
+                .as_ref()
+                .unwrap()
+                .reason
+                .clone()
+                .unwrap();
+            assert!(
+                reason.contains("did not finish within the stop deadline; Start all is required"),
+                "{reason}"
+            );
+            let pool = &snapshot.pools[0];
+            assert_eq!(pool.state, "skipped");
+            assert!(
+                pool.reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("Start all is required")),
+                "{:?}",
+                pool.reason
+            );
+            assert_eq!(pool.runners_up, 0);
+            // nothing starts a replacement listener while the old one is still closing
+            assert_eq!(service.state.lock().unwrap().owners.len(), 1);
             conn.ok("quit").await;
         })
         .await;

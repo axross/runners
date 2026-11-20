@@ -2487,11 +2487,12 @@ renewing, its credentials. Cleanup shares the existing stop deadline.
 
 **Editing the configuration.** An edit that restarts or removes an on-demand pool
 waits for that pool's listener to end within the stop deadline. A pool whose
-listener has not ended, or has cleanup left, keeps what it has, and the other
-pools take their effects all the same. The edit then reports each such pool, as
-`pool <name>: the edit's listener cleanup did not finish within the stop deadline`
-or `pool <name>: on-demand cleanup is incomplete; Start all is required before
-another listener starts`.
+listener has not ended, or has cleanup left, is stopped by the edit and stays
+stopped, shown as skipped, until Start all, and the other pools take their
+effects all the same. The edit then reports each such pool, as `pool <name>: the
+edit's listener cleanup did not finish within the stop deadline; Start all is
+required before another listener starts` or `pool <name>: on-demand cleanup is
+incomplete; Start all is required before another listener starts`.
 
 **Tokens and requests.** On-demand pools use the same repository-scoped
 fine-grained token, Administration: Read and write, with Actions: read optional for
