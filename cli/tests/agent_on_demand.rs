@@ -476,6 +476,61 @@ async fn a_scale_set_on_a_mac_reload_is_invalid_and_the_service_sees_nothing() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_sleep_stops_an_on_demand_pool_beside_an_always_on_one_and_cleans_exactly() {
+    let service = Service::start(2).await;
+    let rig = rig(&service);
+    rig.write_toml(&format!(
+        "{CONFIG}\n[[pool]]\nname = \"side\"\nrepository = \"o/s\"\nrunners = 1\n"
+    ));
+    rig.store_token("o", "s", TOKEN);
+    let (rig, service) = (&rig, &service);
+    let (_, took) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("every runner", |snapshot| snapshot.runners_up == 3)
+                .await;
+            rig.mark_running();
+            let began = tokio::time::Instant::now();
+            rig.signals.sleep();
+            let snapshot = conn.until_state("stopped").await;
+            let took = began.elapsed();
+            assert_eq!(snapshot.agent.reason.unwrap().code, "slept");
+            assert_eq!(
+                snapshot.pools[0].on_demand.as_ref().unwrap().state,
+                "stopped"
+            );
+            conn.ok("quit").await;
+            took
+        })
+        .await;
+    {
+        let state = service.state.lock().unwrap();
+        assert!(state.registrations.is_empty(), "{:?}", state.registrations);
+        assert_eq!(state.jit_names.len(), 2);
+        assert_eq!(state.closed, 1);
+        assert!(state.active_session.is_none());
+    }
+    let stopped: Vec<String> = rig
+        .backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            Call::StopContainers(request) => Some(request.names),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    let stopped_of = |prefix: &str| {
+        stopped
+            .iter()
+            .filter(|name| name.starts_with(prefix))
+            .count()
+    };
+    assert_eq!(stopped_of("axpc-jobs-"), 2, "{stopped:?}");
+    assert_eq!(stopped_of("side-"), 1, "{stopped:?}");
+    assert!(took < Duration::from_secs(2), "the stop took {took:?}");
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn initial_statistics_start_without_a_job_event_and_failed_cleanup_stays_visible() {
     let service = Service::start(1).await;
     service.state.lock().unwrap().sent = Some(1);
