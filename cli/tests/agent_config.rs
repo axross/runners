@@ -789,6 +789,21 @@ async fn on_a_stopped_agent_an_image_is_written_unchecked_and_build_uses_it() {
         .await;
 }
 
+/// whether this process can create a file in a folder set to 0o500, which the kernel
+/// refuses unless the process holds CAP_DAC_OVERRIDE, as root does in a cloud container.
+#[cfg(unix)]
+fn can_write_into_a_read_only_folder() -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let beside = support::TempDir::new();
+    let folder = beside.path().join("read-only-probe");
+    std::fs::create_dir(&folder).expect("the read-only probe folder could not be created");
+    let written = std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o500))
+        .map(|()| std::fs::File::create(folder.join("probe")).is_ok());
+    let _ = std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700));
+    let _ = std::fs::remove_dir_all(&folder);
+    written.expect("the read-only probe folder could not be made read-only")
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refused() {
     let rig = rig();
@@ -848,12 +863,24 @@ async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refus
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let folder = rig.root.path();
-                let mode = std::fs::metadata(folder).unwrap().permissions().mode();
-                std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o500)).unwrap();
-                let refused = edit("pool[1].runners", json!(2)).await;
-                std::fs::set_permissions(folder, std::fs::Permissions::from_mode(mode)).unwrap();
-                assert_eq!(refused.0, "config_unwritable");
+                if can_write_into_a_read_only_folder() {
+                    assert!(
+                        std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true"),
+                        "the read-only-folder step cannot run here: this process can write into a read-only folder"
+                    );
+                    eprintln!(
+                        "note: the read-only-folder step is skipped because this process can write into a read-only folder"
+                    );
+                } else {
+                    let folder = rig.root.path();
+                    let mode = std::fs::metadata(folder).unwrap().permissions().mode();
+                    std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o500))
+                        .unwrap();
+                    let refused = edit("pool[1].runners", json!(2)).await;
+                    std::fs::set_permissions(folder, std::fs::Permissions::from_mode(mode))
+                        .unwrap();
+                    assert_eq!(refused.0, "config_unwritable");
+                }
             }
             assert_eq!(file(rig), TWO_POOLS_TOML);
             // the same sink written by hand: a reload marks the file invalid, keeps the

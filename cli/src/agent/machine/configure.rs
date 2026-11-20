@@ -660,3 +660,27 @@ fn read_result(
         full
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use crate::edit::Operation;
+
+    use super::*;
+
+    #[test]
+    fn a_write_failure_from_the_edit_layer_is_reported_as_config_unwritable() {
+        let refused = edit_error(EditError::Io {
+            path: PathBuf::from("config.toml"),
+            operation: Operation::Write,
+            kind: io::ErrorKind::PermissionDenied,
+        });
+        assert_eq!(refused.code, ErrorCode::ConfigUnwritable);
+        assert!(
+            refused.message.starts_with("config.toml was not written: "),
+            "{}",
+            refused.message
+        );
+    }
+}
