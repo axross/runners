@@ -471,6 +471,7 @@ export class ConfigEditor {
       this.problemsInResult = true;
       const answer = await this.invoke("configuration", { request });
       if (this.reason || answer.value.applies === this.access.stopped) {
+        this.problemsInResult = false;
         this.notify(STATE_CHANGED);
         return;
       }

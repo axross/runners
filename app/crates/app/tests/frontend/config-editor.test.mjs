@@ -791,6 +791,37 @@ for (const code of ["lost_contact", "not_answered", "busy"]) {
   });
 }
 
+test("a check answered after the state changed keeps the problems the read listed", async () => {
+  installDocument();
+  const { model } = editor();
+  model.invoke = async () => {
+    model.update({ ...access, reason: "Starting" });
+    return {
+      kind: "change",
+      value: { effects: [], repositories_released: [], applies: true },
+    };
+  };
+  const problem = { path: "pool[1].runners", message: "must be at most 64" };
+  model.loaded({
+    ...structuredClone(doc),
+    status: "invalid",
+    problems: [problem],
+  });
+  const [first, second] = model.pools;
+  model.removePool(first);
+  model.editing = second.id;
+  await model.check();
+  assert.equal(model.review, null);
+  assert.match(model.message, /changed.*[Cc]heck/);
+  assert.equal(
+    [...editorNotice(model).descendants()].some((node) =>
+      node.textContent?.includes("pool[1].runners: must be at most 64"),
+    ),
+    true,
+  );
+  assert.equal(invalidField(model, second, "runners"), "true");
+});
+
 test("a removed pool remains visible until its runners leave the live snapshot", () => {
   installDocument();
   const { model } = editor();
