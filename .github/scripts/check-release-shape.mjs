@@ -858,147 +858,84 @@ function checkPlainJob(id, script) {
   }
 }
 
-const FEED_CHECK_NAME = "marshal-feed-check";
-const FEED_CHECK_DIRECTORY = "update-tools";
-const CHECK_LINE = `check="\${RUNNER_TEMP}/${FEED_CHECK_DIRECTORY}/${FEED_CHECK_NAME}"`;
-const HASH_LINE = 'line="$(sha256sum "$check")"';
+// the lines that check, hash and compare the feed checker, as the release record
+// writes them. assemble-signed holds them once, together and in this order.
+const FEED_CHECK_BLOCK = [
+  'check="${RUNNER_TEMP}/update-tools/marshal-feed-check"',
+  'line="$(sha256sum "$check")"',
+  'if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then',
+  'echo "error: marshal-feed-check has SHA-256 ${line%% *}, not the ${FEED_CHECK_SHA256} update-tool built" >&2',
+  "exit 1",
+  "fi",
+  'chmod 0755 "$check"',
+];
+const FEED_CHECK_RUN = /^"\$check" dist\/latest\.json ([^|;&]+) \|\| exit 1$/;
+// no other script line of assemble-signed holds any of these, in a command, a
+// quoted message or a comment.
+const FEED_CHECK_WORDS = {
+  check: /\bcheck\b/,
+  FEED_CHECK_SHA256: /\bFEED_CHECK_SHA256\b/,
+  "update-tools": /update-tools/,
+  "marshal-feed-check": /marshal-feed-check/,
+};
 
 /**
- * a shell line without its unquoted trailing comment, as `raw`, and with the
- * contents of its quoted strings emptied, as `bare`, so that words inside an
- * echoed message are not read as commands.
+ * records an assemble-signed that does not hold the hashing block exactly once,
+ * does not run the feed check once, after it, with unsigned/SHA256SUMS among
+ * its arguments, or names the checker, its hash or its directory on any other
+ * line. it compares text, so harmless text that holds one of those words is
+ * refused too.
  */
-function shellLine(line) {
-  let raw = "";
-  let bare = "";
-  let quote = "";
-  for (let index = 0; index < line.length; index++) {
-    const char = line[index];
-    if (quote === "") {
-      if (char === "#" && (index === 0 || /\s/.test(line[index - 1]))) break;
-      if (char === '"' || char === "'") quote = char;
-      bare += char;
-    } else if (char === quote) {
-      quote = "";
-      bare += char;
-    } else if (char === "\\" && quote === '"') {
-      raw += char + (line[index + 1] ?? "");
-      index++;
-      continue;
-    }
-    raw += char;
-  }
-  return { raw, bare };
-}
-
-/**
- * whether a shell line gives the variable a value, in the forms the shape
- * check knows: `name=` and `name+=`, with or without an export, declare, local
- * or readonly prefix; a `${name=}` or `${name:=}` expansion; read, mapfile,
- * readarray or getopts in command position naming it; `printf -v`; and `for`.
- * FEED_CHECK_SHA256 is also read in a quoted `"FEED_CHECK_SHA256=..."`, which
- * is how it would reach a later step through GITHUB_ENV. it does not follow
- * eval, a sourced file or an indirect name, and ignores words inside quotes
- * and an unquoted trailing comment.
- */
-function assignsVariable(line, name) {
-  const { raw, bare } = shellLine(line);
-  const named = `(?<![$\\w{])${name}\\b`;
-  const command = "(^|[;&|({]|\\b(then|do|while|else))\\s*(IFS=\\S*\\s+)?";
-  return (
-    [
-      new RegExp(`(^|[\\s;&|({])${name}\\+?=`),
-      new RegExp(
-        `${command}(read|mapfile|readarray|getopts)\\b[^;&|]*${named}`,
-      ),
-      new RegExp(`\\bprintf\\s+-v\\s+${name}\\b`),
-      new RegExp(`\\bfor\\s+${name}\\s+in\\b`),
-    ].some((pattern) => pattern.test(bare)) ||
-    new RegExp(`\\$\\{${name}:?=`).test(raw) ||
-    (name === "FEED_CHECK_SHA256" && /["']FEED_CHECK_SHA256\+?=/.test(raw))
-  );
-}
-
-/**
- * records a feed checker whose guard can be undone from inside the script:
- * `check` assigned anywhere but once, as the pinned `check=` line before the
- * hash; the checker's path or directory written anywhere else;
- * FEED_CHECK_SHA256 assigned;
- * `line` reassigned between the hash and the comparison; the checker referred
- * to before the comparison, whether made executable, run or read; or a
- * mismatch that does not exit 1.
- */
-function checkFeedCheckHash(scripts, where) {
+function checkFeedCheckBlock(scripts, where) {
   const lines = scripts.split("\n").map((line) => line.trim());
-  const code = [...lines.keys()].filter(
-    (index) => !lines[index].startsWith("#"),
+  const blocks = lines.flatMap((_, index) =>
+    FEED_CHECK_BLOCK.every((text, offset) => lines[index + offset] === text)
+      ? [index]
+      : [],
   );
-  const raw = (index) => shellLine(lines[index]).raw;
-  const checkAt = lines.indexOf(CHECK_LINE);
-  if (
-    code.some(
-      (index) => index !== checkAt && assignsVariable(lines[index], "check"),
-    )
-  )
-    problem(
-      `${where} assigns check other than once, to the feed checker's path`,
-    );
-  if (code.some((index) => assignsVariable(lines[index], "FEED_CHECK_SHA256")))
-    problem(
-      `${where} assigns FEED_CHECK_SHA256 in a script; only update-tool's output may set it`,
-    );
-  if (
-    code.some(
-      (index) =>
-        index !== checkAt &&
-        [`/${FEED_CHECK_NAME}`, `/${FEED_CHECK_DIRECTORY}`].some((text) =>
-          raw(index).includes(text),
-        ),
-    )
-  )
-    problem(
-      `${where} names the feed checker's path or directory outside the check= line`,
-    );
-  const hashed = lines.indexOf(HASH_LINE);
-  const compared = lines.findIndex(
-    (line, index) =>
-      index > hashed &&
-      line === 'if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then',
+  const runs = lines.flatMap((line, index) =>
+    FEED_CHECK_RUN.test(line) ? [index] : [],
   );
-  const closing = compared === -1 ? -1 : lines.indexOf("fi", compared);
-  if (hashed === -1 || closing === -1) {
+  if (blocks.length !== 1) {
     problem(
-      `${where} does not compare the feed check's SHA-256 with FEED_CHECK_SHA256`,
+      `${where}: the hashing block is not exactly as the release record writes it`,
+    );
+  } else {
+    for (const run of runs) {
+      if (run < blocks[0])
+        problem(`${where} runs the feed check before the hashing block`);
+    }
+    const others = lines.filter(
+      (_, index) =>
+        (index < blocks[0] || index >= blocks[0] + FEED_CHECK_BLOCK.length) &&
+        !runs.includes(index),
+    );
+    for (const [word, pattern] of Object.entries(FEED_CHECK_WORDS)) {
+      if (others.some((line) => pattern.test(line)))
+        problem(
+          `${where} has the word ${word} outside the hashing block and the feed check run`,
+        );
+    }
+  }
+  if (runs.length === 0) {
+    problem(
+      `${where} does not run the feed check on dist/latest.json with || exit 1`,
     );
     return;
   }
-  if (checkAt === -1 || checkAt > hashed)
-    problem(
-      `${where} does not set check to the feed checker's path before hashing it`,
-    );
+  if (runs.length > 1)
+    problem(`${where} runs the feed check on dist/latest.json more than once`);
+  const argumentsOfRun = lines[runs[0]].match(FEED_CHECK_RUN)[1];
   if (
-    code.some(
-      (index) =>
-        index > hashed &&
-        index <= closing &&
-        assignsVariable(lines[index], "line"),
-    )
+    !argumentsOfRun
+      .split(/\s+/)
+      .some(
+        (argument) => argument.replaceAll('"', "") === "unsigned/SHA256SUMS",
+      )
   )
     problem(
-      `${where} reassigns line between hashing the feed check and comparing its SHA-256`,
+      `${where} does not run the feed check with unsigned/SHA256SUMS among its arguments`,
     );
-  if (!lines.slice(compared + 1, closing).includes("exit 1"))
-    problem(
-      `${where}: a feed check whose SHA-256 is not FEED_CHECK_SHA256 does not exit 1`,
-    );
-  const used = lines.findIndex(
-    (line, index) =>
-      index !== hashed &&
-      !line.startsWith("#") &&
-      /\$\{?check\b/.test(shellLine(line).raw),
-  );
-  if (used !== -1 && used < closing)
-    problem(`${where} uses the feed check before comparing its SHA-256`);
 }
 
 /**
@@ -1014,7 +951,7 @@ function checkFeed() {
     .join("\n");
   if (!scripts.includes(".github/scripts/write-update-feed.sh"))
     problem(`${where} does not write the feed with write-update-feed.sh`);
-  checkFeedCheckHash(scripts, where);
+  checkFeedCheckBlock(scripts, where);
   // the value must be written exactly, on the step that holds the comparison.
   const hashStep = scriptsOf(assemble).find((step) =>
     step.run.includes('"$FEED_CHECK_SHA256"'),
@@ -1026,24 +963,6 @@ function checkFeed() {
     problem(
       `${where}: FEED_CHECK_SHA256 is not \`${FEED_CHECK_OUTPUT}\`, update-tool's output`,
     );
-  const feedCheck = scripts.match(
-    /^[\t ]*"\$check" dist\/latest\.json ([^|;&\n]+) \|\| exit 1[\t ]*$/m,
-  );
-  if (!feedCheck) {
-    problem(
-      `${where} does not run the feed check on dist/latest.json with || exit 1`,
-    );
-  } else if (
-    !feedCheck[1]
-      .split(/\s+/)
-      .some(
-        (argument) => argument.replaceAll('"', "") === "unsigned/SHA256SUMS",
-      )
-  ) {
-    problem(
-      `${where} does not run the feed check with unsigned/SHA256SUMS among its arguments`,
-    );
-  }
   if (!scripts.includes(".github/scripts/assemble-release.sh signed"))
     problem(`${where} does not run assemble-release.sh in signed mode`);
   if (JSON.stringify(release).includes("--public-key"))

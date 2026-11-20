@@ -9,12 +9,11 @@
 # permissions or its place in the chain; in sign-update, a checkout, another
 # action, a package manager, a fetcher, a tool called by name, an unmarked
 # script or a `${{ }}` in one, or a signer run another way; a feed checked
-# against another key, by a checker that is used in any way before its SHA-256
-# is compared with update-tool's, or whose SHA-256 is compared with another
-# value than update-tool's output, whose `check` is assigned or whose path or
-# directory is written outside its one `check=` line, whose FEED_CHECK_SHA256 is
-# assigned in the script, whose `line` is reassigned between its hash and the
-# comparison, or without unsigned/SHA256SUMS; a step condition that could skip a
+# against another key, without the checker's hashing block exactly once, as
+# written, or with its run before it or not exactly once, with the word check,
+# FEED_CHECK_SHA256, update-tools or marshal-feed-check on any other line
+# (quoted or in a comment too), against a SHA-256 from another update-tool
+# output, or without unsigned/SHA256SUMS; a step condition that could skip a
 # check; a write to SHA256SUMS in the build's assemble job; PATH, BASH_ENV, ENV
 # or SYSTEM_BIN set in release.yaml; and a way past a failed job, whatever the
 # case of its status function. a change the test cannot find in the files fails
@@ -227,59 +226,70 @@ expect_fail "assemble-signed that ignores a failed feed check" "does not run the
   "$release" '"windows-x86_64=dist/${windows_msi}"' '"windows-x86_64=dist/${windows_msi}" || true'
 expect_fail "assemble-signed that checks the feed against another key" "the release checks the feed against the committed key" \
   "$release" '"$check" dist/latest.json' '"$check" --public-key other.pub dist/latest.json'
-feed_check_hash=$'          line="$(sha256sum "$check")"\n          if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then\n            echo "error: marshal-feed-check has SHA-256 ${line%% *}, not the ${FEED_CHECK_SHA256} update-tool built" >&2\n            exit 1\n          fi\n'
-expect_fail "assemble-signed that does not compare the feed check's SHA-256" "does not compare the feed check's SHA-256 with FEED_CHECK_SHA256" \
-  "$release" "$feed_check_hash" ""
-expect_fail "assemble-signed that compares the feed check's SHA-256 with another value" "does not compare the feed check's SHA-256 with FEED_CHECK_SHA256" \
-  "$release" '!= "$FEED_CHECK_SHA256" ]]' '!= "$VERSION" ]]'
-expect_fail "assemble-signed that goes on after a feed check with another SHA-256" "a feed check whose SHA-256 is not FEED_CHECK_SHA256 does not exit 1" \
-  "$release" 'update-tool built" >&2'$'\n            exit 1' 'update-tool built" >&2'$'\n            exit 0'
-expect_fail "assemble-signed that makes the feed check executable before comparing its SHA-256" "uses the feed check before comparing its SHA-256" \
-  "$release" "$feed_check_hash" "" \
-  "$release" 'chmod 0755 "$check"'$'\n' 'chmod 0755 "$check"'$'\n'"$feed_check_hash"
+check_line=$'          check="${RUNNER_TEMP}/update-tools/marshal-feed-check"\n'
 hash_line=$'          line="$(sha256sum "$check")"\n'
-expect_fail "assemble-signed that does not hash the feed check" "does not compare the feed check's SHA-256 with FEED_CHECK_SHA256" \
-  "$release" "$hash_line" ""
+chmod_line=$'          chmod 0755 "$check"\n'
+block="${check_line}${hash_line}"$'          if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then\n            echo "error: marshal-feed-check has SHA-256 ${line%% *}, not the ${FEED_CHECK_SHA256} update-tool built" >&2\n            exit 1\n          fi\n'"${chmod_line}"
+block_problem="the hashing block is not exactly as the release record writes it"
+echo "-- the feed checker's hashing block --"
+expect_fail "assemble-signed that compares the feed check's SHA-256 with another value" "$block_problem" \
+  "$release" '!= "$FEED_CHECK_SHA256" ]]' '!= "$VERSION" ]]'
+expect_fail "assemble-signed that hashes another file" "$block_problem" \
+  "$release" 'sha256sum "$check")"' 'sha256sum -b "$check")"'
+expect_fail "assemble-signed that goes on after a feed check with another SHA-256" "$block_problem" \
+  "$release" 'update-tool built" >&2'$'\n            exit 1' 'update-tool built" >&2'$'\n            exit 0'
+expect_fail "assemble-signed with a line inside the block" "$block_problem" \
+  "$release" "$hash_line" "${hash_line}          line=x"$'\n'
+expect_fail "assemble-signed that makes the feed check executable before hashing it" "$block_problem" \
+  "$release" "$chmod_line" "" \
+  "$release" "$hash_line" "${chmod_line}${hash_line}"
+expect_fail "assemble-signed that sets check after hashing" "$block_problem" \
+  "$release" "${check_line}${hash_line}" "${hash_line}${check_line}"
+expect_fail "assemble-signed without the block" "$block_problem" \
+  "$release" "$block" ""
+expect_fail "assemble-signed with the block twice" "$block_problem" \
+  "$release" "$block" "${block}${block}"
+expect_fail "assemble-signed with the block broken up" "$block_problem" \
+  "$release" "$chmod_line" $'          true\n'"$chmod_line"
+
+echo "-- the feed check run --"
+expect_fail "assemble-signed that runs the feed check before the block" "runs the feed check before the hashing block" \
+  "$release" "$guarded_feed_check" "" \
+  "$release" "$block" "          ${guarded_feed_check}"$'\n'"${block}"
+expect_fail "assemble-signed that runs the feed check twice" "runs the feed check on dist/latest.json more than once" \
+  "$release" "$guarded_feed_check" "${guarded_feed_check}"$'\n          '"${guarded_feed_check}"
 expect_fail "assemble-signed that compares with another update-tool output" "FEED_CHECK_SHA256 is not \`\${{ needs.update-tool.outputs.feed_check_sha256 }}\`" \
   "$release" 'FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.feed_check_sha256 }}' 'FEED_CHECK_SHA256: ${{ needs.update-tool.outputs.tauri_cli_sha256 }}'
-expect_fail "assemble-signed that runs the feed check as braced check before comparing its SHA-256" "uses the feed check before comparing its SHA-256" \
-  "$release" "$hash_line" $'          "${check}" --help >/dev/null || true\n'"$hash_line"
-expect_fail "assemble-signed that runs the feed check as plain check before comparing its SHA-256" "uses the feed check before comparing its SHA-256" \
-  "$release" "$hash_line" $'          "$check" --help >/dev/null || true\n'"$hash_line"
-after_hash() { printf '%s          %s\n' "$hash_line" "$1"; }
-expect_fail "assemble-signed that sets FEED_CHECK_SHA256 from the hash" "assigns FEED_CHECK_SHA256 in a script" \
-  "$release" "$hash_line" "$(after_hash 'FEED_CHECK_SHA256="${line%% *}"')"$'\n'
-expect_fail "assemble-signed that writes FEED_CHECK_SHA256 to GITHUB_ENV" "assigns FEED_CHECK_SHA256 in a script" \
-  "$release" "$hash_line" "$(after_hash 'echo "FEED_CHECK_SHA256=x" >> "$GITHUB_ENV"')"$'\n'
-expect_fail "assemble-signed that reassigns line after the hash" "reassigns line between hashing the feed check and comparing its SHA-256" \
-  "$release" "$hash_line" "$(after_hash 'line="${FEED_CHECK_SHA256}  x"')"$'\n'
-expect_fail "assemble-signed that reassigns check after the comparison" "assigns check other than once" \
-  "$release" 'chmod 0755 "$check"'$'\n' $'check=/tmp/evil\n          chmod 0755 "$check"\n'
-expect_fail "assemble-signed that reassigns check to another tool after the hash" "assigns check other than once" \
-  "$release" "$hash_line" "$(after_hash 'check="${RUNNER_TEMP}/update-tools/cargo-tauri"')"$'\n'
-for assignment in 'check+=x' 'export check=x' 'declare -r check=x' 'local check=x' 'read -r check <<< x' 'mapfile -t check <<< x' 'readarray check <<< x' 'readonly check=x' 'getopts "a" check' 'IFS= read -r check <<< x' 'if true; then read check; fi' 'printf -v check %s x' 'for check in /tmp/evil; do' ': "${check:=x}"'; do
-  expect_fail "assemble-signed that assigns check with ${assignment}" "assigns check other than once" \
-    "$release" 'chmod 0755 "$check"'$'\n' "${assignment}"$'\n          chmod 0755 "$check"\n'
-done
-expect_fail "assemble-signed that makes the feed checker executable by path before hashing it" "names the feed checker's path or directory outside the check= line" \
-  "$release" "$hash_line" $'          chmod 0755 "${RUNNER_TEMP}/update-tools/marshal-feed-check"\n'"$hash_line"
-expect_fail "assemble-signed that makes the feed checker executable by glob before hashing it" "names the feed checker's path or directory outside the check= line" \
-  "$release" "$hash_line" $'          chmod 0755 "${RUNNER_TEMP}"/update-tools/*\n'"$hash_line"
-expect_fail "assemble-signed that makes the feed checker executable by a split word before hashing it" "names the feed checker's path or directory outside the check= line" \
-  "$release" "$hash_line" $'          chmod 0755 "${RUNNER_TEMP}/update-tools/marshal-feed-"check\n'"$hash_line"
-check_line=$'          check="${RUNNER_TEMP}/update-tools/marshal-feed-check"\n'
-expect_fail "assemble-signed that hashes the feed check before setting check" "does not set check to the feed checker's path before hashing it" \
-  "$release" "${check_line}${hash_line}" "${hash_line}${check_line}"
-expect_pass_with "assemble-signed with a message that says read the check" \
-  "$release" 'chmod 0755 "$check"'$'\n' $'echo "cannot read the check" >&2 || true\n          chmod 0755 "$check"\n'
-expect_pass_with "assemble-signed with a trailing comment that says read check" \
-  "$release" 'chmod 0755 "$check"'$'\n' $'chmod 0755 "$check" # read check\n'
-expect_pass_with "assemble-signed with a message that says check=ok" \
-  "$release" 'chmod 0755 "$check"'$'\n' $'echo "check=ok"\n          chmod 0755 "$check"\n'
-expect_pass_with "assemble-signed with a message that says read this line between the hash and the comparison" \
-  "$release" "$hash_line" "$(after_hash 'echo "could not read this line"')"$'\n'
-expect_fail "assemble-signed that never sets check before hashing" "does not set check to the feed checker's path before hashing it" \
-  "$release" $'          check="${RUNNER_TEMP}/update-tools/marshal-feed-check"\n' $'          check=/tmp/evil\n'
+
+echo "-- the words the rest of the job does not hold --"
+# outside <command> <word>: the command after the block must fail naming the word.
+outside() {
+  expect_fail "assemble-signed with ${1} after the block" "has the word ${2} outside the hashing block and the feed check run" \
+    "$release" "$chmod_line" "${chmod_line}          ${1}"$'\n'
+}
+outside 'check=/tmp/evil' check
+outside 'getopts "a" check' check
+outside '"${RUNNER_TEMP}/x/marshal-feed-"check' check
+outside 'export FEED_CHECK_SHA256=x' FEED_CHECK_SHA256
+outside 'echo "FEED_CHECK_SHA256=x" >> "$GITHUB_ENV"' FEED_CHECK_SHA256
+outside 'chmod 0755 "${RUNNER_TEMP}"/update-tools/*' update-tools
+outside 'echo marshal-feed-check' marshal-feed-check
+outside 'echo "the check failed"' check
+outside 'echo "FEED_CHECK_SHA256 is unset"' FEED_CHECK_SHA256
+outside 'echo "update-tools"' update-tools
+outside 'echo "marshal-feed-check"' marshal-feed-check
+outside 'true # check' check
+outside 'true # FEED_CHECK_SHA256' FEED_CHECK_SHA256
+outside 'true # update-tools' update-tools
+outside 'true # marshal-feed-check' marshal-feed-check
+expect_pass_with "assemble-signed with a message that says checksum" \
+  "$release" "$chmod_line" "${chmod_line}"$'          echo "checksum ok"\n'
+expect_pass_with "assemble-signed with a message that says checked" \
+  "$release" "$chmod_line" "${chmod_line}"$'          echo "checked"\n'
+expect_pass_with "assemble-signed with a message that says line=1" \
+  "$release" "$chmod_line" "${chmod_line}"$'          echo "line=1"\n'
+expect_pass_with "assemble-signed with the later hash of the feed repeated" \
+  "$release" 'line="$(sha256sum dist/latest.json)"' $'line="$(sha256sum dist/latest.json)"\n          line="$(sha256sum dist/latest.json)"'
 expect_fail "assemble-signed that runs the feed check without unsigned/SHA256SUMS" "does not run the feed check with unsigned/SHA256SUMS among its arguments" \
   "$release" '"$VERSION" unsigned/SHA256SUMS "windows-x86_64=dist/${windows_msi}" || exit 1' '"$VERSION" "windows-x86_64=dist/${windows_msi}" || exit 1'
 expect_fail "assemble-signed in unsigned mode" "does not run assemble-release.sh in signed mode" \
