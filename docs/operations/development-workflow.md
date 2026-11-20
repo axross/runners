@@ -703,11 +703,11 @@ Do these once, before the first dispatch:
    release is published, and at that release afterwards. Once a release exists after
    `v0.1.1`, the exclusion has no effect and may be dropped.
 
-   The first line of output names where the check starts. A line that starts with
-   `NO PUBLISHED RELEASE` means the start is a `v*` tag other than `v0.1.1` with no
-   published release, so the check would not start at the last release. Do not
-   dispatch: find out who pushed that tag and why, as for a commit with no merged
-   pull request.
+   The `start:` line names where the check starts. A line that starts with
+   `NO PUBLISHED RELEASE` instead means the start is a `v*` tag other than
+   `v0.1.1` with no published release, so the check would not start at the last
+   release. Do not dispatch: find out who pushed that tag and why, as for a
+   commit with no merged pull request.
 
    Each line names a commit and the pull request that merged it. A line that ends
    in `NO MERGED PULL REQUEST` is a commit pushed to main directly, which the
@@ -863,14 +863,15 @@ that tree, do not appear. The notes describe app and later work, not the content
 of the command-line files.
 
 The breaking-marker rule is unchanged. A breaking change merged after `v0.1.1` makes
-a later plan job print `1.0.0`, and until the recovery release is published, so does
+a later plan job print `1.0.0`, and until the recovery release is published, so can
 a `v0.1.1` that is missing or on another commit. When a plan job prints a version
 the maintainer did not expect, the maintainer cancels the run before approving
-`sign-macos` and decides then how to proceed. A release rule that maps a breaking
-change to a minor, and a version input on the dispatch, are not in place: the base
-tag changes no release configuration or workflow, and the release configuration
-keeps the default mapping. How a later release stays on `0.x` after another breaking
-change is the maintainer's decision when a plan job prints `1.0.0`, not made now.
+`sign-macos`, which is before any job pushes a tag, and decides then how to proceed.
+A release rule that maps a breaking change to a minor, and a version input on the
+dispatch, are not in place: the base tag changes no release configuration or
+workflow, and the release configuration keeps the default mapping. How a later
+release stays on `0.x` after another breaking change is the maintainer's decision
+when a plan job prints `1.0.0`, not made now.
 
 `release/package.json` pins `conventional-changelog-conventionalcommits` to the
 `9.x` line. `@semantic-release/release-notes-generator` renders notes with

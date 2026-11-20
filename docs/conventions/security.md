@@ -756,8 +756,13 @@ Residual risks, accepted:
   deleting it, can make the next plan print `1.0.0`; once a later release exists,
   `v0.1.1` no longer affects the version. The check in
   [Each Release](../operations/development-workflow.md#each-release) names such a
-  tag before a dispatch. Immutable releases lock only the tags of published
-  releases.
+  tag only when the check would start at it, and never `v0.1.1`, which it skips.
+  The version is guarded instead by the read-back of `v0.1.1` in
+  [CLI Recovery](../operations/cli-recovery.md#release-the-fixed-cli) before the
+  recovery dispatch, and by the maintainer cancelling, before approving
+  `sign-macos`, a run whose plan prints a version
+  [Version Rules](../operations/development-workflow.md#version-rules) does not
+  expect. Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
   check still tie the file to one commit on main, but no longer to a version. The
