@@ -259,4 +259,91 @@ mod tests {
         assert_eq!(status, expected);
         assert!(serde_json::to_vec(&status).unwrap().len() <= bound);
     }
+
+    fn organization(name: &str, runners: usize) -> OrganizationStatus {
+        OrganizationStatus {
+            organization: name.to_string(),
+            runner_group: "group".to_string(),
+            runners: (0..runners)
+                .map(|index| OrganizationRunnerStatus {
+                    name: format!("{name}-runner-{index}"),
+                    github: "idle".to_string(),
+                })
+                .collect(),
+            ..OrganizationStatus::default()
+        }
+    }
+
+    fn scale_set(index: usize) -> ScaleSetStatus {
+        ScaleSetStatus {
+            pool: format!("pool-{index}"),
+            repository: "owner/repository".to_string(),
+            name: format!("axpc-pool-{index}"),
+            ..ScaleSetStatus::default()
+        }
+    }
+
+    /// what is left after a cut: organization runners, repository runners, scale sets,
+    /// organization rows, then the three omission counts.
+    fn left(status: &GithubStatus) -> ([usize; 4], [u32; 3]) {
+        (
+            [
+                status
+                    .organizations
+                    .iter()
+                    .map(|organization| organization.runners.len())
+                    .sum(),
+                status
+                    .repositories
+                    .iter()
+                    .map(|repository| repository.runners.len())
+                    .sum(),
+                status.scale_sets.len(),
+                status.organizations.len(),
+            ],
+            [
+                status.omitted_runners,
+                status.omitted_scale_sets,
+                status.omitted_organizations,
+            ],
+        )
+    }
+
+    #[test]
+    fn entries_are_left_out_one_at_a_time_in_a_fixed_order_and_each_kind_is_counted() {
+        let mut status = GithubStatus {
+            organizations: vec![organization("a", 1), organization("b", 2)],
+            repositories: vec![RepositoryStatus {
+                repository: "o/a".to_string(),
+                runners: (0..2).map(runner).collect(),
+                ..RepositoryStatus::default()
+            }],
+            scale_sets: (0..2).map(scale_set).collect(),
+            ..GithubStatus::default()
+        };
+        let mut steps = vec![left(&status)];
+        loop {
+            let size = serde_json::to_vec(&status).unwrap().len();
+            status.fit(size - 1);
+            if serde_json::to_vec(&status).unwrap().len() == size {
+                break;
+            }
+            steps.push(left(&status));
+        }
+        assert_eq!(
+            steps,
+            [
+                ([3, 2, 2, 2], [0, 0, 0]),
+                ([2, 2, 2, 2], [1, 0, 0]),
+                ([1, 2, 2, 2], [2, 0, 0]),
+                ([0, 2, 2, 2], [3, 0, 0]),
+                ([0, 1, 2, 2], [4, 0, 0]),
+                ([0, 0, 2, 2], [5, 0, 0]),
+                ([0, 0, 1, 2], [5, 1, 0]),
+                ([0, 0, 0, 2], [5, 2, 0]),
+                ([0, 0, 0, 1], [5, 2, 1]),
+                ([0, 0, 0, 0], [5, 2, 2]),
+            ]
+        );
+    }
 }
