@@ -8,11 +8,11 @@
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::time::{Instant, timeout};
 
@@ -326,6 +326,48 @@ mod http {
         }
     }
 
+    /// reads one request and returns its method, path and body.
+    async fn read_request(stream: &mut TcpStream) -> (String, String, Vec<u8>) {
+        try_read_request(stream).await.unwrap()
+    }
+
+    /// like `read_request`, but `None` for a client that went away before it finished.
+    async fn try_read_request(stream: &mut TcpStream) -> Option<(String, String, Vec<u8>)> {
+        let mut bytes = Vec::new();
+        let mut buffer = [0; 4096];
+        let end = loop {
+            let count = stream
+                .read(&mut buffer)
+                .await
+                .ok()
+                .filter(|count| *count > 0)?;
+            bytes.extend_from_slice(&buffer[..count]);
+            assert!(bytes.len() < 1024 * 1024);
+            if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                break end + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&bytes[..end]).into_owned();
+        let mut first = head.lines().next().unwrap().split(' ');
+        let method = first.next().unwrap().to_owned();
+        let path = first.next().unwrap().to_owned();
+        let size = head
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .map_or(0, |(_, size)| size.trim().parse::<usize>().unwrap());
+        let mut body = bytes[end..].to_vec();
+        while body.len() < size {
+            let count = stream
+                .read(&mut buffer)
+                .await
+                .ok()
+                .filter(|count| *count > 0)?;
+            body.extend_from_slice(&buffer[..count]);
+        }
+        Some((method, path, body))
+    }
+
     struct Fake {
         listener: TcpListener,
         base: String,
@@ -348,34 +390,9 @@ mod http {
                     .await
                     .unwrap()
                     .unwrap();
-                let mut bytes = Vec::new();
-                let mut buffer = [0; 4096];
-                let end = loop {
-                    let count = stream.read(&mut buffer).await.unwrap();
-                    assert!(count > 0);
-                    bytes.extend_from_slice(&buffer[..count]);
-                    assert!(bytes.len() < 1024 * 1024);
-                    if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
-                        break end + 4;
-                    }
-                };
-                let head = String::from_utf8_lossy(&bytes[..end]);
-                let mut first = head.lines().next().unwrap().split(' ');
-                let method = first.next().unwrap().to_owned();
-                let path = first.next().unwrap().to_owned();
+                let (method, path, _) = read_request(&mut stream).await;
                 assert_eq!(method, reply.method);
                 assert!(path.contains(reply.path), "{path} lacks {}", reply.path);
-                let size = head
-                    .lines()
-                    .filter_map(|line| line.split_once(':'))
-                    .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                    .map_or(0, |(_, size)| size.trim().parse::<usize>().unwrap());
-                let mut body = bytes[end..].to_vec();
-                while body.len() < size {
-                    let count = stream.read(&mut buffer).await.unwrap();
-                    assert!(count > 0);
-                    body.extend_from_slice(&buffer[..count]);
-                }
                 self.requests.borrow_mut().push((method, path));
                 if let Some(signal) = reply.signal {
                     signal.send_replace(true);
@@ -477,6 +494,239 @@ mod http {
                 changed.changed().await.unwrap();
             }
         }
+    }
+
+    /// the fake clock's long-poll hold, as the service holds an idle poll.
+    const POLL_HOLD: Duration = Duration::from_secs(50);
+
+    const SESSION_ID: &str = "01234567-89ab-cdef-0123-456789abcdef";
+
+    /// a service that answers by path, not by script, for runs whose length the clock sets;
+    /// it handles one request at a time, and an idle poll waits `POLL_HOLD` on that clock.
+    struct Service<'c> {
+        listener: TcpListener,
+        base: String,
+        clock: &'c ControlledClock,
+        /// how long each admin credential it issues lives, from the clock's now.
+        admin_lifetime: Duration,
+        requests: RefCell<Vec<(String, String)>>,
+        /// the messages the queue redelivers at once until the session acknowledges them.
+        message: RefCell<Option<Value>>,
+        acknowledged: std::cell::Cell<bool>,
+    }
+
+    impl<'c> Service<'c> {
+        async fn new(clock: &'c ControlledClock, admin_lifetime: Duration) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            Self {
+                base: format!("http://{}", listener.local_addr().unwrap()),
+                listener,
+                clock,
+                admin_lifetime,
+                requests: RefCell::new(Vec::new()),
+                message: RefCell::new(None),
+                acknowledged: std::cell::Cell::new(false),
+            }
+        }
+
+        fn client(&self) -> Client {
+            Client::new(Some(&self.base), HttpLimits::default())
+                .unwrap()
+                .with_exchange_retry_delay(Duration::from_millis(1))
+        }
+
+        fn count(&self, method: &str, part: &str) -> usize {
+            self.requests
+                .borrow()
+                .iter()
+                .filter(|(m, path)| m == method && path.contains(part))
+                .count()
+        }
+
+        async fn serve(&self) {
+            loop {
+                let (mut stream, _) = self.listener.accept().await.unwrap();
+                let Some((method, path, body)) = try_read_request(&mut stream).await else {
+                    continue;
+                };
+                self.requests
+                    .borrow_mut()
+                    .push((method.clone(), path.clone()));
+                let answered = match self.answer(&method, &path, &body) {
+                    Some(answered) => answered,
+                    // an idle poll is held for the hold's length, and dropped with its client
+                    None => {
+                        let mut byte = [0; 1];
+                        tokio::select! {
+                            () = self.clock.sleep(POLL_HOLD) => (202, Value::Null),
+                            _ = stream.read(&mut byte) => continue,
+                        }
+                    }
+                };
+                let (status, body) = answered;
+                let body = if status == 202 || status == 204 {
+                    String::new()
+                } else {
+                    body.to_string()
+                };
+                let response = format!(
+                    "HTTP/1.1 {status} Reply\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+        }
+
+        /// `None` is an idle poll, which the caller holds.
+        fn answer(&self, method: &str, path: &str, body: &[u8]) -> Option<(u16, Value)> {
+            let route = path.split('?').next().unwrap();
+            let answer = if route.ends_with("registration-token") {
+                (201, json!({"token": "<registration-placeholder>"}))
+            } else if route.ends_with("runner-registration") {
+                let exp = (self.clock.now() + self.admin_lifetime)
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                (
+                    200,
+                    json!({"url": format!("{}/tenant", self.base), "token": jwt(exp)}),
+                )
+            } else if route.starts_with("/repos/") && route.ends_with("/actions/runners") {
+                (200, json!({"total_count": 0, "runners": []}))
+            } else if route.ends_with("runnerscalesets") {
+                (
+                    200,
+                    json!({"count": 1, "value": [{"id": 23, "name": "example-linux", "runnerGroupId": 1, "labels": [{"name": "example-linux"}]}]}),
+                )
+            } else if route.ends_with("sessions")
+                || route.contains("/sessions/") && method == "PATCH"
+            {
+                (
+                    200,
+                    json!({"sessionId": SESSION_ID, "messageQueueUrl": format!("{}/queue", self.base), "messageQueueAccessToken": "<queue-placeholder>", "statistics": statistics_json(0)}),
+                )
+            } else if route.contains("/sessions/") && method == "DELETE" {
+                (204, Value::Null)
+            } else if route.ends_with("acquirejobs") {
+                let ids: Vec<u64> = serde_json::from_slice(body).unwrap();
+                (200, json!({"count": ids.len(), "value": ids}))
+            } else if route.starts_with("/queue/") && method == "DELETE" {
+                self.acknowledged.set(true);
+                (204, Value::Null)
+            } else if route == "/queue" {
+                let message = self.message.borrow().clone();
+                (200, message.filter(|_| !self.acknowledged.get())?)
+            } else {
+                panic!("unexpected request {method} {path}");
+            };
+            Some(answer)
+        }
+    }
+
+    /// an unsigned token of the shape the client reads its expiry from.
+    fn jwt(exp: u64) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let claims = format!("{{\"exp\":{exp}}}");
+        let mut payload = String::new();
+        for chunk in claims.as_bytes().chunks(3) {
+            let bits = chunk.iter().enumerate().fold(0_u32, |bits, (index, byte)| {
+                bits | (u32::from(*byte) << (16 - 8 * index))
+            });
+            for index in 0..=chunk.len() {
+                payload.push(char::from(
+                    ALPHABET[((bits >> (18 - 6 * index)) & 63) as usize],
+                ));
+            }
+        }
+        format!("header.{payload}.signature")
+    }
+
+    /// moves the clock a little at a time until `horizon` has passed, letting the pool settle
+    /// after each step, so the sim does not run ahead of the tasks it drives.
+    async fn run_for(clock: &ControlledClock, service: &Service<'_>, horizon: Duration) {
+        let end = clock.now() + horizon;
+        while clock.now() < end {
+            clock.advance(Duration::from_secs(10));
+            loop {
+                let seen = service.requests.borrow().len();
+                tokio::time::sleep(Duration::from_millis(4)).await;
+                if service.requests.borrow().len() == seen {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// what an idle pool did to the service, and where it stood, after `horizon` of the clock.
+    struct IdleRun {
+        registrations: usize,
+        polls: usize,
+        state: ListenerState,
+        reason: Option<String>,
+    }
+
+    /// runs a pool with nothing to do against a service whose admin credentials live `lifetime`.
+    async fn idle_pool(lifetime: Duration, horizon: Duration) -> IdleRun {
+        let clock = ControlledClock::new();
+        let service = Service::new(&clock, lifetime).await;
+        let client = service.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(1);
+        let log = MemoryLog::default();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
+        let view = timeout(Duration::from_secs(60), async {
+            tokio::select! {
+                () = service.serve() => unreachable!(),
+                view = async {
+                    let (_, view) = tokio::join!(coordinator.run(), async {
+                        run_for(&clock, &service, horizon).await;
+                        let view = coordinator.view();
+                        channels.stop.send_replace(true);
+                        view
+                    });
+                    view
+                } => view,
+            }
+        })
+        .await
+        .unwrap();
+        IdleRun {
+            registrations: service.count("POST", "registration-token"),
+            polls: service.count("GET", "/queue"),
+            state: view.state,
+            reason: view.reason,
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_credential_due_again_at_once_backs_off_instead_of_renewing_in_a_loop() {
+        let run = idle_pool(Duration::from_secs(100), Duration::from_secs(3600)).await;
+        assert_eq!(run.state, ListenerState::BackingOff);
+        assert_eq!(
+            run.reason.as_deref(),
+            Some("scale-set connection renewal required")
+        );
+        assert_eq!(run.polls, 0, "a pool that cannot register polls for no job");
+        // 5 s doubling to 300 s fits about seventeen attempts in an hour
+        assert!(
+            (2..=25).contains(&run.registrations),
+            "{} registration tokens in an hour",
+            run.registrations
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn renewals_of_a_short_lived_credential_are_never_closer_than_the_floor() {
+        let run = idle_pool(Duration::from_secs(135), Duration::from_secs(3600)).await;
+        assert_eq!(run.state, ListenerState::Listening);
+        // one renewal per 30 s at most, where the lifetime alone would ask for one per 15 s
+        assert!(
+            (20..=125).contains(&run.registrations),
+            "{} registration tokens in an hour",
+            run.registrations
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -11,9 +11,10 @@ use crate::runtime::token::TokenSource;
 use crate::runtime::worker::Backoff;
 use crate::scaleset::{Error, ErrorKind, Message};
 
-use super::{Coordinator, Credentials, ListenerState, PendingSession};
+use super::{
+    Coordinator, Credentials, ListenerState, MIN_REFRESH_WAIT, PendingSession, REFRESH_BEFORE,
+};
 
-const REFRESH_BEFORE: Duration = Duration::from_secs(120);
 pub(crate) const CLOSE_WITHIN: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -210,7 +211,8 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             .expires_at()
             .duration_since(self.clock.now())
             .unwrap_or_default()
-            .saturating_sub(REFRESH_BEFORE);
+            .saturating_sub(REFRESH_BEFORE)
+            .max(MIN_REFRESH_WAIT);
         let max_capacity = *self.controls.capacity.borrow();
         let result = tokio::select! {
             result = self.client.poll(&credentials.session, *last_processed, max_capacity) => result,
@@ -370,7 +372,21 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             return Ok(current);
         }
         let pat = self.token(fatal_store).map_err(Failure::Store)?;
-        self.renew_for_pat(current, &pat).await
+        let renewed = self.renew_for_pat(current, &pat).await?;
+        // a credential that is due again at once cannot register a runner, and renewing it
+        // each cycle would spend the shared token's budget; it backs off like any failure.
+        if renewed
+            .connection
+            .expires_at()
+            .duration_since(self.clock.now())
+            .unwrap_or_default()
+            <= REFRESH_BEFORE
+        {
+            return Err(Failure::Api(super::error(
+                ErrorKind::ConnectionRenewalRequired,
+            )));
+        }
+        Ok(renewed)
     }
 
     /// PATCH keeps the queue/session identity when an unexpired credential was produced by an old PAT.

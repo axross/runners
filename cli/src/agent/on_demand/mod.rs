@@ -25,6 +25,12 @@ use demand::Demand;
 pub(crate) use listener::{CLOSE_WITHIN, Failure};
 pub(crate) use recovery::{PendingSession, PendingSessionCell, SessionRecovery};
 
+/// the admin credential is renewed once this little of its lifetime remains.
+pub(super) const REFRESH_BEFORE: Duration = Duration::from_secs(120);
+
+/// two renewals are never closer than this, whatever lifetime or clock the credential shows.
+pub(super) const MIN_REFRESH_WAIT: Duration = Duration::from_secs(30);
+
 /// logical identity stays distinct from the scale set's routing/runner identity.
 pub struct Pool {
     pub owner: String,
@@ -399,8 +405,12 @@ pub(crate) fn retry_delay(error: &Error, delay: Duration, now: SystemTime) -> Du
 }
 
 pub(crate) fn protocol_error() -> Error {
+    error(ErrorKind::Protocol)
+}
+
+fn error(kind: ErrorKind) -> Error {
     Error {
-        kind: ErrorKind::Protocol,
+        kind,
         status: None,
         retry_after: None,
         rate_reset: None,
