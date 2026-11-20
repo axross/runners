@@ -124,6 +124,8 @@ uses `npm ci --ignore-scripts`. `browser.json` in that directory pins the Chromi
 archive's version, HTTPS URL and SHA-256, computed from the real download.
 Preparation MUST verify that checksum before extracting or running the browser.
 Refresh the controller, browser pin and lock together, then rerun the render gate.
+To regenerate the lock after changing the manifest, use
+`npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
 OS libraries are prepared only on the disposable GitHub-hosted Check runner;
 the worktree preparation task installs no system package and the gate downloads
 nothing. The fake bridge has no credential, live agent or configuration-file access.

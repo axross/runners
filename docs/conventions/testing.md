@@ -48,18 +48,16 @@ Run from the repository root.
 | `mise run check:app-lock`           | Fail when the app's lockfile resolves a crate `marshal-cli` builds with, for Windows, macOS or Linux, to another version than the CLI's                                                                                                                                                                                                                                                                                            |
 | `mise run check`                    | Run every gate above except the writing `format` and the rendering gate; this is what the Check job's `Run Checks` step runs                                                                                                                                                                                                                                                                                                       |
 
-The Linux x64 rendering gate needs one explicit preparation step:
-`mise run prepare:app-render`. It installs test-only npm dependencies from
-`app/crates/app/tests/render/package-lock.json`, with lifecycle scripts disabled,
-and checksum-verifies Chromium before extracting it under `app/target/render/browser-<version>/`.
-It installs no OS libraries. CI prepares those on its disposable GitHub-hosted
-runner only. `mise run test:app-render` runs the browser gate alone. `mise run check`
-does not include it, so a checkout without the browser, and any host other than
-Linux x64, can still run `check`. The Check job runs the gate as its own step
-after `mise run check` and keeps its screenshots and results from
-`app/target/render/output/`. [App](../operations/app.md#the-configuration-editor)
-describes the checks and their limits. To regenerate the test-only lock after
-changing its manifest, use `npm install --package-lock-only --ignore-scripts --prefix app/crates/app/tests/render`.
+The Linux x64 rendering gate needs one explicit preparation step,
+`mise run prepare:app-render`;
+[Development Setup](../operations/development-setup.md#rendering-gate) says what
+it installs and needs. `mise run test:app-render` runs the browser gate alone.
+`mise run check` does not include it, so a checkout without the browser, and any
+host other than Linux x64, can still run `check`. The Check job prepares the gate
+and runs it as its own step after `mise run check`;
+[Development Workflow](../operations/development-workflow.md) says what else that
+job does. [App](../operations/app.md#the-configuration-editor) describes the
+checks and their limits.
 
 The installed copies under `.claude/skills/` are generated and are excluded from
 formatting and linting. [Agent Skills](../operations/agent-skills.md) owns

@@ -657,15 +657,13 @@ draft persistence across views and hides, and Cancel/Esc focus. These Node tests
 use a document stand-in: they establish neither rendered layout nor native web
 view or screen-reader behaviour.
 
-`mise run test:app-render`, which `check` does not include and the Check job runs as
-its own step, renders the bundled page in checksum-pinned Chromium on Linux x64.
-Prepare it first with `mise run prepare:app-render`; that needs Python 3 to
-extract the verified archive, but installs no OS package. The test-only
-`playwright-core` dependency is locked under `app/crates/app/tests/render/` and
-installs with lifecycle scripts disabled. It is not bundled with the app. Its
-public browser API avoids maintaining a second browser driver; the full Playwright
-test runner and Puppeteer are not needed. The Check job alone prepares Chromium's
-OS libraries on its disposable GitHub-hosted runner.
+`mise run test:app-render` renders the bundled page in the pinned Chromium on
+Linux x64. [Development Setup](./development-setup.md#rendering-gate) says how to
+prepare it, [Testing](../conventions/testing.md) where it runs, and
+[Security](../conventions/security.md) how its controller and browser are
+pinned. It drives `playwright-core`'s browser API, not the Playwright test runner
+or Puppeteer, and writes its screenshots and measurements under
+`app/target/render/output/`.
 
 The renderer uses `dump_view --editor-profile axpc|axmc` over recorded running,
 stopped, transition and lost-contact snapshots, and a fake Tauri command bridge
