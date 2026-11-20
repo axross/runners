@@ -252,7 +252,7 @@ impl View<'_> {
             {
                 continue;
             }
-            let key = TokenKey::of(&listener.owner, &listener.repository);
+            let key = TokenKey::for_pool(&listener.target());
             snapshot.pools.push(PoolInfo {
                 name: listener.logical_name.clone(),
                 repository: key.to_string(),
@@ -306,10 +306,17 @@ impl View<'_> {
         pools: &RowsByName<'_, PoolState>,
         slots: &RowsByName<'_, SlotState>,
     ) -> PoolInfo {
-        let key = self.listeners.get(&entry.name).map_or_else(
-            || TokenKey::for_pool(&entry.target),
-            |listener| TokenKey::for_pool(&listener.target()),
-        );
+        let listener_key = self
+            .listeners
+            .get(&entry.name)
+            .map(|listener| TokenKey::for_pool(&listener.target()));
+        // a repository pool edited to another repository shows the one its cleanup
+        // still serves; a listener's target is always a repository, so an
+        // organisation entry never takes its key.
+        let key = match (&entry.target, &listener_key) {
+            (PoolTarget::Repository { .. }, Some(key)) => key.clone(),
+            _ => TokenKey::for_pool(&entry.target),
+        };
         let restarting = self.inner.applying.as_ref().is_some_and(|applying| {
             applying
                 .effects
@@ -410,7 +417,11 @@ impl View<'_> {
             slots: entry.slots,
             runners,
             diagnostics: self.diagnostics(entry),
-            on_demand: self.on_demand(&entry.name, entry.scale_set.as_ref(), &key),
+            on_demand: self.on_demand(
+                &entry.name,
+                entry.scale_set.as_ref(),
+                listener_key.as_ref().unwrap_or(&key),
+            ),
         }
     }
 
@@ -581,6 +592,7 @@ impl View<'_> {
 mod tests {
     use super::*;
     use crate::profile::Profile;
+    use crate::token_store::TokenStore;
     use crate::validate::Plan;
 
     fn entry() -> Entry {
@@ -617,6 +629,22 @@ mod tests {
     }
 
     fn snapshot(board: &Board, macos_golden: Option<Option<String>>) -> Snapshot {
+        snapshot_with(
+            board,
+            macos_golden,
+            entry(),
+            &BTreeMap::new(),
+            &StoreTokens::new(None),
+        )
+    }
+
+    fn snapshot_with(
+        board: &Board,
+        macos_golden: Option<Option<String>>,
+        entry: Entry,
+        listeners: &BTreeMap<String, ListenerView>,
+        tokens: &StoreTokens,
+    ) -> Snapshot {
         let mut inner = Inner::new(Phase::Running);
         inner.macos_golden = macos_golden;
         inner.loaded = Some(Loaded {
@@ -626,7 +654,7 @@ mod tests {
                 plan: Plan {
                     profile: Profile::Axmc,
                     image_name: None,
-                    entries: vec![entry()],
+                    entries: vec![entry],
                     budget: None,
                     settings: None,
                 },
@@ -636,19 +664,92 @@ mod tests {
             problems: Vec::new(),
         });
         let retained = Retained::default();
-        let tokens = StoreTokens::new(None);
         View {
             version: "test",
             inner: &inner,
             config_path: "config.toml",
             board,
             retained: &retained,
-            tokens: &tokens,
-            listeners: &BTreeMap::new(),
+            tokens,
+            listeners,
             left: &[],
             now: SystemTime::now(),
         }
         .snapshot()
+    }
+
+    fn listener_of(owner: &str, repository: &str) -> ListenerView {
+        ListenerView {
+            logical_name: "pool".to_string(),
+            owner: owner.to_string(),
+            repository: repository.to_string(),
+            scale_set: "axpc-pool".to_string(),
+            state: ListenerState::Stopped,
+            status: None,
+            refused_host: None,
+            reason: None,
+            statistics: None,
+            active_reservations: 0,
+            occupied_capacity: 0,
+            incomplete_registrations: Vec::new(),
+            session_cleanup_incomplete: true,
+        }
+    }
+
+    /// a token store that holds a token for the repository `owner/repository` only,
+    /// and whose latest read of it failed.
+    fn tokens_failing_for_the_listener_repository() -> StoreTokens {
+        let store = std::sync::Arc::new(crate::token_store::MemoryTokenStore::default());
+        let repository = TokenKey::of("owner", "repository");
+        store
+            .set(
+                &repository,
+                &crate::runtime::secret::Secret::new("t".to_string()),
+            )
+            .unwrap();
+        let tokens = StoreTokens::new(Some(store.clone()));
+        tokens.refresh([&repository, &TokenKey::parse_organization("octo").unwrap()]);
+        store.fail_with(Some("keychain locked"));
+        let _ = tokens.read(&repository);
+        tokens
+    }
+
+    #[test]
+    fn an_organization_entry_takes_its_card_from_the_entry_and_not_from_a_same_named_listener() {
+        let mut organization = entry();
+        organization.target = PoolTarget::Organization {
+            organization: "octo".to_string(),
+            runner_group: "builders".to_string(),
+        };
+        let listeners = BTreeMap::from([("pool".to_string(), listener_of("owner", "repository"))]);
+        let tokens = tokens_failing_for_the_listener_repository();
+        let snapshot = snapshot_with(&Board::default(), None, organization, &listeners, &tokens);
+        let card = &snapshot.pools[0];
+        assert_eq!(card.repository, "");
+        assert_eq!(card.organization.as_deref(), Some("octo"));
+        assert_eq!(card.runner_group.as_deref(), Some("builders"));
+        assert!(!card.has_token);
+        // the cleanup still runs against the repository, so its store error shows
+        let on_demand = card.on_demand.as_ref().unwrap();
+        assert!(on_demand.cleanup_incomplete);
+        assert!(on_demand.store_error_kind.is_some());
+    }
+
+    #[test]
+    fn a_repository_entry_shows_the_repository_a_waiting_listener_still_serves() {
+        let mut edited = entry();
+        edited.target = PoolTarget::Repository {
+            owner: "owner".to_string(),
+            repository: "other".to_string(),
+        };
+        let listeners = BTreeMap::from([("pool".to_string(), listener_of("owner", "repository"))]);
+        let tokens = tokens_failing_for_the_listener_repository();
+        let snapshot = snapshot_with(&Board::default(), None, edited, &listeners, &tokens);
+        let card = &snapshot.pools[0];
+        assert_eq!(card.repository, "owner/repository");
+        assert_eq!(card.organization, None);
+        assert!(card.has_token);
+        assert!(card.on_demand.as_ref().unwrap().store_error_kind.is_some());
     }
 
     #[test]
