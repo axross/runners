@@ -240,28 +240,31 @@ impl View<'_> {
     /// joins credential rows across pools without merging an organisation key with
     /// a repository key, even when both begin with the same login.
     fn token_rows(&self, entries: &[Entry], snapshot: &mut Snapshot) {
-        let mut by_key: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
+        let mut repositories: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
+        let mut organizations: BTreeMap<TokenKey, Vec<String>> = BTreeMap::new();
         for entry in entries {
+            let by_key = match entry.target {
+                PoolTarget::Repository { .. } => &mut repositories,
+                PoolTarget::Organization { .. } => &mut organizations,
+            };
             by_key
                 .entry(TokenKey::for_pool(&entry.target))
                 .or_default()
                 .push(entry.name.clone());
         }
-        for (key, pools) in by_key {
-            let has_token = self.tokens.has_token(&key);
-            if key.as_str().contains('/') {
-                snapshot.repositories.push(RepositoryInfo {
-                    has_token,
-                    repository: key.to_string(),
-                    pools,
-                });
-            } else {
-                snapshot.organizations.push(OrganizationInfo {
-                    has_token,
-                    organization: key.to_string(),
-                    pools,
-                });
-            }
+        for (key, pools) in repositories {
+            snapshot.repositories.push(RepositoryInfo {
+                has_token: self.tokens.has_token(&key),
+                repository: key.to_string(),
+                pools,
+            });
+        }
+        for (key, pools) in organizations {
+            snapshot.organizations.push(OrganizationInfo {
+                has_token: self.tokens.has_token(&key),
+                organization: key.to_string(),
+                pools,
+            });
         }
     }
 

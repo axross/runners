@@ -99,6 +99,11 @@ impl TokenKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    #[must_use]
+    pub fn is_organization(&self) -> bool {
+        !self.0.contains('/')
+    }
 }
 
 impl fmt::Display for TokenKey {

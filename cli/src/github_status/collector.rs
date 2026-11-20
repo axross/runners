@@ -440,7 +440,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             repositories: self
                 .shown
                 .iter()
-                .filter(|key| key.as_str().contains('/'))
+                .filter(|key| !key.is_organization())
                 .filter_map(|key| self.scopes.get(key))
                 .map(Scope::status)
                 .collect(),
@@ -504,7 +504,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
         if let Some(repository) = self.scopes.get_mut(key) {
             repository.checked = Some(Instant::now());
         }
-        let organization = !key.as_str().contains('/');
+        let organization = key.is_organization();
         let prefix = if organization { "orgs" } else { "repos" };
         let path = format!(
             "/{prefix}/{}/actions/runners?per_page={RUNNERS_PER_PAGE}",
@@ -996,11 +996,11 @@ fn next_try(backoff: &mut Duration, level: Level, now_ms: u64) -> (Duration, Ins
 fn describe(key: &TokenKey, cause: Cause) -> &'static str {
     match cause {
         Cause::TokenRejected => "GitHub rejected the token",
-        Cause::NotFound if !key.as_str().contains('/') => {
+        Cause::NotFound if key.is_organization() => {
             "GitHub cannot find the organisation with its token"
         }
         Cause::NotFound => "GitHub cannot find the repository with its token",
-        Cause::Moved if !key.as_str().contains('/') => "the organisation has moved on GitHub",
+        Cause::Moved if key.is_organization() => "the organisation has moved on GitHub",
         Cause::Moved => "the repository has moved on GitHub",
         Cause::Unreachable => "GitHub could not be reached",
         Cause::Error => "GitHub answered with an error",
