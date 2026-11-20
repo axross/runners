@@ -4773,24 +4773,24 @@ Updates Come Only From the Signed Feed, owns the release-verification trust rule
   more argument, with `sign-update` signing the Mac archive beside the MSI.
 
 **The feed's round trip in the merge checks.** The `Update Feed Round Trip` job of
-`merge-checks.yaml` runs on a push to main and on pull requests that change the
-release workflows, their scripts, the `tauri-cli` files, `app/Cargo.lock`, the feed
-crate or the app's updater; on others it reports success without building. It builds
-the tools with `update-tool`'s script, then
-[`feed-round-trip.sh`](../../.github/scripts/tests/feed-round-trip.sh) makes a
-throwaway key for the run, and
+`merge-checks.yaml` runs on a push to main and on pull requests that change the release
+workflows, their scripts, the `tauri-cli` files, `app/Cargo.lock`, the feed crate or the
+app's updater; on others it reports success without building. It builds the tools with
+`update-tool`'s script, then
+[`feed-round-trip.sh`](../../.github/scripts/tests/feed-round-trip.sh) makes a throwaway
+key for the run, and
 [`run-sign-update.sh`](../../.github/scripts/tests/run-sign-update.sh) runs
 `sign-update`'s own scripts, extracted from `release.yaml` with
-[`extract-run-scripts.mjs`](../../.github/scripts/tests/extract-run-scripts.mjs), on
-the dry run's MSI with that key. The feed check passes the feed `write-update-feed.sh`
+[`extract-run-scripts.mjs`](../../.github/scripts/tests/extract-run-scripts.mjs), on the
+dry run's MSI with that key. The feed check passes the feed `write-update-feed.sh`
 writes, and refuses, with the diagnostic for each cause, a changed MSI, another key's
 signature, a signature for another version, and the throwaway signature against the
-committed key; the job's output is
-searched for the key and its password. `Update Feed In The App On Windows` then runs
-the app's `tests/update_feed.rs`, which gives the same feed and MSI to the updater
-plugin's own `Update::verify` under the app's updater configuration with the throwaway
-key: it accepts them, refuses a changed MSI and another key as signature check
-failures, and refuses another version as a signed version mismatch.
+committed key; the job's output is searched for the key and its password.
+`Update Feed In The App On Windows` then runs the app's `tests/update_feed.rs`, which
+gives the same feed and MSI to the updater plugin's own `Update::verify` under the app's
+updater configuration with the throwaway key: it accepts them, refuses a changed MSI and
+another key as signature check failures, and refuses another version as a signed version
+mismatch.
 
 ### Signing, Held for M2
 
@@ -4988,7 +4988,8 @@ Every extension MUST keep `verify-macos` bounded at 20 minutes when present and
 - `tauri-cli` and its locked dependencies through Cargo;
 - `update-tool`'s checksum-verified crate archive;
 - the pinned `cargo-deny` that `update-tool` installs through the SHA-pinned
-  `jdx/mise-action`, at `mise.toml`'s version and checked against `mise.lock`.
+  `jdx/mise-action`, at `mise.toml`'s version, with its download URL and checksum in
+  `mise.lock`.
 
 W1 MUST change `assemble-release.sh` to take the version, the directory and the
 build's two SHA-256 values. W4's feed pull request gives it an
