@@ -207,12 +207,10 @@ under **Settings, Developer settings, Fine-grained personal access tokens**:
   section of [Security](../conventions/security.md#a-token-carries-only-its-pool-kinds-permissions)
   names. Nothing else.
 
-For an organisation-owned repository, keep one token per repository; do not use
-one token for several repositories in the organisation. An organisation that
-blocks fine-grained tokens does not appear as a resource owner. When the
-organisation requires approval, a member who is not an owner must have an owner
-approve the token before starting the pool. A pending token can read public
-resources only; an organisation owner's token needs no separate approval.
+An organisation that blocks fine-grained tokens does not appear as a resource
+owner. When the organisation requires approval, a member who is not an owner must
+have an owner approve the token before starting the pool. A pending token can read
+public resources only; an organisation owner's token needs no separate approval.
 
 Choose an expiration within the organisation's maximum lifetime policy. GitHub
 defaults that policy to 366 days, and the organisation can shorten it. GitHub
@@ -222,9 +220,10 @@ refuses registration when a token is:
 - Awaiting required approval.
 - Refused by the organisation's policy.
 
-The pool reports the registration failure with GitHub's answer, scrubbed of the
-token. Check the token's settings and organisation policy on GitHub rather than
-assuming every failure means the token's value is wrong. GitHub's
+A runner whose registration fails shows "Backing off" with GitHub's answer,
+scrubbed of the token, and the agent's log keeps the same answer. Check the
+token's settings and organisation policy on GitHub rather than assuming every
+failure means the token's value is wrong. GitHub's
 [token creation steps](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
 and [organisation token policies](https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/setting-a-personal-access-token-policy-for-your-organization)
 describe those controls.
@@ -1073,7 +1072,9 @@ Hub. No inbound port is needed.
 - **A slot logging registration failures:** the message carries GitHub's status. A
   401 or 404 usually means the token expired or lacks Administration access to that
   repository; replace it with **Replace Token** in the Tokens tab, as
-  The Fine-Grained Token section describes. Other slots
+  The Fine-Grained Token section describes. For an organisation-owned repository,
+  the token may instead await an owner's approval or break the organisation's
+  policy; check The Fine-Grained Token section before replacing it. Other slots
   continue their own registration loops, but a shared-token problem can affect
   every pool for that repository.
 

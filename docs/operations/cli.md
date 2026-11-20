@@ -1412,6 +1412,11 @@ a response without one is a failure. The client also:
 - it fails a connection after 10 s and a whole request after 30 s;
 - it fails a response larger than 1 MiB, whether the size is declared or streamed.
 
+The repository's owner may be a personal account or an organisation; the request and
+the pool's one-repository token are the same for both. The Fine-Grained Token section
+of [Windows Runner Host](./windows-runner-host.md) gives the token steps for an
+organisation-owned repository.
+
 Each failure goes into the slot's backoff. The error text has the token replaced by
 `<token>`, whitespace collapsed, and is cut to 500 characters followed by `...`.
 The token is read again from its file at every

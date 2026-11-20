@@ -382,11 +382,11 @@ entry is a pool of `slots` runners for one repository:
   [CLI](./cli.md#profiles) has every rule, its message, and the migration from the
   earlier rules.
 
-For an organisation-owned repository, follow The Fine-Grained Token section of
-[Windows Runner Host](./windows-runner-host.md). Enter the token on that
-repository's row in the Mac window's Tokens tab. The Token Store section of
-[CLI](./cli.md) names its Keychain item. Unlocking the keychain does not resolve
-a refusal from GitHub; check the token on GitHub using those steps.
+For an organisation-owned repository, the token's resource owner is the
+organisation, as The Fine-Grained Token section of
+[Windows Runner Host](./windows-runner-host.md) describes. The Token Store section
+of [CLI](./cli.md) names the token's Keychain item. Unlocking the keychain does not
+resolve a refusal from GitHub; check the token on GitHub using those steps.
 
 The last command-line release's `validate --profile axmc` checks a JSON file on any
 machine.
