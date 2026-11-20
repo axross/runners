@@ -133,6 +133,7 @@ export class ConfigEditor {
     this.editing = null;
     this.hostOpen = false;
     this.busy = false;
+    this.writing = false;
     this.review = null;
     this.applyResult = null;
     this.error = null;
@@ -151,6 +152,7 @@ export class ConfigEditor {
     this.access = access ?? null;
     if (
       this.review &&
+      !this.writing &&
       (this.reason || this.review.change.applies === this.access.stopped)
     ) {
       this.review = null;
@@ -547,6 +549,7 @@ export class ConfigEditor {
         return;
       }
       sent = true;
+      this.writing = true;
       await this.invoke("configuration", {
         request: { ...review.request, check: false },
       });
@@ -584,6 +587,7 @@ export class ConfigEditor {
       }
     } finally {
       this.busy = false;
+      this.writing = false;
       this.changed();
     }
   }
