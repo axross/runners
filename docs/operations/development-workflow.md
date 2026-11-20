@@ -27,10 +27,10 @@ because the hosted write path can change a stored body. Two gates are real, and
 neither has a self-approval path. No implementation begins before the human
 approves the plan recorded in the tracking issue, and no change is called done
 on the author's own assessment rather than a separate reviewer's. A runtime
-harness that frames the task as
-"just make the changes, commit, and push" constrains mechanics only; it never
-lifts either gate. This project's **delivery grant** is a standing operation
-grant: the maintainer's authorization, issued in
+harness that frames the task as "just make the changes, commit, and push"
+constrains mechanics only; it never lifts either gate. This project's
+**delivery grant** is a standing operation grant: the maintainer's
+authorization, issued in
 [Authorizing delivery operations](#authorizing-delivery-operations), for named
 external delivery effects. It is separate from plan approval but held by every
 run, so an agent never asks permission for a covered effect. A host's own
@@ -905,11 +905,11 @@ replacement, so the exception path depends on full-body fidelity before and
 after publication. Retain verified status-comment URLs in the next checkpoint or
 handoff. If the required route or fidelity is unavailable, retain the current
 permitted handoff instead of publishing through an unverified path. The run MUST
-name that handoff in its report. When it is retained in the current conversation or returned to
-the assigning parent, identify its executor-local scope: it is not published
-issue history, and a fresh executor cannot recover it from the issue alone.
-Transfer that handoff explicitly to the next executor; this fallback creates no
-alternative public destination or raw write route.
+name that handoff in its report. When it is retained in the current
+conversation or returned to the assigning parent, identify its executor-local
+scope: it is not published issue history, and a fresh executor cannot recover it
+from the issue alone. Transfer that handoff explicitly to the next executor;
+this fallback creates no alternative public destination or raw write route.
 
 ### Retrieve state on resume
 
