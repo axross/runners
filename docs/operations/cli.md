@@ -2430,7 +2430,11 @@ scope is Tart Linux, not native macOS on-demand pools.
 
 **Listening and admission.** At pool start the agent reads the repository's stored
 token, exchanges registration credentials and finds or creates the named scale set
-in runner group 1. The client pins the Actions service API to `6.0-preview`.
+in runner group 1. The client pins the Actions service API to `6.0-preview`. The
+registration exchange is the one request it retries: a `401` or `403` is tried up
+to 3 times in all, 5 s apart, because GitHub does not always accept a fresh
+registration token at once. Every other call fails on its first answer, and the
+agent's back-off decides what follows.
 Before any session opens, both a found and a newly created set must have exactly
 one label equal to the configured scale-set name, ignoring case. A mismatch
 rejects the pool without opening a session, registering a runner or changing the
@@ -2447,7 +2451,9 @@ remain unacknowledged until acquired as capacity frees or confirmed no longer
 pending. Assigned work beyond the cap waits and may be requeued by GitHub.
 Acknowledgement follows successful processing, and message progress advances only
 after acknowledgement succeeds, so replay does not launch another runner for the
-same demand.
+same demand. The service hands an unresolved message back at once, so while one
+waits for capacity the listener waits up to 10 s, or until a slot ends, before it
+polls again.
 
 **Names and recovery.** The runner and job container share
 `<scale-set>-<slot>-<yyyyMMddHHmmssfff>`, with the existing 1-based slot and exactly
@@ -2473,8 +2479,19 @@ abnormal exit, stop, or JIT success that arrives after stop or drain. A lost JIT
 response is reconciled by that attempt's exact name before another registration.
 A confirmed deletion or confirmed absence settles cleanup; a failed or unknown
 outcome stays visible with the pending non-secret identity. A stopped container
-alone does not prove the registration is gone. Cleanup shares the existing stop
-deadline.
+alone does not prove the registration is gone. A cleanup that fails when a job
+ends is retried with the slot's back-off while the slot keeps its capacity, and
+the slot shows `registration cleanup incomplete (<reason>)` until it settles. A
+stop ends those retries, and also ends a registration that is waiting for, or
+renewing, its credentials. Cleanup shares the existing stop deadline.
+
+**Editing the configuration.** An edit that restarts or removes an on-demand pool
+waits for that pool's listener to end within the stop deadline. A pool whose
+listener has not ended, or has cleanup left, keeps what it has, and the other
+pools take their effects all the same. The edit then reports each such pool, as
+`pool <name>: the edit's listener cleanup did not finish within the stop deadline`
+or `pool <name>: on-demand cleanup is incomplete; Start all is required before
+another listener starts`.
 
 **Tokens and requests.** On-demand pools use the same repository-scoped
 fine-grained token, Administration: Read and write, with Actions: read optional for
@@ -2484,7 +2501,9 @@ are unexpired; removal or a store failure blocks registration rather than fallin
 back to cached credentials. Running jobs keep their original JIT configuration
 and lifecycle behavior. Registration exchanges, refresh, startup runner listing,
 exact reconciliation and deletion are lifecycle requests outside the display
-queue and do not feed its budget. An idle listener with unchanged credentials
+queue and do not feed its budget. The listener renews the service credential when
+2 minutes of its life remain and never twice within 30 s; a renewed credential
+that is due again at once backs off as a failure instead of renewing every cycle. An idle listener with unchanged credentials
 and no pending cleanup makes no periodic REST display request: the listener polls
 the Actions broker and renews service credentials before expiry. Outbound hosts
 and memory-only credential handling are governed by the on-demand section of
@@ -2492,16 +2511,16 @@ and memory-only credential handling are governed by the on-demand section of
 
 **Pool-local failures.** Other pools keep running:
 
-| Cause                                                          | Listener behavior and recovery                                                                                                                                                    |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No stored token                                                | No registration; the existing no-token reason applies.                                                                                                                            |
-| Store failure at start or refresh                              | `store_error`, with the store's kind and platform code; waits for Start All. A failure during JIT registration uses slot failure/back-off, never cached authorization.            |
-| Session conflict (`409`)                                       | `another_listener`; registers nothing and retries with back-off. It does not identify another host.                                                                               |
-| Scale set or session gone (`404`)                              | Finds or creates the set again; a `404` before a poll has succeeded again rejects the pool.                                                                                       |
-| Incompatible scale-set labels                                  | `rejected`, reason `scale-set label mismatch`, with no invented HTTP status; waits for Start All after operator repair.                                                           |
-| Rate limit                                                     | `backing_off`, then automatic retry: `429`, or `403` with `Retry-After`, zero remaining quota or a secondary-limit message. `Retry-After` alone suffices even with nonzero quota. |
-| Other persistent `401`, `403`, `404`, or refused outbound host | `rejected`, with status or refused host, until Start All.                                                                                                                         |
-| Network, `5xx` or other transient error                        | `backing_off`, then retries.                                                                                                                                                      |
+| Cause                                                                     | Listener behavior and recovery                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No stored token                                                           | No registration; the existing no-token reason applies.                                                                                                                                                                                                       |
+| Store failure at start or refresh                                         | `store_error`, with the store's kind and platform code; waits for Start All. A failure during JIT registration uses slot failure/back-off, never cached authorization.                                                                                       |
+| Session conflict (`409` on opening a session)                             | `another_listener`; registers nothing and retries with back-off. It does not identify another host. A `409` on any other call is a service failure, below.                                                                                                   |
+| Scale set or session gone (`404`)                                         | Finds or creates the set again, and does so again for a later `404` once a poll has succeeded in between. A second `404` before such a poll rejects the pool.                                                                                                |
+| Incompatible scale-set labels                                             | `rejected`, reason `scale-set label mismatch`, with no invented HTTP status; waits for Start All after operator repair.                                                                                                                                      |
+| Rate limit                                                                | `backing_off`, then automatic retry: `429`, or `403` with `Retry-After`, zero remaining quota or a secondary-limit message. `Retry-After` alone suffices even with nonzero quota. A `Retry-After` or quota reset more than one hour away counts as one hour. |
+| Other persistent `401`, `403`, `404`, or refused outbound host            | `rejected`, with status or refused host, until Start All. A `401` or `403` on the registration exchange is persistent only after its 3 tries.                                                                                                                |
+| Network, `5xx`, a `409` outside session creation or other transient error | `backing_off`, then retries.                                                                                                                                                                                                                                 |
 
 **Removing an unwanted scale set.** Marshal retains sets when a pool stops, is
 removed or changes its scale-set name, so jobs queued while stopped can wait for
