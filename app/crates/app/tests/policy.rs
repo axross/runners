@@ -18,7 +18,7 @@ use tauri::test::MockRuntime;
 /// the plan's content security policy, in full.
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'";
 
-const MAIN_WINDOW_COMMANDS: [&str; 11] = [
+const MAIN_WINDOW_COMMANDS: [&str; 13] = [
     "read_view",
     "configuration",
     "start_all",
@@ -28,6 +28,8 @@ const MAIN_WINDOW_COMMANDS: [&str; 11] = [
     "try_again",
     "set_token",
     "remove_token",
+    "set_organization_token",
+    "remove_organization_token",
     "hide_window",
     "open_job",
 ];
@@ -69,7 +71,7 @@ fn the_content_security_policy_is_exactly_the_plans() {
 }
 
 #[test]
-fn the_main_window_may_listen_and_call_its_eleven_commands_and_nothing_else() {
+fn the_main_window_may_listen_and_call_its_thirteen_commands_and_nothing_else() {
     let capability = json("capabilities/main-window.json");
     assert_eq!(strings(&capability["windows"]), ["main".to_string()].into());
     let expected: BTreeSet<String> = MAIN_WINDOW_COMMANDS

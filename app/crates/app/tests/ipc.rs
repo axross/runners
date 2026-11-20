@@ -189,7 +189,7 @@ const APP_ORIGIN: &str = if cfg!(windows) {
     "tauri://localhost"
 };
 
-const MAIN_COMMANDS: [&str; 11] = [
+const MAIN_COMMANDS: [&str; 13] = [
     "read_view",
     "configuration",
     "start_all",
@@ -199,6 +199,8 @@ const MAIN_COMMANDS: [&str; 11] = [
     "try_again",
     "set_token",
     "remove_token",
+    "set_organization_token",
+    "remove_organization_token",
     "hide_window",
     "open_job",
 ];
@@ -209,6 +211,8 @@ fn arguments(command: &str) -> serde_json::Value {
     match command {
         "set_token" => json!({ "repository": "axross/runners", "token": "" }),
         "remove_token" => json!({ "repository": "axross/runners" }),
+        "set_organization_token" => json!({ "organization": "example-org", "token": "" }),
+        "remove_organization_token" => json!({ "organization": "example-org" }),
         "read_view" => json!({ "forms": null }),
         "configuration" => json!({ "request": { "kind": "read" } }),
         "answer_confirmation" => json!({ "accepted": false }),
@@ -218,7 +222,7 @@ fn arguments(command: &str) -> serde_json::Value {
 }
 
 #[test]
-fn the_main_window_calls_its_eleven_commands() {
+fn the_main_window_calls_its_thirteen_commands() {
     let app = app();
     let main = window(&app, "main");
     for command in MAIN_COMMANDS {

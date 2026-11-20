@@ -135,6 +135,26 @@ type Reply<T> = oneshot::Sender<Result<T, String>>;
 /// problem beside its field.
 type ConfigReply = oneshot::Sender<Result<ConfigAnswer, Failure>>;
 
+/// the token namespace; a bare login is not inferred to mean an organization.
+#[derive(Clone, Copy)]
+enum TokenScope {
+    Repository,
+    Organization,
+}
+
+impl TokenScope {
+    /// accepts keys independently of the snapshot, including an invalid configuration.
+    fn parse(self, text: &str) -> Result<TokenKey, String> {
+        match self {
+            Self::Repository => {
+                TokenKey::parse(text).map_err(|_| "A repository is written owner/name.".to_string())
+            }
+            Self::Organization => TokenKey::parse_organization(text)
+                .map_err(|_| "An organization is written as its login alone.".to_string()),
+        }
+    }
+}
+
 enum Command {
     Read {
         forms: Option<Forms>,
@@ -148,12 +168,14 @@ enum Command {
         reply: Reply<()>,
     },
     SetToken {
-        repository: String,
+        scope: TokenScope,
+        key: String,
         token: String,
         reply: Reply<()>,
     },
     RemoveToken {
-        repository: String,
+        scope: TokenScope,
+        key: String,
         reply: Reply<()>,
     },
     Config {
@@ -207,7 +229,8 @@ impl Handle {
     /// sent once and dropped; what came of it is in the view.
     pub async fn set_token(&self, repository: String, token: String) -> Result<(), String> {
         self.ask(|reply| Command::SetToken {
-            repository,
+            scope: TokenScope::Repository,
+            key: repository,
             token,
             reply,
         })
@@ -215,8 +238,38 @@ impl Handle {
     }
 
     pub async fn remove_token(&self, repository: String) -> Result<(), String> {
-        self.ask(|reply| Command::RemoveToken { repository, reply })
-            .await
+        self.ask(|reply| Command::RemoveToken {
+            scope: TokenScope::Repository,
+            key: repository,
+            reply,
+        })
+        .await
+    }
+
+    /// saves an organisation's token through the organisation token method and key,
+    /// not a repository's, with the same limits and feedback as a repository save.
+    pub async fn set_organization_token(
+        &self,
+        organization: String,
+        token: String,
+    ) -> Result<(), String> {
+        self.ask(|reply| Command::SetToken {
+            scope: TokenScope::Organization,
+            key: organization,
+            token,
+            reply,
+        })
+        .await
+    }
+
+    /// what came of the removal is recorded in session feedback, as for a save.
+    pub async fn remove_organization_token(&self, organization: String) -> Result<(), String> {
+        self.ask(|reply| Command::RemoveToken {
+            scope: TokenScope::Organization,
+            key: organization,
+            reply,
+        })
+        .await
     }
 
     /// asks the agent's configuration methods; under lost contact the answer is
@@ -267,7 +320,7 @@ enum Internal<L> {
         outcome: Result<(), Failure>,
     },
     Token {
-        repository: String,
+        key: String,
         removal: bool,
         started: Vec<String>,
         outcome: Result<(), Failure>,
@@ -911,11 +964,12 @@ impl<D: Dial> Session<D> {
             Command::Act { act, reply } => self.act(act, reply),
             Command::TryAgain { reply } => self.try_again(reply),
             Command::SetToken {
-                repository,
+                scope,
+                key,
                 token,
                 reply,
-            } => self.set_token(&repository, token, reply),
-            Command::RemoveToken { repository, reply } => self.remove_token(&repository, reply),
+            } => self.set_token(scope, &key, token, reply),
+            Command::RemoveToken { scope, key, reply } => self.remove_token(scope, &key, reply),
             Command::Config { request, reply } => self.config(request, reply),
             Command::WindowShown(shown) => self.set_window_shown(shown),
             Command::OpenJob {
@@ -1021,16 +1075,19 @@ impl<D: Dial> Session<D> {
 
     // ---- tokens
 
-    fn record(&mut self, repository: &str, result: TokenResult) {
+    fn record(&mut self, key: &str, result: TokenResult) {
         self.announce
-            .push(result.announcement(repository, &marshal_view::HOST));
-        self.tokens.results.insert(repository.to_string(), result);
+            .push(result.announcement(key, &marshal_view::HOST));
+        self.tokens.results.insert(key.to_string(), result);
     }
 
-    fn set_token(&mut self, repository: &str, token: String, reply: Reply<()>) {
-        let Ok(key) = TokenKey::parse(repository) else {
-            let _ = reply.send(Err("A repository is written owner/name.".to_string()));
-            return;
+    fn set_token(&mut self, scope: TokenScope, key: &str, token: String, reply: Reply<()>) {
+        let key = match scope.parse(key) {
+            Ok(key) => key,
+            Err(error) => {
+                let _ = reply.send(Err(error));
+                return;
+            }
         };
         let key = key.as_str().to_string();
         // the limits apply here, before anything is sent
@@ -1060,18 +1117,21 @@ impl<D: Dial> Session<D> {
             .as_ref()
             .map(|snapshot| pools_started_by(snapshot, &key))
             .unwrap_or_default();
+        let method = match scope {
+            TokenScope::Repository => Method::TokenSet {
+                repository: key.clone(),
+                token: secret,
+            },
+            TokenScope::Organization => Method::OrganizationTokenSet {
+                organization: key.clone(),
+                token: secret,
+            },
+        };
         let report = self.report.clone();
         tokio::spawn(async move {
-            let outcome = within(
-                TOKEN_WITHIN,
-                link.call(Method::TokenSet {
-                    repository: key.clone(),
-                    token: secret,
-                }),
-            )
-            .await;
+            let outcome = within(TOKEN_WITHIN, link.call(method)).await;
             let _ = report.send(Internal::Token {
-                repository: key,
+                key,
                 removal: false,
                 started,
                 outcome,
@@ -1080,10 +1140,13 @@ impl<D: Dial> Session<D> {
         });
     }
 
-    fn remove_token(&mut self, repository: &str, reply: Reply<()>) {
-        let Ok(key) = TokenKey::parse(repository) else {
-            let _ = reply.send(Err("A repository is written owner/name.".to_string()));
-            return;
+    fn remove_token(&mut self, scope: TokenScope, key: &str, reply: Reply<()>) {
+        let key = match scope.parse(key) {
+            Ok(key) => key,
+            Err(error) => {
+                let _ = reply.send(Err(error));
+                return;
+            }
         };
         let key = key.as_str().to_string();
         let Some(link) = self.link() else {
@@ -1092,17 +1155,19 @@ impl<D: Dial> Session<D> {
             let _ = reply.send(Ok(()));
             return;
         };
+        let method = match scope {
+            TokenScope::Repository => Method::TokenRemove {
+                repository: key.clone(),
+            },
+            TokenScope::Organization => Method::OrganizationTokenRemove {
+                organization: key.clone(),
+            },
+        };
         let report = self.report.clone();
         tokio::spawn(async move {
-            let outcome = within(
-                TOKEN_WITHIN,
-                link.call(Method::TokenRemove {
-                    repository: key.clone(),
-                }),
-            )
-            .await;
+            let outcome = within(TOKEN_WITHIN, link.call(method)).await;
             let _ = report.send(Internal::Token {
-                repository: key,
+                key,
                 removal: true,
                 started: Vec::new(),
                 outcome,
@@ -1368,13 +1433,13 @@ impl<D: Dial> Session<D> {
                 self.refresh();
             }
             Internal::Token {
-                repository,
+                key,
                 removal,
                 started,
                 outcome,
                 reply,
             } => {
-                self.token_answered(&repository, removal, started, outcome);
+                self.token_answered(&key, removal, started, outcome);
                 let _ = reply.send(Ok(()));
             }
             Internal::QuitAnswered(outcome) => self.quit_answered(outcome),
@@ -1410,7 +1475,7 @@ impl<D: Dial> Session<D> {
 
     fn token_answered(
         &mut self,
-        repository: &str,
+        key: &str,
         removal: bool,
         started: Vec<String>,
         outcome: Result<(), Failure>,
@@ -1422,7 +1487,7 @@ impl<D: Dial> Session<D> {
                 // the connection is open and the agent may still do it, so the snapshot,
                 // not this call, says where the token stands
                 self.log.warn(&format!(
-                    "The agent did not answer the token {} for {repository} in {} s; it may still do it.",
+                    "The agent did not answer the token {} for {key} in {} s; it may still do it.",
                     if removal { "removal" } else { "save" },
                     TOKEN_WITHIN.as_secs()
                 ));
@@ -1430,7 +1495,7 @@ impl<D: Dial> Session<D> {
             }
             (_, Err(failure)) => {
                 self.log.warn(&format!(
-                    "A token for {repository} was not {}: {}",
+                    "A token for {key} was not {}: {}",
                     if removal { "removed" } else { "saved" },
                     failure.words()
                 ));
@@ -1446,14 +1511,14 @@ impl<D: Dial> Session<D> {
             TokenResult::NotSaved(_) | TokenResult::NotRemoved(_)
         ) {
             // the form closes on success and stays open, with its error, on failure
-            if self.tokens.editing.as_deref() == Some(repository) {
+            if self.tokens.editing.as_deref() == Some(key) {
                 self.tokens.editing = None;
             }
-            if self.tokens.removing.as_deref() == Some(repository) {
+            if self.tokens.removing.as_deref() == Some(key) {
                 self.tokens.removing = None;
             }
         }
-        self.record(repository, result);
+        self.record(key, result);
         self.refresh();
     }
 

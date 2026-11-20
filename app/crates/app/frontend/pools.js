@@ -221,6 +221,7 @@ function diagnostics(section) {
 
 function card(poolCard, ctx) {
   const headingId = nextId("pool");
+  const tokenKey = poolCard.organization ?? poolCard.repository;
   const note = poolCard.note
     ? h(
         "div",
@@ -230,9 +231,8 @@ function card(poolCard, ctx) {
           ? controlButton(poolCard.pill, {
               shape: "pill",
               key: `pill:${keyOf(poolCard.pill.action)}`,
-              name: `${poolCard.pill.label} for ${poolCard.repository}`,
-              onPress: () =>
-                ctx.gotoToken(poolCard.repository, poolCard.pill.action),
+              name: `${poolCard.pill.label} for ${poolCard.organization ? "organisation " : ""}${tokenKey}`,
+              onPress: () => ctx.gotoToken(tokenKey, poolCard.pill.action),
             })
           : null,
       )
@@ -251,7 +251,10 @@ function card(poolCard, ctx) {
         "data-key": `pool:${poolCard.name}`,
         text: poolCard.name,
       }),
-      h("span", { class: "caption low wrap", text: poolCard.repository }),
+      h("span", {
+        class: "caption low wrap",
+        text: poolCard.organization ? `organisation ${tokenKey}` : tokenKey,
+      }),
       h("span", { class: "grow" }),
       h(
         "span",
@@ -260,6 +263,12 @@ function card(poolCard, ctx) {
         poolCard.line,
       ),
     ),
+    poolCard.organization && poolCard.runner_group
+      ? h("p", {
+          class: "caption low wrap card-line",
+          text: `Runs jobs for the repositories that the runner group ${poolCard.runner_group} admits`,
+        })
+      : null,
     note,
     poolCard.github_notes.map((githubNote) =>
       h(

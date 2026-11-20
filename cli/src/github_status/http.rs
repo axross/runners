@@ -174,11 +174,38 @@ fn id_endpoint(route: &str) -> Option<&str> {
         .then_some(rest)
 }
 
-/// whether a path and query is one the agent requests: one it builds under
-/// `/repos/`, or a next page in GitHub's `/repositories/<id>/` form, without `..`.
+/// the endpoint of an `/orgs/<organization>/…` path: what follows the organization.
+fn orgs_endpoint(route: &str) -> Option<&str> {
+    let (organization, rest) = route.strip_prefix("/orgs/")?.split_once('/')?;
+    (!organization.is_empty() && !rest.is_empty()).then_some(rest)
+}
+
+/// the endpoint of GitHub's `/organizations/<digits>/…` form of an organization path.
+fn organization_id_endpoint(route: &str) -> Option<&str> {
+    let (id, rest) = route.strip_prefix("/organizations/")?.split_once('/')?;
+    (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()) && !rest.is_empty())
+        .then_some(rest)
+}
+
+/// whether a path and query is one the agent requests: one it builds under `/repos/`
+/// or for an organization's runners or runner groups, or a next page in GitHub's
+/// `/repositories/<id>/` form, or in its `/organizations/<id>/` form for those two
+/// organization endpoints, without `..`.
 fn is_request_path(path: &str) -> bool {
     let (route, query) = path.split_once('?').unwrap_or((path, ""));
-    (repos_endpoint(route).is_some() || id_endpoint(route).is_some())
+    let organization = route.strip_prefix("/orgs/").is_some_and(|rest| {
+        rest.split_once('/')
+            .is_some_and(|(organization, endpoint)| {
+                crate::validate::patterns::is_owner(organization)
+                    && matches!(endpoint, "actions/runners" | "actions/runner-groups")
+            })
+    });
+    let organization_id = organization_id_endpoint(route)
+        .is_some_and(|endpoint| matches!(endpoint, "actions/runners" | "actions/runner-groups"));
+    (organization
+        || organization_id
+        || repos_endpoint(route).is_some()
+        || id_endpoint(route).is_some())
         && plain(route)
         && (query.is_empty() || plain(query))
         && !route.split('/').any(|part| part == "." || part == "..")
@@ -194,11 +221,28 @@ pub fn repository_id(path: &str) -> Option<&str> {
         .map(|(id, _)| id)
 }
 
+/// the id of a path in GitHub's `/organizations/<id>/…` form.
+fn organization_id(path: &str) -> Option<&str> {
+    let route = path.split_once('?').map_or(path, |(route, _)| route);
+    route
+        .strip_prefix("/organizations/")
+        .and_then(|rest| rest.split_once('/'))
+        .map(|(id, _)| id)
+}
+
+/// the id of a path in GitHub's `/repositories/<id>/…` or `/organizations/<id>/…`
+/// form, for a read to hold as it follows its pages.
+#[must_use]
+pub fn page_id(path: &str) -> Option<&str> {
+    repository_id(path).or_else(|| organization_id(path))
+}
+
 /// the next page of a paged read that a `link` header names: compared with the
 /// read's first request, followed only on its origin, on its path or on GitHub's
-/// `/repositories/<id>` form of it, with only the query changed. `held_id` is the id
-/// the read has already seen on one of its pages, and a next page with another id
-/// is refused, so one read names one id.
+/// `/repositories/<id>` form of a repository path or `/organizations/<id>` form of an
+/// organization path, with only the query changed. `held_id` is the id the read has
+/// already seen on one of its pages, and a next page with another id is refused, so
+/// one read names one id.
 #[must_use]
 pub fn next_page(link: &str, base_url: &str, first: &str, held_id: Option<&str>) -> Next {
     let Some(target) = link.split(',').find_map(|part| {
@@ -223,14 +267,15 @@ pub fn next_page(link: &str, base_url: &str, first: &str, held_id: Option<&str>)
             .to_string()
     };
     let first_route = route_of(first);
-    let held = held_id.or_else(|| repository_id(first));
-    let same_id = match (repository_id(route), held) {
+    let held = held_id.or_else(|| page_id(first));
+    let same_id = match (page_id(route), held) {
         (Some(next), Some(held)) => next == held,
         _ => true,
     };
     let same_endpoint = route == first_route
         || (same_id
-            && matches!((id_endpoint(route), repos_endpoint(&first_route)), (Some(next), Some(asked)) if next == asked));
+            && (matches!((id_endpoint(route), repos_endpoint(&first_route)), (Some(next), Some(asked)) if next == asked)
+                || matches!((organization_id_endpoint(route), orgs_endpoint(&first_route)), (Some(next), Some(asked)) if next == asked)));
     let usable = is_request_path(local);
     if same_endpoint && usable {
         Next::Page(local.to_string())
@@ -332,6 +377,87 @@ mod tests {
         );
     }
 
+    const ORGANIZATION_RUNNERS: &str = "/orgs/octo/actions/runners?per_page=100";
+
+    #[test]
+    fn a_next_page_in_githubs_organization_id_form_is_followed() {
+        let next = format!("{BASE}/organizations/21341965/actions/runners?per_page=100&page=2");
+        assert_eq!(
+            next_page(&link(&next), BASE, ORGANIZATION_RUNNERS, None),
+            Next::Page("/organizations/21341965/actions/runners?per_page=100&page=2".to_string())
+        );
+        let exact = format!("{BASE}/orgs/octo/actions/runners?per_page=100&page=2");
+        assert!(matches!(
+            next_page(&link(&exact), BASE, ORGANIZATION_RUNNERS, None),
+            Next::Page(_)
+        ));
+        let groups = "/orgs/octo/actions/runner-groups?per_page=100";
+        let next = format!("{BASE}/organizations/7/actions/runner-groups?per_page=100&page=2");
+        assert!(matches!(
+            next_page(&link(&next), BASE, groups, None),
+            Next::Page(_)
+        ));
+    }
+
+    #[test]
+    fn an_organization_read_keeps_one_id() {
+        let held = page_id("/organizations/7/actions/runners?page=2");
+        assert_eq!(held, Some("7"));
+        let same = format!("{BASE}/organizations/7/actions/runners?per_page=100&page=3");
+        assert!(matches!(
+            next_page(&link(&same), BASE, ORGANIZATION_RUNNERS, held),
+            Next::Page(_)
+        ));
+        let other = format!("{BASE}/organizations/8/actions/runners?per_page=100&page=3");
+        assert_eq!(
+            next_page(&link(&other), BASE, ORGANIZATION_RUNNERS, held),
+            Next::Refused
+        );
+    }
+
+    #[test]
+    fn an_organization_id_link_elsewhere_is_refused() {
+        for next in [
+            // another endpoint under the organization id
+            format!("{BASE}/organizations/7/actions/runner-groups?page=2"),
+            format!("{BASE}/organizations/7/actions/secrets?page=2"),
+            format!("{BASE}/organizations/7/members?page=2"),
+            // an id that is not digits
+            format!("{BASE}/organizations/x7/actions/runners?page=2"),
+            format!("{BASE}/organizations//actions/runners?page=2"),
+            format!("{BASE}/organizations/7/actions/runners/../../secrets?page=2"),
+            // another origin
+            "https://evil.example/organizations/7/actions/runners?page=2".to_string(),
+            // an organization's other path
+            format!("{BASE}/orgs/other/actions/runners?page=2"),
+        ] {
+            assert_eq!(
+                next_page(&link(&next), BASE, ORGANIZATION_RUNNERS, None),
+                Next::Refused,
+                "{next}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_repository_read_refuses_an_organization_link_and_the_reverse() {
+        let organization = format!("{BASE}/organizations/7/actions/runners?page=2");
+        assert_eq!(
+            next_page(
+                &link(&organization),
+                BASE,
+                "/repos/owner/app/actions/runners?per_page=100",
+                None
+            ),
+            Next::Refused
+        );
+        let repository = format!("{BASE}/repositories/7/actions/runners?page=2");
+        assert_eq!(
+            next_page(&link(&repository), BASE, ORGANIZATION_RUNNERS, None),
+            Next::Refused
+        );
+    }
+
     #[test]
     fn a_link_without_a_next_page_has_none() {
         assert_eq!(
@@ -377,6 +503,12 @@ mod tests {
         assert!(is_request_path(REQUEST));
         assert!(is_request_path("/repos/o/r/actions/runners?per_page=100"));
         assert!(is_request_path("/repositories/7/actions/runs?page=2"));
+        assert!(is_request_path("/organizations/7/actions/runners?page=2"));
+        assert!(is_request_path(
+            "/organizations/7/actions/runner-groups?page=2"
+        ));
+        assert!(!is_request_path("/organizations/7/actions/secrets"));
+        assert!(!is_request_path("/organizations/x/actions/runners"));
         assert!(!is_request_path("/user"));
         assert!(!is_request_path("/repositories/x/actions/runs"));
         assert!(!is_request_path("/repos/o/../x/actions/runners"));

@@ -15,13 +15,15 @@ host configuration, with the reference for every field, is under
 and the trust rules the host is reviewed against are in
 [Security](../conventions/security.md).
 
-**The command line.** Since W1's installer pull request there is no command line: a
-release carries Marshal and its per-user MSI, and the app's menu and window are how a
-host is run. The axpc host ran its pools with the command line, `marshal`, until then.
-Its procedures, with their commands, token files and `--config` path, are at the
-last command-line release's tag, identified in The Last Command-Line Release
-section of [CLI](./cli.md), and a host
-moves from it to the app with that release's uninstall procedure, then
+**The command line.** W1's installer pull request removed `marshal` from main;
+the app release baseline carries Marshal and its per-user MSI. During bounded F0
+recovery, app publication is suspended and the temporary release route builds the
+fixed historical CLI instead. [CLI Recovery](./cli-recovery.md) owns its
+actual-version installation lifecycle procedures, not the app procedures below.
+The Last Command-Line Release section of [CLI](./cli.md)
+identifies the historical tree with the runtime commands, token files and
+`--config` path. The axpc host still runs the command line. Once an app release is
+available, a host moves to it with the CLI release's uninstall procedure, then
 the Installing Marshal section. The verification below that names a command
 was made with the command line; the app shares its runtime, image check and
 diagnostics, and its own run on axpc is recorded on
@@ -141,7 +143,16 @@ and so does `runs-on: self-hosted`.
 
 ## Installing Marshal
 
-Install Marshal from a release by opening its MSI, with the Windows procedure in
+The following is the app install procedure for the suspended app release baseline.
+A recovery release's `marshal-<version>-windows-x64.msi` is the legacy CLI product,
+not the app MSI: it installs `marshal.exe` and adds its directory to the user
+`Path`, not a Start menu entry for `marshal-app.exe`. Use the recovery tag's
+[CLI Recovery](./cli-recovery.md) procedures for that MSI. No recovery release
+version or native installer evidence is recorded yet. App source and normal builds
+remain; publication resumes only after successful public F0 evidence and a separate
+reviewed restoration.
+
+Install Marshal from an app release by opening its MSI, with the Windows procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back), never by building it on the
 host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
 choose, run the optional check block on it first; that block refuses a file whose
@@ -206,6 +217,43 @@ The agent reads the token from the store at every registration, so a rotated tok
 applies to the next job in every slot with no restart. Rotate a token with
 **Replace Token** on its row, and remove one with **Remove Token**.
 
+### Organisation Pools
+
+A pool configured with `organization` uses an organisation token, not any of that
+organisation's repository tokens. Before starting one, satisfy the Organisation
+Pools Share a Runner Group's Trust Boundary section of
+[Security](../conventions/security.md). The TOML Configuration section of
+[CLI](./cli.md) describes `organization` and `runner_group`.
+
+Create the token while signed in as an owner of the organisation:
+
+1. Open **Settings, Developer settings, Fine-grained personal access tokens** and
+   choose **Generate new token**.
+2. Select the organisation as **Resource owner**.
+3. Select **Public repositories (read-only)** under **Repository access**. Do not
+   select private repositories; this token is not used to read repository data.
+4. Set the organisation permission **Self-hosted runners** to **Read and write**.
+   Add no repository permissions.
+5. Choose an expiration within the organisation's lifetime policy and generate
+   the token.
+6. Open Marshal's **Tokens** tab and find the organisation under
+   **Organisations**. Choose **Set Token**, paste the token and choose **Save**.
+
+Every organisation pool with that login uses this token. Saving it starts pools
+skipped for **no token** while the agent is running. Use **Replace Token** to
+rotate it; the next registration reads the replacement. **Remove Token** stops
+those pools from getting new runners, but runners already up finish their job.
+Repository rows keep their separate tokens.
+
+Removing an organisation's last pool does not remove its token, and the window then
+shows no row to remove it from. Before removing the last pool for a login, choose
+**Remove Token** on the organisation's row. If the pool is already gone, delete the
+Credential Manager entry `app.axross.marshal:github.com/<org>`.
+
+If GitHub refuses registration, the pool shows GitHub's scrubbed answer. Check
+the token's resource owner and permission, then the organisation's token policy;
+Marshal cannot distinguish every policy refusal from a permission failure.
+
 ### Adding Actions: read for Job Names
 
 Marshal's window names the job each busy runner runs, and links to it, only when the
@@ -228,7 +276,8 @@ The command line read each token from a file at the pool's `tokenPath`, which it
 own access control step restricted. Marshal reads no token file and imports none:
 enter each repository's token in the window once, as above. Keep the old token files
 until the app's runners work, because rolling back to the command line reads them,
-then delete them. Their procedure is at the last command-line release's tag.
+then delete them. The fixed historical tree identified in The Last Command-Line
+Release section of [CLI](./cli.md) keeps their procedure.
 
 ## The Host Configuration
 
@@ -901,6 +950,10 @@ calls for a runner bump, below.
 
 ## Updating the Runner
 
+This app-update procedure applies when app publication resumes. During F0 recovery,
+the fixed historical CLI does not incorporate runner bumps on main; use
+[CLI Recovery](./cli-recovery.md) for the bounded release route, not an app update.
+
 A newer runner reaches the host only through a new release, because the app embeds
 the image definition:
 
@@ -1013,21 +1066,29 @@ Hub. No inbound port is needed.
 
 ## Rolling Back
 
-Roll back when a release misbehaves on the host. Rolling back means uninstalling the
+For a recovery CLI release, use the rollback procedure in
+[CLI Recovery](./cli-recovery.md), not the app procedure below.
+
+Roll back when an app release misbehaves on the host. Rolling back means uninstalling the
 installed release and installing the previous one: it needs an earlier release to go
 back to, so a host on the first release has none, and a fault in it is fixed forward
 in a new release. Pick a quiet time, because quitting Marshal stops its runners and
 a job in flight fails.
 
-1. Roll back with the Windows procedure in
+1. Select the target release and verify that it supports this host's profile and
+   configuration before uninstalling anything. If no compatible target is
+   verified, keep the installed app. For a recovery CLI target, open
+   `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`
+   now, replacing `<version>` with that published release's actual version without
+   the `v`; use that tag's install procedure, not the guide at another ref.
+2. Follow the Windows procedure in
    [CLI](./cli.md#updating-repairing-uninstalling-and-rolling-back): remove the tokens
    in the window only if you will not install Marshal again, quit Marshal, uninstall,
-   then install the previous release's MSI, because the MSI refuses a lower version
-   while a newer one is installed.
-2. When the previous release is the last command-line release, install it with that
-   release's procedure instead, at its tag, as
-   The Last Command-Line Release section of [CLI](./cli.md) describes,
-   and follow that tag's copy of this section from there. Keep the token files until
+   then install the selected release's MSI, because the MSI refuses a lower version
+   while a newer one is installed. For a recovery CLI target, install with the
+   target-tag guide you opened in step 1, then follow the runtime procedures in
+   the fixed historical tree that guide identifies.
+   Keep the token files until
    the command line's runners work; the command line reads them, and the app's
    tokens stay in Credential Manager.
 3. Start the release you installed, rebuild the image and start the runners. The

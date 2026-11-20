@@ -628,3 +628,82 @@ fn token_actions_are_available_in_every_state_the_agent_answers_in() {
         }
     }
 }
+
+/// a repository and its owner's organisation pools are separate authorities, even
+/// when a cut snapshot leaves only pools from which to recover their token rows.
+#[test]
+fn organisation_tokens_have_their_own_row_forms_and_pool_actions() {
+    let snapshot = patched("first_launch", |value| {
+        value["repositories"] = serde_json::json!([
+            {"repository": "owner/site", "has_token": false, "pools": ["site"]}
+        ]);
+        for index in [0, 2] {
+            let pool = &mut value["pools"][index];
+            pool.as_object_mut().expect("pool").remove("repository");
+            pool["organization"] = "owner".into();
+            pool["runner_group"] = "Selected jobs".into();
+            pool["state"] = "skipped".into();
+            pool["reason"] = format!("pool[{index}]: no token.").into();
+        }
+    });
+    let ui = ui(Some("owner"), None, &[]);
+    for words in [marshal_view::WINDOWS, marshal_view::MACOS] {
+        let view = build(
+            &Input::new(Connection::Connected, Some(&snapshot), now())
+                .tokens(&ui)
+                .words(words),
+        );
+        let list = list(&view);
+        assert_eq!(list.header.opens_on, Tab::Tokens);
+        assert_eq!(list.tokens.rows.len(), 1);
+        assert_eq!(list.tokens.rows[0].repository, "owner/site");
+        assert!(list.tokens.rows[0].form.is_none());
+        assert_eq!(list.tokens.organizations.len(), 1);
+        let organization = &list.tokens.organizations[0];
+        assert!(organization.repository.is_empty());
+        assert_eq!(organization.organization.as_deref(), Some("owner"));
+        assert_eq!(
+            organization.pools,
+            "Organisation runners. Used by pools app and docs"
+        );
+        assert_eq!(list.tokens.chip.as_deref(), Some("2 tokens need attention"));
+        let form = organization.form.as_ref().expect("organisation form");
+        assert_eq!(form.label, "Token for owner");
+        assert!(form.hint.contains("Self-hosted runners: read and write"));
+        assert!(form.hint.contains("no repository permission"));
+        assert!(form.hint.contains(words.store));
+        for index in [0, 2] {
+            let card = &list.pools[index];
+            assert_eq!(card.organization.as_deref(), Some("owner"));
+            assert_eq!(card.runner_group.as_deref(), Some("Selected jobs"));
+            assert_eq!(
+                card.pill.as_ref().expect("Set Token").action,
+                Action::SetToken("owner".into())
+            );
+        }
+    }
+    let mut stored = snapshot;
+    let mut organization = marshal_cli::agent::snapshot::OrganizationInfo::default();
+    organization.organization = "owner".into();
+    organization.has_token = true;
+    organization.pools = vec!["app".into(), "docs".into()];
+    stored.organizations.push(organization);
+    let ui = marshal_view::TokenUi {
+        removing: Some("owner".into()),
+        ..Default::default()
+    };
+    let view = build(&Input::new(Connection::Connected, Some(&stored), now()).tokens(&ui));
+    let row = &list(&view).tokens.organizations[0];
+    assert!(row.confirming_removal);
+    let question = row
+        .controls
+        .iter()
+        .find_map(|control| control.confirmation.as_ref())
+        .expect("removal question");
+    assert_eq!(question.title, "Remove the token for owner?");
+    assert_eq!(
+        question.body,
+        "Pools app and docs stop getting new runners."
+    );
+    assert_eq!(list(&view).tokens.rows[0].state, TokenState::Missing);
+}

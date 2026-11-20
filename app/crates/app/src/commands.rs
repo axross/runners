@@ -129,6 +129,26 @@ pub async fn remove_token(state: State<'_, AppState>, repository: String) -> Res
 }
 
 #[tauri::command]
+pub async fn set_organization_token(
+    state: State<'_, AppState>,
+    organization: String,
+    token: String,
+) -> Result<(), String> {
+    state
+        .handle
+        .set_organization_token(organization, token)
+        .await
+}
+
+#[tauri::command]
+pub async fn remove_organization_token(
+    state: State<'_, AppState>,
+    organization: String,
+) -> Result<(), String> {
+    state.handle.remove_organization_token(organization).await
+}
+
+#[tauri::command]
 pub fn hide_window<R: Runtime>(window: Window<R>) -> Result<(), String> {
     hide_main_window(&window).map_err(|error| error.to_string())
 }
@@ -204,6 +224,8 @@ pub fn handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'stat
         try_again,
         set_token,
         remove_token,
+        set_organization_token,
+        remove_organization_token,
         hide_window,
         read_confirmation,
         answer_confirmation,
