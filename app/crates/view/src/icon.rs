@@ -24,6 +24,7 @@ pub fn shape(context: &Context<'_>) -> IconState {
         | Resident::NoAgent
         | Resident::NotAnswering
         | Resident::LockHeld
+        | Resident::OutsideApplications
         | Resident::LostContact { .. }
         | Resident::Unknown(_) => IconState::NotInControl,
         Resident::Running if context.restart_due.is_some() => IconState::SomeNotUp,

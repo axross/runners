@@ -25,11 +25,18 @@ fn image(look: Look) -> Image<'static> {
     Image::new_owned(drawn.rgba, drawn.size, drawn.size)
 }
 
+/// whether a left click opens the menu, as a click on a menu bar item does on macOS
+/// (decision 1a); elsewhere it shows the main window, and the menu opens on a right
+/// click.
+const MENU_ON_LEFT_CLICK: bool = cfg!(target_os = "macos");
+
 /// the icon with its first image, and no menu until the session shows its first view.
+/// On macOS the image is a template, which macOS draws in the menu bar's own colours.
 pub fn create(app: &AppHandle, first: Look) -> tauri::Result<()> {
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(image(first))
-        .show_menu_on_left_click(false)
+        .icon_as_template(cfg!(target_os = "macos"))
+        .show_menu_on_left_click(MENU_ON_LEFT_CLICK)
         .on_menu_event(on_menu_event)
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -37,6 +44,7 @@ pub fn create(app: &AppHandle, first: Look) -> tauri::Result<()> {
                 button_state: MouseButtonState::Up,
                 ..
             } = event
+                && !MENU_ON_LEFT_CLICK
             {
                 show_main_window(tray.app_handle());
             }
@@ -58,7 +66,14 @@ pub fn set_current_look(app: &AppHandle, watch: &Mutex<Watch>) -> tauri::Result<
 
 fn set_look(app: &AppHandle, look: Look) -> tauri::Result<()> {
     match app.tray_by_id(TRAY_ID) {
-        Some(tray) => tray.set_icon(Some(image(look))),
+        Some(tray) => {
+            tray.set_icon(Some(image(look)))?;
+            // a new image is never a template until it is made one again
+            if cfg!(target_os = "macos") {
+                tray.set_icon_as_template(true)?;
+            }
+            Ok(())
+        }
         None => Ok(()),
     }
 }
@@ -98,10 +113,16 @@ fn build_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<TauriMenu<tauri::Wr
 }
 
 pub fn set_menu(app: &AppHandle, menu: &Menu) -> tauri::Result<()> {
-    match app.tray_by_id(TRAY_ID) {
-        Some(tray) => tray.set_menu(Some(build_menu(app, menu)?)),
+    // the two menus are independent: a failure in one does not keep the other stale
+    #[cfg(target_os = "macos")]
+    let app_menu = crate::app_menu::set(app, Some(menu));
+    let tray_menu = match app.tray_by_id(TRAY_ID) {
+        Some(tray) => build_menu(app, menu).and_then(|built| tray.set_menu(Some(built))),
         None => Ok(()),
-    }
+    };
+    #[cfg(target_os = "macos")]
+    app_menu?;
+    tray_menu
 }
 
 fn on_menu_event(app: &AppHandle, event: MenuEvent) {
@@ -112,7 +133,7 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     tauri::async_runtime::spawn(async move { run_menu_item(&app, &id).await });
 }
 
-async fn run_menu_item(app: &AppHandle, id: &str) {
+pub(crate) async fn run_menu_item(app: &AppHandle, id: &str) {
     let state = app.state::<AppState>();
     let Some(item) = state.latest.menu().and_then(|menu| {
         menu.items

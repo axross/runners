@@ -74,3 +74,47 @@ impl Record for RecordFile {
         let _ = std::fs::remove_file(&self.path);
     }
 }
+
+/// the marker the app leaves when its agent ended because Marshal was moved, renamed or
+/// replaced while it ran, in Marshal's local data folder; the next launch takes it.
+pub const MOVED_FILE: &str = "agent-ended-moved";
+
+/// the marker as a file. It holds nothing: being there is all it says.
+pub struct MovedFile {
+    path: PathBuf,
+}
+
+impl MovedFile {
+    #[must_use]
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    /// leaves the marker for the next launch.
+    pub fn write(&self) -> Result<(), String> {
+        std::fs::write(&self.path, b"").map_err(|error| format!("{}: {error}", self.path.display()))
+    }
+
+    /// at launch: whether the marker was there; it is removed either way.
+    #[must_use]
+    pub fn take(&self) -> bool {
+        std::fs::remove_file(&self.path).is_ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MovedFile;
+
+    #[test]
+    fn the_moved_marker_is_taken_once() {
+        let folder = std::env::temp_dir().join(format!("marshal-moved-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let marker = MovedFile::new(folder.join(super::MOVED_FILE));
+        assert!(!marker.take(), "no marker before one is written");
+        marker.write().unwrap();
+        assert!(marker.take());
+        assert!(!marker.take(), "a second launch finds none");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+}

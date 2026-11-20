@@ -16,6 +16,9 @@ pub enum TaskbarReading {
     Absent,
     /// the registry could not be read, for this reason.
     Failed(String),
+    /// the platform has no taskbar mode: the Mac's menu bar image is a template, which
+    /// macOS tints for the menu bar itself.
+    NoMode,
 }
 
 /// what the icon looks like.
@@ -118,6 +121,7 @@ impl Watch {
             },
             TaskbarReading::Absent => (None, Some("there is no SystemUsesLightTheme".to_string())),
             TaskbarReading::Failed(why) => (None, Some(why.clone())),
+            TaskbarReading::NoMode => (None, None),
         };
         self.mode = mode;
         if let Some(scale) = scale.filter(|scale| scale.is_finite() && *scale > 0.0) {

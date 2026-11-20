@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::time::Duration;
 
-use crate::macos::prerequisites::{SIGNED_IN_SECTION, section_of_document};
+use crate::macos::prerequisites::{SIGNED_IN_SECTION, SOFTNET_SECTION, section_of_document};
 use crate::runtime::clock::Clock;
 
 use super::client::{Captured, TartClient};
@@ -66,12 +66,26 @@ pub async fn wait_for_agent<C: Clock>(
     }
 }
 
-/// the text of a boot that failed; `kind` is [`JOB_VM`] or [`BUILD_VM`]. A boot that
-/// started and failed names the host document's section, because a locked login
-/// keychain is the documented cause.
+/// Tart's texts for a locked login keychain, as its FAQ lists them.
+const KEYCHAIN_TEXTS: [&str; 3] = [
+    "SecKeyCreateRandomKey_ios failed",
+    "Failed to generate keypair",
+    "Interaction is not allowed with the Security Server",
+];
+
+/// Tart's Softnet errors that a `tart run` the runtime starts can end with.
+const SOFTNET_TEXTS: [&str; 2] = [
+    "Softnet process terminated prematurely",
+    "softnet not found in PATH",
+];
+
+/// the text of a boot that failed; `kind` is [`JOB_VM`] or [`BUILD_VM`]. A `tart run`
+/// that ended names the host document's section for a locked login keychain, for
+/// Softnet, or for both, when its whole output carries one of Tart's texts for that
+/// cause; any other failure names no cause.
 #[must_use]
 pub fn boot_failure_text(kind: &str, vm: &str, end: &BootEnd) -> String {
-    let cause = match end {
+    let (cause, hint) = match end {
         BootEnd::NotStarted(text) => {
             return format!(
                 "boot failure: tart run for the {kind} {vm} could not be started ({text})"
@@ -84,17 +98,38 @@ pub fn boot_failure_text(kind: &str, vm: &str, end: &BootEnd) -> String {
             );
             let text = ended.error_text();
             let text = if text.is_empty() { "no output" } else { &text };
-            format!("tart run for the {kind} {vm} ended with {code} ({text})")
+            (
+                format!("tart run for the {kind} {vm} ended with {code} ({text})"),
+                tart_hint(ended),
+            )
         }
         BootEnd::NoAnswer(text) => {
             let text = if text.is_empty() { "no error" } else { text };
-            format!(
-                "the guest agent of the {kind} {vm} did not answer by the boot deadline ({text})"
+            (
+                format!(
+                    "the guest agent of the {kind} {vm} did not answer by the boot deadline ({text})"
+                ),
+                String::new(),
             )
         }
     };
-    format!(
-        "boot failure: {cause}; a locked login keychain is the documented cause, see {}",
+    format!("boot failure: {cause}{hint}")
+}
+
+/// the hint a boot failure appends for the cause Tart's output points to, empty when
+/// it points to none; read from the whole output, not the cut error text.
+fn tart_hint(ended: &Captured) -> String {
+    let output = ended.output();
+    let carries = |texts: &[&str]| texts.iter().any(|text| output.contains(text));
+    let keychain = format!(
+        "a locked login keychain, see {}",
         section_of_document(SIGNED_IN_SECTION)
-    )
+    );
+    let softnet = format!("Softnet, see {}", section_of_document(SOFTNET_SECTION));
+    match (carries(&KEYCHAIN_TEXTS), carries(&SOFTNET_TEXTS)) {
+        (true, true) => format!("; Tart's error points to {keychain}, and to {softnet}"),
+        (true, false) => format!("; Tart's error points to {keychain}"),
+        (false, true) => format!("; Tart's error points to {softnet}"),
+        (false, false) => String::new(),
+    }
 }
