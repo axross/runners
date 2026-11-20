@@ -1,6 +1,7 @@
 //! the commands the web view calls. Each is granted to a window by a capability, so a
 //! window calls only the ones its capability names.
 
+use marshal_cli::agent::config::Problem;
 use marshal_session::{Act, ConfigAnswer, ConfigRequest, Failure, Forms, Shown, Then};
 use marshal_view::Confirmation;
 use tauri::ipc::Invoke;
@@ -24,7 +25,15 @@ pub async fn read_view(state: State<'_, AppState>, forms: Option<Forms>) -> Resu
 pub struct ConfigurationFailure {
     code: String,
     message: String,
-    problems: Vec<marshal_cli::agent::config::Problem>,
+    problems: Vec<Problem>,
+}
+
+/// `problem` with every token-shaped word of its path and message replaced, as the
+/// footer words the same problems.
+fn plain_problem(mut problem: Problem) -> Problem {
+    problem.path = problem.path.map(|path| marshal_view::plain(&path));
+    problem.message = marshal_view::plain(&problem.message);
+    problem
 }
 
 /// retains structured refusals so the page can label fields and retry store removal
@@ -38,6 +47,13 @@ pub async fn configuration(
         .handle
         .config(request)
         .await
+        .map(|answer| match answer {
+            ConfigAnswer::Read(mut read) => {
+                read.problems = read.problems.into_iter().map(plain_problem).collect();
+                ConfigAnswer::Read(read)
+            }
+            other => other,
+        })
         .map_err(|failure| match failure {
             Failure::Config {
                 code,
@@ -45,8 +61,8 @@ pub async fn configuration(
                 problems,
             } => ConfigurationFailure {
                 code,
-                message,
-                problems,
+                message: marshal_view::plain(&message),
+                problems: problems.into_iter().map(plain_problem).collect(),
             },
             Failure::Store { detail } => ConfigurationFailure {
                 code: "store_failed".into(),
