@@ -149,21 +149,32 @@ pub fn check_entries(
                     .collect();
                 if !overlap.is_empty() {
                     let labels = overlap.join(", ");
-                    let kind = if organization_overlap {
+                    if !organization_overlap {
+                        errors.add(
+                            path.key(Key::Labels),
+                            Kind::AmbiguousRouting { labels, other },
+                        );
+                    } else if b.entry.scale_set.is_some() {
+                        // the later pool cannot carry `labels`, so the name is what to change.
+                        errors.add(
+                            path.key(Key::ScaleSet),
+                            Kind::ScaleSetOrganizationLabel { other },
+                        );
+                    } else {
                         let routing_label_shared = routing_label.is_some_and(|routing_label| {
                             overlap
                                 .iter()
                                 .any(|label| fold::eq_ascii(label, routing_label))
                         });
-                        Kind::OrganizationRoutingOverlap {
-                            labels,
-                            other,
-                            routing_label_shared,
-                        }
-                    } else {
-                        Kind::AmbiguousRouting { labels, other }
-                    };
-                    errors.add(path.key(Key::Labels), kind);
+                        errors.add(
+                            path.key(Key::Labels),
+                            Kind::OrganizationRoutingOverlap {
+                                labels,
+                                other,
+                                routing_label_shared,
+                            },
+                        );
+                    }
                 }
             }
         }

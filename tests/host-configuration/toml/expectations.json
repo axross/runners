@@ -385,7 +385,7 @@
     "profile": "axpc",
     "outcome": "reject",
     "problems": [
-      "line 12: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels 'axpc-demand' also appear at pool[0]; give each pool its own labels"
+      "line 16: pool[1].scale_set: ambiguous routing for pools that may serve the same repository; this scale-set name is also a label at pool[0]; choose a scale-set name that no organization pool of the same owner uses as a label"
     ],
     "contains": [],
     "lacks": []

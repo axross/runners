@@ -235,6 +235,11 @@ pub enum Kind {
         /// whether the shared labels include the file's `routing_label`.
         routing_label_shared: bool,
     },
+    /// the later, on-demand pool's scale-set name is a label of an earlier
+    /// organisation pool of its owner, so the name is the key to change.
+    ScaleSetOrganizationLabel {
+        other: usize,
+    },
     MacosVmsOverLimit {
         total: u32,
         limit: u32,
@@ -388,6 +393,10 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
                 entry_path(*other)
             )
         }
+        Kind::ScaleSetOrganizationLabel { other } => format!(
+            "ambiguous routing for pools that may serve the same repository; this scale-set name is also a label at {}; choose a scale-set name that no organization pool of the same owner uses as a label",
+            entry_path(*other)
+        ),
         Kind::MacosVmsOverLimit { total, limit } => format!(
             "macOS pools total {total} VMs (the sum of their {per_pool}), above the limit of {limit}"
         ),

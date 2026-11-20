@@ -444,7 +444,10 @@ changes:
   so overlapping pools need distinct explicit labels. An on-demand pool of one of that
   organisation's repositories is compared by its scale-set name alone, its only label:
   it clashes with an organisation pool only when that pool's labels include the name,
-  never through the default `routing_label` or the platform labels. Repository-only files retain their
+  never through the default `routing_label` or the platform labels. When the
+  on-demand pool is the later one, the problem is at `pool[i].scale_set` and tells the
+  operator to choose a name no organisation pool of that owner uses as a label; when
+  the organisation pool is the later one, it stays at that pool's `labels`. Repository-only files retain their
   validation rules. A pool naming neither target reports
   `pool[i]: names neither repository nor organization`, and one naming both reports
   `pool[i]: names both repository and organization`. An organisation pool without
@@ -562,7 +565,9 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
       is on-demand is not compared, because an on-demand pool's only label is its
       scale-set name, which step 7.1 compares. For an organisation pool, it is the
       organisation routing overlap in the Organisation pools bullet, which compares
-      an on-demand pool by its scale-set name.
+      an on-demand pool by its scale-set name. Where the later pool is the
+      on-demand one, the overlap is reported at that pool's `scale_set`, which is the
+      key it can change, instead of at its `labels`.
 
    Then on macOS the budget totals.
 
@@ -574,7 +579,8 @@ no value to point at:
 - A missing key names the line where its table starts: a `[[pool]]` or
   `[[pool.volumes]]` header, `[budget]`, or line 1 for the top level.
 - A clash between pools, a name or a routing label, names the line where the later
-  pool starts.
+  pool starts, except that a later on-demand pool whose scale-set name is a label of
+  an organisation pool is reported at its `scale_set`, as a scale-set collision is.
 - A scale-set collision is not one of them: it names the line of the `scale_set`
   value of the pool it is reported on. Two on-demand pools that collide get one
   problem each, at their own `scale_set` lines. When the other pool is always-on,
@@ -4574,10 +4580,13 @@ need CRLF build it from the stored text.
   on-demand rules: the scale-set name and the routing label's character set, each
   kind of scale-set collision (an equal or hyphen-extended name, against another
   scale-set name, a logical `name` or a same-repository label, in both orders and
-  ignoring case), `scale_set` on an organisation pool being refused whatever its
-  value, an organisation pool beside an on-demand pool of the same owner (accepted
-  with the default `routing_label`, rejected when its labels include the scale-set
-  name, in both pool orders and ignoring case), the Mac rejection, and the order and
+  ignoring case, and accepted for a same-named repository of another owner),
+  `scale_set` on an organisation pool being refused whatever its value, including
+  beside `repository` in one pool, an organisation pool beside an on-demand pool of
+  the same owner (accepted with the default `routing_label`, rejected when its labels
+  include the scale-set name, in both pool orders and ignoring case, at the
+  `labels` of a later organisation pool and at the `scale_set` of a later on-demand
+  pool), the Mac rejection, and the order and
   lines of the problems, including
   a pool's `scale_set` problem before its `labels` problem and a pool whose
   `scale_set` is rejected joining the label collisions as an always-on pool. Each
