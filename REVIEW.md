@@ -331,10 +331,13 @@ Apply the lens for each kind of file in the diff.
   `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi`, the update
   feed `latest.json` and `SHA256SUMS`, such as a helper binary or a command-line
   file, a `latest.json` that is published without passing the feed check against the
-  committed release-verification public key, or is outside `SHA256SUMS` and the attestation, an MSI custom action
-  that runs code other than the start of the installed app under
-  `AUTOLAUNCHAPP=True` and the uninstall's deletion of the HKCU Run value `Marshal`,
-  an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade
+  committed release-verification public key, a `latest.json` that is outside
+  `SHA256SUMS` and the attestation, a change to the public key in
+  `app/crates/feed/release-public-key.txt` made without the rotation record and
+  procedure that the Update-Feed Key section of [App](docs/operations/app.md)
+  describes, an MSI custom action that runs code other than the start of the
+  installed app under `AUTOLAUNCHAPP=True` and the uninstall's deletion of the HKCU
+  Run value `Marshal`, an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade
   code or a component code, a download that is none of the pinned WiX package, the
   recorded Rust toolchain exception, the recorded `tauri-cli` exception installed at
   the pin `tauri-cli-version.sh` reads, the `tauri-cli` crate archive `update-tool`
