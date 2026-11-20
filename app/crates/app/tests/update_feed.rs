@@ -22,6 +22,12 @@ use tauri_plugin_updater::{Error, Update, UpdaterExt};
 /// the platform entry the app reads on Windows.
 const PLATFORM: &str = "windows-x86_64";
 
+/// minisign's wording for a file that does not match its signature.
+const VERIFICATION_FAILED: &str = "The signature verification failed";
+
+/// minisign's wording for a signature made under another key than the one given.
+const DIFFERENT_KEY: &str = "The signature was created with a different key than the one provided";
+
 fn directory() -> PathBuf {
     PathBuf::from(
         std::env::var_os("MARSHAL_UPDATE_FEED_DIR")
@@ -71,6 +77,13 @@ fn update(feed: &str, installed_key: &str) -> (Update, Vec<u8>) {
     (update, read(&msi))
 }
 
+/// the plugin's signature check refused, in minisign's wording for why, which tells a
+/// signature that does not verify from a feed or a key the plugin could not read.
+fn assert_refused_by_minisign(refusal: &Error, wording: &str) {
+    assert!(matches!(refusal, Error::Minisign(_)), "{refusal}");
+    assert_eq!(refusal.to_string(), wording);
+}
+
 #[test]
 #[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
 fn the_installed_old_key_accepts_the_transition_signature() {
@@ -84,18 +97,14 @@ fn a_changed_msi_is_refused() {
     let (update, mut msi) = update("latest.json", "update.pub");
     let last = msi.last_mut().expect("the MSI is not empty");
     *last ^= 1;
-    assert!(update.verify(&msi).is_err());
+    assert_refused_by_minisign(&update.verify(&msi).unwrap_err(), VERIFICATION_FAILED);
 }
 
 #[test]
 #[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
 fn the_installed_old_key_refuses_the_new_keys_signature() {
     let (update, msi) = update("latest-another-key.json", "update.pub");
-    let refusal = update.verify(&msi).unwrap_err();
-    assert!(
-        !matches!(refusal, Error::SignedVersionMismatch { .. }),
-        "{refusal}"
-    );
+    assert_refused_by_minisign(&update.verify(&msi).unwrap_err(), DIFFERENT_KEY);
 }
 
 #[test]
@@ -109,11 +118,7 @@ fn the_installed_new_key_accepts_the_subsequent_signature() {
 #[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
 fn the_installed_new_key_refuses_the_old_keys_signature() {
     let (update, msi) = update("latest.json", "other.pub");
-    let refusal = update.verify(&msi).unwrap_err();
-    assert!(
-        !matches!(refusal, Error::SignedVersionMismatch { .. }),
-        "{refusal}"
-    );
+    assert_refused_by_minisign(&update.verify(&msi).unwrap_err(), DIFFERENT_KEY);
 }
 
 #[test]

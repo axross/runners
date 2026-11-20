@@ -3,9 +3,10 @@
 # release dry run: the release run's own sign-update scripts sign the dry run's
 # MSI with a throwaway key made for this run, write-update-feed.sh writes the
 # feed, and the feed check passes it against the throwaway public key. the feed
-# check must refuse a changed MSI, another key's signature, a signature for
-# another version, and the throwaway signature against the committed key. no
-# line of this run's output may hold the throwaway key or its password.
+# check must refuse, and say why, a changed MSI, another key's signature, a
+# signature for another version, and the throwaway signature against the
+# committed key. no line of this run's output may hold the throwaway key or its
+# password.
 #
 #   feed-round-trip.sh <update tools> <dry run release files> <version> <output>
 #
@@ -65,14 +66,18 @@ bash "${scripts}/write-update-feed.sh" "$version" "${output}/latest.json" \
 echo "ok   the feed check passes the feed the release run's scripts signed" | tee -a "$log"
 
 failures=0
-# refused <case> <feed check arguments...>: the feed check must fail.
+# refused <case> <text the diagnostic must hold> <feed check arguments...>: the feed
+# check must fail, and say why.
 refused() {
-  local name="$1" status=0 result
-  shift
+  local name="$1" want="$2" status=0 result
+  shift 2
   result="$("$check" "$@" 2>&1)" || status=$?
   echo "$result" >>"$log"
   if [[ $status -eq 0 ]]; then
     echo "FAIL the feed check passed ${name}" | tee -a "$log" >&2
+    failures=$((failures + 1))
+  elif [[ "$result" != *"$want"* ]]; then
+    echo "FAIL the feed check refused ${name} without saying '${want}': ${result}" | tee -a "$log" >&2
     failures=$((failures + 1))
   else
     echo "ok   the feed check refuses ${name}" | tee -a "$log"
@@ -82,7 +87,7 @@ refused() {
 mkdir "${work}/changed"
 cp -- "${release}/${msi}" "${work}/changed/${msi}"
 printf 'changed' >>"${work}/changed/${msi}"
-refused "a changed MSI" --public-key "${output}/update.pub" "${output}/latest.json" "$version" \
+refused "a changed MSI" "and the build recorded" --public-key "${output}/update.pub" "${output}/latest.json" "$version" \
   "${release}/SHA256SUMS" "windows-x86_64=${work}/changed/${msi}"
 
 # feed_with <signature file> <output name>: the feed with another signature.
@@ -99,11 +104,11 @@ TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$password" "$signer" signer sign \
   --private-key-path "${work}/update.key" --app-version 9.9.9 "${work}/version/${msi}" >>"$log" 2>&1
 feed_with "${work}/other/${msi}.sig" latest-another-key.json
 feed_with "${work}/version/${msi}.sig" latest-another-version.json
-refused "another key's signature" --public-key "${output}/update.pub" "${output}/latest-another-key.json" \
+refused "another key's signature" "the signature does not verify: The signature was created with a different key" --public-key "${output}/update.pub" "${output}/latest-another-key.json" \
   "$version" "${release}/SHA256SUMS" "windows-x86_64=${output}/${msi}"
-refused "a signature for another version" --public-key "${output}/update.pub" \
+refused "a signature for another version" "the signature names version 9.9.9, and the feed names ${version}" --public-key "${output}/update.pub" \
   "${output}/latest-another-version.json" "$version" "${release}/SHA256SUMS" "windows-x86_64=${output}/${msi}"
-refused "the throwaway signature against the committed key" "${output}/latest.json" "$version" \
+refused "the throwaway signature against the committed key" "the signature does not verify: The signature was created with a different key" "${output}/latest.json" "$version" \
   "${release}/SHA256SUMS" "windows-x86_64=${output}/${msi}"
 
 if grep -qF -e "$key" -e "$password" "$log"; then
