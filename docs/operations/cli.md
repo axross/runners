@@ -1412,6 +1412,11 @@ a response without one is a failure. The client also:
 - it fails a connection after 10 s and a whole request after 30 s;
 - it fails a response larger than 1 MiB, whether the size is declared or streamed.
 
+The repository's owner may be a personal account or an organisation; the request and
+the pool's one-repository token are the same for both. The Fine-Grained Token section
+of [Windows Runner Host](./windows-runner-host.md) gives the token steps for an
+organisation-owned repository.
+
 Each failure goes into the slot's backoff. The error text has the token replaced by
 `<token>`, whitespace collapsed, and is cut to 500 characters followed by `...`.
 The token is read again from its file at every
@@ -4473,6 +4478,12 @@ the gates that cover it, so a change to the library knows what the app relies on
   log folder and file mode (`private::current_uid`, `ensure_private_directory` and
   `FILE_MODE`), and the log's timestamp (`runtime::name::stamp`). It adds no message to
   the protocol: a new message follows [Version Rules](#version-rules).
+- The client exposes `config_read`, `config_edit` and `config_reload`, with typed
+  `ConfigRead`, `ConfigChange` and `PoolEffect` answers. Their status and effect
+  names remain strings, so an unknown future name does not break decoding.
+  The session preserves structured configuration problems and passes each request
+  through the same connection as its other actions. Method negotiation controls
+  whether the window offers editing.
 - `cli/helpers/fake_docker.rs` is also built as the `fake-docker` binary of the app's
   executable package, so the app's tests can run the exporter child against a fake
   engine. The source stays under `cli/`; the CLI's own tests build it as before.

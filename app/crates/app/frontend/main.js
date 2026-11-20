@@ -3,6 +3,7 @@
 
 import { askConfirmation, cancelDialog, dialogOpen } from "./dialog.js";
 import { keyOf } from "./controls.js";
+import { ConfigEditor } from "./config-editor.js";
 import { say } from "./live.js";
 import { renderWindow } from "./render.js";
 import { newestFirst } from "./revision.js";
@@ -25,6 +26,15 @@ const state = {
 };
 
 const RETRY_MS = 500;
+let composing = false;
+let readEditor = false;
+const editor = new ConfigEditor(
+  invoke,
+  (focus = null) => {
+    if (state.view) draw(state.view, focus);
+  },
+  say,
+);
 
 /** whether a view is the newest the window has had, whichever route it came by. */
 const isCurrent = newestFirst();
@@ -90,13 +100,32 @@ function focusInstead(key) {
     if (focusKey(`pool:${pool}`)) {
       return;
     }
+    const draft = editor.pools.find(
+      (row) =>
+        !row.removed &&
+        row.source !== null &&
+        editor.document?.pools[row.source].name === pool,
+    );
+    if (draft && focusKey(`edit-heading:${draft.id}`)) return;
   }
   focusHeading();
 }
 
 // ---- drawing
 
+/** keeps a draft field's caret across snapshots, deferring redraws during IME input. */
 function draw(view, focusRequest = null) {
+  editor.update(view.window.editor);
+  if (composing) {
+    state.view = view;
+    return;
+  }
+  const active = document.activeElement;
+  const selection =
+    active?.dataset?.key?.startsWith("config-field:") &&
+    typeof active.selectionStart === "number"
+      ? [active.selectionStart, active.selectionEnd, active.selectionDirection]
+      : null;
   const before = focusRequest ?? focusedKey();
   const scroller = elementOfKey("scroller");
   const scrolled = scroller ? scroller.scrollTop : 0;
@@ -106,6 +135,9 @@ function draw(view, focusRequest = null) {
     const forms = openForms(view);
     state.tab =
       forms.editing || forms.removing ? "tokens" : list.header.opens_on;
+  }
+  if (list && focusRequest === "cancel-config") {
+    state.tab = "pools";
   }
   state.view = view;
   state.drawn = JSON.stringify(view);
@@ -119,6 +151,13 @@ function draw(view, focusRequest = null) {
   if (before !== null && !focusKey(before)) {
     focusInstead(before);
   }
+  if (selection && focusRequest === null)
+    document.activeElement?.setSelectionRange?.(...selection);
+  if (
+    focusRequest?.startsWith("edit-heading:") ||
+    focusRequest === "cancel-config"
+  )
+    elementOfKey(focusRequest)?.scrollIntoView?.({ block: "nearest" });
 }
 
 /**
@@ -135,6 +174,10 @@ function apply(shown, { focus = null } = {}) {
     draw(view, focus);
   }
   say(announce);
+  if (!readEditor && editor.access && !editor.access.read_reason) {
+    readEditor = true;
+    editor.read();
+  }
 }
 
 function redraw() {
@@ -323,6 +366,7 @@ function setSetting(key, on) {
 }
 
 const context = {
+  editor,
   get tab() {
     return state.tab;
   },
@@ -367,6 +411,7 @@ function escape(event) {
     (around.removal ? cancelRemoval : cancelForm)(around.repository);
     return;
   }
+  if (editor.cancel({ panelShown: state.tab === "pools" })) return;
   invoke("hide_window");
 }
 
@@ -393,6 +438,13 @@ document.addEventListener("keydown", (event) => {
   } else {
     moveBetweenTabs(event);
   }
+});
+document.addEventListener("compositionstart", () => {
+  composing = true;
+});
+document.addEventListener("compositionend", () => {
+  composing = false;
+  redraw();
 });
 
 // the app says so before it hides the window, from every place it does, so a token half

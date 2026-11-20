@@ -117,6 +117,15 @@ run = "cargo test --locked --package marshal-modes --package marshal-view --pack
 description = "Run the main window page's own tests with Node, which check the order it draws views in, that it clears a typed token, and what a settings checkbox does"
 run = "node --test app/crates/app/tests/frontend/*.test.mjs"
 
+[tasks."prepare:app-render"]
+description = "Install the locked, test-only browser controller and checksum-verified Chromium under this worktree; no OS packages"
+run = "npm ci --ignore-scripts --omit=optional --prefix app/crates/app/tests/render && node app/crates/app/tests/render/install-browser.mjs"
+
+[tasks."test:app-render"]
+description = "Render recorded editor states in pinned Chromium and check layout, contrast, focus and accessibility; requires prepare:app-render"
+depends = ["rust:require"]
+run = "node app/crates/app/tests/render/editor.mjs"
+
 [tasks."deny:app"]
 description = "Check the crates the app's executable links for banned versions, unreviewed licences, and other sources, for the Windows and macOS builds; the advisory check runs in its own workflow"
 depends = ["rust:require", "fetch:app"]

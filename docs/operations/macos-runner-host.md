@@ -382,6 +382,13 @@ entry is a pool of `slots` runners for one repository:
   [CLI](./cli.md#profiles) has every rule, its message, and the migration from the
   earlier rules.
 
+For an organisation-owned repository, the token's resource owner is the
+organisation, as The Fine-Grained Token section of
+[Windows Runner Host](./windows-runner-host.md) describes. The Token Store section
+of [CLI](./cli.md) names the token's Keychain item. Unlocking the keychain does not
+resolve a refusal from GitHub; check the token on GitHub as The Fine-Grained Token
+section describes.
+
 The last command-line release's `validate --profile axmc` checks a JSON file on any
 machine.
 

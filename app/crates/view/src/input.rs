@@ -165,6 +165,8 @@ pub struct Input<'a> {
     /// whether the agent before this launch ended because Marshal's executable was
     /// moved, renamed or replaced while it ran.
     pub after_moved: bool,
+    /// the agent lists all three configuration methods.
+    pub editor: bool,
 }
 
 impl<'a> Input<'a> {
@@ -182,6 +184,7 @@ impl<'a> Input<'a> {
             ended_jobs: None,
             words: WINDOWS,
             after_moved: false,
+            editor: false,
         }
     }
 
@@ -233,6 +236,13 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn after_moved(mut self, after_moved: bool) -> Self {
         self.after_moved = after_moved;
+        self
+    }
+
+    /// the agent's welcome, not its version, determines whether an editor is offered.
+    #[must_use]
+    pub fn editor(mut self, supported: bool) -> Self {
+        self.editor = supported;
         self
     }
 }

@@ -199,11 +199,34 @@ which needs the **Administration** repository permission set to **Read and
 write**. Create one **fine-grained personal access token per target repository**,
 under **Settings, Developer settings, Fine-grained personal access tokens**:
 
+- **Resource owner:** the repository's owner. For a repository owned by an
+  organisation, select that organisation, not your personal account.
 - **Repository access:** only that one repository.
 - **Permissions:** Administration, read and write. Actions, read, is optional: with
   it the agent can name the job a busy runner runs, at the cost the token permission
   section of [Security](../conventions/security.md#a-token-carries-only-its-pool-kinds-permissions)
   names. Nothing else.
+
+An organisation that blocks fine-grained tokens does not appear as a resource
+owner. When the organisation requires approval, a member who is not an owner must
+have an owner approve the token before starting the pool. A pending token can read
+public resources only; an organisation owner's token needs no separate approval.
+
+Choose an expiration within the organisation's maximum lifetime policy. GitHub
+defaults that policy to 366 days, and the organisation can shorten it. GitHub
+refuses registration when a token is:
+
+- Expired.
+- Awaiting required approval.
+- Refused by the organisation's policy.
+
+A runner whose registration fails shows "Backing off" with GitHub's answer,
+scrubbed of the token, and the agent's log keeps the same answer. Check the
+token's settings and organisation policy on GitHub rather than assuming every
+failure means the token's value is wrong. GitHub's
+[token creation steps](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+and [organisation token policies](https://docs.github.com/en/organizations/managing-programmatic-access-to-your-organization/setting-a-personal-access-token-policy-for-your-organization)
+describe those controls.
 
 Enter each token in Marshal's window: **Open Marshal**, the **Tokens** tab, then
 **Set Token** on the repository's row, paste the token and **Save**. Marshal keeps it
@@ -250,9 +273,10 @@ shows no row to remove it from. Before removing the last pool for a login, choos
 **Remove Token** on the organisation's row. If the pool is already gone, delete the
 Credential Manager entry `app.axross.marshal:github.com/<org>`.
 
-If GitHub refuses registration, the pool shows GitHub's scrubbed answer. Check
-the token's resource owner and permission, then the organisation's token policy;
-Marshal cannot distinguish every policy refusal from a permission failure.
+If GitHub refuses registration, the pool's runners show "Backing off" with
+GitHub's scrubbed answer. Check the token's resource owner and permission, then
+the organisation's token policy; Marshal cannot distinguish every policy refusal
+from a permission failure.
 
 ### Adding Actions: read for Job Names
 
@@ -1049,7 +1073,9 @@ Hub. No inbound port is needed.
 - **A slot logging registration failures:** the message carries GitHub's status. A
   401 or 404 usually means the token expired or lacks Administration access to that
   repository; replace it with **Replace Token** in the Tokens tab, as
-  The Fine-Grained Token section describes. Other slots
+  The Fine-Grained Token section describes. For an organisation-owned repository,
+  the token may instead await an owner's approval or break the organisation's
+  policy; check The Fine-Grained Token section before replacing it. Other slots
   continue their own registration loops, but a shared-token problem can affect
   every pool for that repository.
 

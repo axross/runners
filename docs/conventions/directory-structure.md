@@ -22,6 +22,7 @@ document such a change corrects. Repository tooling, such as `docs/`, `tests/`,
 | Runner image                | Docker, on GitHub's runner image                                                                                  | [Windows Runner Host](../operations/windows-runner-host.md)                             |
 | axmc VMs                    | Tart and Softnet                                                                                                  | [macOS Runner Host](../operations/macos-runner-host.md)                                 |
 | Releases                    | semantic-release                                                                                                  | [Development Workflow](../operations/development-workflow.md)                           |
+| Editor rendering gate       | `playwright-core` and a checksum-pinned Chromium, on Linux x64, under `app/crates/app/tests/render/`              | [Testing](./testing.md) and [App](../operations/app.md)                                 |
 | Toolchain, format, and lint | mise, Prettier, markdownlint, shellcheck, hadolint, actionlint, PSScriptAnalyzer, rustfmt, clippy, and cargo-deny | [Development Setup](../operations/development-setup.md) and [Testing](./testing.md)     |
 
 ## The Layout

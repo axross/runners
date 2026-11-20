@@ -23,6 +23,7 @@ use std::future::pending;
 use std::sync::Arc;
 use std::time::Duration;
 
+use marshal_cli::agent::config::Problem;
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::ENDING_UPDATE;
 use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
@@ -40,8 +41,8 @@ use tokio::time::{Instant, sleep_until};
 
 use crate::connect::{Attempt, Found, RETRY_EVERY, attempt};
 use crate::seam::{
-    AgentInfo, Connected, Dial, DialError, Failure, Launcher, Link, Log, Method, Present,
-    Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
+    AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Launcher, Link,
+    Log, Method, Present, Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
 };
 use update::Drain;
 
@@ -135,6 +136,10 @@ impl Act {
 
 type Reply<T> = oneshot::Sender<Result<T, String>>;
 
+/// a configuration answer keeps its failure whole, so the editor can place each
+/// problem beside its field.
+type ConfigReply = oneshot::Sender<Result<ConfigAnswer, Failure>>;
+
 /// the token namespace; a bare login is not inferred to mean an organization.
 #[derive(Clone, Copy)]
 enum TokenScope {
@@ -182,6 +187,10 @@ enum Command {
         key: String,
         on: bool,
         reply: Reply<()>,
+    },
+    Config {
+        request: ConfigRequest,
+        reply: ConfigReply,
     },
     WindowShown(bool),
     OpenJob {
@@ -278,6 +287,18 @@ impl Handle {
     pub async fn set_setting(&self, key: String, on: bool) -> Result<(), String> {
         self.ask(|reply| Command::SetSetting { key, on, reply })
             .await
+    }
+
+    /// asks the agent's configuration methods; under lost contact the answer is
+    /// [`Failure::Lost`], and the editor keeps its unapplied changes.
+    pub async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
+        let (reply, answer) = oneshot::channel();
+        self.commands
+            .send(Command::Config { request, reply })
+            .map_err(|_| Failure::Other(GONE.to_string()))?;
+        answer
+            .await
+            .unwrap_or_else(|_| Err(Failure::Other(GONE.to_string())))
     }
 
     /// says whether the main window is shown and not minimized, which is when the
@@ -670,6 +691,7 @@ impl<D: Dial> Session<D> {
             .settings(&self.settings)
             .github(feed)
             .ended_jobs(&self.ended_jobs)
+            .editor(self.agent.edits)
             .after_moved(self.after_moved);
         let Update { view, announced } = self.tracker.update(input);
         self.recheck = announced
@@ -981,6 +1003,7 @@ impl<D: Dial> Session<D> {
             } => self.set_token(scope, &key, token, reply),
             Command::RemoveToken { scope, key, reply } => self.remove_token(scope, &key, reply),
             Command::SetSetting { key, on, reply } => self.set_setting(key, on, reply),
+            Command::Config { request, reply } => self.config(request, reply),
             Command::WindowShown(shown) => self.set_window_shown(shown),
             Command::OpenJob {
                 pool,
@@ -1246,9 +1269,13 @@ impl<D: Dial> Session<D> {
                 code: "busy".to_string(),
                 words,
             },
-            Err(Failure::Config { code, message }) => SettingResult::Refused {
+            Err(Failure::Config {
                 code,
-                words: message,
+                message,
+                problems,
+            }) => SettingResult::Refused {
+                code,
+                words: with_problems(&message, &problems),
             },
             Err(other) => SettingResult::Refused {
                 code: String::new(),
@@ -1265,6 +1292,51 @@ impl<D: Dial> Session<D> {
         }
         self.record_setting(key, &label, result);
         self.refresh();
+    }
+
+    /// passes the editor's request to the agent; what an apply does shows in the
+    /// snapshots that follow, so the answer goes straight back to the window.
+    fn config(&mut self, request: ConfigRequest, reply: ConfigReply) {
+        let Some(link) = self.link() else {
+            let _ = reply.send(Err(Failure::Lost));
+            return;
+        };
+        if !self.agent.edits {
+            let _ = reply.send(Err(Failure::NotServed("configuration editing".into())));
+            return;
+        }
+        if let ConfigRequest::RemoveReleasedToken { repository } = &request
+            && TokenKey::parse(repository).is_err()
+        {
+            let _ = reply.send(Err(Failure::Refused(
+                "A repository is written owner/name.".into(),
+            )));
+            return;
+        }
+        let released = match &request {
+            ConfigRequest::RemoveReleasedToken { repository } => Some(repository.clone()),
+            _ => None,
+        };
+        let within = if released.is_some() {
+            TOKEN_WITHIN
+        } else {
+            CALL_WITHIN
+        };
+        let log = Arc::clone(&self.log);
+        tokio::spawn(async move {
+            let answer = tokio::time::timeout(within, link.config(request))
+                .await
+                .unwrap_or_else(|_| {
+                    if let Some(repository) = released {
+                        log.warn(&format!(
+                            "The agent did not answer the removal of the released token for {repository} in {} s; it may still do it.",
+                            TOKEN_WITHIN.as_secs()
+                        ));
+                    }
+                    Err(Failure::TimedOut)
+                });
+            let _ = reply.send(answer);
+        });
     }
 
     // ---- GitHub status
@@ -1692,4 +1764,22 @@ fn not_saved(failure: Failure) -> NotSaved {
         Failure::Lost => NotSaved::LostContact,
         other => NotSaved::Refused(other.words()),
     }
+}
+
+/// a refused setting's words with its problems after them, worded as the snapshot
+/// words them (line N: path: message) and joined as the footer joins them.
+fn with_problems(message: &str, problems: &[Problem]) -> String {
+    if problems.is_empty() {
+        return message.to_string();
+    }
+    let listed: Vec<String> = problems
+        .iter()
+        .map(|problem| match (problem.line, &problem.path) {
+            (Some(line), Some(path)) => format!("line {line}: {path}: {}", problem.message),
+            (Some(line), None) => format!("line {line}: {}", problem.message),
+            (None, Some(path)) => format!("{path}: {}", problem.message),
+            (None, None) => problem.message.clone(),
+        })
+        .collect();
+    format!("{} ({})", message.trim_end_matches('.'), listed.join("; "))
 }

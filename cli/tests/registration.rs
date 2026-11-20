@@ -13,14 +13,16 @@ mod support;
 use std::time::{Duration, Instant};
 
 use marshal_cli::json::{self, Value};
+use marshal_cli::profile::Profile;
 use marshal_cli::runtime::board::Board;
 use marshal_cli::runtime::fake::{Call, FakeBackend, FakeClock, MemoryLog};
+use marshal_cli::runtime::pool::pools_from_plan;
 use marshal_cli::runtime::registration::{
     GitHubRegistrar, HttpLimits, JitRequest, REJECTED_MARK, Registrar,
 };
 use marshal_cli::runtime::secret::Secret;
 use marshal_cli::runtime::worker::{run_slot, stop_channel};
-use marshal_cli::validate::PoolTarget;
+use marshal_cli::validate::{PoolTarget, validate_toml};
 use support::stub::{Reply, Stub};
 use support::{TempDir, slot_spec};
 
@@ -102,6 +104,79 @@ async fn registration_sends_the_request_and_reads_the_response() {
             Value::String("axpc".to_string())
         ])
     );
+}
+
+/// token files isolate the HTTP contract from native credential stores; store-key
+/// selection belongs to the agent-token tests.
+#[tokio::test(flavor = "current_thread")]
+async fn organization_owned_repositories_register_separately_with_their_own_tokens() {
+    let config = br#"schema_version = 1
+routing_label = "axpc"
+image_name = "actions-runner:local"
+[[pool]]
+name = "app"
+repository = "Example-Org/private-app"
+runners = 1
+[[pool]]
+name = "tools"
+repository = "Example-Org/private-tools"
+runners = 1
+"#;
+    let plan = validate_toml(config, Profile::Axpc, None).outcome.unwrap();
+    let pools = pools_from_plan(&plan).unwrap();
+    let stub = Stub::start(vec![
+        Reply::json(r#"{"encoded_jit_config":"app-jit"}"#),
+        Reply::json(r#"{"encoded_jit_config":"tools-jit"}"#),
+    ]);
+    let registrar = GitHubRegistrar::new(Some(&stub.address), HttpLimits::default()).unwrap();
+    let scratch = TempDir::new();
+    let tokens = [TOKEN, "github_pat_stub_other_repository"];
+    for (pool, token) in pools.iter().zip(tokens) {
+        let mut slot = pool.slot_specs().remove(0);
+        slot.token_path = Some(scratch.write_token(&pool.name, token.as_bytes()));
+        let backend = FakeBackend::default();
+        let (stop, receiver) = stop_channel();
+        backend.state.borrow_mut().stop_when_exits_run_out = Some(stop);
+        let log = MemoryLog::default();
+        run_slot(
+            &slot,
+            &backend,
+            &FakeClock::at(1_709_618_828_009),
+            &registrar,
+            &log,
+            &Board::default(),
+            receiver,
+        )
+        .await;
+        assert_eq!(
+            backend.state.borrow().jit_values,
+            [format!("{}-jit", pool.name)]
+        );
+        assert!(log.lines().iter().all(|line| !line.contains(token)));
+    }
+    let requests = stub.requests();
+    assert_eq!(requests.len(), 2);
+    for ((request, repository), token) in requests
+        .iter()
+        .zip(["private-app", "private-tools"])
+        .zip(tokens)
+    {
+        assert_eq!(request.method, "POST");
+        assert_eq!(
+            request.path,
+            format!("/repos/Example-Org/{repository}/actions/runners/generate-jitconfig")
+        );
+        assert_eq!(
+            request.header("authorization"),
+            Some(format!("Bearer {token}").as_str())
+        );
+        let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+        assert_eq!(body["runner_group_id"], 1);
+        assert_eq!(
+            body["labels"],
+            serde_json::json!(["self-hosted", "linux", "x64", "axpc"])
+        );
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]

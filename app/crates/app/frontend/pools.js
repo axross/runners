@@ -3,6 +3,7 @@
 
 import { controlButton, keyOf, nextId } from "./controls.js";
 import { h } from "./dom.js";
+import { editorPools } from "./editor.js";
 import { icon } from "./icons.js";
 
 /** the mark a runner's or a pool's state carries; the state is always written out too. */
@@ -292,6 +293,7 @@ function card(poolCard, ctx) {
 
 /** the Pools panel: a card per pool, or what stands where they would be. */
 export function poolsPanel(list, ctx) {
+  if (ctx.editor?.access) return editorPools(ctx.editor, list, ctx, card);
   const content =
     list.pools.length > 0
       ? h(
@@ -318,10 +320,10 @@ export function poolsPanel(list, ctx) {
  * the footer: GitHub's request budget, the image lines and warnings, the configuration
  * path, and the note.
  */
-export function footer(model) {
+export function footer(model, configuration = null, expanded = false) {
   return h(
     "footer",
-    { class: "footer" },
+    { class: expanded ? "footer config-expanded" : "footer" },
     model.github.map((line) =>
       h("p", { class: "caption low wrap github-line", text: line }),
     ),
@@ -336,9 +338,14 @@ export function footer(model) {
         h("span", { text: line }),
       ),
     ),
+    configuration ??
+      h("p", {
+        class: "caption low wrap",
+        text: model.configuration,
+      }),
     h("p", {
       class: "caption low wrap",
-      text: `${model.configuration} · ${model.note}`,
+      text: model.note,
     }),
   );
 }
