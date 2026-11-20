@@ -722,11 +722,14 @@ Do these once, before the first dispatch:
    queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, approve `sign-macos`'s deployment yourself.
-   It signs and notarizes the fixed-source CLI and pkg. `verify-macos` checks the
-   signed outputs outside the Environment before `assemble-signed`, `attest` and
-   `release`. A failure prevents tagging; fix it in a pull request before another
-   maintainer dispatch. Unsigned dry runs and stand-ins are not signing evidence.
+4. When there is something to release, read the version in the plan job's log
+   ("The next release is <version>."). If Version Rules, below, does not expect
+   it, cancel the run instead. Otherwise approve `sign-macos`'s deployment
+   yourself. It signs and notarizes the fixed-source CLI and pkg. `verify-macos`
+   checks the signed outputs outside the Environment before `assemble-signed`,
+   `attest` and `release`. A failure prevents tagging; fix it in a pull request
+   before another maintainer dispatch. Unsigned dry runs and stand-ins are not
+   signing evidence.
 5. After a green run, check that the release exists and carries exactly the
    Windows bare CLI and MSI, macOS bare CLI and signed/notarized pkg, and `SHA256SUMS`:
 
