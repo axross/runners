@@ -6,8 +6,8 @@ repository's highest-priority review-only policy and complements the
 posted-report instructions differ, this file governs. The explicitly selected
 Claude CI alternative in
 [claude-review.yaml](./.github/workflows/claude-review.yaml) supplies the policy
-through its system prompt, the assignments of the Claude Code review child
-session and the Amp review child thread name it, and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
+through its system prompt, the assignments of the Claude Code review subagent
+and the Amp review child thread name it, and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
 reviewer-origin result against this policy, and treat unobserved provider input
 as unknown, not as proof of a failed review.
 [Development Workflow](./docs/operations/development-workflow.md) owns provider
@@ -19,7 +19,7 @@ This is a **strict** review: run every mandatory check and report every finding
 within the scope below. Review the acceptance criteria carried in the pull
 request body's **Acceptance criteria** section. Do not open the tracking issue
 to find them; an absent criteria section is itself a finding (Important in
-Claude, Claude Code child, and Amp review).
+Claude, Claude Code review subagent, and Amp review).
 
 ## Adopted review arrangements
 
@@ -47,9 +47,9 @@ presentation and reporting-scope defaults in this file and Code Review:
   REQUEST_CHANGES. Its summary also carries the `<!-- ai-agent -->` marker, the
   child thread's URL, and the reviewed commit, because the review is posted
   under the same GitHub account as the change it reviews.
-- **Claude Code child** — the Claude Code review child session follows the Amp
-  arrangement, with the round token its assignment names in place of the child
-  thread's URL: a single submitted COMMENT-type review whose summary carries the
+- **Claude Code review subagent** — the Claude Code review subagent follows the
+  Amp arrangement, with the round token its assignment names in place of the
+  child thread's URL: a single submitted COMMENT-type review whose summary carries the
   `<!-- ai-agent -->` marker, the round token, and the reviewed commit, because
   the review can be posted under the same GitHub account as the change it
   reviews.
@@ -61,11 +61,11 @@ under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
 ## Severity labels for posted reviews
 
-Claude, Claude Code child, and Amp review use Code Review's two posted labels, **Important** and
-**Nit**, instead of its internal Critical/Major/Minor/Nit triage or an
-Approve/Request-Changes verdict. Codex managed review uses native priority
-labels; its presentation and reporting scope follow the adopted arrangements
-above. In this repository, a hard project rule includes every MUST rule of a
+Claude, Claude Code review subagent, and Amp review use Code Review's two posted
+labels, **Important** and **Nit**, instead of its internal
+Critical/Major/Minor/Nit triage or an Approve/Request-Changes verdict. Codex
+managed review uses native priority labels; its presentation and reporting
+scope follow the adopted arrangements above. In this repository, a hard project rule includes every MUST rule of a
 skill whose `description` matches the changed files and every applicable MUST
 rule in project conventions, such as [Security](./docs/conventions/security.md),
 subject to registered deviations in the
@@ -76,9 +76,9 @@ boundary.
 **Guidelines:**
 
 - MUST flag an applicable hard-rule violation and cite its owning skill or
-  project convention and rule. Claude, Claude Code child, and Amp review MUST label it Important;
-  Codex review uses its native priority label without implying an exact
-  equivalence.
+  project convention and rule. Claude, Claude Code review subagent, and Amp
+  review MUST label it Important; Codex review uses its native priority label
+  without implying an exact equivalence.
 
 ## Mandatory checks
 
@@ -94,7 +94,7 @@ Run the following checks on every review and raise findings within their scope:
   under [Code Review's review lenses](./.claude/skills/code-review/references/review-lenses.md),
   Acceptance Criteria boundary. Report violations demonstrable by inspecting
   the changed material, inline where a changed line supports the finding.
-  Claude, Claude Code child, and Amp review label these Important; Codex uses its native
+  Claude, Claude Code review subagent, and Amp review label these Important; Codex uses its native
   priorities. A real-host result, machine-specific measurement, or other
   external verification does not become a finding solely because it cannot be
   confirmed from the diff or lacks an evidence link, whether designated or not.
@@ -130,8 +130,8 @@ contributor's verification.
 
 ## Public-repository safety lenses
 
-Each lens is a hard project rule. Claude, Claude Code child, and Amp review label a violation
-Important; Codex review uses its native priority label.
+Each lens is a hard project rule. Claude, Claude Code review subagent, and Amp
+review label a violation Important; Codex review uses its native priority label.
 
 - **No credentials or host-identifying values.** No token, key, password,
   registration or JIT configuration, `.env` value, internal hostname, IP
@@ -227,8 +227,8 @@ These lenses apply to a change of the axmc VM runtime: `cli/src/runtime/tart/`,
 `cli/src/image/macos_base.rs`, the golden VMs' provisioning assets, and the macOS
 host document. Each is a hard project rule, owned by
 [Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
-and the sections after it. Claude, Claude Code child, and Amp review label a violation Important;
-Codex review uses its native priority label.
+and the sections after it. Claude, Claude Code review subagent, and Amp review
+label a violation Important; Codex review uses its native priority label.
 
 - **No JIT configuration in an argument list.** The JIT configuration reaches the
   guest only on the standard input of a `tart exec -i` call, never with `-t`, and

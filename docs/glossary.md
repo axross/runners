@@ -298,7 +298,7 @@ gate is the maintainer's approval of that plan.
 
 **Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
 with every plan-approval question: delivery of the run's draft pull request, the
-Claude Code review child session that reviews it, or the Claude CI review
+Claude Code review subagent that reviews it, or the Claude CI review
 request when the maintainer has selected that alternative, and watching its
 activity. See [operations/agent-sessions.md](./operations/agent-sessions.md).
 
@@ -307,10 +307,11 @@ independent-review round; it posts its own review on the pull request and is
 archived afterwards when the plan-gate archive confirmation allows it. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
-**Claude Code Review Child Session** - a fresh, non-fork general-purpose
-subagent a Claude Code run starts in its own worktree for one
-independent-review round, which posts its own review on the pull request; the
-counterpart of an Amp review child thread for a Claude Code run. See
+**Claude Code Review Subagent** - a new, non-fork instance of the project's
+`reviewer` subagent that a Claude Code run spawns in its own worktree for one
+independent-review round, assigned as that round's independent review, which
+posts its own review on the pull request; the counterpart of an Amp review child
+thread for a Claude Code run. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Plan-Gate Archive Confirmation** - the human's answer, collected at the plan

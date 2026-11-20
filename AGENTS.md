@@ -88,7 +88,10 @@ capabilities by task instead of applying every change gate to read-only work:
   to the qualifying subagents configured in
   [Agent sessions](./docs/operations/agent-sessions.md#subagents) when the host
   permits them. This agreement is the standing request for those roles; record
-  when no qualifying agent is available or the host refuses the spawn.
+  when no qualifying agent is available or the host refuses the spawn. The
+  `reviewer`'s independent-review use is authorized by the standing delivery
+  grant and the plan-gate review item, not by this request, and its advisory
+  pre-flight use never counts as that review.
 
 ## Host and delivery routing
 
@@ -153,21 +156,28 @@ consumption or review completion.
 For mandatory independent review after opening the draft pull request, use the
 route selected for the authoring host:
 
-- **Claude Code:** start a fresh Claude Code review child session and ask it to
-  review the pull request and publish its review directly there.
+- **Claude Code:** spawn a new, non-fork `reviewer` subagent instance with
+  `isolation: worktree` for each round, never resuming one, assign it as that
+  round's independent review, and ask it to review the pull request and publish
+  its review directly there.
 - **Amp:** start a fresh Amp review child thread for each round, never reusing
   one, and ask it to review the pull request and publish its review directly
   there.
 - **Codex, and changes made without an agent:** the Codex review.
 
-These children MUST have a fresh non-author context, not a fork of the author's
-conversation or a reused advisory reviewer. An independent-review child reviews
-and posts its review itself and does not delegate; the subagent-delegation rule
-above does not apply to it. Advisory pre-flight remains a separate checkpoint
-and does not satisfy independent review. Follow
+The Amp child thread and the Claude Code review subagent MUST each have a fresh
+non-author context, not a fork of the author's conversation or a resumed or
+reused instance, and each Claude Code review subagent MUST be assigned as the
+round's independent review and carry no advisory pre-flight findings. The actor
+assigned an independent review reviews and posts its review itself and does not
+delegate; the subagent-delegation rule above does not apply to it. Advisory
+pre-flight remains a separate checkpoint and does not satisfy independent
+review, and neither do phase-deliverable reviewers or the author's own checks.
+The Independent Review lists every exclusion. Follow
 [The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
-for qualification, review rounds, publication verification, child cleanup, and
-the comment-triggered Claude CI review the maintainer can select instead.
+for qualification, review rounds, publication verification, how a round's
+reviewer is ended or handed over, and the comment-triggered Claude CI review the
+maintainer can select instead.
 Current host and tool restrictions still apply; an unavailable selected route
 leaves the independent-review gate unmet rather than authorizing a substitute.
 
