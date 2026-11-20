@@ -3,7 +3,7 @@
 //! nothing is sent.
 
 use marshal_cli::agent::config::{ConfigRead, Problem};
-use marshal_session::{ConfigAnswer, ConfigRequest, Failure};
+use marshal_session::{AgentInfo, ConfigAnswer, ConfigRequest, Failure};
 
 use crate::support::{Agent, Answer, Called, World, fixture, start};
 
@@ -26,6 +26,7 @@ async fn a_request_reaches_the_agent_and_its_answer_or_refusal_comes_back_whole(
     agent.push(fixture("running"));
     session.settle().await;
 
+    assert!(session.screen.view().window.editor.is_some());
     agent.answer_config(Ok(ConfigAnswer::Read(read())));
     let answer = session.handle.config(ConfigRequest::Read).await.unwrap();
     assert_eq!(answer, ConfigAnswer::Read(read()));
@@ -53,6 +54,27 @@ async fn a_request_reaches_the_agent_and_its_answer_or_refusal_comes_back_whole(
             Called::Config(format!("{edit:?}")),
         ]
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_agent_without_the_configuration_methods_gets_no_editor_and_no_request() {
+    let (agent, link) = Agent::reporting(AgentInfo {
+        version: "1.3.0".into(),
+        drains: true,
+        edits: false,
+    });
+    let world = World::default();
+    world.then(Answer::Agent(link));
+    let session = start(world);
+    agent.push(fixture("running"));
+    session.settle().await;
+
+    assert_eq!(session.screen.view().window.editor, None);
+    assert!(matches!(
+        session.handle.config(ConfigRequest::Read).await,
+        Err(Failure::NotServed(_))
+    ));
+    assert_eq!(agent.calls(), []);
 }
 
 #[tokio::test(start_paused = true)]
