@@ -94,10 +94,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                 Some(Ok(())) => backoff.reset(),
                 Some(Err(Failure::Store(reason))) => {
                     let mut state = self.state.borrow_mut();
-                    state.view.state = ListenerState::StoreError;
-                    state.view.status = None;
-                    state.view.refused_host = None;
-                    state.view.reason = Some(reason);
+                    state.view.store_error(reason);
                     state.fatal = true;
                     drop(state);
                     self.publish();

@@ -176,16 +176,25 @@ fn recreation_and_capacity_reduction_never_release_active_or_uncertain_seats() {
     assert!(demand.reserve(1, 1).is_none());
 }
 
-struct Tokens(RefCell<Result<String, String>>);
+struct Tokens(RefCell<Result<String, String>>, std::cell::Cell<usize>);
 
 impl Tokens {
     fn new() -> Self {
-        Self(RefCell::new(Ok("<pat-placeholder>".to_owned())))
+        Self(
+            RefCell::new(Ok("<pat-placeholder>".to_owned())),
+            std::cell::Cell::new(0),
+        )
+    }
+
+    /// how many times the store has been read.
+    fn reads(&self) -> usize {
+        self.1.get()
     }
 }
 
 impl TokenSource for Tokens {
     fn token(&self, _: &str, _: &str, _: Option<&Path>) -> Result<Secret, String> {
+        self.1.set(self.1.get() + 1);
         self.0.borrow().clone().map(Secret::new)
     }
 }
@@ -1319,6 +1328,56 @@ mod http {
                 .count(),
             1
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_registration_reads_the_store_once_and_again_only_after_a_renewal() {
+        for replaced in [false, true] {
+            let fake = Fake::new().await;
+            let client = fake.client();
+            let tokens = Tokens::new();
+            let channels = Channels::new(1);
+            let log = MemoryLog::default();
+            let coordinator = Coordinator::new(
+                pool(),
+                &client,
+                &tokens,
+                &SystemClock,
+                &log,
+                channels.controls(),
+            );
+            let mut replies = connect();
+            replies.push(session());
+            if replaced {
+                replies.extend(connect());
+                let mut patch = session();
+                patch.method = "PATCH";
+                replies.push(patch);
+            }
+            replies.push(jit());
+            replies.extend([
+                Reply::json("GET", "runners/99", 200, runner()),
+                Reply::empty("DELETE", "runners/99"),
+            ]);
+            tokio::join!(fake.serve(replies), async {
+                seed(&coordinator).await;
+                let mut lease = coordinator
+                    .reserve(1, channels.stop.subscribe())
+                    .await
+                    .unwrap();
+                if replaced {
+                    *tokens.0.borrow_mut() = Ok("<replacement-pat-placeholder>".to_owned());
+                }
+                let before = tokens.reads();
+                let token = Secret::new("<unused-runtime-token>".to_owned());
+                lease.request_jit(&request(&token)).await.unwrap();
+                assert_eq!(tokens.reads() - before, if replaced { 2 } else { 1 });
+                lease
+                    .finish(false, Instant::now() + Duration::from_secs(2))
+                    .await
+                    .unwrap();
+            });
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

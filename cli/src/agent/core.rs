@@ -581,10 +581,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                     retry_delay(&error, backoff.fail(), self.clock.now())
                 }
                 Err(ListenerFailure::Store(reason)) => {
-                    view.state = ListenerState::StoreError;
-                    view.status = None;
-                    view.refused_host = None;
-                    view.reason = Some(reason);
+                    view.store_error(reason);
                     self.publish_cleanup(&view);
                     return;
                 }

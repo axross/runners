@@ -93,6 +93,14 @@ impl View {
         self.session_cleanup_incomplete || !self.incomplete_registrations.is_empty()
     }
 
+    /// a failed store read stops the pool, with the store's own kind and code as the reason.
+    pub(crate) fn store_error(&mut self, reason: String) {
+        self.state = ListenerState::StoreError;
+        self.status = None;
+        self.refused_host = None;
+        self.reason = Some(reason);
+    }
+
     pub(crate) fn failed(&mut self, error: &Error, recreated: bool) -> bool {
         let fatal = matches!(
             error.kind,
@@ -361,10 +369,7 @@ impl<'a, T: TokenSource, K: Clock> Coordinator<'a, T, K> {
             .token(&self.pool.owner, &self.pool.repository, None)
             .inspect_err(|reason| {
                 let mut state = self.state.borrow_mut();
-                state.view.state = ListenerState::StoreError;
-                state.view.status = None;
-                state.view.refused_host = None;
-                state.view.reason = Some(reason.clone());
+                state.view.store_error(reason.clone());
                 state.fatal |= fatal;
                 drop(state);
                 self.publish();

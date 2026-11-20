@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use tokio::time::{Instant, timeout_at};
 
 use crate::runtime::clock::Clock;
@@ -7,9 +5,10 @@ use crate::runtime::name::{is_own_container_name, slot_of_container_name};
 use crate::runtime::registration::{JitRequest, Registrar, RegistrationError};
 use crate::runtime::secret::Secret;
 use crate::runtime::token::TokenSource;
+use crate::runtime::worker::INITIAL_BACKOFF;
 
 use super::listener::Failure;
-use super::{Coordinator, Reservation, View};
+use super::{Coordinator, REFRESH_BEFORE, Reservation, View};
 
 const MAX_CREDENTIAL_ROTATIONS: u32 = 3;
 const HALTED: &str = "on-demand registration halted";
@@ -145,25 +144,18 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
             .expires_at()
             .duration_since(pool.clock.now())
             .unwrap_or_default()
-            <= Duration::from_secs(120);
-        let mut pat = pool.token(refreshing)?;
-        if current.connection.needs_renewal(&pat, pool.clock.now()) {
-            current = self
-                .unless_stopped(async {
-                    pool.renew_for_pat(current, &pat)
-                        .await
-                        .map_err(|failure| pool.registration_failed(failure))
-                })
-                .await?;
-        }
+            <= REFRESH_BEFORE;
         // a previous response may have been lost or cancelled; absence must be confirmed before retrying.
-        self.unless_stopped(pool.cleanup_with_pat(self.id, &pat))
-            .await?;
-        for _ in 0..MAX_CREDENTIAL_ROTATIONS {
-            pat = pool.token(refreshing)?;
-            if !current.connection.needs_renewal(&pat, pool.clock.now()) {
-                break;
+        self.unless_stopped(pool.cleanup(self.id)).await?;
+        let mut pat = pool.token(refreshing)?;
+        let mut renewals = 0;
+        while current.connection.needs_renewal(&pat, pool.clock.now()) {
+            if renewals == MAX_CREDENTIAL_ROTATIONS {
+                return Err(
+                    "stored token changed during credential renewal; retry required".to_owned(),
+                );
             }
+            renewals += 1;
             current = self
                 .unless_stopped(async {
                     pool.renew_for_pat(current, &pat)
@@ -171,12 +163,8 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
                         .map_err(|failure| pool.registration_failed(failure))
                 })
                 .await?;
-        }
-        pat = pool.token(refreshing)?;
-        if current.connection.needs_renewal(&pat, pool.clock.now()) {
-            return Err(
-                "stored token changed during credential renewal; retry required".to_owned(),
-            );
+            // a token set during the renewal asks for the next one
+            pat = pool.token(refreshing)?;
         }
         if self.halted() || epoch.changed() || slot_epoch.has_changed().unwrap_or(true) {
             return Err(HALTED.to_owned());
@@ -223,7 +211,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
     fn registration_failed(&self, failure: Failure) -> String {
         match failure {
             Failure::Api(error) => {
-                self.failed(&error, Duration::from_secs(5));
+                self.failed(&error, INITIAL_BACKOFF);
                 if error.kind == crate::scaleset::ErrorKind::NotFound
                     && !self.state.borrow().recreated
                 {
