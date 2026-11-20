@@ -291,7 +291,7 @@ fn read_repositories(
         }
     }
     if entries.len() > 1 {
-        uniqueness::check_entries(&entries, cx.profile, &mut cx.errors);
+        uniqueness::check_entries(&entries, cx.profile, routing_label, &mut cx.errors);
     }
     entries
 }

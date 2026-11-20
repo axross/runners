@@ -93,6 +93,16 @@
     ],
     "lacks": []
   },
+  "accepted/windows-organization.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "pool[0]: name=alpha repository=Octo (runner group builders) runners=2",
+      "pool[1]: name=beta repository=other/hello runners=1"
+    ],
+    "lacks": []
+  },
   "accepted/windows-other-toml-forms.toml": {
     "profile": "axpc",
     "outcome": "accept",
@@ -323,6 +333,50 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/organization-and-repository.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 5: pool[0]: names both repository and organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-label-clash.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 12: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels 'GPU' also appear at pool[0]; give each pool its own labels"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-no-target.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 5: pool[0]: names neither repository nor organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-runner-group-missing.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 5: pool[0].runner_group: required with organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].scale_set: not allowed with organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/organization-volumes.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 11: pool[0].volumes: not allowed with organization"],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/pool-labels-in-toml-names.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -517,6 +571,13 @@
       "line 3: Routing_Label: unknown key",
       "line 1: routing_label: required key is missing"
     ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/runner-group-without-organization.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 8: pool[0].runner_group: only with organization"],
     "contains": [],
     "lacks": []
   },

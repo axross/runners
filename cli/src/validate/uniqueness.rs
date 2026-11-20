@@ -55,7 +55,12 @@ impl<'a> Keys<'a> {
 /// token files compare under simple case folding, as Windows file names ignore case,
 /// and pools whose OS differs can share a non-platform label, as their platform
 /// labels differ.
-pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
+pub fn check_entries(
+    entries: &[Entry],
+    profile: Profile,
+    routing_label: Option<&str>,
+    errors: &mut Errors,
+) {
     let keys: Vec<Keys> = entries
         .iter()
         .map(|entry| Keys::new(entry, profile))
@@ -106,7 +111,16 @@ pub fn check_entries(entries: &[Entry], profile: Profile, errors: &mut Errors) {
                 if !overlap.is_empty() {
                     let labels = overlap.join(", ");
                     let kind = if organization_overlap {
-                        Kind::OrganizationRoutingOverlap { labels, other }
+                        let routing_label_shared = routing_label.is_some_and(|routing_label| {
+                            overlap
+                                .iter()
+                                .any(|label| fold::eq_ascii(label, routing_label))
+                        });
+                        Kind::OrganizationRoutingOverlap {
+                            labels,
+                            other,
+                            routing_label_shared,
+                        }
                     } else {
                         Kind::AmbiguousRouting { labels, other }
                     };

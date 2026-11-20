@@ -226,6 +226,8 @@ pub enum Kind {
     OrganizationRoutingOverlap {
         labels: String,
         other: usize,
+        /// whether the shared labels include the file's `routing_label`.
+        routing_label_shared: bool,
     },
     MacosVmsOverLimit {
         total: u32,
@@ -361,10 +363,21 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
             "ambiguous same-repository routing; labels '{labels}' also appear at {}",
             entry_path(*other)
         ),
-        Kind::OrganizationRoutingOverlap { labels, other } => format!(
-            "ambiguous routing for pools that may serve the same repository; labels '{labels}' also appear at {}; set distinct explicit labels on each pool instead of the shared routing_label",
-            entry_path(*other)
-        ),
+        Kind::OrganizationRoutingOverlap {
+            labels,
+            other,
+            routing_label_shared,
+        } => {
+            let advice = if *routing_label_shared {
+                "set distinct explicit labels on each pool instead of the shared routing_label"
+            } else {
+                "give each pool its own labels"
+            };
+            format!(
+                "ambiguous routing for pools that may serve the same repository; labels '{labels}' also appear at {}; {advice}",
+                entry_path(*other)
+            )
+        }
         Kind::MacosVmsOverLimit { total, limit } => format!(
             "macOS pools total {total} VMs (the sum of their {per_pool}), above the limit of {limit}"
         ),

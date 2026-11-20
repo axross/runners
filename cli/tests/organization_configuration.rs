@@ -196,8 +196,8 @@ fn organization_volumes_are_rejected_when_present_even_if_empty_or_wrong_typed()
     assert_eq!(repository.entries[0].volumes[0].name, "a-cache");
 }
 
-/// the reserved organisation constraint must not silently enable an on-demand
-/// feature that this repository baseline does not yet implement.
+/// `scale_set` is reported as `not allowed with organization` on an organisation
+/// pool whatever its value, and stays an unknown key on a repository pool.
 #[test]
 fn scale_set_is_refused_for_organizations_without_admitting_it_to_repository_pools() {
     for value in ["'builds'", "false", "[]"] {
@@ -288,18 +288,35 @@ fn organization_overlap_is_case_insensitive_in_both_pool_orders_and_across_group
             "organization = 'example'\nrunner_group = 'two'",
         ),
     ] {
-        for (a, b, label) in [
-            ("", "", "route"),
-            ("\nlabels = []", "", "route"),
-            ("\nlabels = ['Build']", "\nlabels = ['build']", "build"),
-            ("\nlabels = ['route']", "", "route"),
-            ("", "\nlabels = ['ROUTE']", "ROUTE"),
+        for (a, b, label, routing_label_shared) in [
+            ("", "", "route", true),
+            ("\nlabels = []", "", "route", true),
+            (
+                "\nlabels = ['Build']",
+                "\nlabels = ['build']",
+                "build",
+                false,
+            ),
+            ("\nlabels = ['route']", "", "route", true),
+            ("", "\nlabels = ['ROUTE']", "ROUTE", true),
             (
                 "\nlabels = ['shared', 'only-first']",
                 "\nlabels = ['only-second', 'SHARED']",
                 "SHARED",
+                false,
+            ),
+            (
+                "\nlabels = ['route', 'shared']",
+                "\nlabels = ['SHARED', 'Route']",
+                "SHARED, Route",
+                true,
             ),
         ] {
+            let advice = if routing_label_shared {
+                "set distinct explicit labels on each pool instead of the shared routing_label"
+            } else {
+                "give each pool its own labels"
+            };
             let text = pair(&format!("{first}{a}"), &format!("{second}{b}"));
             let line = text
                 .lines()
@@ -312,7 +329,7 @@ fn organization_overlap_is_case_insensitive_in_both_pool_orders_and_across_group
             assert_eq!(
                 problems(&text, Profile::Axpc),
                 [format!(
-                    "line {line}: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels '{label}' also appear at pool[0]; set distinct explicit labels on each pool instead of the shared routing_label"
+                    "line {line}: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels '{label}' also appear at pool[0]; {advice}"
                 )]
             );
         }
