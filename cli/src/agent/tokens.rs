@@ -120,7 +120,6 @@ mod tests {
         (StoreTokens::new(Some(store.clone())), store)
     }
 
-    /// agent registration must not fall back to a token file outside its user store.
     #[test]
     fn a_registration_reads_the_stored_token_by_the_lower_case_key_and_never_the_file() {
         let (tokens, _) = tokens();

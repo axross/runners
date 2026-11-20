@@ -156,8 +156,8 @@ tokn = "ghp_undefined00000000000000000000000"
         .await;
 }
 
-/// a repository pool stays live as the control: removing an organisation pool
-/// must not turn its key into a released repository or discard the control token.
+/// removing an organisation pool leaves a repository pool and its token in place,
+/// and does not report the organisation key as a released repository.
 #[tokio::test(flavor = "current_thread")]
 async fn removing_an_organization_pool_reports_no_released_repository() {
     let rig = Rig::new(ONE_POOL);

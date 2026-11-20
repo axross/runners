@@ -163,8 +163,8 @@ fn invalid_target_and_group_types_are_not_quoted_or_coerced() {
     );
 }
 
-/// an empty volume list is still a forbidden organisation key, not a way to
-/// bypass the trust boundary; repository volume behaviour is the control.
+/// an empty volume list is still a forbidden organisation key; a repository pool's
+/// volumes are unaffected.
 #[test]
 fn organization_volumes_are_rejected_when_present_even_if_empty_or_wrong_typed() {
     for value in [
@@ -373,8 +373,8 @@ fn labels_only_overlap_for_targets_that_can_serve_the_same_repository() {
     );
 }
 
-/// platform labels separate routing across operating systems; changing only the
-/// second OS supplies the control where the shared custom label is ambiguous.
+/// platform labels separate routing across operating systems, so pools whose
+/// operating systems differ may share a custom label.
 #[test]
 fn matching_organization_owners_can_share_labels_when_their_os_differs() {
     let text = pair(

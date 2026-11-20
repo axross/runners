@@ -249,7 +249,6 @@ async fn the_token_is_read_again_at_every_registration() {
     assert_eq!(tokens, [TOKEN, "ghp_rotated", "ghp_rotated"]);
 }
 
-/// the registration target must not change the container isolation contract.
 #[tokio::test(flavor = "current_thread")]
 async fn a_container_runs_under_the_run_contract_with_the_jit_config_and_a_utc_name() {
     let rig = Rig::new();

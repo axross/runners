@@ -477,7 +477,6 @@ mod tests {
 
     type Change = fn(&mut Plan);
 
-    /// conversion equivalence must cover settings beyond the registration target.
     #[test]
     fn the_comparison_finds_a_change_to_any_setting_of_a_pool() {
         let original = plan(WINDOWS_FILE);

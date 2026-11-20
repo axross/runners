@@ -30,7 +30,6 @@ struct Keys<'a> {
 }
 
 impl<'a> Keys<'a> {
-    /// platform labels route by OS and must not count as custom-label collisions.
     fn new(entry: &'a Entry, profile: Profile) -> Self {
         let platform = profile.platform_labels(entry.os);
         Self {

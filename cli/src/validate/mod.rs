@@ -351,7 +351,6 @@ mod tests {
         names
     }
 
-    /// derived readers must admit cross-profile fields before host-specific checks.
     #[test]
     fn each_derived_type_names_the_union_of_both_profiles_fields() {
         let mut root = union(Profile::Axpc.root_fields(), Profile::Axmc.root_fields());

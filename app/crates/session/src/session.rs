@@ -238,7 +238,6 @@ impl Handle {
         .await
     }
 
-    /// uses the organization's own method and key, never a repository token's scope.
     pub async fn set_organization_token(
         &self,
         organization: String,
@@ -1058,7 +1057,6 @@ impl<D: Dial> Session<D> {
         self.tokens.results.insert(key.to_string(), result);
     }
 
-    /// saves in either namespace with the same limits and feedback lifecycle.
     fn set_token(&mut self, scope: TokenScope, key: &str, token: String, reply: Reply<()>) {
         let key = match scope.parse(key) {
             Ok(key) => key,
@@ -1118,7 +1116,6 @@ impl<D: Dial> Session<D> {
         });
     }
 
-    /// leaves a failed removal in the shared session feedback, not a success receipt.
     fn remove_token(&mut self, scope: TokenScope, key: &str, reply: Reply<()>) {
         let key = match scope.parse(key) {
             Ok(key) => key,

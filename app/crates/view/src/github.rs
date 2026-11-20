@@ -260,7 +260,6 @@ fn cause(word: &str) -> Option<&'static str> {
     })
 }
 
-/// GitHub status failures in organisation wording; unknown causes stay silent.
 fn organization_cause(word: &str) -> Option<&'static str> {
     match word {
         "token_rejected" => {

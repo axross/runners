@@ -135,7 +135,6 @@ pub fn diagnostic_records(plan: &Plan) -> Vec<DiagnosticRecord> {
     plan.entries.iter().filter_map(diagnostic_record).collect()
 }
 
-/// prepares container placement; VM disk sizing belongs to the VM pool path.
 fn pool_from_entry(
     plan: &Plan,
     index: usize,

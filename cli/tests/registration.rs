@@ -33,7 +33,6 @@ fn short() -> HttpLimits {
     }
 }
 
-/// repository-only requests provide the compatibility control for organisation tests.
 async fn register(
     stub: &Stub,
     limits: HttpLimits,
@@ -234,7 +233,6 @@ async fn a_token_that_cannot_be_a_header_fails_without_naming_it() {
     assert!(stub.requests().is_empty());
 }
 
-/// URL parsing must not turn a repository component into another API destination.
 #[tokio::test(flavor = "current_thread")]
 async fn an_owner_or_repository_that_would_leave_the_repos_path_is_refused_unsent() {
     let stub = Stub::start(Vec::new());
@@ -366,8 +364,6 @@ fn group_page(groups: Vec<serde_json::Value>, headers: Vec<(&'static str, String
     }
 }
 
-/// uses an ordinary registrar against the stub, preserving the production
-/// ordering of the group read and the JIT request.
 async fn register_organization(
     registrar: &GitHubRegistrar,
     group: &str,
@@ -386,8 +382,7 @@ async fn register_organization(
         .await
 }
 
-/// workflow restrictions may narrow either selected group; id 47 distinguishes
-/// the checked group from the repository registrar's default id 1.
+/// workflow restrictions may narrow either selected group.
 #[tokio::test(flavor = "current_thread")]
 async fn organization_registration_uses_the_checked_group_without_reading_its_repositories() {
     for restricted in [false, true] {
@@ -656,8 +651,7 @@ async fn group_paging_is_complete_and_confined_to_its_origin_and_path() {
     );
 }
 
-/// the extra group read must not weaken the registrar's request limits; each
-/// transport failure is exercised on both sides of the GET/POST boundary.
+/// the extra group read must not weaken the registrar's request limits.
 #[tokio::test(flavor = "current_thread")]
 async fn organization_group_and_jit_reads_share_the_redirect_timeout_and_size_bounds() {
     for at_jit in [false, true] {

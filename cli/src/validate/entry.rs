@@ -1,3 +1,7 @@
+//! one pool entry: its fields, its target (a repository, or in a TOML file an
+//! organisation and runner group), then whether it takes part in the cross-entry
+//! checks.
+
 use std::path::Path;
 
 use serde::Deserialize;
@@ -267,8 +271,8 @@ fn read_repository(node: &EntryFields, path: &KeyPath, cx: &mut Context) -> Opti
     })
 }
 
-/// keeps owner and repository validation shared across split-field JSON and
-/// joined-field TOML; each format retains its own diagnostic paths.
+/// reads the owner and the repository name, from the two keys of a format that has
+/// them or from the one `owner/name` key of a format that joins them.
 fn read_owner_and_repository<'a>(
     node: &'a EntryFields,
     path: &KeyPath,

@@ -106,8 +106,8 @@ async fn organization_tokens_are_normalized_replaced_and_removed_without_touchin
     .await;
 }
 
-/// request errors must not echo input; the storage bound counts UTF-16 units,
-/// so astral characters distinguish it from a character-count limit.
+/// request errors must not echo input; the storage bound counts UTF-16 units, not
+/// characters.
 #[tokio::test(flavor = "current_thread")]
 async fn organization_token_methods_refuse_malformed_params_without_repeating_them() {
     let rig = Rig::new(ONE_POOL);
@@ -369,8 +369,8 @@ async fn a_pool_skipped_for_want_of_a_token_starts_when_one_is_set() {
         .await;
 }
 
-/// a live repository pool is the control while an organisation token is saved,
-/// rotated between jobs and removed before the next registration attempt.
+/// an organisation token is saved, rotated between jobs and removed before the next
+/// registration attempt, without affecting a repository pool's token.
 #[tokio::test(flavor = "current_thread")]
 async fn an_organization_token_starts_a_skipped_pool_and_rotates_without_crossing_repository_keys()
 {
@@ -692,7 +692,6 @@ async fn a_registration_whose_store_fails_names_the_kind_and_code_in_the_runner_
         .await;
 }
 
-/// unavailable storage is an error for either token scope, not an in-memory fallback.
 #[tokio::test(flavor = "current_thread")]
 async fn without_a_token_store_every_pool_is_skipped_and_a_token_cannot_be_set() {
     let rig = Rig::new(ONE_POOL);

@@ -665,7 +665,6 @@ mod tests {
         agent.await.unwrap();
     }
 
-    /// newer clients must remain usable with agents that predate organisation methods.
     #[tokio::test]
     async fn a_method_the_welcome_did_not_list_is_not_sent() {
         let (near, far) = duplex(4096);

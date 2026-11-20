@@ -280,7 +280,6 @@ mod tests {
         );
     }
 
-    /// isolates CPU placement from configuration validation and routing choices.
     fn entry(slots: u32, cpus: f64) -> Entry {
         Entry {
             index: 0,

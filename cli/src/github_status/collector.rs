@@ -317,7 +317,6 @@ pub struct Collector<'a, F: Fetch> {
 }
 
 impl<'a, F: Fetch> Collector<'a, F> {
-    /// shares one rate budget across both target kinds; subscription controls polling.
     #[must_use]
     pub fn new(
         fetch: &'a F,
@@ -948,7 +947,6 @@ impl<'a, F: Fetch> Collector<'a, F> {
         }
     }
 
-    /// enriches repository runners only; organisation credentials never look up jobs.
     fn take_jobs(&mut self, key: &TokenKey, waiting: &[String], pages: Vec<JobsPage>) {
         let Some(repository) = self.scopes.get_mut(key) else {
             return;

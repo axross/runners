@@ -919,8 +919,6 @@ async fn retry_after_is_waited_out_and_a_poll_interval_lengthens_the_checks() {
 const ORGANIZATION_RUNNERS: &str = "/orgs/owner/actions/runners?per_page=100";
 const ORGANIZATION_TOKEN: &str = "github_pat_fake_organization_status_token";
 
-/// builds wire-shaped pools independently of the producer, so a defaulted
-/// repository field cannot conceal an organisation-only decoding failure.
 fn organization_snapshot(
     pools: &[(&str, &str, &str)],
     has_token: bool,
@@ -958,8 +956,6 @@ fn organization_snapshot(
     Arc::new(serde_json::from_value(value).unwrap())
 }
 
-/// keeps the repository credential distinct from two organisation credentials,
-/// making accidental reuse of a repository scope observable to the fake fetch.
 fn organization_world(
     handler: impl FnMut(&str, Option<&str>, Duration) -> Result<Answer, Cause> + 'static,
 ) -> World {
@@ -976,8 +972,7 @@ fn organization_world(
     world
 }
 
-/// several pools in one group and another group share one paged scope; an
-/// unrelated host's runner and a same-named repository runner are controls.
+/// several pools in one group and another group share one paged scope.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn organization_pools_share_conditional_pages_but_not_repository_scope_or_jobs() {
     const PAGE2: &str = "/orgs/owner/actions/runners?per_page=100&page=2";
@@ -1241,8 +1236,8 @@ async fn removed_organization_groups_and_names_do_not_survive_cached_status() {
     assert_eq!(status.organizations[0].runners[0].name, "alpha-2");
 }
 
-/// a repository request is the control for a pause caused by organisation
-/// headers, including the boundary where a new hourly budget becomes usable.
+/// an organisation response's rate headers pause repository requests too, until a
+/// new hourly budget becomes usable.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn an_organization_response_updates_and_pauses_the_one_host_budget() {
     let world = organization_world(|path, _, at| {
@@ -1360,8 +1355,6 @@ async fn organization_paging_refuses_other_origins_scopes_and_endpoints() {
     }
 }
 
-/// a successful busy state precedes each failure, distinguishing retained last
-/// data from falsely treating an error response as a fresh successful check.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn organization_failures_back_off_without_exposing_tokens_or_response_fields() {
     for (code, cause) in [

@@ -91,7 +91,6 @@ fn problems(bytes: &[u8], profile: Profile) -> Vec<String> {
     }
 }
 
-/// fixture expectations cover semantic defaults without depending on Rust's Debug form.
 fn describe(plan: &Plan) -> Vec<String> {
     let settings = plan.settings.as_ref().unwrap();
     let show = |setting: Option<bool>| setting.map_or("unset".to_string(), |s| s.to_string());

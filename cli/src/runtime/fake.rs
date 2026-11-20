@@ -554,7 +554,6 @@ pub struct FakeRegistrar {
 }
 
 impl Registrar for FakeRegistrar {
-    /// supplies controlled registration outcomes without contacting GitHub.
     async fn request_jit(&self, request: &JitRequest<'_>) -> Result<Secret, RegistrationError> {
         self.timeline.push("register");
         self.seen.borrow_mut().push(SeenRegistration {

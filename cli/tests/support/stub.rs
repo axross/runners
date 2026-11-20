@@ -110,7 +110,6 @@ impl Drop for Stub {
     }
 }
 
-/// records real loopback HTTP requests while keeping replies under each test's control.
 fn serve(
     listener: &TcpListener,
     own_address: &str,

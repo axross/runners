@@ -496,7 +496,6 @@ mod tests {
     use crate::profile::Profile;
     use crate::validate::Plan;
 
-    /// a two-slot Mac pool exercises VM-only states without starting a VM.
     fn entry() -> Entry {
         Entry {
             path: String::new(),

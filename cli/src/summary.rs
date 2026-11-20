@@ -17,8 +17,6 @@ fn flag(value: bool) -> &'static str {
     if value { "True" } else { "False" }
 }
 
-/// keeps a group visible in human-readable output without inventing a repository
-/// key for an organisation destination.
 fn target_summary(target: &PoolTarget) -> String {
     match target {
         PoolTarget::Repository { owner, repository } => format!("Repository {owner}/{repository}"),
@@ -29,8 +27,6 @@ fn target_summary(target: &PoolTarget) -> String {
     }
 }
 
-/// describes the container host's quota and placement rules; CPU ids are not
-/// available until launch.
 fn axpc_summary(plan: &Plan) -> Vec<String> {
     let mut lines = vec![
         format!(
@@ -82,8 +78,6 @@ fn axpc_summary(plan: &Plan) -> Vec<String> {
     lines
 }
 
-/// describes the VM host's per-pool and host-wide limits without implying that
-/// configuration validation has checked live host prerequisites.
 fn axmc_summary(plan: &Plan) -> Vec<String> {
     let mut header = format!(
         "Host configuration is valid: {} entries, profile axmc",

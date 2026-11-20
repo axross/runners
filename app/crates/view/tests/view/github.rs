@@ -33,7 +33,6 @@ fn view_with(status: &GithubStatus) -> View {
     build(&Input::new(Connection::Connected, Some(&snapshot), now()).github(live(status)))
 }
 
-/// repository and organisation registrations deliberately share a runner name.
 fn mixed_snapshot() -> Snapshot {
     let mut snapshot = load("running");
     snapshot.pools[0].runners[0].workload = Some("shared".to_string());
@@ -52,7 +51,6 @@ fn mixed_snapshot() -> Snapshot {
     snapshot
 }
 
-/// the same names in different scopes carry conflicting states, not matching rows.
 fn mixed_github(change: impl FnOnce(&mut Value)) -> GithubStatus {
     github_of(|value| {
         value["repositories"][0]["runners"][0]["name"] = "shared".into();
