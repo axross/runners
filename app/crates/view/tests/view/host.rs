@@ -120,8 +120,11 @@ fn the_macs_view_adds_no_windows_or_docker_words() {
     }
 }
 
+/// the view draws an on-demand line for any snapshot that carries `on_demand`, on either host.
+/// the Mac's agent never sends it, because its validator rejects `scale_set`
+/// (`rejected/macos-scale-set.toml`), so this checks only that Mac snapshots without it draw none.
 #[test]
-fn the_macs_window_shows_no_on_demand_line() {
+fn mac_snapshots_without_on_demand_data_draw_no_on_demand_line() {
     let mut views: Vec<(String, View)> = [
         "waiting_for_docker",
         "building",
