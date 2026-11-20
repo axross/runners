@@ -1188,10 +1188,22 @@ mod contract {
     }
 
     #[tokio::test]
-    async fn each_request_sends_one_accept_and_a_content_type_only_with_a_body() {
-        let (fake, client, connection, session) = listening(vec![Reply::empty(202)]).await;
+    async fn each_request_sends_one_accept_and_every_service_request_but_the_poll_a_json_content_type()
+     {
+        let (fake, client, connection, session) = listening(vec![
+            Reply::empty(202),
+            Reply::empty(204),
+            session(),
+            Reply::empty(204),
+        ])
+        .await;
         client.poll(&session, None, 1).await.unwrap();
+        client.acknowledge(&session, 71).await.unwrap();
+        client.refresh_session(&connection, &session).await.unwrap();
+        client.close_session(&connection, &session).await.unwrap();
         let requests = fake.requests();
+        let with_content_type = ["accept", "authorization", "content-type", "user-agent"];
+        let service_accept = Some("application/json; api-version=6.0-preview");
         let rest = &requests[0];
         assert_eq!(
             rest.names(),
@@ -1204,23 +1216,14 @@ mod contract {
         );
         assert_eq!(rest.header("accept"), Some("application/vnd.github+json"));
         let exchange = &requests[1];
-        assert_eq!(
-            exchange.names(),
-            ["accept", "authorization", "content-type", "user-agent"]
+        assert_eq!(exchange.names(), with_content_type);
+        assert_ne!(
+            exchange.header("accept"),
+            service_accept,
+            "the exchange sends no service accept"
         );
-        assert_eq!(exchange.header("accept"), Some("*/*"));
         let lookup = &requests[2];
-        assert_eq!(lookup.names(), ["accept", "authorization", "user-agent"]);
-        assert_eq!(
-            lookup.header("accept"),
-            Some("application/json; api-version=6.0-preview")
-        );
-        let created = &requests[3];
-        assert_eq!(
-            created.names(),
-            ["accept", "authorization", "content-type", "user-agent"]
-        );
-        assert_eq!(created.header("content-type"), Some("application/json"));
+        let session_post = &requests[3];
         let poll = &requests[4];
         assert_eq!(
             poll.names(),
@@ -1230,6 +1233,27 @@ mod contract {
                 "user-agent",
                 "x-scalesetmaxcapacity"
             ]
+        );
+        assert_eq!(poll.header("accept"), service_accept);
+        let [acknowledge, refresh, close] = &requests[5..] else {
+            panic!(
+                "expected three requests after the poll, got {}",
+                requests.len()
+            );
+        };
+        for service in [lookup, session_post, acknowledge, refresh, close] {
+            assert_eq!(service.names(), with_content_type, "{}", service.path);
+            assert_eq!(service.header("accept"), service_accept, "{}", service.path);
+            assert_eq!(
+                service.header("content-type"),
+                Some("application/json"),
+                "{}",
+                service.path
+            );
+        }
+        assert_eq!(
+            [&acknowledge.method, &refresh.method, &close.method],
+            ["DELETE", "PATCH", "DELETE"]
         );
         for request in &requests {
             assert_eq!(request.count("accept"), 1, "{}", request.path);

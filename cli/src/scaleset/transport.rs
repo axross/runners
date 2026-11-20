@@ -120,13 +120,15 @@ impl Transport {
     }
 
     /// marks credentials sensitive before handing a request to reqwest; `accept` is the one
-    /// Accept value of the endpoint family, and a request without a body sends no content type.
+    /// Accept value of the endpoint family, and `json` says whether the family sends a JSON
+    /// content type even without a body.
     fn request(
         &self,
         method: Method,
         url: Url,
         authorization: (&str, &Secret),
         accept: Option<&str>,
+        json: bool,
         body: Option<Value>,
     ) -> Result<RequestBuilder, Error> {
         let (scheme, token) = authorization;
@@ -137,10 +139,11 @@ impl Transport {
         if let Some(accept) = accept {
             request = request.header(ACCEPT, accept);
         }
+        if json {
+            request = request.header(CONTENT_TYPE, "application/json");
+        }
         if let Some(body) = body {
-            request = request
-                .header(CONTENT_TYPE, "application/json")
-                .body(body.to_string());
+            request = request.body(body.to_string());
         }
         Ok(request)
     }
@@ -155,11 +158,20 @@ impl Transport {
         statuses: &[u16],
     ) -> Result<Vec<u8>, Error> {
         let request = self
-            .request(method, url, ("Bearer", token), Some(ACCEPT_VALUE), body)?
+            .request(
+                method,
+                url,
+                ("Bearer", token),
+                Some(ACCEPT_VALUE),
+                body.is_some(),
+                body,
+            )?
             .header("X-GitHub-Api-Version", API_VERSION);
         self.read(request, statuses).await.map(|(_, body)| body)
     }
 
+    /// every Actions-service request sends a JSON content type, as the upstream client does,
+    /// whether or not it has a body; only the message poll, which upstream sends without one, does not.
     pub async fn service(
         &self,
         method: Method,
@@ -168,7 +180,14 @@ impl Transport {
         body: Option<Value>,
         statuses: &[u16],
     ) -> Result<Vec<u8>, Error> {
-        let request = self.request(method, url, ("Bearer", token), Some(SERVICE_ACCEPT), body)?;
+        let request = self.request(
+            method,
+            url,
+            ("Bearer", token),
+            Some(SERVICE_ACCEPT),
+            true,
+            body,
+        )?;
         self.read(request, statuses).await.map(|(_, body)| body)
     }
 
@@ -182,7 +201,14 @@ impl Transport {
         timeout: Duration,
     ) -> Result<Vec<u8>, Error> {
         let request = self
-            .request(method, url, ("Bearer", token), Some(SERVICE_ACCEPT), None)?
+            .request(
+                method,
+                url,
+                ("Bearer", token),
+                Some(SERVICE_ACCEPT),
+                true,
+                None,
+            )?
             .timeout(timeout);
         self.read(request, statuses).await.map(|(_, body)| body)
     }
@@ -199,6 +225,7 @@ impl Transport {
             url,
             ("RemoteAuth", registration),
             None,
+            true,
             Some(body),
         )?;
         self.read(request, &[200, 201]).await.map(|(_, body)| body)
@@ -217,6 +244,7 @@ impl Transport {
                 url,
                 ("Bearer", token),
                 Some(SERVICE_ACCEPT),
+                false,
                 None,
             )?
             .timeout(POLL_TIMEOUT)
