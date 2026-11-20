@@ -11,9 +11,13 @@ mod support;
 use marshal_cli::agent::machine::Launch;
 use marshal_cli::agent::{CallError, Push};
 use marshal_cli::runtime::log::Log;
+use marshal_cli::runtime::registration::{GitHubRegistrar, HttpLimits, JitRequest, Registrar};
+use marshal_cli::runtime::secret::Secret;
 use marshal_cli::token_store::{StoreError, StoreErrorKind, TokenKey, TokenStore};
+use marshal_cli::validate::PoolTarget;
 use serde_json::json;
 use support::agent::{ONE_POOL, OTHER_TOKEN, Raw, Rig, TOKEN, TWO_POOLS};
+use support::stub::{Reply, Stub};
 
 /// both pretty and compact debug formatting are potential secret sinks, before
 /// and after request parsing.
@@ -744,6 +748,69 @@ async fn a_token_path_that_names_no_file_does_not_stop_the_pool() {
             conn.ok("quit").await;
         })
         .await;
+}
+
+/// the text of a refused group check reaches the reason of the organisation runner
+/// that backs off.
+#[tokio::test(flavor = "current_thread")]
+async fn a_refused_runner_group_is_the_reason_of_the_organization_runner_that_backs_off() {
+    let group = json!({"id": 1, "name": "selected-private", "default": true,
+        "inherited": false, "visibility": "selected", "allows_public_repositories": false});
+    let stub = Stub::start(vec![Reply::json(
+        &json!({ "runner_groups": [group] }).to_string(),
+    )]);
+    let refused = GitHubRegistrar::new(Some(&stub.address), HttpLimits::default())
+        .unwrap()
+        .request_jit(&JitRequest {
+            target: &PoolTarget::Organization {
+                organization: "example-org".to_string(),
+                runner_group: "selected-private".to_string(),
+            },
+            name: "org-1",
+            labels: &["self-hosted".to_string()],
+            token: &Secret::new(TOKEN.to_string()),
+        })
+        .await
+        .unwrap_err();
+    assert!(refused.to_string().contains("the default group is refused"));
+    let rig = Rig::new(ONE_POOL);
+    rig.write_toml(
+        r#"schema_version = 1
+routing_label = "axpc"
+image_name = "actions-runner:local"
+[[pool]]
+name = "org"
+organization = "Example-Org"
+runner_group = "selected-private"
+runners = 1
+"#,
+    );
+    rig.store
+        .set(
+            &TokenKey::parse_organization("example-org").unwrap(),
+            &Secret::new(TOKEN.to_string()),
+        )
+        .unwrap();
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_runner_runs().await;
+        rig.registrar.results.borrow_mut().push_front(Err(refused));
+        rig.end_jobs().await;
+        let snapshot = conn
+            .until("the runner backing off", |s| {
+                s.pools
+                    .first()
+                    .and_then(|pool| pool.runners.first())
+                    .is_some_and(|runner| runner.state == "backing_off")
+            })
+            .await;
+        let reason = snapshot.pools[0].runners[0].reason.clone().unwrap();
+        assert!(reason.contains("the default group is refused"), "{reason}");
+        rig.mark_running();
+        conn.ok("quit").await;
+    })
+    .await;
 }
 
 #[tokio::test(flavor = "current_thread")]
