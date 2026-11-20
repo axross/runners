@@ -24,7 +24,7 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -43,8 +43,24 @@ jobs:
       - name: Install Pinned Rust Toolchain
         working-directory: cli
         run: rustup show active-toolchain || rustup toolchain install
+      - name: Prepare The Editor Renderer
+        run: mise run prepare:app-render
+      - name: Install Chromium OS Libraries On This Disposable Runner
+        run: mise exec -- node app/crates/app/tests/render/node_modules/playwright-core/cli.js install-deps chromium
       - name: Run Checks
         run: mise run check
+      - name: Render The Editor
+        run: mise run test:app-render
+      - name: Keep Editor Renders And Measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: editor-renders
+          path: |
+            app/target/render/output/*.png
+            app/target/render/output/results.json
+          retention-days: 14
+          if-no-files-found: warn
 
   # no cache action: a cache would be a trust boundary for a job that builds
   # code, and the build is small.

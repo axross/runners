@@ -41,10 +41,23 @@ Run from the repository root.
 | `mise run test:app`                 | Run the tests of those five app crates                                                                                                                                                                                                                                                                                                                         |
 | `mise run test:app-frontend`        | Run the main window page's tests with Node: the order it draws views in, and that it clears a typed token                                                                                                                                                                                                                                                      |
 | `mise run deny:app`                 | `cargo deny` bans, licenses, and sources over the crates the app's executable links, for the Windows and macOS targets; the advisory check runs in its own workflow                                                                                                                                                                                            |
+| `mise run prepare:app-render`       | Install the locked, test-only browser controller and the checksum-verified Chromium the rendering gate uses, under this working copy; installs no OS package                                                                                                                                                                                                   |
+| `mise run test:app-render`          | Render the main window's recorded configuration-editor states in the pinned Chromium and check layout, contrast, focus and the accessibility tree; needs `prepare:app-render` first                                                                                                                                                                            |
 | `mise run check:notices`            | Fail when the checked-in licence notices in `app/notices/` no longer match `app/Cargo.lock`; `mise run notices:app` writes them again                                                                                                                                                                                                                          |
 | `mise run check:app-pins`           | Fail unless the CLI's and the app's toolchain files name one channel and `app/tauri-cli.version` holds one exact version; `mise run test:tauri-cli-version` tests the script that reads it                                                                                                                                                                     |
 | `mise run check:app-lock`           | Fail when the app's lockfile resolves a crate `marshal-cli` builds with, for Windows, macOS or Linux, to another version than the CLI's                                                                                                                                                                                                                        |
-| `mise run check`                    | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                                                                                                                                                                         |
+| `mise run check`                    | Run every gate above except the writing `format` and the rendering gate; this is what the Check job's `Run Checks` step runs                                                                                                                                                                                                                                   |
+
+The Linux x64 rendering gate needs one explicit preparation step,
+`mise run prepare:app-render`;
+[Development Setup](../operations/development-setup.md#rendering-gate) says what
+it installs and needs. `mise run test:app-render` runs the browser gate alone.
+`mise run check` does not include it, so a checkout without the browser, and any
+host other than Linux x64, can still run `check`. The Check job prepares the gate
+and runs it as its own step after `mise run check`;
+[Development Workflow](../operations/development-workflow.md) says what else that
+job does. [App](../operations/app.md#the-configuration-editor) describes the
+checks and their limits.
 
 The temporary recovery adds these checks to `mise run check`, without replacing
 the normal app release-tool or installer checks:

@@ -57,8 +57,9 @@ names every other document the change corrects.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, their hooks, Amp's and Codex's delivery
   authorization, the plan-gate delivery confirmation, Amp's plan-gate archive
-  confirmation for review child threads, subagents including the Claude Code
-  review child session, and telemetry.
+  confirmation for review child threads, the write-fidelity rules and read-back
+  for GitHub text written from a Claude Code cloud session, subagents including
+  the Claude Code review subagent, and telemetry.
 - [operations/development-setup.md](./operations/development-setup.md) - the
   pinned tools a contributor installs, the Rust toolchain, and the hooks.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
