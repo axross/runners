@@ -1016,7 +1016,8 @@ context does. A run MUST NOT count any other review as satisfying or
 substituting for it: not a fork, not a resumed or reused instance of any use,
 not an instance that is not so assigned or whose assignment carries pre-flight
 findings, not a phase-deliverable reviewer, not a review session started by
-another session, and not the author's own checks. The review is reachable only
+another session unless the maintainer instructs it for the run, and not the
+author's own checks. The review is reachable only
 through the run's draft pull request, so a run that has not opened it has not
 reached this gate and is not complete.
 
@@ -1336,8 +1337,8 @@ A review session that another session starts for a run is not a route. Earlier
 runs used one on a decision relayed for a single run, but no document described
 it and the grant's targets cover only the actors the run itself creates, so it
 adds a second actor outside the grant between the author and the review.
-Reviews already completed that way, and a review session the maintainer
-instructs for a run, are unaffected.
+Reviews already completed that way are unaffected, and a review session the
+maintainer instructs for a run counts as that run's independent review.
 
 ## Acceptance Criteria Verified Out of Tree
 
