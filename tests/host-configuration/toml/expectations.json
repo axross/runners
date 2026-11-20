@@ -107,6 +107,20 @@
     ],
     "lacks": []
   },
+  "accepted/windows-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axpc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset stop_on_network_change=unset resume_after_stop=unset",
+      "image_name: example-image:tag",
+      "pool[0]: name=alpha repository=octo/hello runners=2 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[axpc-linux] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[1]: name=beta repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
   "rejected/empty.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -259,6 +273,15 @@
     "problems": [
       "line 15: pool[0].labels: 'macOS' is a platform label that a linux pool on macOS cannot provide, so list only non-platform labels",
       "line 15: pool[0].labels: 'ARM64' is always added, so list only non-platform labels"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/macos-scale-set.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[0].scale_set: must be absent on macOS; on-demand pools are not supported yet"
     ],
     "contains": [],
     "lacks": []
@@ -516,6 +539,31 @@
       "line 2: routingLabel: unknown key",
       "line 3: Routing_Label: unknown key",
       "line 1: routing_label: required key is missing"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-not-a-string.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].scale_set: must be a scale-set name string"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-with-labels.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 10: pool[0].labels: must be absent or an empty array for an on-demand pool"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-without-the-routing-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].scale_set: must be 1 to 45 ASCII letters, digits, hyphens, underscores or dots, starting with routing_label, a hyphen and a nonempty suffix"
     ],
     "contains": [],
     "lacks": []
