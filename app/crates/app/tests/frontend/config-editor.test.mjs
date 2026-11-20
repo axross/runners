@@ -5,9 +5,10 @@ import {
   editorFooter,
   editorNotice,
   editorPools,
+  editorReview,
 } from "../../frontend/editor.js";
 import { h } from "../../frontend/dom.js";
-import { installDocument } from "./document.mjs";
+import { Element, installDocument } from "./document.mjs";
 
 const text = (key) => ({ key, kind: "text" });
 const access = {
@@ -189,6 +190,49 @@ test("new runners require a fresh confirmation even when the file and running st
   assert.equal(focuses.at(-1), "cancel-config");
   await model.apply();
   assert.equal(calls.filter((call) => call.request.check === false).length, 1);
+});
+
+test("the review names the failing jobs only for a pool whose effect stops runners", () => {
+  installDocument();
+  const { model } = editor();
+  const effect = (pool, change, stops_runners) => ({
+    pool,
+    change,
+    runners_before: 2,
+    runners_after: 2,
+    stops_runners,
+  });
+  model.review = {
+    request: {},
+    remove: new Set(),
+    change: {
+      applies: true,
+      repositories_released: [],
+      effects: [
+        effect("restarting", "restarted", true),
+        effect("idle-restart", "restarted", false),
+        effect("gone", "removed", true),
+        effect("gone-idle", "removed", false),
+        effect("shrinking", "runners_removed", true),
+      ],
+    },
+  };
+  const textOf = (node) =>
+    node.children
+      .map((child) => (child instanceof Element ? textOf(child) : child.text))
+      .join("")
+      .concat(node.textContent);
+  const lines = [...editorReview(model).descendants()]
+    .filter((node) => node.getAttribute("class") === "description wrap")
+    .map(textOf)
+    .filter((line) => line.includes("("));
+  assert.deepEqual(lines, [
+    "restarting: Restarts with the new settings. Its running jobs fail. (2 → 2)",
+    "idle-restart: Restarts with the new settings. (2 → 2)",
+    "gone: Removed. Its running jobs fail. (2 → 2)",
+    "gone-idle: Removed. (2 → 2)",
+    "shrinking: Loses its highest-numbered slots. The other slots carry on. The jobs on the lost slots fail. (2 → 2)",
+  ]);
 });
 
 test("check cannot write; cancel writes nothing; apply retains the source revision, not the preview", async () => {

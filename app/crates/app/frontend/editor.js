@@ -459,12 +459,23 @@ export function editorNotice(model) {
 const EFFECT = {
   unchanged: "Unchanged. Its runners and jobs carry on.",
   added: "Added. Its runners start under Start All's rules.",
-  removed: "Removed. Its runners stop.",
+  removed: "Removed.",
   runners_added: "Gains runners. The other slots carry on.",
   runners_removed:
     "Loses its highest-numbered slots. The other slots carry on.",
   restarted: "Restarts with the new settings.",
 };
+
+/** what one pool's effect does, naming the jobs that fail only when the effect stops runners. */
+function effectText(effect) {
+  const text = EFFECT[effect.change];
+  if (!text)
+    return "Unknown effect. Cancel and update Marshal before applying.";
+  if (!effect.stops_runners) return text;
+  return effect.change === "runners_removed"
+    ? `${text} The jobs on the lost slots fail.`
+    : `${text} Its running jobs fail.`;
+}
 
 /** the agent's effects supply the warning; unknown effects cannot be confirmed. */
 export function editorReview(model) {
@@ -503,7 +514,7 @@ export function editorReview(model) {
           "li",
           { class: "description wrap" },
           h("strong", { text: `${effect.pool}: ` }),
-          `${EFFECT[effect.change] ?? "Unknown effect. Cancel and update Marshal before applying."} (${effect.runners_before} → ${effect.runners_after})`,
+          `${effectText(effect)} (${effect.runners_before} → ${effect.runners_after})`,
         ),
       ),
     ),
