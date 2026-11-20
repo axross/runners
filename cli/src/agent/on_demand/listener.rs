@@ -59,11 +59,12 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                     }
                     continue;
                 }
-                let mut state = self.state.borrow_mut();
-                state.recreated = true;
-                state.recreate_requested = false;
-                state.last_recreation = Some(self.clock.now());
-                drop(state);
+                {
+                    let mut state = self.state.borrow_mut();
+                    state.recreated = true;
+                    state.recreate_requested = false;
+                    state.last_recreation = Some(self.clock.now());
+                }
                 self.close().await;
                 self.credentials.borrow_mut().take();
                 pending = None;
