@@ -631,6 +631,82 @@ async fn stop_waits_for_late_jit_identity_and_cleans_it_without_launching() {
         .await;
 }
 
+/// a pool whose listener left cleanup behind is skipped by an edit, and the edit's
+/// other pools are still applied; the failure is reported once, naming the pool.
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_skips_a_pool_with_incomplete_cleanup_and_still_applies_the_others() {
+    let side = |runners: u32| {
+        format!("\n[[pool]]\nname = \"side\"\nrepository = \"o/s\"\nrunners = {runners}\n")
+    };
+    let service = Service::start(1).await;
+    let rig = rig(&service);
+    rig.write_toml(&format!("{CONFIG}{}", side(1)));
+    rig.store_token("o", "s", TOKEN);
+    let (rig, service) = (&rig, &service);
+    let (_, ()) = rig
+        .drive(Launch::Running, |conn| async move {
+            conn.until("each pool runs one runner", |snapshot| {
+                ["logical", "side"].iter().all(|name| {
+                    snapshot
+                        .pools
+                        .iter()
+                        .any(|pool| pool.name == *name && pool.runners_up == 1)
+                })
+            })
+            .await;
+            rig.mark_running();
+            service.state.lock().unwrap().fail_deletion = true;
+            rig.write_toml(&format!(
+                "{}{}",
+                CONFIG.replace("repository = \"o/r\"", "repository = \"o/t\""),
+                side(2)
+            ));
+            let revision = conn.ok("config_read").await["revision"].clone();
+            conn.call("config_reload", json!({"revision": revision}))
+                .await
+                .unwrap();
+            let snapshot = conn
+                .until(
+                    "the edit's failure and the side pool's new runner",
+                    |snapshot| {
+                        snapshot
+                            .configuration
+                            .last_apply
+                            .as_ref()
+                            .is_some_and(|apply| apply.outcome == "failed")
+                            && snapshot
+                                .pools
+                                .iter()
+                                .any(|pool| pool.name == "side" && pool.runners_up == 2)
+                    },
+                )
+                .await;
+            let reason = snapshot
+                .configuration
+                .last_apply
+                .as_ref()
+                .unwrap()
+                .reason
+                .clone()
+                .unwrap();
+            assert!(
+                reason.contains("pool logical: on-demand cleanup is incomplete"),
+                "{reason}"
+            );
+            assert!(!reason.contains("side"), "{reason}");
+            let logical = snapshot
+                .pools
+                .iter()
+                .find(|pool| pool.name == "logical")
+                .unwrap();
+            assert_eq!(logical.repository, "o/r");
+            assert!(logical.on_demand.as_ref().unwrap().cleanup_incomplete);
+            assert_eq!(service.state.lock().unwrap().registrations.len(), 1);
+            conn.ok("quit").await;
+        })
+        .await;
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn reload_preserves_failed_cleanup_instead_of_starting_a_replacement_listener() {
     for configuration in [

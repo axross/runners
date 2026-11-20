@@ -669,7 +669,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
     /// or new pool is admitted and prepared as at Start all, and a pool that gains
     /// runners starts its new slots alone. A pool that waits for its token takes its
     /// new settings and goes on waiting, and a pool with no slot running, because it
-    /// was skipped, is admitted and prepared again.
+    /// was skipped, is admitted and prepared again. A pool whose listener has
+    /// cleanup left, or has not ended, keeps what it has, and the other pools take
+    /// their effects all the same.
     async fn apply(
         &self,
         plan: &Plan,
@@ -702,7 +704,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                     Step::Remove | Step::Restart => {
                         listener.coordinator.stop(deadline);
                         listener.stop.send_replace(true);
-                        ending_listeners.push(listener.ended.clone());
+                        ending_listeners.push((*pool, listener.ended.clone()));
                     }
                     Step::StartNew | Step::StopAbove(_) => {
                         if let Some(new) = spec(pool) {
@@ -733,21 +735,31 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             );
         }
         let listeners_ended = async {
-            for mut ended in ending_listeners {
-                let _ = ended.wait_for(|ended| *ended).await;
+            let mut late = Vec::new();
+            for (pool, mut ended) in ending_listeners {
+                if timeout_at(deadline, ended.wait_for(|ended| *ended))
+                    .await
+                    .is_err()
+                {
+                    late.push(pool);
+                }
             }
+            late
         };
-        let ((), listeners_result) = tokio::join!(
-            self.stop_slots(leaving, running),
-            timeout_at(deadline, listeners_ended),
-        );
-        if listeners_result.is_err() {
-            return Err(
-                "the edit's listener cleanup did not finish within the stop deadline".to_string(),
-            );
+        let ((), late) = tokio::join!(self.stop_slots(leaving, running), listeners_ended);
+        // a pool whose listener cannot be replaced yet is left as it is while the
+        // rest of the edit goes on, and the apply reports every such pool at the end
+        let mut failures = Vec::new();
+        let mut skipped = Vec::new();
+        for pool in late {
+            failures.push(format!(
+                "pool {pool}: the edit's listener cleanup did not finish within the stop deadline"
+            ));
+            skipped.push(pool);
         }
         for (pool, step) in &steps {
             if matches!(step, Step::Remove | Step::Restart)
+                && !skipped.contains(pool)
                 && let Some(view) = running
                     .listeners
                     .borrow()
@@ -756,9 +768,10 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                     .or_else(|| self.listeners.borrow().get(*pool).cloned())
                 && view.has_pending_cleanup()
             {
-                return Err(format!(
+                failures.push(format!(
                     "pool {pool}: on-demand cleanup is incomplete; Start all is required before another listener starts"
                 ));
+                skipped.push(pool);
             }
         }
         running
@@ -771,6 +784,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
 
         let mut fresh = Vec::new();
         for (pool, step) in steps {
+            if skipped.contains(&pool) {
+                continue;
+            }
             match step {
                 Step::Remove => {
                     self.listeners.send_modify(|listeners| {
@@ -839,7 +855,11 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             fresh.into_iter().partition(|pool| self.admit(pool));
         running.waiting.borrow_mut().extend(waiting);
         self.prepare_and_start(admitted, running, stop).await;
-        Ok(())
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; "))
+        }
     }
 
     /// what the apply does to a pool, from its effect and whether it runs slots or
