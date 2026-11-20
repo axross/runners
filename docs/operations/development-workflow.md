@@ -380,8 +380,9 @@ release-profile tests, checks that the app's product version is the stamped vers
 and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
 the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
 artifact of the run. The dry run signs nothing and references no Environment, and no
-job of any workflow declares one until the next signing job returns. It holds
-`contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
+app-build job declares one. The temporary CLI recovery has its own unsigned dry
+run; only its dispatch-only signing job declares the `release` Environment.
+The app dry run holds `contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
 describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
 and holds `contents: read`. It downloads the dry run's artifact and runs the check and
 uninstall blocks that [CLI](./cli.md#installing-updating-and-rolling-back) documents:
@@ -574,19 +575,26 @@ an id other than `DOCKER_GROUP_ID`, which the golden VM's `docker` group has, so
 changes it also changes `DOCKER_GROUP_ID`, the Dockerfile and the smoke test
 together, and raises the golden VM version and the contract version.
 
-The CLI embeds the runner image's definition, so a host that runs the CLI builds the
-new runner only once it has a binary built after the bump. Keep the pull request's
-`build(deps)` title when merging: it releases a patch, as Version Rules, under
-Cutting a Release, below, describes. After the bump merges, the maintainer
-dispatches a release, and each such host updates to it with the procedure in
+During temporary CLI recovery, runner bumps on main do not enter the fixed
+historical program input. Dispatching a recovery release does not deliver those
+bumps to a CLI host. The Temporary CLI Recovery section of
+[Security](../conventions/security.md) governs that bounded route, and
+[CLI Recovery](./cli-recovery.md) owns its operator procedure.
+Keep the pull request's `build(deps)` title when merging: it releases a patch,
+as Version Rules, under Cutting a Release, below, describes. After app publication
+is restored, the maintainer dispatches a release and each host updates the app
+with the procedure in
 [CLI](./cli.md#installing-updating-and-rolling-back).
 
 ## Cutting a Release
 
-The maintainer releases the app by dispatching
+During the bounded F0 recovery, the maintainer releases the historical CLI by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
 works out the version from the commits, as Version Rules, below, describes.
-[CLI](./cli.md#releases) describes what the workflow builds, and
+[CLI Recovery](./cli-recovery.md) owns the fixed input, actual-version CLI
+install procedures and restoration prerequisite. App builds remain active, but
+app publication is suspended until a separate reviewed restoration against
+then-current main. [CLI](./cli.md) retains the app release baseline, and
 [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
 records why each control is there. The maintainer takes every step in this
 section. The delivery grant lets an explicit human instruction cover release,
@@ -598,11 +606,10 @@ agent relays it.
 
 ### Before the First Release
 
-The `release` Environment's part of this section, step 2, is held for M2 and W4: from
-W1's installer pull request until M2's or W4's signing job returns, no job declares
-the Environment, and the Environment, its secrets and its variable are kept for that
-job, which then needs them as this step sets them. The other steps were the first
-dispatch's prerequisites.
+The temporary CLI signing job uses the `release` Environment under step 2's
+existing contract. Recheck those prerequisites before a recovery dispatch;
+do not assume the held app-signing gap means an unprotected release. The tag
+bootstrap in step 3 is historical and must not be repeated for recovery.
 
 Do these once, before the first dispatch:
 
@@ -696,15 +703,13 @@ Do these once, before the first dispatch:
    queued, and only the latest of them runs.
 3. When there is nothing to release, the plan job hands out no version, and the
    other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, the run builds, assembles, attests and
-   releases without waiting for an approval: from W1's installer pull request until
-   M2's or W4's signing job returns, no job declares the `release` Environment, so
-   step 1's check at the dispatch is the only one. The signing job that returns
-   brings back an approval here, with its own checks. A failure in `build`,
-   `assemble-signed` or `attest` stops the run before any tag is pushed; fix it in a
-   pull request and dispatch again.
-5. After a green run, check that the release exists and carries exactly the app
-   executable, the MSI and `SHA256SUMS`:
+4. When there is something to release, approve `sign-macos`'s deployment yourself.
+   It signs and notarizes the fixed-source CLI and pkg. `verify-macos` checks the
+   signed outputs outside the Environment before `assemble-signed`, `attest` and
+   `release`. A failure prevents tagging; fix it in a pull request before another
+   maintainer dispatch. Unsigned dry runs and stand-ins are not signing evidence.
+5. After a green run, check that the release exists and carries exactly the
+   Windows bare CLI and MSI, macOS bare CLI and signed/notarized pkg, and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
@@ -718,23 +723,21 @@ Do these once, before the first dispatch:
    after the plan job, the release job logs the same line and ends without a tag or
    a release. Either way, run step 1 again and dispatch again.
 
-6. Check the release with the optional check block in
-   [CLI](./cli.md#installing-updating-and-rolling-back) before opening its
-   installer on a host. This is the maintainer's release verification, not a step
-   an operator must take. The first release of the app is also the first run of
-   `gh attestation verify` against its MSI and of the check block's comparison of the
-   extracted `marshal-app.exe` with its `SHA256SUMS` line, so for that release run
-   the check block before opening the MSI on a host. A failure there is a release
-   defect, and it leaves the check unusable for that release. The WiX pin is
-   recorded under [Pinning Convention](../conventions/security.md#pinning-convention).
-   The MSI and the app are not signed, as
-   [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-   records.
+6. Run the actual-version optional download check in CLI Recovery before opening
+   either installer. Publish the workflow/tag commit and historical program
+   identity separately, plus every successful F0 release/signing and native-host
+   outcome. An unknown or failed item blocks restoration. WSL and hosted CI do
+   not replace the native Windows11 or Mac evidence. Neither a recovery-code
+   merge nor a release alone closes F0 or waives a downstream dependency.
+
+Only after that public evidence may the separate recovery-restoration PR remove
+the temporary path and restore the then-current app release contract. The later
+F0 measured signing-record PR remains documents-only and separate.
 
 ### Renewing the Certificates
 
-This section is held for M2 and W4: no job signs from W1's installer pull request
-until M2's `sign-macos` returns, and this yearly work applies to it from then.
+This yearly work applies to the temporary CLI `sign-macos` and remains the
+contract for M2's and W4's later signing work after app restoration.
 
 The Developer ID certificates are expected to last one year, which the maintainer
 confirms from the certificates' dates, and renewing them is yearly work for the
@@ -799,8 +802,10 @@ that subject, so the title decides the release:
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
   Dependabot writes for the runner image, the CLI's crates and the toolchain, so
-  such a bump reaches hosts in a release. Its notes list it under Dependencies,
-  through the notes generator's `presetConfig.types` in the same file. Dependabot's
+  such a bump raises the release version. During CLI recovery, the fixed
+  historical program excludes main's dependency updates. Release notes list the
+  bump under Dependencies through the notes generator's `presetConfig.types` in
+  the same file. Dependabot's
   entry for the app's crates writes the same subject, so until the release carries
   the app, a bump of a crate only the app links releases a patch that changes
   nothing in the released `marshal`.

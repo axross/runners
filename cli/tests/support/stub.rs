@@ -16,7 +16,8 @@ use std::time::Duration;
 
 /// what the stub does with one connection.
 pub enum Reply {
-    /// a status line, extra headers, and a body.
+    /// a status line, extra headers, and a body; `{stub}` in a header expands to
+    /// this server's origin, which is only known once its listener is bound.
     Respond {
         status: &'static str,
         headers: Vec<(&'static str, String)>,
@@ -147,6 +148,7 @@ fn serve(
                     body.len()
                 );
                 for (name, value) in headers {
+                    let value = value.replace("{stub}", own_address);
                     head.push_str(&format!("{name}: {value}\r\n"));
                 }
                 head.push_str("\r\n");

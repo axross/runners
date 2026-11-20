@@ -376,14 +376,13 @@ impl<B: Backend, K: Clock, R: Registrar> Context<'_, B, K, R> {
 
         let name = job_container_name(&slot.pool, slot.number, self.clock.now());
         let registration = async {
-            let token =
-                self.tokens
-                    .token(&slot.owner, &slot.repository, slot.token_path.as_deref())?;
+            let token = self
+                .tokens
+                .token(&slot.target, slot.token_path.as_deref())?;
             log.mask(&token);
             self.registrar
                 .request_jit(&JitRequest {
-                    owner: &slot.owner,
-                    repository: &slot.repository,
+                    target: &slot.target,
                     name: &name,
                     labels: &slot.labels,
                     token: &token,

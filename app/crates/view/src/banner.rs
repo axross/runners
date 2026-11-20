@@ -386,13 +386,18 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
         Stop::NoPoolStarted => {
             let heading = "Stopped: no pool could start";
             let (lead, lines) = if context.every_pool_lacks_a_token() {
-                let lead = "Every pool was skipped because its repository has no token.";
-                (
-                    lead,
-                    vec![format!(
-                        "{lead} Set a token for each repository, then choose Start All."
-                    )],
-                )
+                let (lead, next) = if context.pools.iter().any(|pool| pool.organization.is_some()) {
+                    (
+                        "Every pool was skipped because it has no token.",
+                        "Set the tokens in the Tokens tab, then choose Start All.",
+                    )
+                } else {
+                    (
+                        "Every pool was skipped because its repository has no token.",
+                        "Set a token for each repository, then choose Start All.",
+                    )
+                };
+                (lead, vec![format!("{lead} {next}")])
             } else {
                 let lead = "Each pool below says why.";
                 (
@@ -733,7 +738,7 @@ fn unknown_state(state: &str) -> Banner {
 }
 
 fn no_tokens(context: &Context<'_>) -> Option<Banner> {
-    let repositories = tokens::repositories(context);
+    let repositories = tokens::token_owners(context);
     if repositories.is_empty() || repositories.iter().any(|repository| repository.has_token) {
         return None;
     }
@@ -749,8 +754,17 @@ fn no_tokens(context: &Context<'_>) -> Option<Banner> {
     {
         return None;
     }
-    let heading = "No repository has a token yet";
-    let line = "Set a token for each repository, then choose Start All.";
+    let (heading, line) = if repositories.iter().any(|owner| owner.organization) {
+        (
+            "No token is set yet",
+            "Set the tokens in the Tokens tab, then choose Start All.",
+        )
+    } else {
+        (
+            "No repository has a token yet",
+            "Set a token for each repository, then choose Start All.",
+        )
+    };
     Some(banner(
         BannerKind::NoTokens,
         Tone::Warning,
@@ -775,6 +789,7 @@ fn truncated(context: &Context<'_>) -> Option<Banner> {
             "configuration problems",
         ),
         (omitted.repositories, "repository", "repositories"),
+        (omitted.organizations, "organisation", "organisations"),
         (omitted.leftovers, leftover.as_str(), leftovers.as_str()),
         (omitted.images, words.image_short, images.as_str()),
     ]

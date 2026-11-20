@@ -586,6 +586,10 @@ svg {
   flex: 1;
 }
 
+.card-line {
+  padding: 0 16px 10px;
+}
+
 .card-state {
   display: inline-flex;
   align-items: center;
@@ -788,6 +792,20 @@ svg {
   border-radius: var(--radius-xl);
   background: var(--list-card-fill);
   box-shadow: var(--shadow-list-card);
+}
+
+.token-section {
+  gap: 8px;
+}
+
+.token-heading {
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px;
+}
+
+.token-permission::first-letter {
+  text-transform: uppercase;
 }
 
 .token-row {

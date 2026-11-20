@@ -61,6 +61,8 @@ pub enum Called {
     Quit,
     TokenSet { repository: String, token: String },
     TokenRemove { repository: String },
+    OrganizationTokenSet { organization: String, token: String },
+    OrganizationTokenRemove { organization: String },
     LifecycleSet { key: String, on: bool },
     Drain { version: String },
     SubscribeGithub,
@@ -102,6 +104,8 @@ fn name(method: &Method) -> &'static str {
         Method::Quit => "quit",
         Method::TokenSet { .. } => "token_set",
         Method::TokenRemove { .. } => "token_remove",
+        Method::OrganizationTokenSet { .. } => "organization_token_set",
+        Method::OrganizationTokenRemove { .. } => "organization_token_remove",
         Method::LifecycleSet { .. } => "lifecycle_set",
     }
 }
@@ -136,6 +140,16 @@ impl Link for FakeLink {
                 token: token.expose().to_string(),
             },
             Method::TokenRemove { repository } => Called::TokenRemove { repository },
+            Method::OrganizationTokenSet {
+                organization,
+                token,
+            } => Called::OrganizationTokenSet {
+                organization,
+                token: token.expose().to_string(),
+            },
+            Method::OrganizationTokenRemove { organization } => {
+                Called::OrganizationTokenRemove { organization }
+            }
             Method::LifecycleSet { key, on } => Called::LifecycleSet { key, on },
         };
         let (answer, held) = {

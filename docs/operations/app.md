@@ -18,26 +18,35 @@ axpc's pools with the app.
 
 ## What Exists
 
-The app builds, its tests run, and since W1's installer pull request (pull request 3)
-each release carries it and its per-user MSI, as the Releases section of
-[CLI](./cli.md) describes,
-in place of the command line. W1, [#73](https://github.com/axross/runners/issues/73),
-is the child that owns the app. No host has installed it yet: axpc still runs its
-pools with the last command-line release, identified in The Last Command-Line
-Release section of [CLI](./cli.md),
-so this document describes an app that CI builds and tests and the release ships,
-not one a host has run. The same pull request removed the command line: no `marshal`
-binary is built on any operating system, and the app is the only way to run a host.
+The app builds and its tests run. W1's installer pull request (pull request 3)
+established the Windows app and per-user MSI release baseline in place of the
+command line, as the Releases section of [CLI](./cli.md) describes. W1,
+[#73](https://github.com/axross/runners/issues/73), is the child that owns the app.
+That pull request removed the `marshal` binary target from main on every operating
+system; normal app builds do not build a CLI.
 
-| Part                                                 | State                                                                                                                                                           |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The app, its menu and its main window                | Built by the Windows and macOS app jobs of `merge-checks.yaml`; each build is kept as a run artifact                                                            |
-| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode                                                                                  |
-| The token store                                      | The Credential Manager on Windows and the login keychain on macOS, entered in the main window                                                                   |
-| The installer, the release, the install layout below | Built and tested by the release build on every pull request; see the Installers section of [CLI](./cli.md). The Mac's disk image comes with M2's pull request 2 |
-| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request                                                                       |
-| The command line's removal                           | Done in W1's installer pull request; the last command-line release keeps it                                                                                     |
-| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                                                                                       |
+During bounded F0 recovery, app publication is suspended while the release workflow
+builds the fixed historical CLI and its legacy MSI/pkg instead.
+[CLI Recovery](./cli-recovery.md) owns those actual-version installation procedures
+and the successful public F0 evidence required before a separate reviewed app-path
+restoration. App source and normal builds remain; the recovery is not a supported
+parallel CLI product. The app release and installation descriptions below are the
+suspended baseline, not the recovery installers. No recovery release version or
+native installer evidence is recorded yet.
+
+No host has installed the app yet: axpc still runs its pools with the command line,
+identified in The Last Command-Line Release section of [CLI](./cli.md). This
+document describes an app that CI builds and tests, not one a host has run.
+
+| Part                                                 | State                                                                                                                                                                                |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The app, its menu and its main window                | Built by the Windows and macOS app jobs of `merge-checks.yaml`; each build is kept as a run artifact                                                                                 |
+| The agent's resident mode and protocol version 2     | In the `marshal-cli` library, served by the app's executable in its agent mode                                                                                                       |
+| The token store                                      | The Credential Manager on Windows and the login keychain on macOS, entered in the main window                                                                                        |
+| The installer, the release, the install layout below | Built and tested by the retained app release build on every pull request; see the Installers section of [CLI](./cli.md). The Mac's release disk image comes with M2's pull request 2 |
+| Updates                                              | The app's side, with the committed public key; the feed comes with W4's last pull request                                                                                            |
+| The command line's removal                           | Removed from main by W1; only the bounded recovery builds the fixed historical CLI                                                                                                   |
+| Verification on axpc                                 | Not done; see [Verification Status](#verification-status)                                                                                                                            |
 
 ## The Executable and Its Modes
 
@@ -174,7 +183,8 @@ web view.
 - **The app ending** or being killed leaves the agent and its runners running, and
   the next launch reconnects to them.
 
-A token travels from the window to the agent only in `token_set`. The session trims
+A token travels from the window to the agent only in `token_set` or
+`organization_token_set`. The session trims
 it, refuses an empty one or one over 1280 UTF-16 code units before sending, wraps it
 in the library's `Secret`, sends it once and drops it; it is in no field, log line,
 error text or view. A removal that the agent refuses, or that is asked for with no
@@ -197,7 +207,7 @@ still runs, and a warning goes to the standard error stream.
 
 ## Commands and Events
 
-The web view calls the Rust side through thirteen commands, declared in
+The web view calls the Rust side through fifteen commands, declared in
 [`build.rs`](../../app/crates/app/build.rs), each with a permission file under
 [`permissions/autogenerated/`](../../app/crates/app/permissions/autogenerated) that
 `tauri-build` writes and the repository keeps. A window can call a command only when
@@ -206,17 +216,18 @@ nothing else. On macOS two more, each limited to one window, grant only dragging
 window by its top band, and for the main window zooming it, which
 [Security](../conventions/security.md) lists:
 
-| Command                                                    | Called by               | Does                                                                                            |
-| ---------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
-| `read_view(forms?)`                                        | The main window         | Returns the current view and its revision; `forms` tells the Rust side which token form is open |
-| `start_all`, `stop_all`, `build`, `stop_build`             | The main window         | The action of the same name, shown at once as pending                                           |
-| `try_again`                                                | The main window         | Connects again after lost contact                                                               |
-| `set_token(repository, token)`, `remove_token(repository)` | The main window         | Sends `token_set` or `token_remove`; the token is trimmed and checked first                     |
-| `set_setting(key, on)`                                     | The main window         | Sends `lifecycle_set` for one `[lifecycle]` key; see [The Settings Tab](#the-settings-tab)      |
-| `hide_window`                                              | The main window         | Hides the window; the icon and the agent keep running                                           |
-| `open_job(pool, runner)`                                   | The main window         | Opens the job that runner runs on github.com; see [GitHub Status](#github-status-in-the-window) |
-| `read_confirmation`                                        | The confirmation window | Returns the question the menu asked                                                             |
-| `answer_confirmation(accepted)`                            | The confirmation window | Runs the action or quits when `accepted`, then closes the window                                |
+| Command                                                                                  | Called by               | Does                                                                                            |
+| ---------------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `read_view(forms?)`                                                                      | The main window         | Returns the current view and its revision; `forms` tells the Rust side which token form is open |
+| `start_all`, `stop_all`, `build`, `stop_build`                                           | The main window         | The action of the same name, shown at once as pending                                           |
+| `try_again`                                                                              | The main window         | Connects again after lost contact                                                               |
+| `set_token(repository, token)`, `remove_token(repository)`                               | The main window         | Sends `token_set` or `token_remove`; the token is trimmed and checked first                     |
+| `set_organization_token(organization, token)`, `remove_organization_token(organization)` | The main window         | Sends `organization_token_set` or `organization_token_remove` only when the agent advertises it |
+| `set_setting(key, on)`                                                                   | The main window         | Sends `lifecycle_set` for one `[lifecycle]` key; see [The Settings Tab](#the-settings-tab)      |
+| `hide_window`                                                                            | The main window         | Hides the window; the icon and the agent keep running                                           |
+| `open_job(pool, runner)`                                                                 | The main window         | Opens the job that runner runs on github.com; see [GitHub Status](#github-status-in-the-window) |
+| `read_confirmation`                                                                      | The confirmation window | Returns the question the menu asked                                                             |
+| `answer_confirmation(accepted)`                                                          | The confirmation window | Runs the action or quits when `accepted`, then closes the window                                |
 
 The capabilities are [`main-window.json`](../../app/crates/app/capabilities/main-window.json),
 which also grants `core:event:allow-listen` and `core:event:allow-unlisten`, and
@@ -224,7 +235,7 @@ which also grants `core:event:allow-listen` and `core:event:allow-unlisten`, and
 `tests/ipc.rs` runs both windows against Tauri's mock runtime and shows that a call
 the capability does not grant is refused and that the granted ones are not. Quit runs
 from the menu on the Rust side and has no command. `commands::handler` is the one
-list of the thirteen commands the app and `tests/ipc.rs` both register.
+list of the fifteen commands the app and `tests/ipc.rs` both register.
 
 A failed action that a confirmation started is written to the app's log, since the
 window that asked is gone by then.
@@ -298,7 +309,8 @@ then follows the snapshot, since the agent may still do it.
 
 Esc closes the first of these that is open and does nothing more: a tooltip balloon,
 then a confirmation dialog, then an open token form or removal question, and only then
-hides the window. The page clears a token field as soon as it calls `set_token`,
+hides the window. The page clears a token field as soon as it calls `set_token` or
+`set_organization_token`,
 whatever the outcome, and keeps the token in no variable; `save-token.test.mjs` loads
 the page over a stand-in for the document and drives that path with a call that
 resolves and one that rejects. It also clears every open token field when the app
@@ -549,6 +561,14 @@ for the repository, and on macOS a login-keychain item, with the names
 window's Tokens tab, and the app never shows a stored token and never reads the store
 itself.
 
+When the configuration names organisation pools, the Tokens tab separates
+Repositories from Organisations, with headings above the lists. An organisation
+row uses the organisation's lower-case login and names every pool sharing its
+token. Set Token on a skipped pool's card selects that row; its form and removal
+question work like a repository's. The card names the organisation and gives the
+runner group its own line under the name. Without an organisation pool, the tab
+keeps its single repository list without section headings.
+
 Today's token files are not imported. A host that moves from the command line to the
 app enters each repository's token in the window, once.
 
@@ -587,8 +607,9 @@ meantime are ignored while `config.toml` exists. Delete `config.toml` to migrate
 
 ## Install Layout
 
-W1's MSI creates this layout, as the Installers section of [CLI](./cli.md) describes, and the build
-leg's installer test measures it on every run; no host has it installed yet.
+W1's app MSI, not the recovery CLI MSI, creates this layout, as the Installers
+section of [CLI](./cli.md) describes. The retained app build's installer test
+measures it on every run; no host has it installed yet.
 
 | What                                  | Where                                                                             |
 | ------------------------------------- | --------------------------------------------------------------------------------- |
@@ -597,7 +618,7 @@ leg's installer test measures it on every run; no host has it installed yet.
 | Start menu entry                      | Marshal, starting the app                                                         |
 | Configuration (default)               | `%LOCALAPPDATA%\marshal\config.toml`                                              |
 | Logs                                  | `%LOCALAPPDATA%\marshal\logs\`, the app's files under their own name              |
-| Tokens                                | Credential Manager, one generic credential per repository                         |
+| Tokens                                | Credential Manager, one generic credential per repository or organisation         |
 | Web view data                         | `%LOCALAPPDATA%\app.axross.marshal\`, named by the bundle identifier              |
 
 The bundle identifier is `app.axross.marshal`, the same as the signing identifier
@@ -607,11 +628,18 @@ one code object. The name `marshal-app.exe` never collides with a leftover
 
 ## Rolling Back
 
-A rollback uninstalls Marshal and installs the previous release, as
-the Updating, Repairing, Uninstalling and Rolling Back section of [CLI](./cli.md)
-describes. Before the first app release, the previous release is the last
-command-line release; its procedures are at its tag, identified in
-The Last Command-Line Release section of [CLI](./cli.md).
+Before uninstalling Marshal, select the target release and verify that it supports
+this host's profile and configuration. If no compatible target is verified, keep
+the installed app. For an app target, follow the Updating, Repairing, Uninstalling
+and Rolling Back section of [CLI](./cli.md).
+
+Before the first app release, the previous release is the last command-line
+release. For a recovery CLI target, open
+`https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`
+before uninstalling, replacing `<version>` with that published release's actual
+version without the `v`. Use that tag's guide for CLI installation and its
+identified fixed historical tree for runtime procedures.
+
 The PowerShell host scripts are gone, so a rollback never restores
 them. Going back from the
 app to the command line takes three things the app does not do for you:
@@ -795,6 +823,13 @@ every registered runner it does not list reads "not shown" rather than "not list
 A word of the topic's open sets this reader does not know reads as checking, or says
 nothing on the card.
 
+An organisation pool uses its organisation and runner group to select GitHub
+status, then matches the host's runner by name. Its busy runner reads
+"Job not shown for organisation runners" and has no Open run link. The session
+also refuses a job-page request for an organisation pool, rather than using a
+repository entry with the same runner name. Organisation status keeps the same
+freshness and held-value rules as repository status.
+
 A pool's card says when job names are hidden or could not be read, and when GitHub
 cannot answer for its repository, with the last check's time and when Marshal tries
 again; a token cause W1's card already gives is not said twice, and a repository with
@@ -968,10 +1003,11 @@ Keychain items are kept. Until M4, Marshal has no login item and no updates of i
 own.
 
 With the command line still running, the app shows that another Marshal holds the
-runner lock. Stop it with `marshal stop`, then remove the command line with the
-uninstall procedure of the last command-line release's documents, as
-[The Last Command-Line Release](./cli.md#the-last-command-line-release) says; from then
-on the app runs the pools.
+runner lock. Stop it with `marshal stop` before handing the pools to the app. For a
+pkg install, use the uninstall procedure in the recovery release tag's
+[CLI Recovery](./cli-recovery.md) guide. For a manual copy at `~/.local/bin/marshal`,
+use that guide's macOS block under Migrating From a Manual Install instead. Then
+use the app to run the pools.
 
 To uninstall, quit Marshal and move it to the Trash. What it leaves, and how to remove
 each:

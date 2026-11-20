@@ -1,0 +1,10 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "alpha"
+organization = "octo"
+runner_group = "builders"
+scale_set = "builds"
+runners = 1

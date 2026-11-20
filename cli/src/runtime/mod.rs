@@ -18,6 +18,7 @@ pub mod name;
 pub mod pool;
 pub mod registration;
 pub mod retained;
+mod runner_groups;
 pub mod scrub;
 pub mod secret;
 pub mod select;
