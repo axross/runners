@@ -448,8 +448,9 @@ one. The denial covers editing tools and nested spawning, not every possible
 shell write. Without an assignment that names the instance as a round's
 independent review and carries that round's token, it returns its report
 privately and posts nothing; with one, it posts exactly one COMMENT-type review.
-Claude Code documents enforcing only that denial, which the first live round
-confirms, as [#155](https://github.com/axross/runners/issues/155) tracks. Every
+Of these limits, only that denial is one Claude Code documents enforcing; no
+live round has confirmed it yet, and
+[#155](https://github.com/axross/runners/issues/155) tracks the first. Every
 other limit is instruction-only for every instance: shell writes and commits,
 push and merge, approve or request-changes verdicts, GitHub writes beyond the
 round's one review, starting or messaging actors through non-Agent routes, and

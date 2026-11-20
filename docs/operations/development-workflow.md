@@ -478,10 +478,10 @@ A Claude Code review subagent can:
 
 The definition declares, and Claude Code documents enforcing, one set of limits
 on a `reviewer` instance: it denies the Edit, Write, NotebookEdit, and Agent
-tools. That enforcement is first confirmed on the first live round, which
-[#155](https://github.com/axross/runners/issues/155) tracks. Every other limit
-is instruction-only, whether the instance is the advisory pre-flight reader or a
-round's independent review:
+tools. No live round has confirmed that enforcement yet;
+[#155](https://github.com/axross/runners/issues/155) tracks the first. Every
+other limit is instruction-only, whether the instance is the advisory
+pre-flight reader or a round's independent review:
 
 - no shell write to the repository beyond fetching the reviewed commit and
   checking it out in its own confirmed worktree, and no commit; an advisory

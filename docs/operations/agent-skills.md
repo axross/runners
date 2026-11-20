@@ -248,15 +248,16 @@ bounded ways, each the maintainer's choice:
 
 - The instance is the project's `reviewer` subagent, spawned with
   `isolation: worktree`. Its definition declares, and Claude Code documents
-  enforcing, the denial of the Edit, Write, NotebookEdit, and Agent tools; the
-  first live round confirms it, as
-  [#155](https://github.com/axross/runners/issues/155) tracks. The other limits
-  are instruction-only, as the accepted-consequences list in Development
-  Workflow's grant section gives them. The definition leaves available
-  restrictions on GitHub write tools and on session-starting and messaging tools
-  unused, for the reasons the counterexample below gives. The same `reviewer.md`
-  still serves as the advisory pre-flight reader, and its prose permits posting
-  only under an independent-review assignment that carries a round token.
+  enforcing, the denial of the Edit, Write, NotebookEdit, and Agent tools; no
+  live round has confirmed it yet, and
+  [#155](https://github.com/axross/runners/issues/155) tracks the first. The
+  other limits are instruction-only, as the accepted-consequences list in
+  Development Workflow's grant section gives them. The definition leaves
+  available restrictions on GitHub write tools and on session-starting and
+  messaging tools unused, for the reasons the counterexample below gives. The
+  same `reviewer.md` still serves as the advisory pre-flight reader, and its
+  prose permits posting only under an independent-review assignment that
+  carries a round token.
 - The host documentation describes no operation that makes a completed subagent
   non-resumable, so a completed instance is recorded as completed in run state
   rather than closed, and that record ends the round without a per-round
@@ -276,9 +277,10 @@ bounded ways, each the maintainer's choice:
 The concrete counterexample to the first quoted rule is the review subagent
 itself: denying every GitHub write tool would remove the direct publication that
 rule requires; a deny-list naming only one connector's non-review GitHub write
-tools, or one host's session-starting or messaging tools, would not travel and
-would leave the same writes reachable through the shell; and a reader still
-needs the shell and the tracker to read the change. The accepted exposure is
+tools, or one session's connector-provided session-starting or messaging tools,
+would not cover other sessions' connectors and would leave the same writes
+reachable through the shell; and a reader still needs the shell and the tracker
+to read the change. The accepted exposure is
 that a `reviewer` instance, whose definition carries the conditional posting
 permission, can still write through the shell or the tracker, or start another
 actor through a non-Agent tool, and the host would not stop it. The alternatives
