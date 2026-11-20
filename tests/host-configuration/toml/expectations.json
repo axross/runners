@@ -146,6 +146,16 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/invalid-scale-set-reads-labels-as-always-on.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[1].scale_set: must be a scale-set name string",
+      "line 11: pool[1].labels: ambiguous same-repository routing; labels 'FAST' also appear at pool[0]"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/key-wrong-case-beside-the-right-key.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -374,6 +384,13 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/organization-without-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].organization: unknown key"],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/pool-labels-in-toml-names.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -583,11 +600,30 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/scale-set-before-labels-in-one-pool.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].scale_set: must be a scale-set name string",
+      "line 10: pool[0].labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/scale-set-collides-with-pool-name.toml": {
     "profile": "axpc",
     "outcome": "reject",
     "problems": [
       "line 14: pool[1].scale_set: scale-set routing or cleanup identity collides with pool[0]; use a distinct scale-set name"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-equals-later-peer-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].scale_set: scale-set routing or cleanup identity collides with pool[1]; use a distinct scale-set name"
     ],
     "contains": [],
     "lacks": []
