@@ -967,7 +967,8 @@ later host:
   (see [CLI](../operations/cli.md#github-status)) are `GET`s there through the same
   client; neither follows a redirect, so a redirect cannot carry the token to
   another host, and a status read follows a next page only on the same origin and
-  endpoint path. It fails a connection after
+  endpoint path, or GitHub's numeric-id form of it for the same repository or
+  organisation. It fails a connection after
   10 s, a request after 30 s, and a response over 1 MiB. The token lives in a type
   with no `Display` and a redacted `Debug`, the header that carries it is marked
   sensitive, and error text has the token replaced before it is logged. Only a

@@ -1435,8 +1435,9 @@ their cause and enter the slot's backoff.
 
 The group check uses each page's last `ETag`, and a cached page is usable only
 after an authorised `304` for that request. A failed read never reuses an old
-permission. Next pages must have the first request's origin and exact path;
-cycles, more than ten pages, missing flags and invalid responses fail closed.
+permission. Next pages must have the first request's origin and either its exact path
+or GitHub's `/organizations/<id>/actions/runner-groups` form of it, with one id for
+the whole read; cycles, more than ten pages, missing flags and invalid responses fail closed.
 The check repeats before every registration, outside the display queue and its
 budget. A group fixed in GitHub is accepted at the next attempt, without a
 restart. Only then does the registrar send
@@ -2760,14 +2761,17 @@ budget.
 
 **Next pages.** For every paged read, each address in a `link` header's `next` is
 compared with the read's first request. It is followed only when it has that request's
-origin and its path is either that request's path or `/repositories/<id>` followed by
-exactly the rest of that path after `/repos/<owner>/<repo>`, where `<id>` is one or
+origin and its path is either that request's path, or `/repositories/<id>` followed by
+exactly the rest of that path after `/repos/<owner>/<repo>`, or, for the runner list
+of an organisation, `/organizations/<id>/actions/runners`, where `<id>` is one or
 more ASCII digits and the same on every page of the read, and only its query differs.
-GitHub names next pages in the `/repositories/<id>` form. Any other address reads as
-`error` and is not requested, so no response can send the token to another origin or
-another endpoint path. The agent does not check that `<id>` is the configured
-repository's, which would cost another request; the address comes only from GitHub's
-response over TLS, with no redirect followed.
+GitHub names next pages in those id forms. A repository read never follows the
+`/organizations/` form, and an organisation read never follows the `/repositories/`
+form. Any other address reads as `error` and is not requested, so no response can
+send the token to another origin or another endpoint path. The agent does not check
+that `<id>` is the configured repository's or organisation's, which would cost
+another request; the address comes only from GitHub's response over TLS, with no
+redirect followed.
 
 The requests use the registration client: `https://api.github.com` only in a release
 build, no redirect, 10 s to connect, 30 s a request, 1 MiB a response, the token in a

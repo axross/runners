@@ -1355,6 +1355,61 @@ async fn organization_paging_refuses_other_origins_scopes_and_endpoints() {
     }
 }
 
+/// GitHub continues an organisation list at `/organizations/<id>/…`; a later page may
+/// not name another id.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn organization_paging_follows_the_numeric_id_form_and_holds_one_id() {
+    const PAGE2: &str = "/organizations/21341965/actions/runners?per_page=100&page=2";
+    const PAGE3: &str = "/organizations/21341965/actions/runners?per_page=100&page=3";
+    for (third, followed, status_word) in [
+        (PAGE3, true, "ok"),
+        (
+            "/organizations/21341966/actions/runners?per_page=100&page=3",
+            false,
+            "error",
+        ),
+    ] {
+        let world = organization_world(move |path, _, _| match path {
+            ORGANIZATION_RUNNERS => {
+                let mut answer = json(&runners(&[("alpha-1", "online", true)]), "\"p1\"");
+                answer.link = Some(format!("<{BASE}{PAGE2}>; rel=\"next\""));
+                Ok(answer)
+            }
+            PAGE2 => {
+                let mut answer = json(&runners(&[("alpha-2", "online", false)]), "\"p2\"");
+                answer.link = Some(format!("<{BASE}{third}>; rel=\"next\""));
+                Ok(answer)
+            }
+            PAGE3 => Ok(json(&runners(&[("alpha-3", "offline", false)]), "\"p3\"")),
+            other => panic!("followed a refused page: {other}"),
+        });
+        let (_s, snapshot_rx, _a, active_rx, status_tx, status_rx) = channels(
+            organization_snapshot(
+                &[
+                    ("owner", "alpha", "alpha-1"),
+                    ("owner", "alpha", "alpha-2"),
+                    ("owner", "alpha", "alpha-3"),
+                ],
+                true,
+                false,
+            ),
+            true,
+        );
+        drive(&world, snapshot_rx, active_rx, status_tx, async {
+            sleep(Duration::from_secs(1)).await;
+        })
+        .await;
+        let paths = world.fetch.paths();
+        assert_eq!(paths.len(), if followed { 3 } else { 2 }, "{paths:?}");
+        assert_eq!(paths[..2], [ORGANIZATION_RUNNERS, PAGE2]);
+        let status = status_rx.borrow().clone();
+        assert_eq!(status.organizations[0].status, status_word);
+        if followed {
+            assert_eq!(status.organizations[0].runners.len(), 3);
+        }
+    }
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn organization_failures_back_off_without_exposing_tokens_or_response_fields() {
     for (code, cause) in [

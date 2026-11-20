@@ -21,7 +21,7 @@ use crate::token_store::{TokenKey, TokenStore};
 use super::answer::{Answer, Cause, Endpoint, Next, Outcome, Wait, classify};
 use super::budget::{Level, Tracker};
 use super::clean;
-use super::http::{Fetch, Get, next_page, repository_id};
+use super::http::{Fetch, Get, next_page, page_id};
 use super::{
     GithubStatus, Job, OrganizationRunnerStatus, OrganizationStatus, RepositoryStatus, RunnerStatus,
 };
@@ -573,7 +573,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
     ) -> Read {
         let mut bodies = Vec::new();
         let mut path = first.to_string();
-        // the `/repositories/<id>` id of the read, held from the first page that names one
+        // the `/repositories/<id>` or `/organizations/<id>` id of the read, held from the first
+        // page that names one
         let mut held_id: Option<String> = None;
         for _ in 0..MAX_PAGES {
             if !self.is_active() || self.waiting() {
@@ -644,7 +645,7 @@ impl<'a, F: Fetch> Collector<'a, F> {
             };
             bodies.push(page.body);
             if held_id.is_none() {
-                held_id = repository_id(&path).map(str::to_string);
+                held_id = page_id(&path).map(str::to_string);
             }
             let next = page.link.as_deref().map_or(Next::None, |link| {
                 next_page(link, self.fetch.base_url(), first, held_id.as_deref())

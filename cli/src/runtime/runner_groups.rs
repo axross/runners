@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::github_status::answer::Next;
 use crate::github_status::collector::MAX_PAGES;
-use crate::github_status::http::{Fetch, Get, GitHubReader, next_page};
+use crate::github_status::http::{Fetch, Get, GitHubReader, next_page, page_id};
 use crate::runtime::secret::Secret;
 
 use super::registration::{HttpLimits, SetupError};
@@ -64,6 +64,8 @@ impl GroupCheck {
         let mut path = first.clone();
         let mut seen = BTreeSet::new();
         let mut selected = None;
+        // the `/organizations/<id>` id of the read, held from the first page that names one
+        let mut held_id: Option<String> = None;
         for _ in 0..MAX_PAGES {
             if !seen.insert(path.clone()) {
                 return Err("the runner group pages repeat".to_string());
@@ -77,8 +79,11 @@ impl GroupCheck {
                     selected = Some(group.clone());
                 }
             }
+            if held_id.is_none() {
+                held_id = page_id(&path).map(str::to_string);
+            }
             let next = page.link.as_deref().map_or(Next::None, |link| {
-                next_page(link, self.reader.base_url(), &first, None)
+                next_page(link, self.reader.base_url(), &first, held_id.as_deref())
             });
             match next {
                 Next::None => return selected.ok_or("runner group not found".to_string())?.id(),

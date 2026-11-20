@@ -651,6 +651,51 @@ async fn group_paging_is_complete_and_confined_to_its_origin_and_path() {
     );
 }
 
+/// GitHub continues an organisation's group list at `/organizations/<id>/…`; a later
+/// page may not name another id.
+#[tokio::test(flavor = "current_thread")]
+async fn group_paging_follows_the_numeric_id_form_and_holds_one_id() {
+    let second =
+        "<{stub}/organizations/21341965/actions/runner-groups?per_page=100&page=2>; rel=\"next\"";
+    let third =
+        "<{stub}/organizations/21341965/actions/runner-groups?per_page=100&page=3>; rel=\"next\"";
+    let stub = Stub::start(vec![
+        group_page(vec![], vec![("Link", second.to_string())]),
+        group_page(vec![], vec![("Link", third.to_string())]),
+        group_page(vec![safe_group()], vec![]),
+        Reply::json(r#"{"encoded_jit_config":"id-form"}"#),
+    ]);
+    let registrar = GitHubRegistrar::new(Some(&stub.address), short()).unwrap();
+    assert_eq!(
+        register_organization(&registrar, "selected-private", TOKEN)
+            .await
+            .unwrap()
+            .expose(),
+        "id-form"
+    );
+    let paths: Vec<_> = stub.requests().iter().map(|r| r.path.clone()).collect();
+    assert_eq!(
+        paths[1..3],
+        [
+            "/organizations/21341965/actions/runner-groups?per_page=100&page=2",
+            "/organizations/21341965/actions/runner-groups?per_page=100&page=3"
+        ]
+    );
+    let other =
+        "<{stub}/organizations/21341966/actions/runner-groups?per_page=100&page=3>; rel=\"next\"";
+    let stub = Stub::start(vec![
+        group_page(vec![], vec![("Link", second.to_string())]),
+        group_page(vec![], vec![("Link", other.to_string())]),
+    ]);
+    let registrar = GitHubRegistrar::new(Some(&stub.address), short()).unwrap();
+    assert!(
+        register_organization(&registrar, "selected-private", TOKEN)
+            .await
+            .is_err()
+    );
+    assert_eq!(stub.requests().len(), 2);
+}
+
 /// the extra group read must not weaken the registrar's request limits.
 #[tokio::test(flavor = "current_thread")]
 async fn organization_group_and_jit_reads_share_the_redirect_timeout_and_size_bounds() {
