@@ -4,7 +4,7 @@ How agent sessions start in this project, the hooks that run during one, how Amp
 and Codex runs handle delivery authorization, Claude Code's plan-gate delivery
 confirmation, Amp's plan-gate confirmation for archiving review child threads,
 host-owned CI and review waits, the subagents a session can delegate to,
-including the Claude Code review child session, how a session's usage is
+including the Claude Code review subagent, how a session's usage is
 tagged, and the environment variables recommended for cutting a Claude Code
 session's cost. Claude Code and Amp are the hosts this repository configures;
 they share the pinned toolchain in [`mise.toml`](../../mise.toml) and nothing
@@ -241,7 +241,7 @@ Every plan-approval question, including the one for a revised plan, MUST also
 ask the human to confirm, in the same answer:
 
 - delivery of the run's draft pull request;
-- creation of a fresh Claude Code review child session that reviews it and
+- spawning a new `reviewer` subagent instance each round that reviews it and
   publishes directly to it, or, when the maintainer has selected the Claude CI
   alternative for the run, the Claude CI review request on it;
 - watching that pull request's activity, where the host offers it, until the
@@ -291,7 +291,8 @@ follows stays under the delivery grant.
   resumes the run and lacks that exchange in its own conversation asks once
   before its first `TaskStop`, even when run state records an earlier
   confirmation. A recorded decline carries forward, so no later session asks
-  again, and a child still running is handed over as one the run cannot stop.
+  again, and a review subagent still running is handed over as one the run
+  cannot stop.
 - MUST, when the human confirms delivery but declines the review item,
   open the draft pull request, keep it draft, and report the external-review
   gate as unmet and the loop as not complete.
@@ -354,15 +355,16 @@ wait followed by sanctioned GitHub reads, or with a subscription only where the
 host and the run already permit it.
 
 For a Claude Code-authored pull request, the awaited results are its required
-GitHub checks and the review its Claude Code review child session posts, or,
-when the maintainer selected the Claude CI alternative for the run, the Claude
-CI review.
+GitHub checks and the review its Claude Code review subagent posts, or, when the
+maintainer selected the Claude CI alternative for the run, the Claude CI review.
 Claude Code's [subagent documentation](https://code.claude.com/docs/en/sub-agents)
 says subagents run in the background by default and that, while fork mode is
-on, an interactive session cannot block on one, so the child's completion
+on, an interactive session cannot block on one, so the instance's completion
 arrives as a notification rather than as the result of a blocking wait; this
-has not yet been exercised in this repository. After it arrives, read the posted
-review back on the pull request. A child's permission prompt appears in the
+has not yet been exercised for the review subagent, and
+[#155](https://github.com/axross/runners/issues/155) tracks its first live
+round. After it arrives, read the posted review back on the pull request. A
+review subagent's permission prompt appears in the
 authoring session, and one the run cannot answer for the human is a human wait,
 as the After Approval section of [Development Workflow](./development-workflow.md)
 lists.
@@ -433,17 +435,25 @@ delegated merely by choosing this actor. It states its delivery boundary, that
 commits stay local and pushing and publishing belong to whoever asked, in its
 own prose rather than by withdrawing a tool.
 
-`reviewer.md` is the reader for the advisory pre-flight review. It denies exactly
-two things, editing and spawning, and nothing else. Widening that deny-list is
-the tempting mistake and MUST be resisted: judging a change means confirming what
-was asked and not only what was written, which reaches the issue, the plan's
-artifacts, and the documentation behind a factual claim. A reviewer that cannot
-reach one of those does not fail to start; it returns a report short by exactly
-those checks, and an under-equipped review reads exactly like a clean one. The
-denial covers editing tools and nested spawning, not every possible shell write.
-Its review is advisory; the independent-review rule in
-[Development Workflow](./development-workflow.md) says it never stands in for
-that review.
+`reviewer.md` is the reader for the advisory pre-flight review and, under an
+assignment that names it so, the Claude Code independent review. It denies
+exactly two things, editing and spawning, which are the Edit, Write, and
+NotebookEdit tools and the Agent tool, and nothing else. Widening that deny-list
+is the tempting mistake and MUST be resisted: judging a change means confirming
+what was asked and not only what was written, which reaches the issue, the
+plan's artifacts, and the documentation behind a factual claim. A reviewer that
+cannot reach one of those does not fail to start; it returns a report short by
+exactly those checks, and an under-equipped review reads exactly like a clean
+one. The denial covers editing tools and nested spawning, not every possible
+shell write. Without an assignment that names the instance as a round's
+independent review and carries that round's token, it returns its report
+privately and posts nothing; with one, it posts exactly one COMMENT-type review.
+Which limits the host enforces and which stay instruction-only is listed with
+the standing delivery grant in
+[Development Workflow](./development-workflow.md), including that the posting
+condition itself is instruction-only for every instance. An instance used for
+the pre-flight is advisory and is never the independent review; only a new
+instance the run assigns that role counts.
 
 `investigator.md` is the reader for a payload the main actor needs only one
 conclusion from: a log, a long thread, a wide search across files or history, a
@@ -455,7 +465,8 @@ local lookup or when the host prohibits that delegation purpose.
 
 Each of these exists to keep some context out of the main actor's own: the
 implementer so it does not inherit the planning phase's accumulated context, the
-reviewer so it does not inherit the implementer's reasoning state, and the
+reviewer so it does not inherit the implementer's reasoning state and, as the
+independent review, the author's conversation, and the
 investigator so a large payload never enters the main actor's context at all.
 All three run Sonnet at `effort: high`. The investigator runs at `high` rather
 than a lower level because its output is a judgment the main actor cannot check
@@ -473,8 +484,9 @@ external review remain unchanged. Deleting any of the three files degrades
 gracefully rather than breaking the loop. Without the implementer, the loop
 delegates to a generic agent or runs single-agent; without the reviewer, the
 pre-flight stage is skipped rather than performed by the main actor, which is
-what keeps it from collapsing into self-review; without the investigator, the
-main actor reads the payload itself.
+what keeps it from collapsing into self-review, and the Claude Code
+independent-review gate stays unmet because no other subagent substitutes;
+without the investigator, the main actor reads the payload itself.
 
 The advisory pre-flight review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the
@@ -484,21 +496,23 @@ and available; its findings and round limits follow
 If no reader qualifies, record the exact unavailable or prohibited reason and the
 resulting delivery restriction. That outcome is not a clean review; the Deliver a
 draft when advisory pre-flight is unavailable section of
-[Development Workflow](./development-workflow.md) states what it permits.
+[Development Workflow](./development-workflow.md) states what it permits,
+including that on Claude Code a missing `reviewer` leaves both gates unmet.
 
-The independent review's Claude Code review child session is none of these
-three. Each round starts a new child with the built-in `general-purpose`
-subagent type and `isolation: worktree` on the call itself, never as a fork,
-because a fork inherits the author's conversation. `reviewer.md` cannot serve:
-it enforces its tool limits but tells its reader not to post, and the
-independent review must be posted on the pull request. Claude Code's
+The independent review's Claude Code review subagent is one more use of
+`reviewer.md`, not a fourth definition. Each round spawns a new instance with
+`isolation: worktree` on the call itself, never as a fork, because a fork
+inherits the author's conversation, and never by resuming an earlier instance.
+The pinned model and effort are not overridden at spawn time. Claude Code's
 [subagent documentation](https://code.claude.com/docs/en/sub-agents) says a
 subagent loads the project's CLAUDE.md, which here imports AGENTS.md; this has
-not yet been exercised in this repository. AGENTS.md's Code Review Rules exempt
-the child from the delegation rule. The Claude Code review child session
-procedure in [Development Workflow](./development-workflow.md) owns its
-assignment, checkpoints, and ending, and the register in
-[Agent Skills](./agent-skills.md) records where it departs from Loop
+not yet been exercised for `reviewer`, and
+[#155](https://github.com/axross/runners/issues/155) tracks it. AGENTS.md's Code
+Review Rules exempt the instance from the delegation rule. The Claude Code
+review subagent procedure in [Development Workflow](./development-workflow.md)
+owns its assignment, isolation check, checkpoints, and ending, and states why a
+review session started by another session is not a route; the register in
+[Agent Skills](./agent-skills.md) records where the route departs from Loop
 Engineering's review-child defaults.
 
 For Claude Code reads, keep the exact object of a judgment and the rules governing
@@ -534,7 +548,10 @@ Distinguish these cases:
 A generic worker can qualify only through the same tool and role checks, with an
 explicit assignment and boundaries. Otherwise the caller reads or implements
 directly where permitted; an unavailable advisory reviewer is recorded rather
-than replaced with self-approval. A CLI agent or persistent thread MUST NOT be
+than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
+or whose spawn the host refuses, is also an unavailable independent-review
+route: that gate stays unmet, and no other subagent, provider, or session
+replaces it. A CLI agent or persistent thread MUST NOT be
 used to bypass a missing role or a prohibited purpose. For unavailable research,
 plan, or design review, the driver MUST use
 [Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).

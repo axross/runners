@@ -216,9 +216,12 @@ Since the merge of the pull request that closes
 [issue #127](https://github.com/axross/runners/issues/127), the confirmation's
 review item is the creation of a Claude Code review child session for the pull
 request, or the Claude CI review request when the maintainer has selected that
-alternative for the run; the dependency this entry records is unchanged.
+alternative for the run. Since the merge of the pull request that closes
+[issue #151](https://github.com/axross/runners/issues/151), the first of those
+is the spawning of a new `reviewer` subagent instance for each round; the
+dependency this entry records is unchanged.
 
-### Deviation - the Claude Code review child's limits and closure
+### Deviation - the Claude Code review subagent's limits and closure
 
 The project installation of `loop-engineering`, from `axross/skills` revision
 `cce7ecf` (the refresh in #96), whose capability hash in `skills-lock.json` is
@@ -239,37 +242,61 @@ its
   permission remains unavailable, identify the exact session/thread and reason,
   and ask them to close it with concrete host-specific steps."
 
-The Claude Code review child session in
+The Claude Code review subagent in
 [Development Workflow](./development-workflow.md) departs from these in four
 bounded ways, each the maintainer's choice:
 
-- The child is a general-purpose subagent started with `isolation: worktree`.
-  The worktree enforces only the no-edit limit on the author's checkout; the
-  no-push, publication-scope, and no-delegation limits are instructions the host
-  does not enforce. `.claude/agents/reviewer.md` enforces tool limits, but its
-  instructions forbid posting, so it cannot serve as a child that publishes
-  directly; it stays the advisory pre-flight reader.
+- The instance is the project's `reviewer` subagent, spawned with
+  `isolation: worktree`. The host enforces its denial of the Edit, Write,
+  NotebookEdit, and Agent tools, and the run confirms its worktree is distinct
+  from the author's checkout. The other limits are instructions the host does
+  not enforce: no shell write or commit, no push or merge, no approve or
+  request-changes verdict, no GitHub write beyond the round's one review, no
+  starting or messaging of other actors through a route other than the Agent
+  tool, and no posting by an instance not assigned as the round's independent
+  review. The definition leaves available restrictions on GitHub write tools and
+  on session-starting and messaging tools unused: a reader needs the shell and
+  the tracker to read, and a deny-list naming one host's connector tools would
+  not travel. The same `reviewer.md` still serves as the advisory pre-flight
+  reader, and its prose permits posting only under an independent-review
+  assignment that carries a round token.
 - The host documentation describes no operation that makes a completed subagent
-  non-resumable, so a completed child is recorded as completed in run state
+  non-resumable, so a completed instance is recorded as completed in run state
   rather than closed, and that record ends the round without a per-round
-  handoff. The run never resumes a completed child.
-- A child still running after its result is verified or its round has failed
-  is stopped with `TaskStop`. The host documentation says a child stopped this
-  way resumes when messaged, so, like a completed child, it is recorded as
-  stopped rather than closed, and the run never messages or resumes it. A
-  child the run cannot stop, including one an earlier session spawned, whose
-  agent ID only that session can use, is handed to the maintainer with its
-  agent ID, the reason, and, in a local interactive session, the step "press
-  `x` on its row in `/tasks`" in the session that spawned it.
+  handoff. The run never resumes a completed instance.
+- An instance still running after its result is verified or its round has
+  failed is stopped with `TaskStop`. The host documentation says an instance
+  stopped this way resumes when messaged, so, like a completed instance, it is
+  recorded as stopped rather than closed, and the run never messages or resumes
+  it. An instance the run cannot stop, including one an earlier session
+  spawned, whose agent ID only that session can use, is handed to the
+  maintainer with its agent ID, the reason, and, in a local interactive
+  session, the step "press `x` on its row in `/tasks`" in the session that
+  spawned it.
 - In a cloud session, where `/tasks` is not documented, the handoff says that
   no human step is verified there instead of naming one.
 
-This entry is adopted by the maintainer's merge of the pull request that closes
+The concrete counterexample is the instruction-only exposure above: a
+`reviewer` instance, whose definition carries the conditional posting
+permission, can still write through the shell or the tracker, or start another
+actor through a non-Agent tool, and the host would not stop it. The alternatives
+are a second, posting-capable definition and a deny-list that also names GitHub
+write tools and session-starting and messaging tools; the maintainer chose one
+definition and left the rest instruction-only, and accepted the exposure.
+
+The deviation described before this amendment, a general-purpose subagent child
+whose limits beyond the worktree were all instructions, was adopted by the
+maintainer's merge of the pull request that closes
 [issue #127](https://github.com/axross/runners/issues/127), together with the
-review route and grant amendments it serves. It changes no installed skill,
-host restriction, or plan and review gate, and authorizes no upstream
-publication. Reassess it when the installed review-workflow rules change, when
-Claude Code documents an operation that ends a completed subagent, enforces tool
-limits on a general-purpose subagent, or documents `/tasks` for cloud sessions,
-when a project subagent definition that may post is added, or when the
-maintainer withdraws this choice.
+review route and grant amendments it served. This amendment was adopted by the
+maintainer's approval of the plan in
+[issue #151](https://github.com/axross/runners/issues/151) and takes effect on
+the maintainer's merge of the pull request that closes it. It changes no
+installed skill, host restriction, or plan and review gate, and authorizes no
+upstream publication. Reassess it when the installed review-workflow rules
+change, when Claude Code documents an operation that ends a completed
+subagent, enforces the posting condition or the remaining limits on a project
+subagent, or documents `/tasks` for cloud sessions, when
+[#155](https://github.com/axross/runners/issues/155) records a host fact that
+contradicts what the route assumes, or when the maintainer withdraws this
+choice.
