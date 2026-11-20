@@ -172,7 +172,8 @@ independent review and carry no advisory pre-flight findings. The actor
 assigned an independent review reviews and posts its review itself and does not
 delegate; the subagent-delegation rule above does not apply to it. Advisory
 pre-flight remains a separate checkpoint and does not satisfy independent
-review. Follow
+review, and neither do phase-deliverable reviewers or the author's own checks;
+The Independent Review lists every exclusion. Follow
 [The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
 for qualification, review rounds, publication verification, how a round's
 reviewer is ended or handed over, and the comment-triggered Claude CI review the

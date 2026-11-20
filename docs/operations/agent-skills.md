@@ -291,12 +291,13 @@ maintainer approved in
 [issue #151](https://github.com/axross/runners/issues/151), recorded at
 [this comment](https://github.com/axross/runners/issues/151#issuecomment-7049089352),
 which is its adoption-evidence locator, and, like the earlier ones, is adopted
-by the maintainer's merge of the pull request that closes that issue. It changes no
-installed skill, host restriction, or plan and review gate, and authorizes no
-upstream publication. Reassess it when the installed review-workflow rules
-change, when Claude Code documents an operation that ends a completed
-subagent, enforces the posting condition or the remaining limits on a project
-subagent, or documents `/tasks` for cloud sessions, when
+by the maintainer's merge of the pull request that closes that issue. Its scope
+is the Claude Code independent-review route only; the Amp and Codex routes are
+unaffected. It changes no installed skill, host restriction, or plan and review
+gate, and authorizes no upstream publication. Reassess it when the installed
+review-workflow rules change, when Claude Code documents an operation that ends
+a completed subagent, enforces the posting condition or the remaining limits on
+a project subagent, or documents `/tasks` for cloud sessions, when
 [#155](https://github.com/axross/runners/issues/155) records a host fact that
 contradicts what the route assumes, or when the maintainer withdraws this
 choice.

@@ -215,10 +215,9 @@ approved in that issue
 ([recorded here](https://github.com/axross/runners/issues/151#issuecomment-7049089352))
 and, like the earlier ones, takes effect only on the maintainer's merge of the
 pull request that closes it; that pull request is reviewed under the grant as
-merged before it. Agent
-runs share the maintainer's operator identity, so the signal that
-distinguishes such a merge as a human act is that agents never merge on their
-own: merge is excluded from this grant, and it is the maintainer's
+merged before it. Agent runs share the maintainer's operator identity, so the
+signal that distinguishes such a merge as a human act is that agents never merge
+on their own: merge is excluded from this grant, and it is the maintainer's
 decision, per [Branches and Merging](#branches-and-merging). The grant is
 separate from plan approval, which releases implementation and is not what
 authorizes a delivery effect, but every run already holds it, so no run asks
@@ -484,7 +483,8 @@ tools. That enforcement is first confirmed on the first live round, which
 is instruction-only, whether the instance is the advisory pre-flight reader or a
 round's independent review:
 
-- no shell write and no commit;
+- no shell write to the repository beyond checking out the reviewed commit in
+  its own confirmed worktree, and no commit;
 - no push and no merge;
 - no approve or request-changes verdict;
 - no GitHub write other than those that compose the round's one review;
@@ -497,13 +497,13 @@ The last item follows from one definition serving both uses: every `reviewer`
 instance carries the conditional posting permission in its prose, and the host
 does not enforce that the condition holds. The definition leaves GitHub write
 tools and session-starting and messaging tools undenied. A reader needs the
-shell and the tracker to read, and the names of the others are host- and
-connector-specific, so a deny-list naming one host's tools would not travel.
+shell and the tracker to read, and the names of session-starting and messaging
+tools are host- and connector-specific, so a deny-list naming one host's tools would not travel.
 
 An Amp review child thread's or a Claude Code review subagent's review supplies
 no GitHub approval and no APPROVE verdict; a shared operator account is not a
-distinct bot identity. The selected route
-supplies context-independent review for this project's delivery gate. This
+distinct bot identity. The selected route supplies context-independent review
+for this project's delivery gate. This
 grant covers neither unrelated threads or sessions nor reconfiguration to make
 an unavailable route work.
 
@@ -1257,13 +1257,13 @@ never a fork of the authoring conversation.
    implementation receipt, and the pre-flight ledger and findings, carry none of
    the author's claimed verdicts. Tell the instance to stop and post nothing if
    its working directory is the author's checkout; otherwise to check out the
-   reviewed commit inside its worktree, since the worktree branches from the
-   default branch; to read the actual change and surrounding code; not to edit,
-   push, or delegate, and to make no write other than those that compose its
-   review; to post one COMMENT-type review itself; and to report the review's
-   URL, the commit it read, which of those limits its host enforced and which it
-   followed by instruction, which GitHub identity it posted under, and any
-   limitations.
+   reviewed commit inside its confirmed worktree, since the worktree branches
+   from the default branch; to read the actual change and surrounding code; not
+   to edit, push, or delegate, and to make no write other than that checkout and
+   the writes that compose its review; to post one COMMENT-type review itself;
+   and to report the review's URL, the commit it read, which of those limits its
+   host enforced and which it followed by instruction, which GitHub identity it
+   posted under, and any limitations.
 3. Right after the spawn, checkpoint the round token, the agent ID the spawn
    returned, and the instance's worktree in run state, through Save and resume
    run state, above. The round token, the posted review, and the worktree are
@@ -1328,9 +1328,9 @@ instance or counting another round.
 One `reviewer.md` serves both the advisory pre-flight and this route, with an
 assignment-keyed posting exception, and its `sonnet` and `high` pin is kept and
 not overridden at spawn time. Both are the maintainer's decisions of 2026-11-20,
-recorded in [issue #151](https://github.com/axross/runners/issues/151). The cost
-of the shared definition is the accepted instruction-only exposure listed with
-the grant, above.
+[recorded in issue #151](https://github.com/axross/runners/issues/151#issuecomment-7047417917),
+and no further rationale was given for them. The cost of the shared definition
+is the accepted instruction-only exposure listed with the grant, above.
 
 A review session that another session starts for a run is not a route. Earlier
 runs used one on a decision relayed for a single run, but no document described

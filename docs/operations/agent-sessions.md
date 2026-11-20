@@ -480,13 +480,13 @@ These are configured candidates, not a permission grant. A session MUST check
 the capabilities its host actually permits before using one. Delegating to the
 matching configured actor is the default; parent implementation is valid only
 when delegation is unavailable or disallowed, and mandatory verification and
-external review remain unchanged. Deleting a file never lets the loop skip a
-gate. Without the implementer, the loop delegates to a generic agent or runs
-single-agent. Without the reviewer, the pre-flight stage is skipped rather than
-performed by the main actor, which is what keeps it from collapsing into
-self-review, and the Claude Code independent-review gate stays unmet because no
-other subagent substitutes. Without the investigator, the main actor reads the
-payload itself.
+external review remain unchanged. Deleting a file never lets the loop skip the
+independent-review gate. Without the implementer, the loop delegates to a
+generic agent or runs single-agent. Without the reviewer, the pre-flight stage
+is skipped rather than performed by the main actor, which is what keeps it from
+collapsing into self-review, and the Claude Code independent-review gate stays
+unmet because no other subagent substitutes. Without the investigator, the main
+actor reads the payload itself.
 
 The advisory pre-flight review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the

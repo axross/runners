@@ -61,11 +61,11 @@ under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
 ## Severity labels for posted reviews
 
-Claude, Claude Code review subagent, and Amp review use Code Review's two posted labels, **Important** and
-**Nit**, instead of its internal Critical/Major/Minor/Nit triage or an
-Approve/Request-Changes verdict. Codex managed review uses native priority
-labels; its presentation and reporting scope follow the adopted arrangements
-above. In this repository, a hard project rule includes every MUST rule of a
+Claude, Claude Code review subagent, and Amp review use Code Review's two posted
+labels, **Important** and **Nit**, instead of its internal
+Critical/Major/Minor/Nit triage or an Approve/Request-Changes verdict. Codex
+managed review uses native priority labels; its presentation and reporting
+scope follow the adopted arrangements above. In this repository, a hard project rule includes every MUST rule of a
 skill whose `description` matches the changed files and every applicable MUST
 rule in project conventions, such as [Security](./docs/conventions/security.md),
 subject to registered deviations in the
@@ -76,9 +76,9 @@ boundary.
 **Guidelines:**
 
 - MUST flag an applicable hard-rule violation and cite its owning skill or
-  project convention and rule. Claude, Claude Code review subagent, and Amp review MUST label it Important;
-  Codex review uses its native priority label without implying an exact
-  equivalence.
+  project convention and rule. Claude, Claude Code review subagent, and Amp
+  review MUST label it Important; Codex review uses its native priority label
+  without implying an exact equivalence.
 
 ## Mandatory checks
 
@@ -130,8 +130,8 @@ contributor's verification.
 
 ## Public-repository safety lenses
 
-Each lens is a hard project rule. Claude, Claude Code review subagent, and Amp review label a violation
-Important; Codex review uses its native priority label.
+Each lens is a hard project rule. Claude, Claude Code review subagent, and Amp
+review label a violation Important; Codex review uses its native priority label.
 
 - **No credentials or host-identifying values.** No token, key, password,
   registration or JIT configuration, `.env` value, internal hostname, IP
@@ -227,8 +227,8 @@ These lenses apply to a change of the axmc VM runtime: `cli/src/runtime/tart/`,
 `cli/src/image/macos_base.rs`, the golden VMs' provisioning assets, and the macOS
 host document. Each is a hard project rule, owned by
 [Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
-and the sections after it. Claude, Claude Code review subagent, and Amp review label a violation Important;
-Codex review uses its native priority label.
+and the sections after it. Claude, Claude Code review subagent, and Amp review
+label a violation Important; Codex review uses its native priority label.
 
 - **No JIT configuration in an argument list.** The JIT configuration reaches the
   guest only on the standard input of a `tart exec -i` call, never with `-t`, and
