@@ -483,8 +483,9 @@ tools. That enforcement is first confirmed on the first live round, which
 is instruction-only, whether the instance is the advisory pre-flight reader or a
 round's independent review:
 
-- no shell write to the repository beyond checking out the reviewed commit in
-  its own confirmed worktree, and no commit;
+- no shell write to the repository beyond fetching the reviewed commit and
+  checking it out in its own confirmed worktree, and no commit; an advisory
+  pre-flight instance has no such worktree and makes no shell write;
 - no push and no merge;
 - no approve or request-changes verdict;
 - no GitHub write other than those that compose the round's one review;
@@ -1257,14 +1258,14 @@ never a fork of the authoring conversation.
    review workflow excludes, which includes the author's conversation, the
    implementation receipt, and the pre-flight ledger and findings, carry none of
    the author's claimed verdicts. Tell the instance to stop and post nothing if
-   its working directory is the author's checkout; otherwise to check out the
-   reviewed commit inside its confirmed worktree, since the worktree branches
-   from the default branch; to read the actual change and surrounding code; not
-   to edit, push, or delegate, and to make no write other than that checkout and
-   the writes that compose its review; to post one COMMENT-type review itself;
-   and to report the review's URL, the commit it read, which of those limits its
-   host enforced and which it followed by instruction, which GitHub identity it
-   posted under, and any limitations.
+   its working directory is the author's checkout; otherwise to fetch the
+   reviewed commit and check it out inside its confirmed worktree, since the
+   worktree branches from the default branch; to read the actual change and
+   surrounding code; not to edit, push, or delegate, and to make no write other
+   than that fetch and checkout and the writes that compose its review; to post
+   one COMMENT-type review itself; and to report the review's URL, the commit it
+   read, which of those limits its host enforced and which it followed by
+   instruction, which GitHub identity it posted under, and any limitations.
 3. Right after the spawn, checkpoint the round token, the agent ID the spawn
    returned, and the instance's worktree in run state, through Save and resume
    run state, above. The round token, the posted review, and the worktree are
