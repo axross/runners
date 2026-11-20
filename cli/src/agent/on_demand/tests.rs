@@ -311,8 +311,7 @@ fn errors_keep_rate_limit_retry_hints_and_rejection_details_without_secrets() {
         &log,
         channels.controls(),
     );
-    let mut error = super::protocol_error();
-    error.kind = ErrorKind::RateLimited;
+    let mut error = Error::new(ErrorKind::RateLimited);
     error.status = Some(403);
     error.retry_after = Some(Duration::from_secs(30));
     coordinator.failed(&error, Duration::from_secs(5));

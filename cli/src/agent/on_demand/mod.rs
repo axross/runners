@@ -481,17 +481,3 @@ pub(crate) fn retry_delay(error: &Error, delay: Duration, now: SystemTime) -> Du
         .unwrap_or_default();
     delay.max(error.retry_after.unwrap_or_default()).max(reset)
 }
-
-pub(crate) fn protocol_error() -> Error {
-    error(ErrorKind::Protocol)
-}
-
-fn error(kind: ErrorKind) -> Error {
-    Error {
-        kind,
-        status: None,
-        retry_after: None,
-        rate_reset: None,
-        refused_host: None,
-    }
-}

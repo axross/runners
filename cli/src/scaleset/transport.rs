@@ -50,7 +50,7 @@ pub struct Error {
 }
 
 impl Error {
-    pub(super) fn new(kind: ErrorKind) -> Self {
+    pub(crate) fn new(kind: ErrorKind) -> Self {
         Self {
             kind,
             status: None,

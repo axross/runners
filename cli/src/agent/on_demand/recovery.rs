@@ -73,13 +73,7 @@ impl PendingSession {
             Rc::clone(&old.connection)
         };
         if !connection.same_service(&old.connection) {
-            return Err(Failure::Api(Error {
-                kind: ErrorKind::OwnershipMismatch,
-                status: None,
-                retry_after: None,
-                rate_reset: None,
-                refused_host: None,
-            }));
+            return Err(Failure::Api(Error::new(ErrorKind::OwnershipMismatch)));
         }
         let session = if let Some(session) = old.session {
             session

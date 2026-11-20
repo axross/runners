@@ -266,7 +266,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             }
             // progress cannot skip an unresolved overflow message even if a broken service advances delivery.
             if pending.as_ref().is_some_and(|old| old.id != message.id) {
-                return Err(Failure::Api(super::protocol_error()));
+                return Err(Failure::Api(Error::new(ErrorKind::Protocol)));
             }
             self.state.borrow_mut().demand.receive(&message);
             self.state.borrow_mut().view.statistics = Some(message.statistics);
@@ -311,7 +311,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                 ),
             )
             .await
-            .map_err(|_| Failure::Api(super::protocol_error()))??;
+            .map_err(|_| Failure::Api(Error::new(ErrorKind::Protocol)))??;
             self.state.borrow_mut().view.session_cleanup_incomplete = false;
         }
         let pat = self.token(true).map_err(Failure::Store)?;
@@ -359,7 +359,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             .unwrap_or_default();
         for (name, id) in leftovers {
             let Some(id) = id else {
-                return Err(Failure::Api(super::protocol_error()));
+                return Err(Failure::Api(Error::new(ErrorKind::Protocol)));
             };
             self.client
                 .delete_runner(&self.pool.owner, &self.pool.repository, id, &name, &pat)
@@ -434,7 +434,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             .unwrap_or_default()
             <= REFRESH_BEFORE
         {
-            return Err(Failure::Api(super::error(
+            return Err(Failure::Api(Error::new(
                 ErrorKind::ConnectionRenewalRequired,
             )));
         }
@@ -460,7 +460,7 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             .find_or_create(&connection, &self.pool.scale_set)
             .await?;
         if scale_set.id() != current.scale_set.id() {
-            return Err(Failure::Api(super::protocol_error()));
+            return Err(Failure::Api(Error::new(ErrorKind::Protocol)));
         }
         if self.halted() {
             return Err(Failure::Halted);

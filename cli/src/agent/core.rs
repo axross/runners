@@ -516,7 +516,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
                 result = timeout(
                     super::on_demand::CLOSE_WITHIN,
                     PendingSession::retry(pending, client, self.tokens, self.clock.now()),
-                ) => result.unwrap_or_else(|_| Err(ListenerFailure::Api(super::on_demand::protocol_error()))),
+                ) => result.unwrap_or_else(|_| Err(ListenerFailure::Api(crate::scaleset::Error::new(crate::scaleset::ErrorKind::Protocol)))),
             };
             let delay = match result {
                 Ok(()) => {
