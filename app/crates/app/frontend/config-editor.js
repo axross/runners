@@ -416,8 +416,12 @@ export class ConfigEditor {
     }
   }
 
-  /** cancels the active question or review, returning focus to its opener. */
-  cancel() {
+  /**
+   * cancels the active question, result or review, returning focus to its opener. The
+   * result and the review show only on the Pools tab, so Escape cancels them only
+   * while that panel is on show; the question bar shows on every tab.
+   */
+  cancel({ panelShown = true } = {}) {
     if (this.busy) return false;
     if (this.readAsk) {
       this.readAsk = false;
@@ -429,6 +433,7 @@ export class ConfigEditor {
       this.changed("reload-config");
       return true;
     }
+    if (!panelShown) return false;
     if (this.applyResult) {
       this.applyResult = null;
       this.changed("heading");

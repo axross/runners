@@ -301,13 +301,16 @@ scrolls the area just far enough to show it whole, keeping its control in view; 
 opened by the pointer stays where it is, so nothing moves under the pointer.
 
 Esc closes the first of these that is open and does nothing more: a tooltip balloon,
-then a confirmation dialog, then an open token form or removal question, and only then
-hides the window. The page clears a token field as soon as it calls `set_token`,
-whatever the outcome, and keeps the token in no variable; `save-token.test.mjs` loads
-the page over a stand-in for the document and drives that path with a call that
-resolves and one that rejects. It also clears every open token field when the app
-sends `marshal:hidden`, which it does at every place it hides the window, and when
-the web view reports the page hidden, a second route; the form stays open and empty.
+then a confirmation dialog, then the open token form or removal question the focus is
+in, then the editor's Read Again or Reload question, which shows on every tab, then
+the editor's review or saved result, which shows on the Pools tab only and so is
+cancelled only while that tab is on show, and only then hides the window. The page
+clears a token field as soon as it calls `set_token`, whatever the outcome, and keeps
+the token in no variable; `save-token.test.mjs` loads the page over a stand-in for
+the document and drives that path with a call that resolves and one that rejects. It
+also clears every open token field when the app sends `marshal:hidden`, which it does
+at every place it hides the window, and when the web view reports the page hidden, a
+second route; the form stays open and empty.
 
 From `app/`, `cargo run -p marshal-view --example dump_view -- <fixture.json>` prints a
 recorded snapshot's view as JSON, with options to set the connection, a pending

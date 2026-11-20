@@ -380,12 +380,12 @@ function escape(event) {
     cancelDialog();
     return;
   }
-  if (editor.cancel()) return;
   const around = openAround(document.activeElement);
   if (around) {
     (around.removal ? cancelRemoval : cancelForm)(around.repository);
     return;
   }
+  if (editor.cancel({ panelShown: state.tab === "pools" })) return;
   invoke("hide_window");
 }
 
