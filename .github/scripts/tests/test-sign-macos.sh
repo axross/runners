@@ -356,13 +356,13 @@ resolve() {
   inner="${expression#\$\{\{ }"
   inner="${inner% \}\}}"
   case "$inner" in
-    secrets.MACOS_APPLICATION_P12_BASE64) printf '%s' "$s_application_p12" ;;
-    secrets.MACOS_INSTALLER_P12_BASE64) printf '%s' "$s_installer_p12" ;;
-    secrets.MACOS_P12_PASSWORD) printf '%s' "$s_password" ;;
-    secrets.MACOS_NOTARY_KEY_P8) printf '%s' "$s_p8" ;;
-    secrets.MACOS_NOTARY_KEY_ID) printf '%s' "$s_key_id" ;;
-    secrets.MACOS_NOTARY_ISSUER_ID) printf '%s' "$s_issuer" ;;
-    vars.MACOS_TEAM_ID) printf '%s' "$s_team" ;;
+    secrets.APPLE_APPLICATION_P12_BASE64) printf '%s' "$s_application_p12" ;;
+    secrets.APPLE_INSTALLER_P12_BASE64) printf '%s' "$s_installer_p12" ;;
+    secrets.APPLE_P12_PASSWORD) printf '%s' "$s_password" ;;
+    secrets.APPLE_NOTARY_KEY_P8) printf '%s' "$s_p8" ;;
+    secrets.APPLE_NOTARY_TEAM_KEY_ID) printf '%s' "$s_key_id" ;;
+    secrets.APPLE_NOTARY_ISSUER_ID) printf '%s' "$s_issuer" ;;
+    vars.APPLE_TEAM_ID) printf '%s' "$s_team" ;;
     needs.plan.outputs.version) printf '%s' "$job_version" ;;
     *)
       echo "error: the test does not know the expression ${expression}" >&2
@@ -631,22 +631,26 @@ s_installer_p12="${secret_installer:0:8}"$'\r\n'"${secret_installer:8}"
 run_case "a passing run with LF and CRLF-wrapped P12 secrets" pass "Imported the Developer ID G2 certificate and both identities." some
 
 echo "-- refusals before any security call --"
-for name in MACOS_APPLICATION_P12_BASE64 MACOS_INSTALLER_P12_BASE64 MACOS_P12_PASSWORD MACOS_NOTARY_KEY_P8 MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID MACOS_TEAM_ID; do
+signing_names=(APPLE_APPLICATION_P12_BASE64 APPLE_INSTALLER_P12_BASE64 APPLE_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_TEAM_KEY_ID APPLE_NOTARY_ISSUER_ID APPLE_TEAM_ID)
+for name in "${signing_names[@]}"; do
   reset_case
   case "$name" in
-    MACOS_APPLICATION_P12_BASE64) s_application_p12="" ;;
-    MACOS_INSTALLER_P12_BASE64) s_installer_p12="" ;;
-    MACOS_P12_PASSWORD) s_password="" ;;
-    MACOS_NOTARY_KEY_P8) s_p8="" ;;
-    MACOS_NOTARY_KEY_ID) s_key_id="" ;;
-    MACOS_NOTARY_ISSUER_ID) s_issuer="" ;;
-    MACOS_TEAM_ID) s_team="" ;;
+    APPLE_APPLICATION_P12_BASE64) s_application_p12="" ;;
+    APPLE_INSTALLER_P12_BASE64) s_installer_p12="" ;;
+    APPLE_P12_PASSWORD) s_password="" ;;
+    APPLE_NOTARY_KEY_P8) s_p8="" ;;
+    APPLE_NOTARY_TEAM_KEY_ID) s_key_id="" ;;
+    APPLE_NOTARY_ISSUER_ID) s_issuer="" ;;
+    APPLE_TEAM_ID) s_team="" ;;
   esac
   run_case "an empty ${name}" fail "these secrets or variables are empty: ${name}" none
 done
 reset_case
+s_application_p12="" s_installer_p12="" s_password="" s_p8="" s_key_id="" s_issuer="" s_team=""
+run_case "all seven values empty at once" fail "these secrets or variables are empty: ${signing_names[*]}; the release Environment is missing or incomplete" none
+reset_case
 s_team="abc"
-run_case "a team ID that is not a team ID" fail "MACOS_TEAM_ID is not a 10-character team ID" none
+run_case "a team ID that is not a team ID" fail "APPLE_TEAM_ID is not a 10-character team ID" none
 for bad in "1.2" "1.2.3-rc.1" "01.2.3" "v1.2.3" "" "1.2.3 "; do
   reset_case
   job_version="$bad"
@@ -717,10 +721,10 @@ scenario_lines="invalid=installer"
 run_case "an Installer identity that is not valid in the keychain" fail "is not valid in this keychain" some
 reset_case
 scenario_lines="application_team=ZZZZZ99999"
-run_case "an Application certificate of another team" fail "Developer ID Application certificate names team 'ZZZZZ99999'" some
+run_case "an Application certificate of another team" fail "Developer ID Application certificate names team 'ZZZZZ99999', not APPLE_TEAM_ID" some
 reset_case
 scenario_lines="installer_team=ZZZZZ99999"
-run_case "an Installer certificate of another team" fail "Developer ID Installer certificate names team 'ZZZZZ99999'" some
+run_case "an Installer certificate of another team" fail "Developer ID Installer certificate names team 'ZZZZZ99999', not APPLE_TEAM_ID" some
 reset_case
 scenario_lines="installer_certificates=two"
 run_case "a second Installer certificate of the same name" fail "holds 2 certificates named 'Developer ID Installer: Test Maintainer (${team})', not exactly one" some

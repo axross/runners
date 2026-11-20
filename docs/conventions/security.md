@@ -404,7 +404,7 @@ operator procedure and the two source identities.
 `release.yaml` remains dispatch-only on main with the existing release concurrency.
 Its seven stages are plan, build, sign-macos, verify-macos, assemble-signed, attest
 and release. Only `sign-macos` declares `release` and reads the six signing secrets
-and `MACOS_TEAM_ID` under the Environment contract retained below. It holds only
+and `APPLE_TEAM_ID` under the Environment contract retained below. It holds only
 `contents: read`, checks nothing out, and runs inline operating-system tools, no
 repository script, package manager or third-party action. Secret files are 0600,
 notary-key lines are masked, and keychain/files are removed after success or failure.
@@ -540,10 +540,10 @@ record a change to either workflow, to the build call in
     [the roadmap](https://github.com/axross/runners/issues/72) requires
     self-approval. "Allow administrators to bypass" is off. The maintainer reports
     the settings on the tracking issue, because agents cannot read them.
-  - **Its secrets** are the six Environment secrets `MACOS_APPLICATION_P12_BASE64`,
-    `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`,
-    `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and its variable is
-    `MACOS_TEAM_ID`, which is not secret. A job reads them only if it declares the
+  - **Its secrets** are the six Environment secrets `APPLE_APPLICATION_P12_BASE64`,
+    `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`, `APPLE_NOTARY_KEY_P8`,
+    `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and its variable is
+    `APPLE_TEAM_ID`, which is not secret. A job reads them only if it declares the
     Environment, and only after the reviewer approves it. No repository secret is
     added for signing.
   - **The signing identifier** `app.axross.marshal` and the team are fixed and
@@ -1997,9 +1997,9 @@ accident; it is a backstop, not the control. The workflows read one repository
 secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
 maintainer. The `release` Environment keeps six Environment secrets, read only
 by the temporary CLI signing job and retained for M2's and W4's later signing jobs:
-`MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`, `MACOS_P12_PASSWORD`,
-`MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`, and one
-Environment variable that is not secret, `MACOS_TEAM_ID`; the maintainer creates
+`APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`,
+`APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and one
+Environment variable that is not secret, `APPLE_TEAM_ID`; the maintainer creates
 them, and no value is committed. A secret value is never echoed, passed on a command
 line, or written into an image layer or build cache. Two exceptions for a
 credential on a command line are recorded in `sign-macos` for the temporary CLI

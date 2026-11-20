@@ -301,7 +301,7 @@ for (const [file, doc] of Object.entries(workflows)) {
 // `secrets` context, or by passing all of them (`secrets: inherit`) to a called
 // workflow. every workflow file is read, and none but release.yaml's sign-macos
 // is exempt. this reads the parsed documents, not the scripts' text.
-const SECRET_READ = /\bsecrets\s*(?:\.\s*MACOS_|\[)|\(\s*secrets\s*\)/i;
+const SECRET_READ = /\bsecrets\s*(?:\.\s*APPLE_|\[)|\(\s*secrets\s*\)/i;
 function secretReads(value, path = "") {
   if (typeof value === "string") {
     return SECRET_READ.test(value) ? [`${path} reads ${value.trim()}`] : [];
@@ -802,8 +802,8 @@ function checkSigningJob() {
       if (step.run.includes("${{"))
         problem(`${where}: step "${label}" expands \${{ }} inside run`);
       for (const [name, value] of Object.entries(step.env ?? {})) {
-        if (!name.startsWith("MACOS_")) continue;
-        const context = name === "MACOS_TEAM_ID" ? "vars" : "secrets";
+        if (!name.startsWith("APPLE_")) continue;
+        const context = name === "APPLE_TEAM_ID" ? "vars" : "secrets";
         if (value !== `\${{ ${context}.${name} }}`) {
           problem(
             `${where}: step "${label}" must read ${name} from ${context}.${name}`,
@@ -1380,7 +1380,7 @@ function checkMeasuredTools() {
     );
   if (
     "env" in step &&
-    Object.keys(step.env ?? {}).some((key) => /SECRET|MACOS_/.test(key))
+    Object.keys(step.env ?? {}).some((key) => /SECRET|APPLE_/.test(key))
   ) {
     problem(
       "cli-recovery-build.yaml's signing tools step receives a signing value",
