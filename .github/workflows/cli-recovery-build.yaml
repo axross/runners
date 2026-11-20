@@ -47,7 +47,7 @@ jobs:
       - name: Install Pinned Rust Toolchain
         run: rustup show active-toolchain || rustup toolchain install
       - name: Install The Historical Dependency Checker Without A Cache
-        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           version: 2026.9.17
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
