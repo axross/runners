@@ -254,8 +254,7 @@ bounded ways, each the maintainer's choice:
   are instruction-only, as the accepted-consequences list in Development
   Workflow's grant section gives them. The definition leaves available
   restrictions on GitHub write tools and on session-starting and messaging tools
-  unused: a reader needs the shell and the tracker to read, and a deny-list
-  naming one host's connector tools would not travel. The same `reviewer.md`
+  unused, for the reasons the counterexample below gives. The same `reviewer.md`
   still serves as the advisory pre-flight reader, and its prose permits posting
   only under an independent-review assignment that carries a round token.
 - The host documentation describes no operation that makes a completed subagent
@@ -274,10 +273,11 @@ bounded ways, each the maintainer's choice:
 - In a cloud session, where `/tasks` is not documented, the handoff says that
   no human step is verified there instead of naming one.
 
-The concrete counterexample is the review subagent itself: denying GitHub write
-tools would remove the direct publication the same rule requires, and a
-deny-list naming one host's session-starting or messaging tools would not
-travel. The accepted exposure is that a `reviewer` instance, whose definition
+The concrete counterexample to the first quoted rule is the review subagent
+itself: denying GitHub write tools would remove the direct publication that rule
+requires, a deny-list naming one host's session-starting or messaging tools
+would not travel, and a reader still needs the shell and the tracker to read the
+change. The accepted exposure is that a `reviewer` instance, whose definition
 carries the conditional posting permission, can still write through the shell
 or the tracker, or start another actor through a non-Agent tool, and the host
 would not stop it. The alternatives are a second, posting-capable definition and
