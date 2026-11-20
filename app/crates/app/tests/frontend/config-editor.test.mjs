@@ -120,6 +120,24 @@ test("an invalid omitted optional field can be explicitly unset without writing 
   assert.deepEqual(model.edits(), []);
 });
 
+test("a list field drops its empty lines and stays unset when every line is empty", () => {
+  const { model } = editor();
+  const pool = model.pools[0];
+  model.set(pool, "labels", "one\ntwo\n");
+  assert.deepEqual(model.edits(), [
+    { op: "set", path: "pool[0].labels", value: ["one", "two"] },
+  ]);
+  model.set(pool, "labels", "one\n\ntwo");
+  assert.deepEqual(model.edits(), [
+    { op: "set", path: "pool[0].labels", value: ["one", "two"] },
+  ]);
+  const labelled = structuredClone(doc);
+  labelled.pools[0].labels = ["kept"];
+  model.loaded(labelled);
+  model.set(model.pools[0], "labels", "\n");
+  assert.deepEqual(model.edits(), [{ op: "remove", path: "pool[0].labels" }]);
+});
+
 test("a stopped confirmation expires on starting, including a check still in flight", async () => {
   let release;
   let held = false;

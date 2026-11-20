@@ -52,8 +52,10 @@ function scalar(text, spec, path) {
     }
     case "boolean":
       return text === "true";
-    case "texts":
-      return text.split("\n");
+    case "texts": {
+      const lines = text.split("\n").filter((line) => line !== "");
+      return lines.length === 0 ? undefined : lines;
+    }
     default:
       return text;
   }
