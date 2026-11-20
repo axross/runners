@@ -216,8 +216,6 @@ function tokenRow(row, ctx) {
     "li",
     {
       class: "token-row",
-      "data-repository": row.repository,
-      "data-organization": row.organization,
       "data-token-key": repository,
     },
     h(
