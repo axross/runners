@@ -146,6 +146,7 @@ export class ConfigEditor {
     this.reloadAsk = false;
     this.readAsk = false;
     this.problemsInResult = false;
+    this.checked = null;
   }
 
   /** view updates may invalidate consent, but must not replace the user's draft. */
@@ -211,12 +212,40 @@ export class ConfigEditor {
   }
 
   /**
-   * the path prefix a pool's problems carry: the pool's place among those kept after a
-   * check, and its place in the file before one.
+   * the prefix a pool's fields show, and the one the agent's problems name them by. before
+   * a check both are the pool's place in the file; after one, problems follow the checked
+   * result, so `matched` keeps that order however the draft changes and is null for a
+   * pool the result lacks.
    */
-  problemPrefix(pool) {
-    const index = this.pools.filter((p) => !p.removed).indexOf(pool);
-    return `pool[${this.problemsInResult ? index : (pool.source ?? index)}]`;
+  problemPrefixes(pool) {
+    const live = this.pools.filter((p) => !p.removed).indexOf(pool);
+    if (!this.problemsInResult) {
+      const prefix = `pool[${pool.source ?? live}]`;
+      return { shown: prefix, matched: prefix };
+    }
+    const checked = this.checked.pools.indexOf(pool);
+    return {
+      shown: `pool[${live}]`,
+      matched: checked < 0 ? null : `pool[${checked}]`,
+    };
+  }
+
+  /** a volume's prefixes, on the same terms as its pool's. */
+  volumePrefixes(pool, volume) {
+    const pools = this.problemPrefixes(pool);
+    const live = pool.volumes.filter((v) => !v.removed).indexOf(volume);
+    if (!this.problemsInResult) {
+      const prefix = `${pools.shown}.volumes[${volume.source ?? live}]`;
+      return { shown: prefix, matched: prefix };
+    }
+    const checked = this.checked.volumes.get(pool)?.indexOf(volume) ?? -1;
+    return {
+      shown: `${pools.shown}.volumes[${live}]`,
+      matched:
+        pools.matched === null || checked < 0
+          ? null
+          : `${pools.matched}.volumes[${checked}]`,
+    };
   }
 
   notify(message, focus = null) {
@@ -453,6 +482,13 @@ export class ConfigEditor {
             edits: this.edits(),
             check: true,
           };
+      const kept = this.pools.filter((p) => !p.removed);
+      this.checked = {
+        pools: kept,
+        volumes: new Map(
+          kept.map((p) => [p, p.volumes.filter((v) => !v.removed)]),
+        ),
+      };
       this.problemsInResult = true;
       const answer = await this.invoke("configuration", { request });
       if (this.reason || answer.value.applies === this.access.stopped) {

@@ -44,11 +44,15 @@ function problems(model) {
 }
 
 /** a labelled field with its problem as an accessible description, even when locked. */
-function field(model, row, spec, prefix) {
-  const path = prefix ? `${prefix}.${spec.key}` : spec.key;
+function field(model, row, spec, prefixes) {
+  const at = (prefix) => (prefix ? `${prefix}.${spec.key}` : spec.key);
+  const path = at(prefixes.shown);
   const id = nextId("config-field");
   const description = `${id}-description`;
-  const errors = problems(model).filter((p) => p.path === path);
+  const errors =
+    prefixes.matched === null
+      ? []
+      : problems(model).filter((p) => p.path === at(prefixes.matched));
   const unavailable = model.locked
     ? "Finish or cancel the check and review first."
     : null;
@@ -169,7 +173,7 @@ function field(model, row, spec, prefix) {
 
 /** replaces only the edited card's runner rows; no field changes the running pool. */
 function form(model, pool) {
-  const prefix = model.problemPrefix(pool);
+  const prefixes = model.problemPrefixes(pool);
   return h(
     "div",
     { class: "config-form" },
@@ -180,7 +184,7 @@ function form(model, pool) {
     h(
       "div",
       { class: "config-grid" },
-      model.access.pool.map((spec) => field(model, pool, spec, prefix)),
+      model.access.pool.map((spec) => field(model, pool, spec, prefixes)),
     ),
     model.access.volume.length
       ? h(
@@ -189,7 +193,7 @@ function form(model, pool) {
           h("h3", { class: "label caption", text: "Volumes" }),
           pool.volumes
             .filter((v) => !v.removed)
-            .map((volume, index) =>
+            .map((volume) =>
               h(
                 "div",
                 { class: "config-volume" },
@@ -201,7 +205,7 @@ function form(model, pool) {
                       model,
                       volume,
                       spec,
-                      `${prefix}.volumes[${model.problemsInResult ? index : (volume.source ?? index)}]`,
+                      model.volumePrefixes(pool, volume),
                     ),
                   ),
                 ),
@@ -314,10 +318,12 @@ export function editorPools(model, list, ctx, liveCard) {
       head
         .querySelector("h2")
         .setAttribute("data-key", `edit-heading:${pool.id}`);
-      const prefix = model.problemPrefix(pool);
-      const hasProblems = problems(model).some(
-        (p) => p.path === prefix || p.path?.startsWith(`${prefix}.`),
-      );
+      const { matched } = model.problemPrefixes(pool);
+      const hasProblems =
+        matched !== null &&
+        problems(model).some(
+          (p) => p.path === matched || p.path?.startsWith(`${matched}.`),
+        );
       const changed = model.poolChanged(pool);
       if (hasProblems || changed)
         head.append(
@@ -688,7 +694,7 @@ export function editorFooter(model, configuration) {
             "div",
             { class: "config-grid" },
             model.access.settings.map((spec) =>
-              field(model, model.host, spec, ""),
+              field(model, model.host, spec, { shown: "", matched: "" }),
             ),
           ),
         )

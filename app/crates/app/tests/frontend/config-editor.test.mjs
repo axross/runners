@@ -702,6 +702,57 @@ test("field problems follow their source or result index after an earlier pool i
   );
 });
 
+function invalidField(model, row, key) {
+  return editorPools(model, { pools: [] }, {}, () => null)
+    .flatMap((node) => [...node.descendants()])
+    .find((node) => node.dataset.key === `config-field:${row.id}:${key}`)
+    ?.getAttribute("aria-invalid");
+}
+
+function refusing(...problems) {
+  return () => {
+    throw { code: "config_invalid", message: "Invalid result", problems };
+  };
+}
+
+test("a refused check's pool problem stays with the pool that was checked when a removal is undone", async () => {
+  installDocument();
+  const { model } = editor(
+    refusing({ path: "pool[1].runners", message: "must be at most 64" }),
+  );
+  const [first, second, third] = model.pools;
+  model.removePool(first);
+  model.set(third, "runners", "80");
+  await model.check();
+  model.editing = third.id;
+  assert.equal(invalidField(model, third, "runners"), "true");
+  model.keepPool(first);
+  assert.equal(model.problemPrefixes(first).matched, null);
+  model.editing = second.id;
+  assert.equal(invalidField(model, second, "runners"), null);
+  model.editing = third.id;
+  assert.equal(invalidField(model, third, "runners"), "true");
+});
+
+test("a refused check's volume problem stays with the volume that was checked when another is removed", async () => {
+  installDocument();
+  const { model } = editor(
+    refusing({
+      path: "pool[0].volumes[1].mount_path",
+      message: "must be absolute",
+    }),
+  );
+  const [pool] = model.pools;
+  const [first, second] = pool.volumes;
+  model.set(second, "mount_path", "relative");
+  await model.check();
+  model.editing = pool.id;
+  assert.equal(invalidField(model, second, "mount_path"), "true");
+  model.removeVolume(pool, first);
+  assert.equal(invalidField(model, second, "mount_path"), "true");
+  assert.equal(invalidField(model, second, "suffix"), null);
+});
+
 test("a removed pool remains visible until its runners leave the live snapshot", () => {
   installDocument();
   const { model } = editor();
