@@ -9,7 +9,8 @@
 # permissions or its place in the chain; in sign-update, a checkout, another
 # action, a package manager, a fetcher, a tool called by name, an unmarked
 # script or a `${{ }}` in one, or a signer run another way; a feed checked
-# against another key; a step condition that could skip a check; a write to
+# against another key, by a checker whose SHA-256 is not compared with
+# update-tool's before it runs, or without unsigned/SHA256SUMS; a step condition that could skip a check; a write to
 # SHA256SUMS in the build's assemble job; PATH, BASH_ENV, ENV or SYSTEM_BIN set
 # in release.yaml; and a way past a failed job, whatever the case of its status
 # function. a change the test cannot find in the files fails the test, so it
@@ -222,6 +223,18 @@ expect_fail "assemble-signed that ignores a failed feed check" "does not run the
   "$release" '"windows-x86_64=dist/${windows_msi}"' '"windows-x86_64=dist/${windows_msi}" || true'
 expect_fail "assemble-signed that checks the feed against another key" "the release checks the feed against the committed key" \
   "$release" '"$check" dist/latest.json' '"$check" --public-key other.pub dist/latest.json'
+feed_check_hash=$'          line="$(sha256sum "$check")"\n          if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then\n            echo "error: marshal-feed-check has SHA-256 ${line%% *}, not the ${FEED_CHECK_SHA256} update-tool built" >&2\n            exit 1\n          fi\n'
+expect_fail "assemble-signed that does not compare the feed check's SHA-256" "does not compare the feed check's SHA-256 with FEED_CHECK_SHA256" \
+  "$release" "$feed_check_hash" ""
+expect_fail "assemble-signed that compares the feed check's SHA-256 with another value" "does not compare the feed check's SHA-256 with FEED_CHECK_SHA256" \
+  "$release" '!= "$FEED_CHECK_SHA256" ]]' '!= "$VERSION" ]]'
+expect_fail "assemble-signed that goes on after a feed check with another SHA-256" "a feed check whose SHA-256 is not FEED_CHECK_SHA256 does not exit 1" \
+  "$release" 'update-tool built" >&2'$'\n            exit 1' 'update-tool built" >&2'$'\n            exit 0'
+expect_fail "assemble-signed that makes the feed check executable before comparing its SHA-256" "makes the feed check executable or runs it before comparing its SHA-256" \
+  "$release" "$feed_check_hash" "" \
+  "$release" 'chmod 0755 "$check"'$'\n' 'chmod 0755 "$check"'$'\n'"$feed_check_hash"
+expect_fail "assemble-signed that runs the feed check without unsigned/SHA256SUMS" "does not run the feed check with unsigned/SHA256SUMS among its arguments" \
+  "$release" '"$VERSION" unsigned/SHA256SUMS "windows-x86_64=dist/${windows_msi}" || exit 1' '"$VERSION" "windows-x86_64=dist/${windows_msi}" || exit 1'
 expect_fail "assemble-signed in unsigned mode" "does not run assemble-release.sh in signed mode" \
   "$release" 'assemble-release.sh signed' 'assemble-release.sh unsigned'
 

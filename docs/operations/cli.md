@@ -5231,9 +5231,12 @@ fails it too.
   `contents: read`, checks out with `persist-credentials: false`, uses no cache
   action, and gives `jdx/mise-action` `cache: false`. `update-tool` runs
   `build-update-tools.sh`. `assemble-signed` writes the feed with
-  `write-update-feed.sh`, runs the feed check on `dist/latest.json`, and runs
-  `assemble-release.sh signed`; nothing in `release.yaml` passes `--public-key`, so
-  the feed is checked against the committed release-verification key.
+  `write-update-feed.sh`, runs the feed check on `dist/latest.json` with
+  `unsigned/SHA256SUMS` among its arguments, and runs `assemble-release.sh signed`;
+  nothing in `release.yaml` passes `--public-key`, so the feed is checked against the
+  committed release-verification key. Before it makes the feed checker executable or
+  runs it, the job compares the checker's SHA-256 with `FEED_CHECK_SHA256`, the hash
+  `update-tool` built, and exits 1 on a mismatch.
 - **No step condition.** No step of `update-tool`, `sign-update` or `assemble-signed`
   carries an `if`.
 - **`attest` and `release`.** `attest` holds exactly `id-token: write` and

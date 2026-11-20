@@ -857,6 +857,38 @@ function checkPlainJob(id, script) {
 }
 
 /**
+ * records a feed checker that is made executable or run before its SHA-256 is
+ * compared with the one update-tool built, or whose mismatch does not exit 1.
+ */
+function checkFeedCheckHash(scripts, where) {
+  const lines = scripts.split("\n").map((line) => line.trim());
+  const hashed = lines.findIndex((line) => line.includes('sha256sum "$check"'));
+  const compared = lines.findIndex(
+    (line, index) =>
+      index > hashed &&
+      line === 'if [[ "${line%% *}" != "$FEED_CHECK_SHA256" ]]; then',
+  );
+  const closing = compared === -1 ? -1 : lines.indexOf("fi", compared);
+  if (hashed === -1 || closing === -1) {
+    problem(
+      `${where} does not compare the feed check's SHA-256 with FEED_CHECK_SHA256`,
+    );
+    return;
+  }
+  if (!lines.slice(compared + 1, closing).includes("exit 1"))
+    problem(
+      `${where}: a feed check whose SHA-256 is not FEED_CHECK_SHA256 does not exit 1`,
+    );
+  const used = lines.findIndex(
+    (line) => /^chmod\b.*"\$check"/.test(line) || line.startsWith('"$check" '),
+  );
+  if (used !== -1 && used < closing)
+    problem(
+      `${where} makes the feed check executable or runs it before comparing its SHA-256`,
+    );
+}
+
+/**
  * records publication paths that could skip the committed-trust feed check;
  * artifact verification belongs to the release run, not this static check.
  */
@@ -869,14 +901,25 @@ function checkFeed() {
     .join("\n");
   if (!scripts.includes(".github/scripts/write-update-feed.sh"))
     problem(`${where} does not write the feed with write-update-feed.sh`);
-  if (
-    !/^[\t ]*"\$check" dist\/latest\.json [^|;&\n]+ \|\| exit 1[\t ]*$/m.test(
-      scripts,
-    )
-  )
+  checkFeedCheckHash(scripts, where);
+  const feedCheck = scripts.match(
+    /^[\t ]*"\$check" dist\/latest\.json ([^|;&\n]+) \|\| exit 1[\t ]*$/m,
+  );
+  if (!feedCheck) {
     problem(
       `${where} does not run the feed check on dist/latest.json with || exit 1`,
     );
+  } else if (
+    !feedCheck[1]
+      .split(/\s+/)
+      .some(
+        (argument) => argument.replaceAll('"', "") === "unsigned/SHA256SUMS",
+      )
+  ) {
+    problem(
+      `${where} does not run the feed check with unsigned/SHA256SUMS among its arguments`,
+    );
+  }
   if (!scripts.includes(".github/scripts/assemble-release.sh signed"))
     problem(`${where} does not run assemble-release.sh in signed mode`);
   if (JSON.stringify(release).includes("--public-key"))
