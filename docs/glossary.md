@@ -47,8 +47,8 @@ that names a runner host's image and lists its **Execution Pools** for
 **CLI** reads it, checked against a **Host Profile**.
 
 **Target Repository** - a GitHub repository a runner host serves. Its
-**Execution Pools** share one repository-scoped token, from a file for the command
-line or the **Token Store** for the **Resident Agent**.
+**Execution Pools** share one repository-scoped token, which the **Resident Agent**
+keeps in the **Token Store** and the command-line releases read from a file.
 
 **Execution Pool** - one entry of the **Host Configuration**, with its own
 **Slots**, registration labels, and
@@ -76,49 +76,54 @@ can use a custom label to select that pool for its **Target Repository**.
 
 **Supervisor** - the host-side process that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,
-starts a runner container, waits for it to exit, and repeats. On axpc it is the
-**CLI**'s `start`.
+starts a runner container, waits for it to exit, and repeats. It is the
+**Resident Agent**, and in the command-line releases it was the **CLI**'s `start`.
 
-**CLI** - this project's Rust command line tool, under `cli/`. `validate` checks a
-**Host Configuration**; `build` builds its **Runner Image** from the definition
-the binary embeds; `start` runs a host's pools in the foreground as the
-**Supervisor**, and `stop`, `restart`, `status`, and `diagnostics` talk to it.
+**CLI** - the `marshal-cli` library under `cli/`, named for the `marshal` command
+line it was built as until W1's installer pull request; no command line is built
+now. Its `validate` reads a **Host Configuration**, its `build` builds the
+**Runner Image** from the definition the library embeds, its `start` runs a host's
+pools in the foreground as the **Supervisor**, and its **Resident Agent** does both
+for the **Marshal App**.
 
-**CLI Release** - a `v<version>` tag on main and the GitHub release that carries the
-**CLI**'s two binaries, the unsigned Windows MSI and the signed and notarized macOS
-pkg that carry them, and `SHA256SUMS`. The macOS binary is signed too. The maintainer
-starts one by dispatching `release.yaml`, and semantic-release picks the version from
-the commit subjects since the last `v*` tag. See
+**Marshal Release** - a `v<version>` tag on main and the GitHub release that
+carries its files. Since W1's installer pull request they are the Windows app's
+executable, the unsigned per-user MSI that holds it, and `SHA256SUMS`; the releases
+before it carry
+the **CLI**'s two binaries, its MSI and its macOS pkg, and the newest of them is the
+last command-line release. The maintainer starts one by dispatching `release.yaml`,
+and semantic-release picks the version from the commit subjects since the last `v*`
+tag. See
 [operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).
 
-**CLI Installer** - the Windows MSI, which is not code-signed, or the macOS pkg,
-which is signed with Developer ID and notarized, of a **CLI Release**. It holds the
-**CLI**'s binary unchanged and an operator opens it to install it. An
-optional **Check Block** checks the download first, and the installer's version is
-the release's `X.Y.Z`, or `0.0.0` for the dry run's. See
+**Marshal Installer** - the per-user Windows MSI of a **Marshal Release**, which is
+not code-signed. It holds the app's `marshal-app.exe` unchanged, with its licence
+notices and a Start menu entry, and an operator opens it to install it. An optional **Check Block**
+checks the download first, and the installer's version is the release's `X.Y.Z`, or
+`0.0.0` for the dry run's. See
 [operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
 
 **Release Environment** - the GitHub Environment named `release`, which holds the
 macOS signing secrets and the `MACOS_TEAM_ID` variable. It admits `main` only and
-needs the maintainer's approval for each run, and only `sign-macos` declares it. The
-maintainer creates and changes it; agents never do. See
+needs the maintainer's approval for each run. No job declares it from W1's installer
+pull request until M2's or W4's signing job returns; it and its secrets are kept for
+that job. The maintainer creates and changes it; agents never do. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed
-under: the **CLI**'s macOS binary until the Windows app's installer replaces the
-command line in the release, and the Mac app once it ships. The macOS pkg is built
-with it too. It and the team are fixed, so the designated requirement stays the
-same from release to release, which is what the Keychain trust of later work
-matches. See
+under: the **CLI**'s macOS binary in the command-line releases, and the Mac app once
+it ships. The command line's macOS pkg was built with it too. It and the team are
+fixed, so the designated requirement stays the same from release to release, which
+is what the Keychain trust of later work matches. See
 [operations/cli.md](./operations/cli.md#the-signing-contracts).
 
 **Check Block** - the optional block in the **CLI** document that checks a
-downloaded **CLI Installer** against `SHA256SUMS`, the tag's commit on main, the
-attestation, and the version of the binary inside it, and installs nothing. It
-ends with `refused:` and its cause when a check fails.
+downloaded **Marshal Installer** against `SHA256SUMS`, the tag's commit on main, the
+attestation, and the app inside it against its `SHA256SUMS` line, and installs
+nothing. It ends with `refused:` and its cause when a check fails.
 
-**Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s `Cargo.toml` and
-`Cargo.lock` hold on main. A release build writes the release version over it in
+**Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s and the app's
+`Cargo.toml` and `Cargo.lock` hold on main. A release build writes the release version over it in
 the runner only, so the version is never committed. See
 [operations/cli.md](./operations/cli.md#releases).
 
@@ -144,8 +149,8 @@ mode. Not to be confused with an **Agent Host**. See
 shows the icon, its menu and the main window and, started again with `agent` as its
 first argument, runs the **Resident Agent** in a separate hidden process that outlives
 it. The app is a client of **Protocol Version 2** only; it never holds the lock, reads
-the configuration, touches the **Token Store** or runs Docker. It is built in CI and
-not yet installed or released. See [operations/app.md](./operations/app.md).
+the configuration, touches the **Token Store** or runs Docker. A release ships it with
+its per-user MSI. See [operations/app.md](./operations/app.md).
 
 **Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
 token, by the repository's lower-case `owner/name`, and an organization's by its
@@ -289,12 +294,19 @@ gate is the maintainer's approval of that plan.
 
 **Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
 with every plan-approval question: delivery of the run's draft pull request, the
-Claude review request on it, and watching its activity. See
-[operations/agent-sessions.md](./operations/agent-sessions.md).
+Claude Code review child session that reviews it, or the Claude CI review
+request when the maintainer has selected that alternative, and watching its
+activity. See [operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
 independent-review round; it posts its own review on the pull request and is
 archived afterwards when the plan-gate archive confirmation allows it. See
+[operations/development-workflow.md](./operations/development-workflow.md).
+
+**Claude Code Review Child Session** - a fresh, non-fork general-purpose
+subagent a Claude Code run starts in its own worktree for one
+independent-review round, which posts its own review on the pull request; the
+counterpart of an Amp review child thread for a Claude Code run. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Plan-Gate Archive Confirmation** - the human's answer, collected at the plan

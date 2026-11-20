@@ -24,7 +24,7 @@ use marshal_cli::runtime::backend::{
 };
 use marshal_cli::runtime::diagnostic;
 use support::docker::{FAKE_DOCKER, Fake, Invocation};
-use support::{BINARY, TempDir};
+use support::{COMMANDS_HELPER, TempDir};
 use tokio::time::Instant;
 
 const NAME: &str = "d-1-20240305060708009";
@@ -576,7 +576,7 @@ fn an_exporter_whose_pipe_closes_ends_with_its_clients() {
         checkout: None,
         deadline: Duration::from_secs(60),
     };
-    let mut child = Command::new(BINARY)
+    let mut child = Command::new(COMMANDS_HELPER)
         .args(request.arguments(FAKE_DOCKER.as_ref()))
         .env("FAKE_DOCKER_DIR", fake.dir.path())
         .stdin(Stdio::piped())

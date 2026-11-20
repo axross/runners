@@ -1,138 +1,58 @@
 # runners
 
-Generic GitHub Actions self-hosted runner images and the CLI that runs them, and
-later the host configuration for Claude Code Remote Control and Amp runner agent
-hosts on WSL 2.
+Generic GitHub Actions self-hosted runner images and Marshal, the Windows app that
+runs them, and later the host configuration for Claude Code Remote Control and Amp
+runner agent hosts on WSL 2.
 
-## Status
-
-The repository holds the entry files for agent sessions, the agent configuration
-for Claude Code and Amp, the project documentation, the pinned lint toolchain, and
-the first runner material: one runner image and a Rust command line tool, the CLI,
-`marshal`, that runs it for several repositories from a Windows machine with Docker
-Desktop, and a Windows notification-area app that runs the same agent, which CI
-builds and nothing installs or releases yet.
+The repository holds one runner image, the Rust library `marshal-cli` that runs it
+for several repositories, and Marshal, a Windows notification-area app whose
+resident agent runs that library from a Windows machine with Docker Desktop, which
+each release ships with a per-user MSI. There is no command line: the `marshal`
+command line ended with the
+[last command-line release](./docs/operations/cli.md#the-last-command-line-release),
+which the axpc host still runs until it moves to the app.
 [Windows Runner Host](./docs/operations/windows-runner-host.md) owns the operator
-procedure and states what has and has not been verified on a real host. The CLI
-checks a host configuration, its `build` command builds the runner image, its
-`start`, `stop`, `restart`, and `status` commands run a host's pools, and its
-`diagnostics` command exports what a diagnostics-enabled pool left. The axpc host
-runs its pools with a released `marshal`. On the axmc host, an Apple silicon Mac,
-`marshal` runs each Linux pool's jobs in a fresh Tart Ubuntu VM that is cloned from
-a golden VM, on Softnet, with no Docker Desktop, and `marshal build --profile axmc`
-makes the golden VM.
-[macOS Runner Host](./docs/operations/macos-runner-host.md) owns that procedure and
-states what has and has not been run on the Mac. The agent-host configuration is not
-here yet. Layout:
-
-| Path                            | Holds                                                                                                                                                                     | State   |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `images/actions-runner/`        | The runner image: GitHub's runner image plus build dependencies, pinned by digest                                                                                         | Present |
-| `hosts/windows-docker-desktop/` | An example configuration for the axpc host profile, and the reference for its fields                                                                                      | Present |
-| `cli/`                          | The CLI: `validate` checks a host configuration, `build` builds the runner image, and `start`, `stop`, `restart`, `status`, and `diagnostics` run a host                  | Present |
-| `app/`                          | The Windows app: a notification-area icon and main window for the resident agent, which its executable also runs; [App](./docs/operations/app.md) owns it                 | Present |
-| `release/`                      | The pinned semantic-release tooling that `release.yaml` runs to tag and publish the CLI's releases                                                                        | Present |
-| `hosts/macos/`                  | An example configuration for the macOS host profile, `axmc`, whose Linux and macOS pools run in Tart VMs; see [macOS Runner Host](./docs/operations/macos-runner-host.md) | Present |
-| `agent-hosts/claude-code/`      | WSL 2 service units and templates for Claude Code Remote Control                                                                                                          | Planned |
-| `agent-hosts/amp/`              | WSL 2 service units and templates for Amp runners                                                                                                                         | Planned |
+procedure, including how a host moves to the app, and states what has and has
+not been verified on a real host. The
+library checks a host configuration, builds the runner image, runs a host's pools,
+and exports what a diagnostics-enabled pool left. On the axmc host, an Apple silicon
+Mac, the library runs each Linux and macOS pool's jobs in a fresh Tart VM of its OS
+that is cloned from a golden VM, on Softnet, with no Docker Desktop, and builds the
+golden VMs; axmc has no supported way to run it until M2's Mac app.
+[macOS Runner Host](./docs/operations/macos-runner-host.md) owns that runtime and
+states what has and has not been run on the Mac. The agent-host configuration is
+not here yet.
 
 This repository is public. Its GitHub Actions CI and review jobs run on
-GitHub-hosted runners, never on a self-hosted one; see [Security](./docs/conventions/security.md).
+GitHub-hosted runners, never on a self-hosted one; see
+[Security](./docs/conventions/security.md).
 
-## Getting started
+## Development
 
-[mise](https://mise.jdx.dev/) pins every tool the checks use, so a local run and
-CI use the same versions. Install mise, then from the repository root:
+Prepare these tools to work on the repository:
 
-```bash
-mise trust
-mise install
-```
+- **mise**, which pins every tool the checks use, as
+  [`mise.toml`](./mise.toml) declares.
+- **The Rust toolchain** that [`cli/rust-toolchain.toml`](./cli/rust-toolchain.toml)
+  pins, for the library and the app.
 
-`mise install` installs the tools pinned in [`mise.toml`](./mise.toml): Node,
-Prettier, markdownlint-cli2, shellcheck, hadolint, actionlint, PowerShell, and jq.
-PSScriptAnalyzer is a PowerShell module rather than a mise tool, so
-`mise run lint:powershell` downloads its pinned version from the PowerShell
-Gallery the first time it runs, and refuses it unless its SHA-256 matches the pin
-in `mise.toml`. `cargo-deny` and `cargo-about` are mise tools too.
+Read these guides before making a change:
 
-The CLI needs the Rust toolchain that [`cli/rust-toolchain.toml`](./cli/rust-toolchain.toml)
-pins, and the app's [`app/rust-toolchain.toml`](./app/rust-toolchain.toml) names the same
-channel. Rust is not a mise tool. On Linux x86-64, run the provisioning script, then
-put `~/.cargo/bin` on `PATH`:
-
-```bash
-.agents/install-rust
-```
-
-It installs `rustup` from a pinned release when that is absent, then the pinned
-toolchain, and does nothing when both are there. The agent session setup and the
-Claude Code session-start hook run it for you; see
-[Agent Sessions](./docs/operations/agent-sessions.md). On another platform, install
-`rustup` yourself. Without the toolchain, every Rust task fails at once with one
-line that names the script.
-
-## Commands
-
-Run from the repository root.
-
-| Command                             | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mise install`                      | Install the pinned tools                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `mise run format`                   | Rewrite Markdown, JSON, YAML, and TypeScript files with Prettier, and Rust files with rustfmt                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `mise run format:check`             | Fail when Prettier or rustfmt would change a file                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `mise run lint`                     | Run every linter below                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `mise run lint:markdown`            | markdownlint-cli2 over the Markdown files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `mise run lint:shell`               | shellcheck over `*.sh` files, `.agents/setup`, and `.agents/install-rust`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `mise run lint:docker`              | hadolint over Dockerfiles; passes when there are none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `mise run lint:actions`             | actionlint over `.github/workflows/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `mise run lint:powershell`          | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files, flagging syntax Windows PowerShell 5.1 rejects, after checking that its settings still flag PowerShell 7-only syntax; passes when there are none                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `mise run check:links`              | Resolve relative links in `docs/`, `images/`, `hosts/`, `.claude/agents/`, and the root Markdown files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `mise run check:docs`               | Run the `docs/` structural validators                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `mise run check:amp`                | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `mise run check:skills`             | Check that `skills-lock.json` and `.claude/skills/` list the same skills                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `mise run lint:rust`                | clippy over the CLI, all targets, warnings as errors                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `mise run test:set-release-version` | Run the version write script, `.github/scripts/set-release-version.sh`, against temporary copies of `Cargo.toml` and `Cargo.lock`: a release and a prerelease version, invalid versions, a missing placeholder, a duplicate entry, and CRLF files                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `mise run test:verify-release`      | Run the release gate, `.github/scripts/verify-release.sh`, against temporary release files: the plan phase's output, the exact files, a missing, extra, or misnamed file or installer, a directory in place of a binary, a checksum mismatch, an unset or unknown phase, and the asset globs in `release/.releaserc.json` against the exact files                                                                                                                                                                                                                                                                                                                  |
-| `mise run test:assemble-release`    | Run `.github/scripts/assemble-release.sh`, which writes `SHA256SUMS` for the release's four files, against temporary directories: the four lines in their fixed order, and a refusal for another file set, a changed file, or a hash that is not a SHA-256. It needs GNU `sha256sum` and GNU `find -printf`, so it runs on Linux (CI), not on macOS                                                                                                                                                                                                                                                                                                                |
-| `mise run check:release-shape`      | Read the `.yaml` and `.yml` workflows with `.github/scripts/check-release-shape.mjs` and fail unless the release jobs keep the shape the release record describes: only `sign-macos` declares the `release` Environment and reads a signing secret, and it runs only the named signing tools and base utilities. It catches mistakes, not a hostile edit; the rules are listed in [What the Signing Tests Cover](./docs/operations/cli.md#what-the-signing-tests-cover)                                                                                                                                                                                            |
-| `mise run test:release-shape`       | Run that check against the unchanged workflows, then against copies altered one change at a time, and expect each alteration to fail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `mise run test:sign-macos`          | Run `sign-macos`'s `run:` scripts, extracted from `release.yaml`, against recording stand-ins of the macOS signing tools: every refusal before and after the keychain exists, including a certificate that is another team's, expired, a second of its name, or not the selected identity's, the flags of `codesign`, `pkgbuild`, `notarytool`, and `stapler`, the deletion of the keychain and files after a pass and after a failure at each call and step, and that no secret or `.p8` line is printed. It needs GNU `stat -c`, `base64 -w0`, `sed -i`, and `sha256sum`, and `jq`, which mise provides, so it runs on Linux (CI), not on macOS                  |
-| `mise run test:signed-pkg`          | Run `.github/scripts/tests/test-signed-pkg.sh`, which `verify-macos` runs on the signed package, against stand-ins of the macOS tools, and produce each refusal: unsigned files that `SHA256SUMS` does not list, a differing payload, identifier, version, bill of materials, or `Scripts`, two teams, an unsigned or ad-hoc binary, a missing hardened runtime or timestamp, a designated requirement that is neither of the two default forms, an assessment `spctl` does not accept, an unstapled package, and a notary log of another submission or without the binary's CDHash. It needs GNU `sed -i` and `sha256sum`, so it runs on Linux (CI), not on macOS |
-| `mise run test:installer-version`   | Run `.github/scripts/installer-version.sh`: a release `X.Y.Z` is kept, `0.0.0-dryrun.<n>` maps to `0.0.0`, and a version beyond the MSI limits or in another prerelease form is refused                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `mise run test:fetch-wix`           | Run `.github/scripts/fetch-wix.sh` with a stand-in `curl` and `dotnet`: a package whose SHA-256 differs from the pin is refused before `dotnet` runs, and a package with the pinned hash is installed from a NuGet.Config that lists only its folder                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `mise run test:install-blocks`      | Run the documented macOS install blocks of `docs/operations/cli.md` under bash with the pinned `jq` and stand-ins for `gh`, `pkgutil`, `xattr`, `cp`, `sudo`, `installer`, and `marshal`: the optional check, migration, uninstall, and bare-binary blocks, with every refusal produced and what ran and what did not asserted. The Install Blocks job in CI runs it under zsh too, and the Windows blocks under Windows PowerShell 5.1 and PowerShell 7                                                                                                                                                                                                           |
-| `mise run test:rust`                | Run the CLI's unit and integration tests, which read the shared fixtures                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `mise run deny:rust`                | `cargo deny` bans, licenses, and sources over the CLI's crates; the advisory check runs in its own workflow                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `mise run lint:app`                 | clippy over the app's platform-independent crates (the mode dispatch, the view, the session, the icon, and the update feed), all targets, warnings as errors; the Tauri crate needs the web view and is linted by the Windows CI job                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `mise run test:app`                 | Run the tests of those five app crates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `mise run test:app-frontend`        | Run the main window page's tests with Node: the order it draws views in, and that it clears a typed token                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `mise run deny:app`                 | `cargo deny` bans, licenses, and sources over the crates the app's executable links, for the Windows and macOS targets; the advisory check runs in its own workflow                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `mise run check:notices`            | Fail when the checked-in licence notices in `app/notices/` no longer match `app/Cargo.lock`; `mise run notices:app` writes them again                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `mise run check:app-pins`           | Fail unless the CLI's and the app's toolchain files name one channel and `app/tauri-cli.version` holds one exact version; `mise run test:tauri-cli-version` tests the script that reads it                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `mise run check:app-lock`           | Fail when the app's lockfile resolves a crate `marshal-cli` builds with, for Windows, macOS or Linux, to another version than the CLI's                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `mise run check`                    | Run every gate above except the writing `format`; this is what CI runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-
-The installed copies under `.claude/skills/` are generated and are excluded from
-formatting and linting. [Agent Skills](./docs/operations/agent-skills.md) owns
-refreshing them and the upstream comparison that `check:skills` does not do.
-
-## Development workflow
-
-Every change goes through the change loop in
-[Development Workflow](./docs/operations/development-workflow.md): a tracking
-issue with the plan in its body, the maintainer's approval, work on a branch
-named for its issue (`issue-<n>-<description>`, or `noissue-<description>`), a
-draft pull request, and an independent review.
-Merging is the maintainer's decision. The same gates apply to a change made
-without an agent.
-
-The agent configuration is described in
-[Agent Sessions](./docs/operations/agent-sessions.md), which states the command
-each format and check hook runs; they use the pinned tools above.
+- [Development setup](./docs/operations/development-setup.md) — install the
+  pinned tools and the Rust toolchain.
+- [Contributor agreement](./AGENTS.md) — working rules for agent sessions.
+- [Development workflow](./docs/operations/development-workflow.md) — plan,
+  verify, review, and deliver a change; the same gates apply without an agent.
+- [Testing](./docs/conventions/testing.md) — the check commands and what CI runs.
+- [Directory structure and technologies](./docs/conventions/directory-structure.md)
+  — where runner material lives and what it is built with.
+- [Documentation index](./docs/index.md) — conventions, operational guides, and
+  the glossary.
 
 ## Related links
 
-- [docs/index.md](./docs/index.md) - project documentation
-- [AGENTS.md](./AGENTS.md) - the working agreement for agent sessions
 - [REVIEW.md](./REVIEW.md) - the review policy
+- [Windows Runner Host](./docs/operations/windows-runner-host.md) - running the
+  axpc host
+- [macOS Runner Host](./docs/operations/macos-runner-host.md) - running the axmc
+  host

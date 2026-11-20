@@ -1,4 +1,4 @@
-//! a scratch host for running `marshal start` and its clients as real processes
+//! a scratch host for running the commands helper's `start` and its clients as real processes
 //! against the fake `docker`.
 #![allow(
     dead_code,
@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use super::docker::FAKE_DOCKER;
 use super::stub::{Reply, Stub};
-use super::{BINARY, TempDir};
+use super::{COMMANDS_HELPER, TempDir};
 
 /// the token the pool reads.
 pub const TOKEN: &str = "ghp_hosttoken0123456789abcdef";
@@ -114,7 +114,7 @@ impl Host {
 
     /// the command for `marshal <args>` on this host.
     pub fn command(&self, args: &[&str]) -> Command {
-        let mut command = Command::new(BINARY);
+        let mut command = Command::new(COMMANDS_HELPER);
         command
             .args(args)
             .current_dir(self.root.path())
@@ -130,7 +130,7 @@ impl Host {
         self.command(args).output().unwrap()
     }
 
-    /// starts `marshal start` for `config` against `stub`.
+    /// starts the commands helper's `start` for `config` against `stub`.
     pub fn start_with(&self, config: &Path, stub: &Stub) -> Started {
         let mut command = self.command(&["start", "--profile", "axpc"]);
         command
@@ -146,8 +146,8 @@ impl Host {
         self.start_with(&self.config, stub)
     }
 
-    /// starts `marshal start` against `stub` as the leader of a process group of its
-    /// own, as a shell starts a foreground job, so a signal to that group is what a
+    /// starts the commands helper's `start` against `stub` as the leader of a process
+    /// group of its own, as a shell starts a foreground job, so a signal to that group is what a
     /// terminal's Ctrl+C sends.
     #[cfg(unix)]
     pub fn start_as_group_leader(&self, stub: &Stub) -> Started {

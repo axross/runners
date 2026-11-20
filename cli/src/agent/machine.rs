@@ -28,6 +28,7 @@ use crate::instance::restart::{RestartPolicy, Verdict};
 use crate::instance::resume::Resume;
 use crate::instance::steps::{self, Steps};
 use crate::lifecycle_settings::{Current, InEffect};
+use crate::macos::count::ConfiguredPool;
 use crate::macos::network::NetworkReading;
 use crate::profile::Profile;
 use crate::runtime::backend::Backend;
@@ -1407,8 +1408,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
     /// builds the image the configuration names while the runners are stopped; the
     /// call is answered once the build has started, and the snapshot tells the rest.
     async fn building(&self, requests: &mut Requests, reply: Reply) -> Next {
-        let image = match self.image_to_build() {
-            Ok(image) => image,
+        let (image, pools) = match self.image_to_build() {
+            Ok(build) => build,
             Err(message) => {
                 let _ = reply.send(refused(message));
                 return Next::Idle;
@@ -1428,7 +1429,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
         ));
 
         let (stop, stop_receiver) = watch::channel(None::<Instant>);
-        let mut work = pin!(self.builder.build(&image, self.log, stop_receiver));
+        let mut work = pin!(self.builder.build(&image, &pools, self.log, stop_receiver));
         let mut waiting: Vec<Reply> = Vec::new();
         let mut cancelled = false;
         let mut ticker = ticker();
@@ -1483,8 +1484,9 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
         true
     }
 
-    /// the image a build may build now, or why it may not.
-    fn image_to_build(&self) -> Result<String, String> {
+    /// the image the configuration names, and its pools, which tell an axmc build which
+    /// golden VMs to make.
+    fn image_to_build(&self) -> Result<(String, Vec<ConfiguredPool>), String> {
         let plan = self.inner.borrow().plan().cloned().ok_or_else(|| {
             "the image name comes from the configuration, and the agent holds none that \
              is valid"
@@ -1494,7 +1496,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             image if image.contains('@') => Err(format!(
                 "the image name {image} names a digest, which cannot be tagged; give it a tag instead"
             )),
-            image => Ok(image.to_string()),
+            image => Ok((image.to_string(), ConfiguredPool::of_plan(&plan))),
         }
     }
 

@@ -21,7 +21,7 @@ use marshal_cli::runtime::pool::SlotSpec;
 use marshal_cli::runtime::registration::{JitRequest, Registrar, RegistrationError};
 use marshal_cli::runtime::secret::Secret;
 use marshal_cli::runtime::worker::{run_slot, stop_channel};
-use support::rig::{Rig, START_MILLIS, golden_name, job_vm};
+use support::rig::{Rig, SOFTNET_ENDED_EARLY, START_MILLIS, golden_name, job_vm};
 use support::{TempDir, slot_spec};
 use tokio::sync::watch;
 
@@ -203,23 +203,23 @@ async fn a_failure_at_the_clone_the_resize_or_the_boot_backs_off_with_the_vm_del
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_boot_failure_is_logged_with_tarts_error_and_the_signed_in_section() {
+async fn a_boot_failure_is_logged_with_tarts_error_and_the_section_it_points_to() {
     let rig = Rig::new();
     rig.fake.script("run_mode", "exit");
-    rig.fake
-        .script("run_error", "Error: the login keychain is locked");
+    rig.fake.script("run_error", SOFTNET_ENDED_EARLY);
     run(&rig, 1).await;
     let warnings =
         rig.log_lines("WARN: example-repo-one slot 2: the job host could not be prepared");
     assert_eq!(warnings.len(), 1, "{:?}", rig.log.lines());
     assert!(
-        warnings[0].contains("Error: the login keychain is locked")
+        warnings[0].contains(SOFTNET_ENDED_EARLY)
             && warnings[0].contains(
-                "see the \"The Signed-In Session\" section of the macOS Runner Host document"
+                "Tart's error points to Softnet, see the \"Setting Up Softnet\" section of the macOS Runner Host document"
             ),
         "{}",
         warnings[0]
     );
+    assert!(!warnings[0].contains("login keychain"), "{}", warnings[0]);
     assert!(warnings[0].contains(&job_vm()));
 }
 
