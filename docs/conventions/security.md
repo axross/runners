@@ -1116,6 +1116,11 @@ runtime and VM ownership rules do not change. The on-demand section of
   exact name before another registration. Unconfirmed deletion MUST stay visible
   as incomplete cleanup with its non-secret pending identity, not as proof of
   zero registrations. The existing stop deadline MUST NOT be extended.
+- Two hosts MUST NOT use one scale-set name for one repository. Startup runner
+  cleanup runs before a session can show another listener, so it would remove the
+  other host's offline runners. `validate` reads one host's configuration and
+  cannot see across hosts, so this is a rule for the operator and for review, not a
+  check.
 - Tart job VMs retain `marshal-job-<logical-pool>-<slot>-<yyyyMMddHHmmssfff>` and
   their configured-logical-pool cleanup boundary. Scale-set names MUST NOT replace
   logical pool names in VM lookup or cleanup, and golden, build and unrelated VMs
