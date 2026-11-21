@@ -513,10 +513,12 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
             let result = tokio::select! {
                 biased;
                 () = wait_for_stop(&mut stopping) => return,
-                result = timeout(
-                    super::on_demand::CLOSE_WITHIN,
-                    PendingSession::retry(pending, client, self.tokens, self.clock.now()),
-                ) => result.unwrap_or_else(|_| Err(ListenerFailure::Api(crate::scaleset::Error::new(crate::scaleset::ErrorKind::Protocol)))),
+                result = PendingSession::retry_within(
+                    pending,
+                    client,
+                    self.tokens,
+                    self.clock.now(),
+                ) => result,
             };
             let delay = match result {
                 Ok(()) => {

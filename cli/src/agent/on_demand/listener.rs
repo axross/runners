@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use tokio::sync::watch;
-use tokio::time::{Instant, timeout, timeout_at};
+use tokio::time::{Instant, timeout_at};
 
 use crate::runtime::clock::Clock;
 use crate::runtime::name::is_own_container_name;
@@ -302,17 +302,13 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
             return Err(Failure::Halted);
         }
         if self.pending_session.borrow().is_some() {
-            timeout(
-                CLOSE_WITHIN,
-                PendingSession::retry(
-                    &self.pending_session,
-                    self.client,
-                    self.tokens,
-                    self.clock.now(),
-                ),
+            PendingSession::retry_within(
+                &self.pending_session,
+                self.client,
+                self.tokens,
+                self.clock.now(),
             )
-            .await
-            .map_err(|_| Failure::Api(Error::new(ErrorKind::Protocol)))??;
+            .await?;
             self.state.borrow_mut().view.session_cleanup_incomplete = false;
         }
         let pat = self.token(true).map_err(Failure::Store)?;

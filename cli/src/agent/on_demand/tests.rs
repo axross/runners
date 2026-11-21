@@ -1086,6 +1086,59 @@ mod http {
         assert_eq!(fake.count("POST", "generatejitconfig"), 0);
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_session_cleanup_that_outlasts_its_bound_reports_a_lapsed_request() {
+        let fake = Fake::new().await;
+        let client = fake.client_retrying(listener::CLOSE_WITHIN * 6);
+        let tokens = Tokens::new();
+        let seen = watch::Sender::new(false);
+        let mut replies = connect();
+        replies.push(session());
+        replies.extend(refused_exchange(&seen));
+        let (_, outcome) = tokio::join!(fake.serve(replies), async {
+            let pat = tokens.token(&pool().target(), None).unwrap();
+            let connection = Rc::new(
+                client
+                    .connect("example-owner", "example-repository", &pat)
+                    .await
+                    .unwrap(),
+            );
+            let set = client
+                .find_or_create(&connection, "example-linux")
+                .await
+                .unwrap();
+            let session = Rc::new(
+                client
+                    .create_session(&connection, &set, "<host-placeholder>")
+                    .await
+                    .unwrap(),
+            );
+            let pending = Rc::new(RefCell::new(Some(PendingSession::known(
+                connection,
+                set,
+                session,
+                "<host-placeholder>".to_owned(),
+            ))));
+            // the replaced token makes the cleanup renew the credentials first
+            *tokens.0.borrow_mut() = Ok("<replacement-pat-placeholder>".to_owned());
+            let outcome =
+                PendingSession::retry_within(&pending, &client, &tokens, SystemTime::now()).await;
+            (outcome, pending.borrow().is_some())
+        });
+        let (Err(Failure::Api(error)), still_pending) = outcome else {
+            panic!("the cleanup was expected to lapse");
+        };
+        assert_eq!(
+            error.kind,
+            ErrorKind::Unreachable("session cleanup timed out".to_owned())
+        );
+        assert!(
+            error.to_string().contains("session cleanup timed out"),
+            "{error}"
+        );
+        assert!(still_pending, "a lapsed cleanup must stay pending");
+    }
+
     /// what an idle pool did to the service, and where it stood, after `horizon` of the clock.
     struct IdleRun {
         rest: Vec<(String, String)>,

@@ -26,7 +26,7 @@ use crate::scaleset::{
 use crate::validate::PoolTarget;
 
 use demand::Demand;
-pub(crate) use listener::{CLOSE_WITHIN, Failure};
+pub(crate) use listener::Failure;
 pub(crate) use recovery::{PendingSession, PendingSessionCell, SessionRecovery};
 pub(crate) use slot::run_on_demand_slot;
 

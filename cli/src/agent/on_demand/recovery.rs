@@ -3,11 +3,13 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::time::SystemTime;
 
+use tokio::time::timeout;
+
 use crate::runtime::token::TokenSource;
 use crate::scaleset::{Client, Connection, Error, ErrorKind, ScaleSet, Session};
 use crate::validate::PoolTarget;
 
-use super::listener::Failure;
+use super::listener::{CLOSE_WITHIN, Failure};
 
 pub(crate) type PendingSessionCell = Rc<RefCell<Option<PendingSession>>>;
 pub(crate) type SessionRecovery = BTreeMap<String, PendingSessionCell>;
@@ -101,5 +103,22 @@ impl PendingSession {
         client.close_session(&connection, &session).await?;
         pending.borrow_mut().take();
         Ok(())
+    }
+
+    /// `retry` held to `CLOSE_WITHIN`; a lapsed bound is a request that did not finish, not a
+    /// malformed response.
+    pub(crate) async fn retry_within<T: TokenSource>(
+        pending: &PendingSessionCell,
+        client: &Client,
+        tokens: &T,
+        now: SystemTime,
+    ) -> Result<(), Failure> {
+        timeout(CLOSE_WITHIN, Self::retry(pending, client, tokens, now))
+            .await
+            .unwrap_or_else(|_| {
+                Err(Failure::Api(Error::new(ErrorKind::Unreachable(
+                    "session cleanup timed out".to_owned(),
+                ))))
+            })
     }
 }
