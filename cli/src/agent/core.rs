@@ -151,25 +151,6 @@ fn is_slot_container(name: &str, pool: &str, slot: u32) -> bool {
         .is_some_and(|stamp| parse_stamp(stamp).is_some())
 }
 
-/// whether both targets are repositories with the same owner and name, in any case.
-fn same_repository(a: &PoolTarget, b: &PoolTarget) -> bool {
-    match (a, b) {
-        (
-            PoolTarget::Repository {
-                owner: a_owner,
-                repository: a_repository,
-            },
-            PoolTarget::Repository {
-                owner: b_owner,
-                repository: b_repository,
-            },
-        ) => {
-            a_owner.eq_ignore_ascii_case(b_owner) && a_repository.eq_ignore_ascii_case(b_repository)
-        }
-        _ => false,
-    }
-}
-
 impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
     fn services(&self) -> Services<'a, B, K, R> {
         Services {
@@ -189,7 +170,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar> AgentCore<'a, B, K, R> {
         if self.listeners.borrow().values().any(|listener| {
             listener.has_pending_cleanup()
                 && (listener.logical_name == pool.name
-                    || (same_repository(&listener.target(), &pool.target)
+                    || (listener.target().same_repository(&pool.target)
                         && pool
                             .scale_set
                             .as_ref()

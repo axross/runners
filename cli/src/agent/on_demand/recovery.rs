@@ -58,10 +58,7 @@ impl PendingSession {
         };
         let pat = tokens
             .token(
-                &PoolTarget::Repository {
-                    owner: old.connection.owner().to_owned(),
-                    repository: old.connection.repository().to_owned(),
-                },
+                &PoolTarget::repository(old.connection.owner(), old.connection.repository()),
                 None,
             )
             .map_err(Failure::Store)?;

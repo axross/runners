@@ -63,10 +63,7 @@ pub struct Pool {
 
 impl Pool {
     fn target(&self) -> PoolTarget {
-        PoolTarget::Repository {
-            owner: self.owner.clone(),
-            repository: self.repository.clone(),
-        }
+        PoolTarget::repository(&self.owner, &self.repository)
     }
 }
 
@@ -118,10 +115,7 @@ impl View {
     /// the repository the listener serves, as a token and registration target.
     #[must_use]
     pub fn target(&self) -> PoolTarget {
-        PoolTarget::Repository {
-            owner: self.owner.clone(),
-            repository: self.repository.clone(),
-        }
+        PoolTarget::repository(&self.owner, &self.repository)
     }
 
     pub fn has_pending_cleanup(&self) -> bool {

@@ -21,7 +21,6 @@ fn extends(name: &str, prefix: &str) -> bool {
 struct Keys<'a> {
     entry: &'a Entry,
     owner: String,
-    repository: Option<String>,
     token_path: Option<String>,
     /// the labels that are not platform labels of this entry's own OS, each with its
     /// ASCII lowercase form; two entries' lists compare only when their OS is the
@@ -35,10 +34,6 @@ impl<'a> Keys<'a> {
         Self {
             entry,
             owner: entry.target.owner().to_ascii_lowercase(),
-            repository: match &entry.target {
-                PoolTarget::Repository { repository, .. } => Some(repository.to_ascii_lowercase()),
-                PoolTarget::Organization { .. } => None,
-            },
             token_path: entry.token_path.as_deref().map(fold::folded),
             routing_labels: entry
                 .labels
@@ -50,14 +45,8 @@ impl<'a> Keys<'a> {
     }
 }
 
-impl Keys<'_> {
-    /// whether both entries are for one repository, which takes the same owner and
-    /// the same repository name; an organisation pool has no repository.
-    fn same_repository(&self, other: &Self) -> bool {
-        self.owner == other.owner
-            && self.repository.is_some()
-            && self.repository == other.repository
-    }
+fn is_organization(keys: &Keys) -> bool {
+    matches!(keys.entry.target, PoolTarget::Organization { .. })
 }
 
 /// records every collision between a later entry and an earlier one, in entry order;
@@ -78,7 +67,7 @@ pub fn check_entries(
         let path = KeyPath::root().key(Key::Repositories).index(b.entry.index);
         for a in keys.iter().take(later) {
             let other = a.entry.index;
-            let same_repository = a.same_repository(b);
+            let same_repository = a.entry.target.same_repository(&b.entry.target);
             for (own, peer) in [(b, a), (a, b)] {
                 if let Some(scale_set) = &own.entry.scale_set {
                     let name = scale_set.to_ascii_lowercase();
@@ -135,7 +124,7 @@ pub fn check_entries(
                 );
             }
             let organization_overlap =
-                a.owner == b.owner && (a.repository.is_none() || b.repository.is_none());
+                a.owner == b.owner && (is_organization(a) || is_organization(b));
             // the scale-set collision checks above cover a same-repository pair with an
             // on-demand pool, whose only label is its scale-set name.
             let on_demand = a.entry.scale_set.is_some() || b.entry.scale_set.is_some();
