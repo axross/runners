@@ -347,14 +347,21 @@ impl Client {
     }
 
     /// call only after processing succeeds; an error leaves acknowledgement and progress unresolved.
+    /// a `404` counts as acknowledged: a repeated delete after a lost or cancelled response finds the
+    /// message already gone, and a session that has really vanished answers `404` on the next poll.
     pub async fn acknowledge(&self, session: &Session, message_id: u64) -> Result<(), Error> {
         let mut url = session.queue_url.clone();
         let path = format!("{}/{}", url.path().trim_end_matches('/'), message_id);
         url.set_path(&path);
-        self.transport
+        match self
+            .transport
             .service(Method::DELETE, url, &session.queue_token, None, &[204])
             .await
-            .map(|_| ())
+        {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     /// a freshly read PAT is required even when service credentials remain unexpired.

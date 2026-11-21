@@ -1947,6 +1947,59 @@ mod http {
     }
 
     #[tokio::test(flavor = "current_thread")]
+    async fn a_404_on_the_repeated_ack_after_a_lost_one_counts_as_acknowledged() {
+        let fake = Fake::new().await;
+        let client = fake.client();
+        let tokens = Tokens::new();
+        let channels = Channels::new(2);
+        let log = MemoryLog::default();
+        let clock = ControlledClock::new();
+        let coordinator =
+            Coordinator::new(pool(), &client, &tokens, &clock, &log, channels.controls());
+        let mut replies = connect();
+        let mut initial = session();
+        initial.body["statistics"] = statistics_json(0);
+        replies.push(initial);
+        replies.push(offer_message(&[11], 0));
+        replies.push(Reply::json(
+            "POST",
+            "acquirejobs",
+            200,
+            json!({"count": 1, "value": [11]}),
+        ));
+        let mut lost_ack = Reply::empty("DELETE", "queue/7");
+        lost_ack.lose_response = true;
+        replies.push(lost_ack);
+        // the message is already gone when the delete is repeated
+        replies.push(Reply::json("DELETE", "queue/7", 404, Value::Null));
+        replies.push(Reply::json("GET", "lastMessageId=7", 202, Value::Null));
+        tokio::join!(fake.serve(replies), async {
+            seed(&coordinator).await;
+            let mut pending = None;
+            let mut last = None;
+            let mut cleaned = true;
+            let mut session_id = coordinator.credentials().unwrap().session.id().to_owned();
+            coordinator
+                .cycle(&mut pending, &mut last, &mut session_id, &mut cleaned)
+                .await
+                .unwrap();
+            assert!(
+                coordinator
+                    .cycle(&mut pending, &mut last, &mut session_id, &mut cleaned)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(last, None);
+            coordinator
+                .cycle(&mut pending, &mut last, &mut session_id, &mut cleaned)
+                .await
+                .unwrap();
+            assert_eq!(last, Some(7));
+            assert!(!coordinator.state.borrow().recreate_requested);
+        });
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn overflow_and_lost_ack_never_advance_progress_or_duplicate_a_reservation() {
         let fake = Fake::new().await;
         let client = fake.client();

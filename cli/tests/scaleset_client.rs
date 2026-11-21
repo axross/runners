@@ -540,6 +540,24 @@ mod contract {
     }
 
     #[tokio::test]
+    async fn a_404_on_acknowledgement_counts_as_acknowledged_without_a_retry() {
+        let (fake, client, _connection, session) =
+            listening(vec![Reply::empty(404), Reply::empty(503)]).await;
+        client.acknowledge(&session, 71).await.unwrap();
+        assert_eq!(
+            client.acknowledge(&session, 71).await.unwrap_err().kind,
+            ErrorKind::Service
+        );
+        let deletes: Vec<_> = fake
+            .requests()
+            .into_iter()
+            .filter(|request| request.method == "DELETE")
+            .map(|request| request.path)
+            .collect();
+        assert_eq!(deletes, vec!["/queue/71", "/queue/71"]);
+    }
+
+    #[tokio::test]
     async fn queue_query_is_preserved_but_progress_parameter_is_owned_by_the_listener() {
         let mut replies = connection_replies();
         replies.extend([
