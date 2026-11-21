@@ -41,17 +41,26 @@ embeds and runs jobs only in an image that declares the same. See
 containers, together with the host configuration under `hosts/<platform>/`. The first
 platform is Windows with Docker Desktop, under `hosts/windows-docker-desktop/`.
 
-**Host Configuration** - the machine-local JSON file, kept outside the repository,
+**Host Configuration** - the machine-local JSON or TOML file, kept outside the repository,
 that names a runner host's image and lists its **Execution Pools** for
 **Target Repositories**. The
 **CLI** reads it, checked against a **Host Profile**.
 
 **Target Repository** - a GitHub repository a runner host serves. Its
-**Execution Pools** share one repository-scoped token file.
+**Execution Pools** share one repository-scoped token, which the **Resident Agent**
+keeps in the **Token Store** and the command-line releases read from a file.
 
 **Execution Pool** - one entry of the **Host Configuration**, with its own
 **Slots**, registration labels, and
 container, runner, and cache-volume namespace.
+
+**Runner Scale Set** - a repository-level GitHub Actions routing identity with a
+name and a message session that supplies job demand to an **On-Demand Pool**.
+
+**On-Demand Pool** - an **Execution Pool** with the optional TOML `scale_set`
+setting, whose **Resident Agent** starts **Ephemeral Runners** in response to
+demand from a **Runner Scale Set**. An **Organisation Pool** is never
+on-demand.
 
 **Organisation Pool** - an **Execution Pool** whose TOML `organization` and
 `runner_group` select one named group in a GitHub organisation instead of one
@@ -64,7 +73,7 @@ group's repositories form one trust domain. Marshal accepts only a non-default,
 non-inherited group with selected repositories and public access disabled.
 
 **Routing Label** - the label a workflow uses in `runs-on` to select an
-**Execution Pool**. Missing or empty host `labels` default to the host's own
+**Execution Pool**. For an always-on pool, missing or empty host `labels` default to the host's own
 label, `axpc` or `axmc`; a non-empty list supplies that pool's routing labels
 instead. In a TOML host configuration the required `routing_label` key supplies
 the default, so no host's label is built in. See
@@ -75,8 +84,9 @@ lists beside `self-hosted`, `linux`, and `x64`. A workflow
 can use a custom label to select that pool for its **Target Repository**.
 
 **Slot** - one concurrent runner position on a runner host. A host with two slots
-can run two jobs at once; each slot starts a fresh ephemeral runner when its
-previous one exits.
+can run two jobs at once. In an always-on pool, each slot starts a fresh ephemeral
+runner when its previous one exits; in an **On-Demand Pool**, a slot starts a
+runner only for demand a **Runner Scale Set** reports, up to the pool's `runners`.
 
 **Supervisor** - the host-side process that keeps each slot of every **Execution
 Pool** filled: it requests a **JIT Config** with the target repository's token,

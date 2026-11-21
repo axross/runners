@@ -379,31 +379,32 @@ are problems at every level. A date or time is a wrong type, because no key hold
 one. Any TOML form that gives the same tree reads the same: dotted keys, inline
 tables, an inline array of tables, and hexadecimal integers.
 
-| Top-level key    | Type                                    | Rule                                                                                                                                                                                                                                                  |
-| ---------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_version` | integer                                 | Required, and MUST be `1`.                                                                                                                                                                                                                            |
-| `routing_label`  | string                                  | Required, with no default. A pool that lists no labels carries it beside the platform labels, and a `labels` list replaces it. It follows the label pattern and is none of the platform labels of any host, and Labels applies to it as to a default. |
-| `image_name`     | string                                  | Windows: required. macOS: optional, as `imageName` is on axmc.                                                                                                                                                                                        |
-| `[budget]`       | table of `cpus`, `memory_gb`, `disk_gb` | macOS: required, under today's `budget` rules. Windows: an undefined key.                                                                                                                                                                             |
-| `[lifecycle]`    | table                                   | Optional. Four optional booleans, below.                                                                                                                                                                                                              |
-| `[[pool]]`       | array of tables                         | At least one. Each table is one entry of today's `repositories`.                                                                                                                                                                                      |
+| Top-level key    | Type                                    | Rule                                                                                                                                                                                                                                                                                                             |
+| ---------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version` | integer                                 | Required, and MUST be `1`.                                                                                                                                                                                                                                                                                       |
+| `routing_label`  | string                                  | Required, with no default. An always-on pool that lists no labels carries it beside the platform labels, and a `labels` list replaces it. It also prefixes each on-demand scale-set name. It follows the label pattern and is none of the platform labels of any host, and Labels applies to it as to a default. |
+| `image_name`     | string                                  | Windows: required. macOS: optional, as `imageName` is on axmc.                                                                                                                                                                                                                                                   |
+| `[budget]`       | table of `cpus`, `memory_gb`, `disk_gb` | macOS: required, under today's `budget` rules. Windows: an undefined key.                                                                                                                                                                                                                                        |
+| `[lifecycle]`    | table                                   | Optional. Four optional booleans, below.                                                                                                                                                                                                                                                                         |
+| `[[pool]]`       | array of tables                         | At least one. Each table is one entry of today's `repositories`.                                                                                                                                                                                                                                                 |
 
-| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                    |
-| ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                   | string                              | `name`                           | Required.                                                                                                                               |
-| `repository`             | string                              | `owner` and `repository`         | Exactly one of this and `organization` is required. Its value is `"owner/name"`; each part follows the owner or repository rule.        |
-| `organization`           | string                              | none                             | The organisation's login, under the owner rule. TOML only.                                                                              |
-| `runner_group`           | string                              | none                             | Required with `organization`, rejected without it. The exact group name in GitHub, not blank and without control characters.            |
-| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                               |
-| `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                               |
-| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`. |
-| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                        |
-| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                        |
-| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                |
-| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                             |
-| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                               |
-| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                    |
-| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                   |
+| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                                                          |
+| ------------------------ | ----------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                   | string                              | `name`                           | Required.                                                                                                                                                                     |
+| `repository`             | string                              | `owner` and `repository`         | Exactly one of this and `organization` is required. Its value is `"owner/name"`; each part follows the owner or repository rule.                                              |
+| `organization`           | string                              | none                             | The organisation's login, under the owner rule. TOML only.                                                                                                                    |
+| `runner_group`           | string                              | none                             | Required with `organization`, rejected without it. The exact group name in GitHub, not blank and without control characters.                                                  |
+| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool. For an on-demand pool, the maximum concurrent runners.              |
+| `scale_set`              | string                              | None                             | Optional, TOML only. Makes the pool on-demand; absent keeps it always-on. Windows resident agent only; rejected on macOS, and rejected with `organization`. Name rules below. |
+| `labels`                 | array of strings                    | `labels`                         | Optional. On an always-on pool, absent or empty gives the platform labels plus `routing_label`. On an on-demand pool it MUST be absent or empty.                              |
+| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`.                                       |
+| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                                                              |
+| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                                                              |
+| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                                                      |
+| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                                                                   |
+| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                                                                     |
+| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                                                          |
+| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                                                         |
 
 Every key follows the rule of the JSON key it renames on the host's profile:
 whether it is required, its default, and its range. The shared rule set applies
@@ -416,15 +417,37 @@ changes:
   axpc. A TOML pool without them is a Linux pool without volumes.
 - **One `repository` key.** The owner is part of it, so a missing owner is a problem
   on `repository`.
+- **`scale_set` selects on-demand operation.** The name is 1 to 45 ASCII letters,
+  digits, hyphens, underscores or dots, starting with `routing_label`, a hyphen
+  and a nonempty suffix, such as `axpc-linux`. Comparisons ignore ASCII case.
+  A routing label outside that character set makes an on-demand configuration
+  invalid at `routing_label`. A scale-set name MUST NOT equal or extend another
+  pool's scale-set name or logical `name` by a hyphen, in either direction, on
+  the same host. It MUST NOT equal another pool's label in the same repository, and
+  an organisation pool of its owner MUST NOT list it as a label. Neither pair uses
+  `routing_label` or the platform labels, which an on-demand pool does not carry.
+  A pool may use its own logical name as its scale-set name or use a distinct,
+  non-colliding alias. The scale-set name is its only label; neither the platform
+  labels nor `routing_label` is added. Mac pools reject the key at
+  `pool[i].scale_set`, including Linux pools; native macOS always-on pools remain
+  supported. Invalid names and collisions also name `pool[i].scale_set`; nonempty
+  labels name `pool[i].labels`. Problems keep the existing line/column and
+  no-source-value rules.
 - **Organisation pools.** `organization` and `runner_group` select an organisation
   runner group instead of one repository. Such a pool rejects `volumes`, including an
-  empty list, with `not allowed with organization`. `scale_set` is not a known key of
-  this configuration, so it is reported as an undefined key, except on an organisation
-  pool, where it is reported as `not allowed with organization`. JSON gains no
-  organisation keys. With the same OS, an organisation pool must not share a
+  empty list, with `not allowed with organization`. `scale_set` is reported as
+  `pool[i].scale_set: not allowed with organization` on an organisation pool whatever
+  its value, so an organisation pool is never on-demand and a repository an organisation
+  owns uses a repository pool. JSON gains no organisation keys. With the same OS, an organisation pool must not share a
   non-platform label with another pool of that organisation or any of its repositories,
   comparing logins and labels without case. This includes the default `routing_label`,
-  so overlapping pools need distinct explicit labels. Repository-only files retain their
+  so overlapping pools need distinct explicit labels. An on-demand pool of one of that
+  organisation's repositories is compared by its scale-set name alone, its only label:
+  it clashes with an organisation pool only when that pool's labels include the name,
+  never through the default `routing_label` or the platform labels. When the
+  on-demand pool is the later one, the problem is at `pool[i].scale_set` and tells the
+  operator to choose a name no organisation pool of that owner uses as a label; when
+  the organisation pool is the later one, it stays at that pool's `labels`. Repository-only files retain their
   validation rules. A pool naming neither target reports
   `pool[i]: names neither repository nor organization`, and one naming both reports
   `pool[i]: names both repository and organization`. An organisation pool without
@@ -507,14 +530,46 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
 5. `pool` itself: missing, not an array of tables, or empty.
 6. Each pool in file order, all of one pool's problems before the next pool's, in the
    order of the JSON keys they rename, after the pool's own unknown keys:
-   `repository`, `organization`, `runner_group`, `os`, `labels`, `volumes`,
-   `runners`, `name`, `cpus`, `memory_gb`, on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
-   not booleans, `diagnostic_directory`, and last `diagnostic_raw_records` when it
-   requires `diagnostics`.
+   `repository`, `organization`, `runner_group`, `os`, `scale_set`, `labels`,
+   `volumes`, `runners`, `name`, `cpus`, `memory_gb`, on macOS `disk_gb`, then
+   `diagnostics` and `diagnostic_raw_records` when they are not booleans,
+   `diagnostic_directory`, and last `diagnostic_raw_records` when it requires
+   `diagnostics`. A pool that sets `scale_set` has one of these problems at that
+   place, the first that applies:
+   - with `organization`, `not allowed with organization`, whatever the value or
+     the host;
+   - on macOS, the rejection of the key;
+   - on Windows, a `routing_label` that is valid but outside the scale-set name's
+     character set, reported at `routing_label`. It is reported once for the whole file, in the
+     step of the first pool that sets `scale_set`, and no later pool repeats it;
+   - a value that is not a string;
+   - a name that breaks the name rule.
+
+   A valid name makes the pool on-demand, and a `labels` that is not absent or empty
+   is then a problem at `pool[i].labels`. A pool whose `scale_set` is rejected reads
+   `labels` as an always-on pool does and joins step 7 as one.
+
 7. The checks across pools, for each pool after the first against each pool before
-   it: a colliding `name`, then an ambiguous routing label, which for an organisation
-   pool is the organisation routing overlap in the Organisation pools bullet. Then on
-   macOS the budget totals.
+   it, in this order:
+   1. The scale-set collisions. When the later pool has a `scale_set`, its collision
+      with the earlier pool, at the later pool's `scale_set`; then, when the earlier
+      pool has one, its collision with the later pool, at the earlier pool's
+      `scale_set`. A scale-set name collides with the other pool's `name` or
+      `scale_set` when the two are equal or one is the other followed by a hyphen,
+      ignoring ASCII case, and with a label of the other pool when both pools are in
+      the same repository and the two are equal, ignoring ASCII case. The same
+      repository is the same owner and the same repository name, compared without
+      case, so `a/x` and `b/x` are different repositories.
+   2. A colliding `name`, at the later pool's `name`.
+   3. An ambiguous routing label. For the same repository, a pair where either pool
+      is on-demand is not compared, because an on-demand pool's only label is its
+      scale-set name, which step 7.1 compares. For an organisation pool, it is the
+      organisation routing overlap in the Organisation pools bullet, which compares
+      an on-demand pool by its scale-set name. Where the later pool is the
+      on-demand one, the overlap is reported at that pool's `scale_set`, which is the
+      key it can change, instead of at its `labels`.
+
+   Then on macOS the budget totals.
 
 **Key paths and lines.** A key path is in TOML form, such as `pool[1].runners` or
 `pool[0].volumes[2].mount_path`, with pools and volumes counted from 0, as the JSON
@@ -524,7 +579,12 @@ no value to point at:
 - A missing key names the line where its table starts: a `[[pool]]` or
   `[[pool.volumes]]` header, `[budget]`, or line 1 for the top level.
 - A clash between pools, a name or a routing label, names the line where the later
-  pool starts.
+  pool starts, except that a later on-demand pool whose scale-set name is a label of
+  an organisation pool is reported at its `scale_set`, as a scale-set collision is.
+- A scale-set collision is not one of them: it names the line of the `scale_set`
+  value of the pool it is reported on. Two on-demand pools that collide get one
+  problem each, at their own `scale_set` lines. When the other pool is always-on,
+  only the on-demand pool gets one.
 - A budget total names the line where `[budget]` starts, which is its first dotted key
   when the table is written that way.
 
@@ -1463,11 +1523,11 @@ Both the reads and the POST keep the outbound limits and secret handling above.
 
 ### Names and the Slot Loop
 
-A runner is named `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC, and its container has
+An always-on runner is named `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC, and its container has
 the same name. A name is recognised as a pool's own only when it is the
 pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits.
 
-A slot loops until it is asked to stop. Each attempt checks the image, then prepares
+An always-on slot loops until it is asked to stop. Each attempt checks the image, then prepares
 the job host, then probes the CPUs, then registers, then runs the container, then,
 for a diagnostics-enabled pool, exports it, and finally releases the host. An image
 that cannot run jobs, or a check Docker does not answer, registers nothing and goes
@@ -2011,6 +2071,8 @@ shows both halves and runs again in the release profile in CI.
 | ------------------- | ----------------------------------------------------------------------------------- |
 | `agent::machine`    | The agent's state, and what each request, failure and changed executable does to it |
 | `agent::core`       | The pools' slots, with each token read from the store and late pools started        |
+| `agent::on_demand`  | Each on-demand pool's listener, demand, admission and owned registration cleanup    |
+| `scaleset`          | The bounded HTTPS client for repository scale sets and their runner lifecycle       |
 | `agent::state`      | Where the agent is, why it is stopped, and what it knows of its configuration       |
 | `agent::tokens`     | The pools' token source, read from the store, and the changes that start late pools |
 | `agent::view`       | The snapshot, built from the state, the board, the retained record and the tokens   |
@@ -2419,6 +2481,142 @@ token". A running job container keeps the JIT configuration it was started with.
 read, not a live reading: it refreshes only on a configuration read, a `token_set`
 or a `token_remove`.
 
+### On-Demand Pools
+
+A Windows resident-agent pool with `scale_set` waits for GitHub demand instead of
+keeping every slot registered. Workflows in the pool's repository target it with
+`runs-on: <scale-set name>`. With no offered or assigned demand and no running job,
+successful cleanup leaves no registered runner and no job container. There is no
+warm-runner or minimum-idle setting. The pool retains its per-container CPU and
+memory limits, and `runners` caps concurrent starting and running runners; Windows
+gains no host budget or dynamic lending of idle capacity. Pools without the key,
+including Mac Linux and native macOS pools, keep their always-on behavior.
+
+This is the Windows/Docker implementation contract, not a report of live product
+validation. Native-Windows job delivery, stop/restart, crash recovery, timing and
+the app's added states still need their product verification. The earlier protocol
+probe is feasibility evidence only; WSL is not native-Windows evidence. Mac
+on-demand support is not included. Its separate pull request starts only after the
+Windows pull request merges, its M2 prerequisite being met by merged pull
+request #118, as the maintainer decided on
+[#72](https://github.com/axross/runners/issues/72#issuecomment-7000962487); its
+scope is Tart Linux, not native macOS on-demand pools.
+
+**Listening and admission.** At pool start the agent reads the repository's stored
+token, exchanges registration credentials and finds or creates the named scale set
+in runner group 1. The client pins the Actions service API to `6.0-preview`. The
+registration exchange is the one request it retries: a `401` or `403` is tried up
+to 3 times in all, 5 s apart, because GitHub does not always accept a fresh
+registration token at once. Every other call fails on its first answer, and the
+agent's back-off decides what follows.
+Before any session opens, both a found and a newly created set must have exactly
+one label equal to the configured scale-set name, ignoring case. A mismatch
+rejects the pool without opening a session, registering a runner or changing the
+set.
+
+Each new or recreated session's initial statistics supply demand before the first
+poll. The listener uses GitHub's assigned-job count rather than counting job
+events. It acquires `JobAvailable` offers only up to free capacity and also accepts
+`JobAssigned` demand. Each admitted slot obtains a scale-set JIT configuration and
+runs one ephemeral runner in a Docker container. Slot completion and retry timers
+continue reconciliation even when no new event arrives. A `202` poll keeps the
+last statistics, not zero demand. Overflow offers retain their request IDs and
+remain unacknowledged until acquired as capacity frees or confirmed no longer
+pending. Assigned work beyond the cap waits and may be requeued by GitHub.
+Acknowledgement follows successful processing, and message progress advances only
+after acknowledgement succeeds, so replay does not launch another runner for the
+same demand. A `404` on acknowledgement counts as acknowledged, because a repeated
+delete after a lost response may find the message already gone; a session that has
+really gone answers `404` on the next poll. The service hands an unresolved message back at once, so while one
+waits for capacity the listener waits up to 10 s, or until a slot ends, before it
+polls again.
+
+**Names and recovery.** The runner and job container share
+`<scale-set>-<slot>-<yyyyMMddHHmmssfff>`, with the existing 1-based slot and exactly
+17 ASCII UTC timestamp digits. The configured `name` remains the logical pool
+identity for limits, volumes, status attribution and runtime ownership; it need
+not equal `scale_set`. At startup the agent lists the repository's runners once
+and removes only offline runners whose whole name matches this pool's scale-set
+format. Online runners, a longer scale-set name, other pools and always-on runners
+are not adopted by a prefix match. Container cleanup recognises the same whole
+name and retains cleanup of the logical pool's older always-on containers when
+changing modes, under the existing diagnostics rules. The Mac runtime's
+`marshal-job-<logical-pool>-<slot>-<yyyyMMddHHmmssfff>` VM names and exact configured
+logical-pool cleanup rules are unchanged; a scale-set alias is not a VM pool name,
+and no cleanup broadens to golden, build or unrelated VMs.
+
+**Stop and cleanup.** Stop All, Quit, a lifecycle stop and removal of the pool close
+the session and stop its runners. Neither a stop nor an update drain acquires more
+work or starts a runner. Update drain retains its running-job deadline and resume
+rules. Session close runs beside the existing stop sequence, best-effort within
+5 s, without delaying its steps or extending its deadline. Registration cleanup
+uses exact owned runner IDs and names after normal completion, a launch failure,
+abnormal exit, stop, or JIT success that arrives after stop or drain. A lost JIT
+response is reconciled by that attempt's exact name before another registration.
+A confirmed deletion or confirmed absence settles cleanup; a failed or unknown
+outcome stays visible with the pending non-secret identity. A stopped container
+alone does not prove the registration is gone. A cleanup that fails when a job
+ends is retried with the slot's back-off while the slot keeps its capacity, and
+the slot shows `registration cleanup incomplete (<reason>)` until it settles. An
+error a retry cannot change, such as a refused token, ends the retries: the slot
+is held, the cleanup stays reported incomplete, and Start All retries it. A stop
+gets one last attempt within the stop deadline, and also ends a registration
+that is waiting for, or renewing, its credentials. During an update drain a
+failing cleanup gets at most one more attempt, then the slot counts as drained
+with its cleanup still reported incomplete, and the retries resume if the drain
+ends without an update. Cleanup shares the existing stop deadline.
+
+**Editing the configuration.** An edit that restarts or removes an on-demand pool
+waits for that pool's listener to end within the stop deadline. A pool whose
+listener has not ended, or has cleanup left, is stopped by the edit and stays
+stopped, shown as skipped, until Start all, and the other pools take their
+effects all the same. The edit then reports each such pool, as `pool <name>: the
+edit's listener cleanup did not finish within the stop deadline; Start all is
+required before another listener starts` or `pool <name>: on-demand cleanup is
+incomplete; Start all is required before another listener starts`.
+
+**Tokens and requests.** On-demand pools use the same repository-scoped
+fine-grained token, Administration: Read and write, with Actions: read optional for
+job names; the Fine-Grained Token section of
+[Windows Runner Host](./windows-runner-host.md#the-fine-grained-token) gives its
+steps, including those for an organisation-owned repository. The agent rereads the store before every JIT registration. Replacement
+invalidates credentials derived from the old token even while those credentials
+are unexpired; removal or a store failure blocks registration rather than falling
+back to cached credentials. Running jobs keep their original JIT configuration
+and lifecycle behavior. Registration exchanges, refresh, startup runner listing,
+exact reconciliation and deletion are lifecycle requests outside the display
+queue and do not feed its budget. The listener renews the service credential when
+2 minutes of its life remain, and that expiry-driven renewal never repeats
+within 30 s; a replaced token renews it at once. A renewed credential that is due
+again at once backs off as a failure instead of renewing every cycle. An idle listener with unchanged credentials
+and no pending cleanup makes no periodic REST display request: the listener polls
+the Actions broker and renews service credentials before expiry. Outbound hosts
+and memory-only credential handling are governed by the on-demand section of
+[Security](../conventions/security.md).
+
+**Pool-local failures.** Other pools keep running:
+
+| Cause                                                                     | Listener behavior and recovery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No stored token                                                           | No registration; the existing no-token reason applies.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Store failure at start or refresh                                         | `store_error`, with the store's kind and platform code; waits for Start All. A failure during JIT registration uses slot failure/back-off, never cached authorization.                                                                                                                                                                                                                                                                                                                                                                  |
+| Session conflict (`409` on opening a session)                             | `another_listener`; registers nothing and retries with back-off. It does not identify another host, and startup runner cleanup has already run by then, so two hosts that share a scale-set name for one repository can remove each other's offline runners, which [Security](../conventions/security.md) forbids. A `409` on any other call is a service failure, below.                                                                                                                                                               |
+| Scale set or session gone (`404`)                                         | Finds or creates the set again, and does so again for a later `404` once a poll has succeeded in between. A second `404` before such a poll rejects the pool. Recreations are at least 30 s apart; a `404` inside that window waits, showing `backing_off` with status `404` and the reason `scale set not found; recreating`, and admits nothing until the next recreation; a store error showing then stays shown (`store_error` wins over `backing_off`). A `404` on acknowledgement is not one of these: it counts as acknowledged. |
+| Incompatible scale-set labels                                             | `rejected`, reason `scale-set label mismatch`, with no invented HTTP status; waits for Start All after operator repair.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Rate limit                                                                | `backing_off`, then automatic retry: `429`, or `403` with `Retry-After`, zero remaining quota or a secondary-limit message. `Retry-After` alone suffices even with nonzero quota. A `Retry-After` or quota reset more than one hour away counts as one hour.                                                                                                                                                                                                                                                                            |
+| Other persistent `401`, `403`, `404`, or refused outbound host            | `rejected`, with status or refused host, until Start All. A `401` or `403` on the registration exchange is persistent only after its 3 tries.                                                                                                                                                                                                                                                                                                                                                                                           |
+| Network, `5xx`, a `409` outside session creation or other transient error | `backing_off`, then retries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+**Removing an unwanted scale set.** Marshal retains sets when a pool stops, is
+removed or changes its scale-set name, so jobs queued while stopped can wait for
+the listener to return. Stop the pool and workflows that target an unwanted set,
+then delete that exact scale set manually in the repository's **Settings, Actions,
+Runners**. Remove or change `scale_set` in the configuration before starting again
+if the set must stay deleted. For a label mismatch, choose an unused valid
+scale-set name, or stop workflows using the incompatible set and delete it
+manually before Start All lets Marshal recreate it. Marshal never changes or
+deletes the incompatible set automatically.
+
 ### Protocol Version 2
 
 Protocol version 2 is served only by the agent, on the channel of the instance layer
@@ -2596,6 +2794,10 @@ methods, at its start and at `start_all`, and never watches it.
   key or a wrong-typed value appears only in `problems`, each a `path`, a `line` and a
   `message`, at most 100. `schema_version` and `lifecycle` are not sent. A result
   that would pass the message limit has `too_large` true and no values.
+- **`scale_set`** is an optional text setting in the same reader and editor.
+  Setting, changing or removing it uses the comment-preserving write path and
+  restarts only the affected pool under the effect rules below. A rejected value
+  leaves the last valid configuration running.
 - **`edits`** are the write path's operations as JSON, addressed by TOML key paths
   counted from 0, such as `pool[1].runners`: `{"op":"set","path","value"}`,
   `{"op":"remove","path"}`, `{"op":"add_entry","array","values"}` and
@@ -2664,26 +2866,33 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                                          | Holds                                                                                                                                                       |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`                                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
-| `agent.update`                                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
-| `agent.build`                                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
-| `configuration`                                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
-| `configuration.last_apply`                     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
-| `configuration.status`                         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
-| `configuration.in_use`                         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
-| `configuration.migration`                      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
-| `runners_up`, `runners_wanted`                 | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
-| `repositories`                                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
-| `organizations`                                | Each organisation login in lower case, `has_token` and its pools                                                                                            |
-| `pools`                                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
-| `pools[].organization`, `pools[].runner_group` | Present only for an organisation pool, which has no `repository` field                                                                                      |
-| `pools[].runners`                              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
-| `pools[].diagnostics`                          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
-| `leftovers`                                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
-| `images`                                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
-| `omitted`                                      | How many `runners`, `problems`, `pools`, `repositories`, `organizations`, `leftovers` and `images` it left out                                              |
+| Field                                                    | Holds                                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                                                  | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
+| `agent.update`                                           | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
+| `agent.build`                                            | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
+| `configuration`                                          | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
+| `configuration.last_apply`                               | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
+| `configuration.status`                                   | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
+| `configuration.in_use`                                   | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
+| `configuration.migration`                                | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
+| `runners_up`, `runners_wanted`                           | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
+| `repositories`                                           | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
+| `organizations`                                          | Each organisation login in lower case, `has_token` and its pools                                                                                            |
+| `pools`                                                  | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
+| `pools[].organization`, `pools[].runner_group`           | Present only for an organisation pool, which has no `repository` field                                                                                      |
+| `pools[].runners`                                        | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
+| `pools[].diagnostics`                                    | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
+| `pools[].on_demand`                                      | On-demand pools only: `name`, `state`, `status`, `refused_host`, `reason`, `store_error_kind`, `store_error_code`, `cleanup_incomplete`, `registrations`    |
+| `pools[].on_demand.name`                                 | The configured scale-set name, not the logical pool name                                                                                                    |
+| `pools[].on_demand.state`                                | `listening`, `another_listener`, `rejected`, `store_error`, `backing_off` or `stopped`                                                                      |
+| `pools[].on_demand.status`, `refused_host`, `reason`     | Non-secret HTTP status, refused host or explanation where applicable; label mismatch has a reason, not a fabricated status                                  |
+| `pools[].on_demand.store_error_kind`, `store_error_code` | The store's `needs_user`, `access_refused` or `other` kind and platform code where supplied                                                                 |
+| `pools[].on_demand.cleanup_incomplete`                   | Boolean: some session or registration cleanup has not been confirmed; a stopped runtime does not clear it                                                   |
+| `pools[].on_demand.registrations[]`                      | Exact pending non-secret registration identity: `slot`, `runner_id` (null if unknown), `name`; no session credential or URL                                 |
+| `leftovers`                                              | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
+| `images`                                                 | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
+| `omitted`                                                | How many `runners`, `problems`, `pools`, `repositories`, `organizations`, `leftovers` and `images` it left out                                              |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the
@@ -2752,17 +2961,29 @@ runner names are shown. Pools and groups of one organisation share a conditional
 paged read and check time, with the same 15 s minimum, budget, subscription and
 backoff rules as repositories. Group rows reflect configured pools, not detection
 of a runner moved in GitHub. Organisation tokens never trigger repository job
-lookups. Message cutting drops organisation runners, then repository runners, then
-organisation group rows; `omitted_runners` counts dropped runners and
-`omitted_organizations` counts dropped group rows.
+lookups. Message cutting drops, from the end of each list, organisation runners, then
+repository runners, then `scale_sets` entries, then organisation group rows, until the
+value fits: `omitted_runners` counts dropped runners, `omitted_scale_sets` dropped scale
+sets and `omitted_organizations` dropped group rows. A scale set holds only counts, while
+a group row says whether its organisation's token and runner list work.
 
-**Collection follows the subscription.** The agent reads GitHub only while at least
+**Display collection follows the subscription.** The agent reads GitHub for display only while at least
 one connection holds a `github` subscription that was subscribed or renewed in the
 last 90 s. When the last one ends, no new request starts after 1 s; one in flight
 finishes or times out and its answer is kept. The app holds that subscription on a
 connection of its own while its window is shown and not minimized, and renews it every
 30 s, so an app that hangs stops collection within 91 s. After collection stops the
 agent keeps each repository's last pages and their `ETag`s.
+
+An on-demand listener is independent of display collection and continues while the
+window is hidden. Its `scale_sets` counts come from the session's initial or latest
+message statistics, with no extra display request. A `202` retains the last counts.
+The counts are published only while the `github` subscription is held, including
+for a pool whose repository has no entry in `repositories`, and the entries are
+cleared when the subscription ends, so the next subscriber's first value carries no
+earlier counts. A listener that is not the pool's own, by pool, scale-set name and
+repository, gives null counts. The existing
+repository and budget fields keep their meanings.
 
 **The checks.** A repository is checked while one of its pools has a runner with a
 `workload` and the token store held its token at the last look; the token is read
@@ -2841,14 +3062,21 @@ Actions: read shows the next job's name without a restart.
 
 **The `github` value:**
 
-| Field                          | Meaning                                                                                                                |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `budget`                       | `null` until a display request is answered, then `limit`, `remaining`, `resets_at`, `seen_at` and `level`              |
-| `repositories`                 | Each repository with a registered runner and a stored token, by its key, with what the agent last learned of it        |
-| `repositories[]`               | `repository`, `checked_at`, `status`, `retry_at`, `job_names`, `job_names_cause`, `job_names_retry_at`, `runners`      |
-| `repositories[].runners`       | This host's runners GitHub lists: `name` (the snapshot's `workload`), `github` (`offline`, `idle` or `busy`) and `job` |
-| `repositories[].runners[].job` | `workflow`, `name`, `run_id` and `job_id`, once a busy runner's job is known                                           |
-| `omitted_runners`              | Runner entries left out from the end to keep the value within 64 KiB less the envelope                                 |
+| Field                                                 | Meaning                                                                                                                                                                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `budget`                                              | `null` until a display request is answered, then `limit`, `remaining`, `resets_at`, `seen_at` and `level`                                                                                 |
+| `repositories`                                        | Each repository with a registered runner and a stored token, by its key, with what the agent last learned of it                                                                           |
+| `repositories[]`                                      | `repository`, `checked_at`, `status`, `retry_at`, `job_names`, `job_names_cause`, `job_names_retry_at`, `runners`                                                                         |
+| `repositories[].runners`                              | This host's runners GitHub lists: `name` (the snapshot's `workload`), `github` (`offline`, `idle` or `busy`) and `job`                                                                    |
+| `repositories[].runners[].job`                        | `workflow`, `name`, `run_id` and `job_id`, once a busy runner's job is known                                                                                                              |
+| `organizations`                                       | One entry per configured organisation group, as the text above describes: `organization`, `runner_group`, `checked_at`, `status` and `runners`, each runner with `name` and `github` only |
+| `scale_sets`                                          | One entry per on-demand pool, independent of the repository display scope                                                                                                                 |
+| `scale_sets[]`                                        | `pool`, `repository`, `name`, `assigned`, `running`, `registered_idle`                                                                                                                    |
+| `scale_sets[].pool`, `repository`, `name`             | Logical pool name, repository key and configured scale-set name                                                                                                                           |
+| `scale_sets[].assigned`, `running`, `registered_idle` | GitHub's assigned-job, running-job and registered-idle-runner counts from the existing session statistics, not local slot counts; null before statistics are available                    |
+| `omitted_runners`                                     | Runner entries left out from the end to keep the value within 64 KiB less the envelope                                                                                                    |
+| `omitted_scale_sets`                                  | Scale-set entries left out from the end after all runner entries, before any organisation group row, when needed to keep the same message bound                                           |
+| `omitted_organizations`                               | Organisation group rows left out from the end after all runner and scale-set entries, when needed to keep the same message bound                                                          |
 
 Times are milliseconds since the Unix epoch. `status` is `ok` or the cause in the table
 above; `job_names` is `unknown` (no in-progress-runs request answered yet), `shown`,
@@ -2923,7 +3151,15 @@ the fake `docker` and a GitHub stub, a second agent refused, and the log continu
 with ten files kept. `tests/agent_drain.rs` covers the update drain: idle, busy and
 unknown runners, the bound, the reachable rows of its state table, a cancelled drain,
 a backing-off slot, a pool waiting for a token, a core failure, and diagnostic
-finalisation.
+finalisation. `tests/agent_on_demand.rs` runs on-demand pools against a loopback
+scale-set service: demand against capacity, a stop's exact cleanup, edits and
+reloads with cleanup still open, recovery of an unknown registration or session,
+the update drain beside a failed job or cleanup, the store, status and
+refused-host failures of a pool, and that no credential reaches a connection or
+the log. `tests/scaleset_client.rs` covers the scale-set client against the same
+kind of service: the protocol's payloads and progress, the typed statuses and rate
+limits, the bounded sizes, redirects and timeouts, the registration exchange's
+retries, and the headers each request sends.
 
 The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
 the `serve` mode of the helper and against `serve-agent`, which opens the agent's
@@ -4348,9 +4584,22 @@ need CRLF build it from the stored text.
   rules, letter case, duplicates, wrong
   types including a date, nesting deeper than the parser allows, in an array, an
   inline table, a dotted key and a table header, each placed on its line, the
-  problem order, the lines, and a token-shaped value or key. Each expectation names the profile
-  (`axpc` for Windows, `axmc` for macOS), the outcome, the problems whole, with their
-  lines and in order, and `contains` and `lacks` strings checked against the problems
+  problem order, the lines, and a token-shaped value or key. They also pin the
+  on-demand rules: the scale-set name and the routing label's character set, each
+  kind of scale-set collision (an equal or hyphen-extended name, against another
+  scale-set name, a logical `name` or a same-repository label, in both orders and
+  ignoring case, and accepted for a same-named repository of another owner),
+  `scale_set` on an organisation pool being refused whatever its value, including
+  beside `repository` in one pool, an organisation pool beside an on-demand pool of
+  the same owner (accepted with the default `routing_label`, rejected when its labels
+  include the scale-set name, in both pool orders and ignoring case, at the
+  `labels` of a later organisation pool and at the `scale_set` of a later on-demand
+  pool), the Mac rejection, and the order and
+  lines of the problems, including
+  a pool's `scale_set` problem before its `labels` problem and a pool whose
+  `scale_set` is rejected joining the label collisions as an always-on pool. Each
+  expectation names the profile (`axpc` for Windows, `axmc` for macOS), the
+  outcome, the problems whole, with their lines and in order, and `contains` and `lacks` strings checked against the problems
   and, for an accepted file, a description of its plan. An unknown or misspelled key
   fails the read, and the test fails when a fixture has no expectation or an
   expectation has no fixture. Some inputs are built at run time because a stored file
@@ -4427,9 +4676,9 @@ The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Four more steps run on Linux only: the
-base-address, instance-roots, build-definition, release-overrides, and
-agent-overrides tests again with `--release` and `MARSHAL_EXPECT_RELEASE=1`, which
-makes each fail if built in the wrong profile;
+base-address, instance-roots, build-definition, release-overrides,
+agent-overrides, and scale-set client tests again with `--release` and
+`MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by
@@ -4616,8 +4865,8 @@ cross-compilation and no cache action, and:
 2. writes the version with `set-release-version.sh`, and maps the installer's
    version, as [Installers](#installers) describes;
 3. runs the CLI's base-address, instance-roots, build-definition, release-overrides,
-   and agent-overrides tests and the app's mode-dispatch tests with `--release` and
-   `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
+   agent-overrides, and scale-set client tests and the app's mode-dispatch tests
+   with `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
    profile, on the target itself;
 4. installs `tauri-cli` with `cargo install tauri-cli --version =<pin> --locked`
    into a directory under `$RUNNER_TEMP`, with the pin read from

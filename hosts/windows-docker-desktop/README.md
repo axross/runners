@@ -76,6 +76,14 @@ starts them again after a sleep or network stop;
 [The Agent's Signals](../../docs/operations/cli.md#the-agents-signals) describes
 each one.
 
+A pool may also set the optional `scale_set` key, which makes it on demand: the
+agent registers no runner and starts no container for it until GitHub offers a job to
+that scale-set name, and workflows put the name in `runs-on`. The key's rules and
+what the agent does with it are in
+[On-Demand Pools](../../docs/operations/cli.md#on-demand-pools), and the operator's
+steps are in
+[On-Demand Pools in the Resident Agent](../../docs/operations/windows-runner-host.md#on-demand-pools-in-the-resident-agent).
+
 ## Checking a configuration
 
 Marshal checks `config.toml` at its start and at every Start all runners, without

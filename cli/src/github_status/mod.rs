@@ -26,13 +26,30 @@ pub struct GithubStatus {
     pub repositories: Vec<RepositoryStatus>,
     #[serde(default)]
     pub organizations: Vec<OrganizationStatus>,
-    /// group entries left out after runners to keep the message bounded.
+    /// group entries left out, after runners and scale sets, to keep the message bounded.
     #[serde(default)]
     pub omitted_organizations: u32,
     /// runner entries left out from the end to keep the value within the agent's
     /// message limit.
     #[serde(default)]
     pub omitted_runners: u32,
+    #[serde(default)]
+    pub scale_sets: Vec<ScaleSetStatus>,
+    /// scale-set entries left out, after runners, to keep the message bounded.
+    #[serde(default)]
+    pub omitted_scale_sets: u32,
+}
+
+/// counts from a pool's existing listener; no display request is made for this scope.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ScaleSetStatus {
+    pub pool: String,
+    pub repository: String,
+    pub name: String,
+    pub assigned: Option<u64>,
+    pub running: Option<u64>,
+    pub registered_idle: Option<u64>,
 }
 
 /// an organization group's last check, without repository job information.
@@ -139,9 +156,12 @@ pub struct Job {
 }
 
 impl GithubStatus {
-    /// leaves out runner entries from the end until the value's JSON is at most
-    /// `max_bytes`, counting them in `omitted_runners`; if still too large, leaves
-    /// out organization group entries, counting them in `omitted_organizations`.
+    /// leaves entries out from the end until the value's JSON is at most `max_bytes`, in
+    /// this order: organization runner entries, then repository runner entries, both
+    /// counted in `omitted_runners`; then scale sets, in `omitted_scale_sets`; then
+    /// organization group entries, in `omitted_organizations`. A scale set holds only
+    /// counts, while a group entry says whether its organization's token and runner list
+    /// work.
     pub fn fit(&mut self, max_bytes: usize) {
         while serde_json::to_vec(self).map_or(usize::MAX, |json| json.len()) > max_bytes {
             if let Some(runners) = self
@@ -153,23 +173,22 @@ impl GithubStatus {
             {
                 runners.pop();
                 self.omitted_runners += 1;
-                continue;
-            }
-            let Some(runners) = self
+            } else if let Some(runners) = self
                 .repositories
                 .iter_mut()
                 .rev()
                 .map(|repository| &mut repository.runners)
                 .find(|runners| !runners.is_empty())
-            else {
-                if self.organizations.pop().is_some() {
-                    self.omitted_organizations += 1;
-                    continue;
-                }
+            {
+                runners.pop();
+                self.omitted_runners += 1;
+            } else if self.scale_sets.pop().is_some() {
+                self.omitted_scale_sets += 1;
+            } else if self.organizations.pop().is_some() {
+                self.omitted_organizations += 1;
+            } else {
                 return;
-            };
-            runners.pop();
-            self.omitted_runners += 1;
+            }
         }
     }
 }
@@ -215,5 +234,116 @@ mod tests {
         assert_eq!(status.repositories[0].runners.len(), 3);
         assert!(status.repositories[1].runners.is_empty());
         assert!(serde_json::to_vec(&status).unwrap().len() <= whole - one - one / 2);
+    }
+
+    #[test]
+    fn scale_sets_alone_cannot_exceed_the_message_bound() {
+        let mut status = GithubStatus {
+            scale_sets: (0..4)
+                .map(|index| ScaleSetStatus {
+                    pool: format!("pool-{index}"),
+                    repository: "owner/repository".to_string(),
+                    name: format!("axpc-pool-{index}"),
+                    assigned: Some(5),
+                    running: Some(2),
+                    registered_idle: Some(1),
+                })
+                .collect(),
+            ..GithubStatus::default()
+        };
+        let mut expected = status.clone();
+        expected.scale_sets.truncate(1);
+        expected.omitted_scale_sets = 3;
+        let bound = serde_json::to_vec(&expected).unwrap().len();
+        status.fit(bound);
+        assert_eq!(status, expected);
+        assert!(serde_json::to_vec(&status).unwrap().len() <= bound);
+    }
+
+    fn organization(name: &str, runners: usize) -> OrganizationStatus {
+        OrganizationStatus {
+            organization: name.to_string(),
+            runner_group: "group".to_string(),
+            runners: (0..runners)
+                .map(|index| OrganizationRunnerStatus {
+                    name: format!("{name}-runner-{index}"),
+                    github: "idle".to_string(),
+                })
+                .collect(),
+            ..OrganizationStatus::default()
+        }
+    }
+
+    fn scale_set(index: usize) -> ScaleSetStatus {
+        ScaleSetStatus {
+            pool: format!("pool-{index}"),
+            repository: "owner/repository".to_string(),
+            name: format!("axpc-pool-{index}"),
+            ..ScaleSetStatus::default()
+        }
+    }
+
+    /// what is left after a cut: organization runners, repository runners, scale sets,
+    /// organization rows, then the three omission counts.
+    fn left(status: &GithubStatus) -> ([usize; 4], [u32; 3]) {
+        (
+            [
+                status
+                    .organizations
+                    .iter()
+                    .map(|organization| organization.runners.len())
+                    .sum(),
+                status
+                    .repositories
+                    .iter()
+                    .map(|repository| repository.runners.len())
+                    .sum(),
+                status.scale_sets.len(),
+                status.organizations.len(),
+            ],
+            [
+                status.omitted_runners,
+                status.omitted_scale_sets,
+                status.omitted_organizations,
+            ],
+        )
+    }
+
+    #[test]
+    fn entries_are_left_out_one_at_a_time_in_a_fixed_order_and_each_kind_is_counted() {
+        let mut status = GithubStatus {
+            organizations: vec![organization("a", 1), organization("b", 2)],
+            repositories: vec![RepositoryStatus {
+                repository: "o/a".to_string(),
+                runners: (0..2).map(runner).collect(),
+                ..RepositoryStatus::default()
+            }],
+            scale_sets: (0..2).map(scale_set).collect(),
+            ..GithubStatus::default()
+        };
+        let mut steps = vec![left(&status)];
+        loop {
+            let size = serde_json::to_vec(&status).unwrap().len();
+            status.fit(size - 1);
+            if serde_json::to_vec(&status).unwrap().len() == size {
+                break;
+            }
+            steps.push(left(&status));
+        }
+        assert_eq!(
+            steps,
+            [
+                ([3, 2, 2, 2], [0, 0, 0]),
+                ([2, 2, 2, 2], [1, 0, 0]),
+                ([1, 2, 2, 2], [2, 0, 0]),
+                ([0, 2, 2, 2], [3, 0, 0]),
+                ([0, 1, 2, 2], [4, 0, 0]),
+                ([0, 0, 2, 2], [5, 0, 0]),
+                ([0, 0, 1, 2], [5, 1, 0]),
+                ([0, 0, 0, 2], [5, 2, 0]),
+                ([0, 0, 0, 1], [5, 2, 1]),
+                ([0, 0, 0, 0], [5, 2, 2]),
+            ]
+        );
     }
 }

@@ -245,6 +245,11 @@ fn pools_note(context: &Context<'_>) -> Option<String> {
 fn attention(cards: &[PoolCard]) -> Vec<Attention> {
     let mut found = Vec::new();
     for card in cards {
+        found.extend(
+            card.on_demand
+                .as_ref()
+                .and_then(|listener| listener.attention.clone()),
+        );
         let skipped = card.state == "Skipped" && card.mark.is_some();
         let rejected = card
             .pill

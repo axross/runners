@@ -197,10 +197,17 @@ fn organization_volumes_are_rejected_when_present_even_if_empty_or_wrong_typed()
 }
 
 /// `scale_set` is reported as `not allowed with organization` on an organisation
-/// pool whatever its value, and stays an unknown key on a repository pool.
+/// pool whatever its value, while a repository pool's value is judged as a scale-set
+/// name.
 #[test]
-fn scale_set_is_refused_for_organizations_without_admitting_it_to_repository_pools() {
-    for value in ["'builds'", "false", "[]"] {
+fn scale_set_is_refused_for_organizations_whatever_its_value() {
+    let name_rule = "pool[0].scale_set: must be 1 to 45 ASCII letters, digits, hyphens, underscores or dots, starting with routing_label, a hyphen and a nonempty suffix";
+    let not_a_name = "pool[0].scale_set: must be a scale-set name string";
+    for (value, repository_problem) in [
+        ("'builds'", name_rule),
+        ("false", not_a_name),
+        ("[]", not_a_name),
+    ] {
         assert_eq!(
             problems(
                 &configuration(&format!(
@@ -217,7 +224,7 @@ fn scale_set_is_refused_for_organizations_without_admitting_it_to_repository_poo
                 )),
                 Profile::Axpc
             ),
-            ["line 8: pool[0].scale_set: unknown key"]
+            [format!("line 8: {repository_problem}")]
         );
     }
 }

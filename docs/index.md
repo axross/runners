@@ -32,6 +32,8 @@ names every other document the change corrects.
   and macOS VMs, CPU placement in it, Softnet and its SUID check, the accepted host-facing
   surface, the VM-local Docker socket, the pinned Tart, Softnet, golden VM base, and
   runner image Docker client, how the resident agent keeps tokens and receives them,
+  the on-demand scale-set labels, exact runner/container ownership and cleanup,
+  allowed service hosts and memory-only service credentials,
   what the TOML configuration holds and what its problems quote, what the Windows
   app's web view, capabilities and process may do, the app's dependency policy, what
   is never committed, and why the review gate admits one bot identity by login.
@@ -66,7 +68,7 @@ names every other document the change corrects.
   running ephemeral runners for several repositories on a Windows machine with
   Docker Desktop with Marshal: prerequisites, installing Marshal, the
   per-repository token, the host configuration,
-  building the image, running and stopping the pools, diagnostics and their
+  the resident agent's on-demand setup and scale-set removal, building the image, running and stopping the pools, diagnostics and their
   recovery, health checks, rebuilding and updating, recovery, and rolling back to
   the previous release.
 - [operations/macos-runner-host.md](./operations/macos-runner-host.md) -
@@ -86,7 +88,8 @@ names every other document the change corrects.
   CPU placement, the slot loop, and the signal source), the
   instance layer (instance state, single-instance lock, and control channel),
   the resident agent (its state, the token store, protocol version 2 with its
-  version rules, and the snapshot),
+  version rules, the snapshot, on-demand pools, scale-set validation and editing,
+  listener failures, registration cleanup and the `scale_sets` display scope),
   the image contract (its labels, the image check, and freshness), building the
   runner image with `build`, running a host with `start`, `stop`, `restart`,
   `status`, and `diagnostics` (the log, containment, the stop sequence, and the
@@ -106,7 +109,8 @@ names every other document the change corrects.
   and the glyph files, the bundled font and colour values, the licence notices,
   building the app and the `tauri-cli` pin, the install layout, rolling back to the
   command line, what its tests do and do not show, and the sections other children
-  add.
+  add, including the on-demand scale-set name, listener state and assigned count
+  on the Windows pool card.
 - [operations/agent-skills.md](./operations/agent-skills.md) - installing and
   refreshing the skills from `axross/skills`, the drift checks, and the register
   of deviations and gaps.
@@ -118,7 +122,8 @@ names every other document the change corrects.
 ## Glossary
 
 - [glossary.md](./glossary.md) - runner, image, host, CLI, golden VM, build VM,
-  job VM, Softnet, agent-host, and change-loop vocabulary.
+  job VM, Softnet, runner scale set, on-demand pool, agent-host, and change-loop
+  vocabulary.
 
 For what this project is and the tools a contributor prepares, see
 [`README.md`](../README.md). [`AGENTS.md`](../AGENTS.md) is the working agreement

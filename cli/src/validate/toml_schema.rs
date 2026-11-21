@@ -56,12 +56,13 @@ const ROOT: [Member; 6] = [
     member(Key::Repositories, Child::Tables(Table::Pool)),
 ];
 
-const POOL: [Member; 14] = [
+const POOL: [Member; 15] = [
     member(Key::Name, Child::Leaf),
     member(Key::Repository, Child::Leaf),
     member(Key::Organization, Child::Leaf),
     member(Key::RunnerGroup, Child::Leaf),
     member(Key::Slots, Child::Leaf),
+    member(Key::ScaleSet, Child::Leaf),
     member(Key::Labels, Child::Leaf),
     member(Key::Os, Child::Leaf),
     member(Key::Cpus, Child::Leaf),
@@ -176,6 +177,7 @@ pub(crate) fn key_name(key: Key) -> &'static str {
         Key::MountPath => "mount_path",
         Key::SchemaVersion => "schema_version",
         Key::RoutingLabel => "routing_label",
+        Key::ScaleSet => "scale_set",
         Key::Lifecycle => "lifecycle",
         Key::StartAtLogin => "start_at_login",
         Key::StartRunnersOnLaunch => "start_runners_on_launch",
@@ -190,17 +192,31 @@ mod tests {
     use super::super::problem::Segment;
     use super::*;
 
+    const TABLES: [Table; 5] = [
+        Table::Root,
+        Table::Pool,
+        Table::Budget,
+        Table::Lifecycle,
+        Table::Volume,
+    ];
+
+    /// stops compiling when a table is added, until the match names it, and then the test below
+    /// fails until `TABLES` lists it.
+    fn table_count() -> usize {
+        match Table::Root {
+            Table::Root | Table::Pool | Table::Budget | Table::Lifecycle | Table::Volume => 5,
+        }
+    }
+
+    #[test]
+    fn every_table_is_listed() {
+        assert_eq!(TABLES.len(), table_count());
+    }
+
     #[test]
     fn every_key_but_the_owner_and_token_path_belongs_to_a_table() {
-        let tables = [
-            Table::Root,
-            Table::Pool,
-            Table::Budget,
-            Table::Lifecycle,
-            Table::Volume,
-        ];
         for key in Key::ALL {
-            let held = tables
+            let held = TABLES
                 .iter()
                 .any(|table| table.members().iter().any(|member| member.key == key));
             assert_eq!(held, !matches!(key, Key::Owner | Key::TokenPath), "{key:?}");
@@ -209,18 +225,75 @@ mod tests {
 
     #[test]
     fn a_table_defines_each_name_once() {
-        for table in [
-            Table::Root,
-            Table::Pool,
-            Table::Budget,
-            Table::Lifecycle,
-            Table::Volume,
-        ] {
+        for table in TABLES {
             let mut names: Vec<&str> = table.members().iter().map(|m| key_name(m.key)).collect();
             names.sort_unstable();
             let count = names.len();
             names.dedup();
             assert_eq!(names.len(), count, "{table:?}");
+        }
+    }
+
+    /// whether a key's name says it holds a credential rather than configuration; `pat` and `key`
+    /// count only as whole words of the name, since inside one they would trip `mount_path`.
+    fn names_a_credential(name: &str) -> bool {
+        let name = name.to_ascii_lowercase();
+        [
+            "token",
+            "secret",
+            "password",
+            "jit",
+            "credential",
+            "jwt",
+            "auth",
+        ]
+        .iter()
+        .any(|word| name.contains(word))
+            || name.split('_').any(|word| matches!(word, "pat" | "key"))
+    }
+
+    #[test]
+    fn no_key_the_schema_defines_holds_a_credential() {
+        for table in TABLES {
+            for member in table.members() {
+                let name = key_name(member.key);
+                assert!(!names_a_credential(name), "{table:?} defines {name}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_key_named_for_a_credential_is_caught() {
+        for name in [
+            "token",
+            "pat_token",
+            "Secret",
+            "jit_config",
+            "api_password",
+            "credentials",
+            "jwt",
+            "id_jwt",
+            "oauth",
+            "auth_header",
+            "pat",
+            "github_pat",
+            "key",
+            "api_key",
+            "Signing_KEY",
+        ] {
+            assert!(names_a_credential(name), "{name}");
+        }
+        for name in [
+            "scale_set",
+            "labels",
+            "diagnostic_raw_records",
+            "mount_path",
+            "path",
+            "patch_level",
+            "keep_awake",
+            "keyboard_layout",
+        ] {
+            assert!(!names_a_credential(name), "{name}");
         }
     }
 

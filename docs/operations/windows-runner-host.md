@@ -59,6 +59,10 @@ command line:
 
 Not yet verified on axpc, each for the reason given:
 
+- the resident agent's on-demand pools, including live job delivery, the cap,
+  stop/restart, crash cleanup and the window's added listener states; the earlier
+  scale-set probe establishes protocol feasibility, not product validation, and
+  WSL checks do not establish native-Windows behavior;
 - Marshal's MSI install, the optional check block with its extraction, the
   uninstall block, and the prompts an unsigned MSI from a browser download raises,
   which have not run on axpc. CI runs the blocks against the release dry run's MSI in
@@ -246,7 +250,9 @@ A pool configured with `organization` uses an organisation token, not any of tha
 organisation's repository tokens. Before starting one, satisfy the Organisation
 Pools Share a Runner Group's Trust Boundary section of
 [Security](../conventions/security.md). The TOML Configuration section of
-[CLI](./cli.md) describes `organization` and `runner_group`.
+[CLI](./cli.md) describes `organization` and `runner_group`. An organisation pool is
+never on-demand: `scale_set` is refused on it, and an on-demand pool for a repository
+the organisation owns is a repository pool with that repository's token.
 
 Create the token while signed in as an owner of the organisation:
 
@@ -367,6 +373,69 @@ The Configuration File section of [App](./app.md) describes. Marshal does not
 watch the file, so an edit applies at the next **Start all runners**: after every
 edit, **Stop all runners**, then **Start all runners**, and read the window. It does
 not check that a pool has a token; the Tokens tab shows which have none.
+
+### On-Demand Pools in the Resident Agent
+
+On-demand pools run in the resident agent of a Marshal that contains them, from its
+TOML configuration. No published release does yet: app publication is suspended, as
+[Installing Marshal](#installing-marshal) says, and the temporary recovery release
+builds the fixed historical command line, which predates on-demand pools
+([CLI Recovery](./cli-recovery.md)). Build the runner image and meet the same Docker
+Desktop prerequisites before starting these pools.
+
+In `%LOCALAPPDATA%\marshal\config.toml`, add `scale_set` to the intended pool and
+leave `labels` absent or empty. For example, with `routing_label = "axpc"`, a pool
+without cache volumes can be written as:
+
+```toml
+[[pool]]
+name = "linux-jobs"
+repository = "<owner>/<repo>"
+runners = 1
+scale_set = "axpc-linux"
+```
+
+Replace the repository placeholder. Keep the file's required `schema_version`,
+`routing_label` and `image_name`; this pool is not a complete configuration. The
+schema chapter of [CLI](./cli.md) gives name, collision and editor rules.
+`runners` is the concurrency cap, not an idle runner count, and a distinct `name`
+remains the pool's logical identity. Other pool settings, including each
+container's resource limits and the cache boundaries, keep their meanings.
+
+1. Enter the repository-scoped fine-grained token in the window's **Tokens** tab,
+   created as [The Fine-Grained Token](#the-fine-grained-token) describes, with its
+   resource-owner and approval steps for an organisation-owned repository.
+   Use Administration: Read and write; Actions: read is optional for job names.
+   The agent imports no token file; [Token Files of the Command Line](#token-files-of-the-command-line)
+   says why.
+2. Arrange a quiet window, use **Stop all runners** before editing a running agent's file,
+   and save the configuration. These controls stop every pool. A client using
+   `config_edit` or `config_reload` can instead apply the change to only the
+   affected pool, as the configuration-editing section of [CLI](./cli.md)
+   describes; changing `scale_set` stops that pool's jobs.
+3. Use **Start all runners** to reread the file. Invalid settings leave the last valid
+   configuration in use. Check the pool card for its scale-set name and
+   listener state. A listening pool with no demand has no registered runner or
+   job container after successful cleanup; an incomplete-cleanup report is not
+   a healthy zero-runner result.
+4. In the target repository's workflow, use `runs-on: axpc-linux` for this example,
+   not `[self-hosted, linux, x64, axpc]`. The scale-set name is the only label.
+   Workflows in this public runners repository still use GitHub-hosted runners.
+
+The on-demand section of [CLI](./cli.md) explains listener errors and recovery.
+**Stop all runners** closes the listener and stops its runners without deleting the scale
+set. A job queued while the pool is stopped can wait for **Start all runners**. Hiding the
+window stops display collection, not job listening. Token replacement applies to
+the next registration even before cached service credentials expire; removal or a
+store failure prevents it, while an already running job keeps its current JIT
+configuration.
+
+For `another_listener`, leave Marshal to retry with back-off; a crashed session
+can take time to expire. For `scale-set label mismatch`, choose an unused valid
+name or stop workflows that use the incompatible set before deleting it manually
+and using **Start all runners** to recreate it. Marshal does not repair or delete that set
+automatically. The manual deletion procedure is in the on-demand section of
+[CLI](./cli.md).
 
 ### Split a repository into general and Android pools
 
@@ -923,9 +992,15 @@ containers stay until removed by hand with `docker volume rm` and `docker rm`. T
 isolation rules the host enforces between repositories are in
 [Security](../conventions/security.md).
 
+For a resident on-demand pool, use **Stop all runners**, remove the entry from `config.toml`
+and use **Start all runners**, or use a client's `config_edit` or `config_reload` method.
+Its scale set remains on GitHub, also after a rename.
+Stop workflows targeting an unwanted set and delete that exact scale set manually
+in the repository settings, following the on-demand section of [CLI](./cli.md).
+
 ## Health Checks
 
-- **GitHub:** a healthy host shows, under each repository's **Settings, Actions,
+- **Always-on pools on GitHub:** a healthy host shows, under each repository's **Settings, Actions,
   Runners**, the sum of its entries' `slots` runners, **Idle** when no job is queued and **Active** when
   one is running, because each slot registers a runner before it starts a
   container. Each registration carries exactly `self-hosted`, `linux`, `x64`, and
@@ -938,7 +1013,7 @@ isolation rules the host enforces between repositories are in
   image problem. A pool that did not start shows its reason. A footer warning about
   the image is a freshness warning; see
   [Rebuilding the Image](#rebuilding-the-image-for-operating-system-updates).
-- **Machine:** `docker ps` shows `slots` running containers per entry, named
+- **Always-on pools on the machine:** `docker ps` shows `slots` running containers per entry, named
   `<name>-<index>-<timestamp>`, whether idle or busy, since an idle container is
   a runner waiting for a job. None means the same as above.
   `docker inspect` on a container shows its limits under `HostConfig`: `NanoCpus`
@@ -948,6 +1023,13 @@ isolation rules the host enforces between repositories are in
   agent's log has the guard's bounded `CPU affinity verified` line, which reports
   the kernel-granted set; the authorized real-host check also resolves the actual
   cgroup cpuset/quota layout.
+- **On-demand pools:** check the window's listener state, not a fixed idle runner
+  count. With no demand and successful cleanup, both the repository runner list
+  and `docker ps` have no runner/container for the pool. During a job, compare its
+  whole scale-set-based runner/container name with the logical pool and slot
+  shown in the window. Assigned, running and registered-idle counts come from
+  the existing session statistics; they add no display request. Pending exact
+  cleanup identities require recovery even when no container remains.
 - **Tokens:** the Tokens tab shows a token set for every repository a pool names.
 - **End to end:** for each pool, a workflow run whose `runs-on` matches that
   entry's routing label starts executing rather than sitting queued.
@@ -1011,7 +1093,7 @@ workflows with; [Security](../conventions/security.md) states the accepted risk
 behind that.
 
 The machine needs outbound HTTPS to `github.com` and `api.github.com`,
-`*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
+`actions.githubusercontent.com` and `*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
 pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
 image build, whenever Marshal builds the image, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
@@ -1024,6 +1106,11 @@ provisioning also needs HTTPS to
 `services.gradle.org` for the Gradle distribution, including its redirects to
 GitHub release-asset storage. The Dockerfile itself needs no access to Docker
 Hub. No inbound port is needed.
+
+The resident on-demand listener also uses the returned Actions service host and
+`broker.actions.githubusercontent.com` for its long poll. This is outbound-only;
+it needs no inbound listener on the network. The on-demand outbound allowlist and
+credential rules are in [Security](../conventions/security.md).
 
 ## Recovery
 

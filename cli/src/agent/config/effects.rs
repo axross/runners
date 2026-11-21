@@ -219,6 +219,33 @@ mod tests {
     }
 
     #[test]
+    fn changing_on_demand_mode_or_alias_restarts_only_that_pool() {
+        let other = pool("other", 2, "");
+        let always_on = plan(&format!("{}{other}", pool("logical", 1, "")));
+        let on_demand = plan(&format!(
+            "{}{other}",
+            pool("logical", 1, "scale_set = \"axpc-linux\"")
+        ));
+        let renamed = plan(&format!(
+            "{}{other}",
+            pool("logical", 1, "scale_set = \"axpc-jobs\"")
+        ));
+        for (before, after) in [
+            (&always_on, &on_demand),
+            (&on_demand, &renamed),
+            (&on_demand, &always_on),
+        ] {
+            assert_eq!(
+                changes(before, after),
+                [
+                    row("logical", Change::Restarted, true),
+                    row("other", Change::Unchanged, false)
+                ]
+            );
+        }
+    }
+
+    #[test]
     fn with_nothing_in_use_every_pool_is_added() {
         let after = plan(&pool("a", 2, ""));
         let effects = effects(None, &after);

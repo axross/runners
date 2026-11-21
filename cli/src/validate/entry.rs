@@ -45,6 +45,8 @@ pub(super) struct EntryFields {
     #[serde(default)]
     name: Field,
     #[serde(default)]
+    scale_set: Field,
+    #[serde(default)]
     slots: Field,
     #[serde(default)]
     token_path: Field,
@@ -85,14 +87,28 @@ pub fn read_entry(
     let target = read_target(&node, &path, cx);
     let token_path = read_token_path(&node.token_path, &path, cx);
     let os = read_os(&node.os, &path, cx);
-    let labels = registration_labels(
-        &node.labels,
-        &path,
-        routing_label,
-        profile,
-        os,
-        &mut cx.errors,
-    );
+    let scale_set = read_scale_set(&node, &path, routing_label, cx);
+    let labels = match &scale_set {
+        Some(name) => {
+            match node.labels.get() {
+                None => {}
+                Some(Value::Array(items)) if items.is_empty() => {}
+                Some(_) => cx.errors.add(
+                    path.key(Key::Labels),
+                    Kind::MustBe("absent or an empty array for an on-demand pool"),
+                ),
+            }
+            Some(vec![name.clone()])
+        }
+        None => registration_labels(
+            &node.labels,
+            &path,
+            routing_label,
+            profile,
+            os,
+            &mut cx.errors,
+        ),
+    };
     let volumes = read_volumes(&node, &path, cx);
     let macos = os == Some(Os::Macos);
     let default_slots = if macos {
@@ -153,6 +169,7 @@ pub fn read_entry(
         path: reader.entry_path(index),
         target,
         name: name.clone(),
+        scale_set,
         slots,
         token_path: token_path.map(str::to_string),
         labels,
@@ -171,6 +188,58 @@ pub fn read_entry(
         os,
         disk_gb,
     })
+}
+
+/// reads the TOML-only identity without admitting credentials or the Mac slice.
+fn read_scale_set(
+    node: &EntryFields,
+    path: &KeyPath,
+    routing_label: Option<&str>,
+    cx: &mut Context,
+) -> Option<String> {
+    if !cx.reader.format().carries_settings() {
+        return None;
+    }
+    let value = node.scale_set.get()?;
+    let path = path.key(Key::ScaleSet);
+    if node.organization.get().is_some() {
+        cx.errors.add(path, Kind::NotAllowedWithOrganization);
+        return None;
+    }
+    if cx.profile == Profile::Axmc {
+        cx.errors.add(
+            path,
+            Kind::MustBe("absent on macOS; on-demand pools are not supported yet"),
+        );
+        return None;
+    }
+    let routing = routing_label?;
+    if !patterns::has_scale_set_characters(routing) {
+        if !std::mem::replace(&mut cx.routing_label_reported, true) {
+            cx.errors.add(
+                KeyPath::root().key(Key::RoutingLabel),
+                Kind::MustBe(
+                    "ASCII letters, digits, hyphens, underscores or dots for on-demand pools",
+                ),
+            );
+        }
+        return None;
+    }
+    let Value::String(name) = value else {
+        cx.errors.add(path, Kind::MustBe("a scale-set name string"));
+        return None;
+    };
+    let prefix = format!("{}-", routing.to_ascii_lowercase());
+    if !patterns::is_scale_set_name(name)
+        || !name
+            .to_ascii_lowercase()
+            .strip_prefix(&prefix)
+            .is_some_and(|suffix| !suffix.is_empty())
+    {
+        cx.errors.add(path, Kind::MustBe("1 to 45 ASCII letters, digits, hyphens, underscores or dots, starting with routing_label, a hyphen and a nonempty suffix"));
+        return None;
+    }
+    Some(name.clone())
 }
 
 /// reads the token path where the reader's format has one; the outer `None` is a

@@ -34,7 +34,7 @@ function row(slot, container, github, job) {
 let revision = 0;
 
 /** a view of the app pool with the given runner rows. */
-function shown(runners, { announce = [], notes = [] } = {}) {
+function shown(runners, { announce = [], notes = [], listener = null } = {}) {
   revision += 1;
   return {
     revision,
@@ -61,6 +61,7 @@ function shown(runners, { announce = [], notes = [] } = {}) {
               tags: [],
               from: null,
               line: "Running · 2 of 2 up",
+              on_demand: listener,
               note: "No token for owner/app.",
               pill: {
                 action: { set_token: "owner/app" },
@@ -265,4 +266,62 @@ test("the budget is the footer's first line", () => {
     first.textContent,
     "GitHub requests: 4,210 of 5,000 left this hour · resets 04:05 · checked every 15 s",
   );
+});
+
+test("on-demand text uses the existing card, adds no control and never parses markup", () => {
+  const before = tabStops().map((element) => element.getAttribute("data-key"));
+  const line = "On demand · axpc-linux · Rejected";
+  const detail =
+    "scale-set label mismatch <b>unchanged</b> · Cleanup incomplete";
+  handlers.get("marshal:view")({
+    payload: shown([IDLE], { listener: { line, detail } }),
+  });
+  assert.ok(elements().some((element) => element.textContent === line));
+  assert.ok(elements().some((element) => element.textContent === detail));
+  assert.equal(elements().filter((element) => element.tag === "b").length, 0);
+  assert.deepEqual(
+    tabStops().map((element) => element.getAttribute("data-key")),
+    before,
+  );
+  assert.match(text(app), /Running · 2 of 2 up/);
+  assert.match(text(app), /No token for owner\/app\./);
+  assert.match(text(app), /GitHub: idle/);
+});
+
+test("a listener announcement keeps focus and a count-only update adds no announcement", () => {
+  const focusKey = "pill:set_token:owner/app";
+  elements()
+    .find((element) => element.getAttribute("data-key") === focusKey)
+    .focus();
+  const message = "Pool app: On demand · axpc-linux · Listening";
+  const before = live.children.length;
+  handlers.get("marshal:view")({
+    payload: shown([IDLE], {
+      listener: {
+        line: "On demand · axpc-linux · Listening · 0 assigned",
+        detail: null,
+      },
+      announce: [message],
+    }),
+  });
+  assert.equal(document.activeElement.getAttribute("data-key"), focusKey);
+  assert.equal(live.children.length, before + 1);
+  assert.equal(live.children.at(-1).textContent, message);
+  handlers.get("marshal:view")({
+    payload: shown([IDLE], {
+      listener: {
+        line: "On demand · axpc-linux · Listening · 3 assigned",
+        detail: null,
+      },
+    }),
+  });
+  assert.equal(document.activeElement.getAttribute("data-key"), focusKey);
+  assert.equal(live.children.length, before + 1);
+  assert.match(text(app), /On demand · axpc-linux · Listening · 3 assigned/);
+});
+
+test("an always-on card shows no listener text", () => {
+  handlers.get("marshal:view")({ payload: shown([IDLE]) });
+  assert.doesNotMatch(text(app), /On demand|Cleanup incomplete/);
+  assert.match(text(app), /Running · 2 of 2 up/);
 });
