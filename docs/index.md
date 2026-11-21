@@ -38,7 +38,8 @@ names every other document the change corrects.
   app's web view, capabilities and process may do, the app's dependency policy, what
   is never committed, and why the review gate admits one bot identity by login.
 - [conventions/testing.md](./conventions/testing.md) - the check commands, what
-  each verifies, and which of them CI runs.
+  each verifies, which of them CI runs, and what a test does when the kernel
+  does not refuse the access it relies on.
 - [conventions/directory-structure.md](./conventions/directory-structure.md) -
   the technologies this repository uses, where each listed runner path lives,
   and the table a change that adds, removes, or repurposes one updates.
@@ -56,7 +57,8 @@ names every other document the change corrects.
   and the independent review route.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
   Code and Amp sessions start, their hooks, Amp's and Codex's delivery
-  authorization, the plan-gate delivery confirmation, Amp's plan-gate archive
+  authorization, asking the maintainer (launched sessions and subagents
+  included), the plan-gate delivery confirmation, Amp's plan-gate archive
   confirmation for review child threads, the write-fidelity rules and read-back
   for GitHub text written from a Claude Code cloud session, subagents including
   the Claude Code review subagent, and telemetry.

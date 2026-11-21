@@ -84,6 +84,19 @@ capabilities by task instead of applying every change gate to read-only work:
 - MUST read [docs/index.md](./docs/index.md) when a task depends on project
   terminology, behavior, conventions, or past decisions, then follow only the
   relevant routes.
+- MUST put a decision the maintainer owns — such as scope, product behavior, an
+  architecture choice, a finding disposition, an additional review round, or a
+  plan approval — to the maintainer through its host's dedicated question
+  mechanism whenever the session exposes an eligible one, however the session
+  was started, and MUST NOT list options as prose in the turn output in place of
+  the question unless none is eligible. A launch prompt's statement that the
+  launcher handles communication with the maintainer, or its instruction to stop
+  and report or to send the options to the launcher, assigns a duty to report to
+  the launcher; it MUST NOT be read as replacing the question.
+- MUST read
+  [Asking the Maintainer](./docs/operations/agent-sessions.md#asking-the-maintainer)
+  when a session holds a maintainer decision, was launched by another session, or
+  launches one.
 - MUST delegate investigation, implementation, and advisory pre-flight review
   to the qualifying subagents configured in
   [Agent sessions](./docs/operations/agent-sessions.md#subagents) when the host
