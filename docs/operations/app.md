@@ -633,6 +633,11 @@ token of a repository no remaining pool names, never an organisation's. Remove a
 organisation's token from the [Tokens tab](#configuration-and-tokens) before removing
 the last pool that names it; after that, the tab has no row for it.
 
+An on-demand pool's `scale_set` key has no field either, so the form neither shows
+nor changes it; its other fields edit as any repository pool's. The agent's check
+refuses a non-empty `labels` on it, since its scale-set name is its only label. Add,
+change or remove `scale_set` in a text editor.
+
 `config-editor.js` keeps the unapplied draft across view updates and window hides.
 `editor.js` draws its fields, problems, change bar and in-list review. Apply first
 asks the agent to check, then lists the agent's effects for every pool. A change
