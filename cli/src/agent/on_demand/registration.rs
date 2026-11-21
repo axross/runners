@@ -120,7 +120,7 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
             .stop_deadline
             .map_or(deadline, |stop| stop.min(deadline));
         let cleanup = timeout_at(deadline, pool.cleanup(self.id)).await;
-        match cleanup {
+        let failure = match cleanup {
             Ok(Ok(())) => {
                 let mut state = pool.state.borrow_mut();
                 state.owned.remove(&self.id);
@@ -129,20 +129,15 @@ impl<T: TokenSource, K: Clock> Reservation<'_, '_, T, K> {
                 drop(state);
                 pool.publish();
                 pool.wake.notify_waiters();
-                Ok(())
+                return Ok(());
             }
-            result => {
-                let failure = match result {
-                    Ok(Err(failure)) => failure,
-                    Err(_) => CleanupFailure::from(
-                        "registration cleanup deadline reached; outcome unconfirmed".to_owned(),
-                    ),
-                    Ok(Ok(())) => return Ok(()),
-                };
-                pool.cleanup_failed(self.id, &failure.reason);
-                Err(failure)
-            }
-        }
+            Ok(Err(failure)) => failure,
+            Err(_) => CleanupFailure::from(
+                "registration cleanup deadline reached; outcome unconfirmed".to_owned(),
+            ),
+        };
+        pool.cleanup_failed(self.id, &failure.reason);
+        Err(failure)
     }
 }
 
