@@ -918,6 +918,13 @@ test("the window edits in cards, keeps drafts across views and hides, labels pro
             diagnostics: null,
           })),
           tokens: { rows: [] },
+          settings: {
+            intro: "Settings.",
+            unavailable: null,
+            reason_in_intro: false,
+            groups: [],
+            chip: null,
+          },
           stale: false,
         },
         footer: {

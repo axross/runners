@@ -72,6 +72,13 @@ function shown() {
             },
           ],
           tokens: { intro: "Tokens.", rows: [ROW] },
+          settings: {
+            intro: "Settings.",
+            unavailable: null,
+            reason_in_intro: false,
+            groups: [],
+            chip: null,
+          },
           stale: false,
         },
         footer: {

@@ -16,6 +16,7 @@ mod github;
 mod host;
 mod newer_agent;
 mod privacy;
+mod settings;
 mod states;
 mod support;
 mod time;
