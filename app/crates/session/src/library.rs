@@ -200,6 +200,14 @@ impl Link for Agent {
                 .organization_token_remove(&organization)
                 .await
                 .map(|()| serde_json::Value::Null),
+            Method::LifecycleSet { key, on } => {
+                self.client
+                    .call(
+                        "lifecycle_set",
+                        serde_json::json!({ "key": key, "value": on }),
+                    )
+                    .await
+            }
         };
         called.map(|_| ()).map_err(failure)
     }

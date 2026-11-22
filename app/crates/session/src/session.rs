@@ -23,14 +23,16 @@ use std::future::pending;
 use std::sync::Arc;
 use std::time::Duration;
 
+use marshal_cli::agent::config::Problem;
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_cli::agent::wire::ENDING_UPDATE;
 use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
 use marshal_cli::github_status::GithubStatus;
 use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi,
-    Tracker, Update, View, job_page, pools_started_by,
+    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, SettingResult,
+    SettingsUi, TokenResult, TokenUi, Tracker, Update, View, job_page, pools_started_by,
+    setting_label,
 };
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot};
@@ -54,6 +56,9 @@ const CALL_WITHIN: Duration = Duration::from_secs(40);
 
 /// the longest a token call waits for the Credential Manager.
 const TOKEN_WITHIN: Duration = Duration::from_secs(10);
+
+/// the longest `lifecycle_set` waits: one write of config.toml.
+const SETTING_WITHIN: Duration = Duration::from_secs(10);
 
 /// the longest `quit` waits: the stop sequence, then the agent ending.
 const QUIT_WITHIN: Duration = Duration::from_secs(45);
@@ -178,6 +183,11 @@ enum Command {
         key: String,
         reply: Reply<()>,
     },
+    SetSetting {
+        key: String,
+        on: bool,
+        reply: Reply<()>,
+    },
     Config {
         request: ConfigRequest,
         reply: ConfigReply,
@@ -272,6 +282,13 @@ impl Handle {
         .await
     }
 
+    /// writes one `[lifecycle]` setting through the agent; what came of it is in the
+    /// view.
+    pub async fn set_setting(&self, key: String, on: bool) -> Result<(), String> {
+        self.ask(|reply| Command::SetSetting { key, on, reply })
+            .await
+    }
+
     /// asks the agent's configuration methods; under lost contact the answer is
     /// [`Failure::Lost`], and the editor keeps its unapplied changes.
     pub async fn config(&self, request: ConfigRequest) -> Result<ConfigAnswer, Failure> {
@@ -323,6 +340,12 @@ enum Internal<L> {
         key: String,
         removal: bool,
         started: Vec<String>,
+        outcome: Result<(), Failure>,
+        reply: Reply<()>,
+    },
+    Setting {
+        key: String,
+        on: bool,
         outcome: Result<(), Failure>,
         reply: Reply<()>,
     },
@@ -468,6 +491,7 @@ pub struct Session<D: Dial> {
     pending: Option<Pending>,
     answered: Option<Instant>,
     tokens: TokenUi,
+    settings: SettingsUi,
     announce: Vec<String>,
     tracker: Tracker,
     shown: Option<View>,
@@ -554,6 +578,7 @@ impl<D: Dial> Session<D> {
             pending: None,
             answered: None,
             tokens: TokenUi::default(),
+            settings: SettingsUi::default(),
             announce: Vec::new(),
             tracker: Tracker::new(),
             shown: None,
@@ -663,6 +688,7 @@ impl<D: Dial> Session<D> {
             .words(marshal_view::HOST)
             .pending(self.pending)
             .tokens(&self.tokens)
+            .settings(&self.settings)
             .github(feed)
             .ended_jobs(&self.ended_jobs)
             .editor(self.agent.edits)
@@ -776,6 +802,7 @@ impl<D: Dial> Session<D> {
                 self.stage = Stage::Live;
                 self.connection = Connection::Connected;
                 self.last_heard_ms = Some(self.now_ms());
+                self.settings.results.clear();
                 self.log.info("Connected to the agent.");
                 if send_launch {
                     self.send_launch_call();
@@ -865,6 +892,11 @@ impl<D: Dial> Session<D> {
         match pushed.unwrap_or(Pushed::Closed) {
             Pushed::Snapshot(snapshot) => {
                 self.last_heard_ms = Some(self.now_ms());
+                // a result under a setting stands until the snapshot's lifecycle part changes:
+                // its settings, the sign-in item, keep-awake or a resume
+                if self.snapshot.as_ref().map(|old| &old.lifecycle) != Some(&snapshot.lifecycle) {
+                    self.settings.results.clear();
+                }
                 self.snapshot = Some(*snapshot);
                 self.snapshot_for_drain();
                 self.refresh();
@@ -970,6 +1002,7 @@ impl<D: Dial> Session<D> {
                 reply,
             } => self.set_token(scope, &key, token, reply),
             Command::RemoveToken { scope, key, reply } => self.remove_token(scope, &key, reply),
+            Command::SetSetting { key, on, reply } => self.set_setting(key, on, reply),
             Command::Config { request, reply } => self.config(request, reply),
             Command::WindowShown(shown) => self.set_window_shown(shown),
             Command::OpenJob {
@@ -1006,6 +1039,10 @@ impl<D: Dial> Session<D> {
             since_ms,
         });
         self.answered = None;
+        if act == Act::StartAll {
+            // Start all reads config.toml again, so a refusal no longer stands
+            self.settings.results.clear();
+        }
         // the transition shows at once, before the agent has answered
         self.refresh();
         let report = self.report.clone();
@@ -1174,6 +1211,87 @@ impl<D: Dial> Session<D> {
                 reply,
             });
         });
+    }
+
+    // ---- settings
+
+    fn set_setting(&mut self, key: String, on: bool, reply: Reply<()>) {
+        let Some(label) = setting_label(&key) else {
+            let _ = reply.send(Err(format!(
+                "{} is not a setting.",
+                marshal_view::plain(&key)
+            )));
+            return;
+        };
+        if self.settings.writing.is_some() {
+            let _ = reply.send(Err("Another setting is being saved.".to_string()));
+            return;
+        }
+        let Some(link) = self.link() else {
+            self.record_setting(&key, label, SettingResult::LostContact);
+            self.refresh();
+            let _ = reply.send(Ok(()));
+            return;
+        };
+        self.settings.writing = Some((key.clone(), on));
+        self.refresh();
+        let report = self.report.clone();
+        tokio::spawn(async move {
+            let outcome = within(
+                SETTING_WITHIN,
+                link.call(Method::LifecycleSet {
+                    key: key.clone(),
+                    on,
+                }),
+            )
+            .await;
+            let _ = report.send(Internal::Setting {
+                key,
+                on,
+                outcome,
+                reply,
+            });
+        });
+    }
+
+    fn record_setting(&mut self, key: &str, label: &str, result: SettingResult) {
+        self.announce.push(result.announcement(label));
+        self.settings.results.insert(key.to_string(), result);
+    }
+
+    fn setting_answered(&mut self, key: &str, on: bool, outcome: Result<(), Failure>) {
+        self.settings.writing = None;
+        let result = match outcome {
+            Ok(()) => SettingResult::Saved { on },
+            Err(Failure::Lost) => SettingResult::LostContact,
+            Err(Failure::TimedOut) => SettingResult::NotAnswered,
+            Err(Failure::Busy(words)) => SettingResult::Refused {
+                code: "busy".to_string(),
+                words,
+            },
+            Err(Failure::Config {
+                code,
+                message,
+                problems,
+            }) => SettingResult::Refused {
+                code,
+                words: with_problems(&message, &problems),
+            },
+            Err(other) => SettingResult::Refused {
+                code: String::new(),
+                words: other.words(),
+            },
+        };
+        let label = setting_label(key).unwrap_or(key).to_string();
+        if !matches!(result, SettingResult::Saved { .. }) {
+            self.log.warn(&format!(
+                "{key} was not set {}: {}",
+                if on { "on" } else { "off" },
+                result.announcement(&label)
+            ));
+        }
+        self.record_setting(key, &label, result);
+        self.refresh();
     }
 
     /// passes the editor's request to the agent; what an apply does shows in the
@@ -1460,6 +1578,15 @@ impl<D: Dial> Session<D> {
                 self.token_answered(&key, removal, started, outcome);
                 let _ = reply.send(Ok(()));
             }
+            Internal::Setting {
+                key,
+                on,
+                outcome,
+                reply,
+            } => {
+                self.setting_answered(&key, on, outcome);
+                let _ = reply.send(Ok(()));
+            }
             Internal::QuitAnswered(outcome) => self.quit_answered(outcome),
             Internal::Checked(outcome) => self.checked(outcome),
             Internal::DrainAnswered(outcome) => self.drain_answered(outcome),
@@ -1637,4 +1764,22 @@ fn not_saved(failure: Failure) -> NotSaved {
         Failure::Lost => NotSaved::LostContact,
         other => NotSaved::Refused(other.words()),
     }
+}
+
+/// a refused setting's words with its problems after them, worded as the snapshot
+/// words them (line N: path: message) and joined as the footer joins them.
+fn with_problems(message: &str, problems: &[Problem]) -> String {
+    if problems.is_empty() {
+        return message.to_string();
+    }
+    let listed: Vec<String> = problems
+        .iter()
+        .map(|problem| match (problem.line, &problem.path) {
+            (Some(line), Some(path)) => format!("line {line}: {path}: {}", problem.message),
+            (Some(line), None) => format!("line {line}: {}", problem.message),
+            (None, Some(path)) => format!("{path}: {}", problem.message),
+            (None, None) => problem.message.clone(),
+        })
+        .collect();
+    format!("{} ({})", message.trim_end_matches('.'), listed.join("; "))
 }

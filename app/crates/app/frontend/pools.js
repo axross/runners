@@ -90,7 +90,7 @@ function bannerBody(banner, ctx) {
   );
 }
 
-/** the banners that lead the scrolling list, over both tabs. */
+/** the banners that lead the scrolling list, over every tab. */
 export function banners(list, ctx) {
   return list.map((banner) =>
     h(
