@@ -10,8 +10,63 @@ including the Claude Code review subagent, how a session's usage is
 tagged, and the environment variables recommended for cutting a Claude Code
 session's cost. Claude Code and Amp are the hosts this repository configures;
 they share the pinned toolchain in [`mise.toml`](../../mise.toml) and nothing
-else. Codex reads [`AGENTS.md`](../../AGENTS.md) and has no configuration here
-beyond the delivery-authorization guidance below.
+else. Codex uses the project entry in the intended checkout.
+
+## Starting Codex in the intended checkout
+
+From the runners checkout root, pass the task to Codex.
+
+```sh
+codex 'Use Technical Document Authoring to update the contributor launch guide.'
+```
+
+Codex starts in the directory containing [`AGENTS.md`](../../AGENTS.md).
+Its Response Approach routes the change through Professional Behavior, Software
+Development and Loop Engineering before planning, delegation or edits. A named
+skill also applies to its subject.
+
+From the parent directory, put the checkout and the route in the **initial
+task**. Replace `./runners checkout` with the intended checkout's path and the
+last sentence with the task. A launcher that already starts Codex above the
+checkout can pass the same text.
+
+```sh
+codex 'Enter the runners checkout at "./runners checkout".
+Read its scoped AGENTS.md and follow its Response Approach, including the
+prerequisites and Loop Engineering, before planning, assigning work or editing.
+Use Technical Document Authoring to update the contributor launch guide.'
+```
+
+### Launch walkthrough
+
+Tracing the two examples reaches the same Response Approach. From the root the
+entry is in the launch directory. From the parent the initial task identifies
+the child even if a sibling also contains an AGENTS.md. In either case the
+first update can give the phase as intake and the tracking issue or approval
+as unknown while the actor checks them.
+
+- **Continue an issue with new scope.** Follow
+  [Retrieve state on resume](./development-workflow.md#retrieve-state-on-resume)
+  from the named issue. Compare its canonical revision, recorded human approval
+  and pending phase with the current checkout and existing edits. Preserve
+  those edits, revise the plan for the expansion and obtain the maintainer's
+  approval before implementing or delegating the new work.
+- **Continue unchanged approved scope.** Resume at the recorded pending phase.
+  For example, when verification and pre-flight allow a push, an append-only
+  push to the run's working branch matches the adopted grant. Hold a request
+  to assign an additional person to the pull request until separately
+  authorized. Check the actual host and tool conditions for each effect.
+  [Codex delivery authorization](#codex-delivery-authorization) routes through
+  [Amp delivery authorization](#amp-delivery-authorization) to the
+  [adopted grant](./development-workflow.md#authorizing-delivery-operations).
+- **Ask a standalone read-only question.** For “Where is Amp provisioned?” the
+  project entry points directly to [Amp Environment Provisioning](#amp-environment-provisioning)
+  and [`.agents/setup`](../../.agents/setup). After loading the applicable
+  prerequisites, answer the question directly.
+
+The shell walkthrough captured the working directory and initial task passed to
+a stand-in for Codex, then traced the project links. Startup by a live host and
+an actor receiving and following the guidance were unobserved.
 
 ## Amp Quality Hooks
 
@@ -118,17 +173,22 @@ This section covers delivery only, not Codex provisioning or startup.
 
 ## The Session-Start Hook
 
-In a cloud session, [`.claude/hooks/session-start.sh`](../../.claude/hooks/session-start.sh)
-activates mise, runs `mise trust` and `mise install` to provision the pinned
-toolchain, runs [`.agents/install-rust`](../../.agents/install-rust) to provision
-the pinned Rust toolchain, copies the opt-in quality hooks into place, and echoes a pointer to
-[`AGENTS.md`](../../AGENTS.md) so every session carries the working agreement
-into its context. It installs no JavaScript dependencies, because this
-repository has no `package.json`; Prettier and markdownlint come from mise.
+[`.claude/settings.json`](../../.claude/settings.json) registers two
+independent SessionStart commands. [The reminder](../../.claude/hooks/session-guidance.sh)
+directs the actor to the checkout's AGENTS.md, its prerequisites and Loop
+Engineering before planning, delegating or editing a change. The reminder
+names [`AGENTS.md`](../../AGENTS.md) directly so the actor can read the working
+agreement even on a host that treats the `@AGENTS.md` import in
+[`CLAUDE.md`](../../CLAUDE.md) as literal text.
 
-It exits immediately unless `CLAUDE_CODE_REMOTE=true`, because a local session
-manages its own toolchain and should not have one installed under it. Set that
-variable by hand to exercise the hook locally.
+[The bootstrap](../../.claude/hooks/session-start.sh) activates mise, runs
+`mise trust` and `mise install`, calls [`.agents/install-rust`](../../.agents/install-rust)
+and copies the opt-in quality hooks. A bootstrap failure leaves the reminder
+independently runnable. Prettier and markdownlint come from mise.
+
+Both commands exit silently unless `CLAUDE_CODE_REMOTE=true`. A local session
+manages its own toolchain. Set that variable by hand to opt into the remote
+behavior locally.
 
 The toolchain block activates mise only when it is **already** present. It MUST
 NOT be changed to install mise unconditionally: a hard `curl | sh` turns a
@@ -144,15 +204,31 @@ with a line naming the script. The hook puts `~/.cargo/bin` on its own `PATH` an
 appends that line to the session environment file once, so a later run of the hook
 in the same session does not repeat it.
 
-The hook is wired in [`.claude/settings.json`](../../.claude/settings.json),
-which also sets the session's default reasoning effort, `effortLevel`, shipped as
-`xhigh`. Both are read at session start, so a change to either reaches only the
-next session.
+The registration also sets the session's default reasoning effort,
+`effortLevel`, to `xhigh`. Claude Code reads those settings at session start.
 
-The reminder it echoes names `AGENTS.md` rather than `CLAUDE.md` on purpose.
-`CLAUDE.md` is an `@AGENTS.md` import, which is a Claude Code mechanism; a host
-that does not resolve imports would read the literal import line instead of the
-working agreement.
+### SessionStart fixture results
+
+At the baseline for [issue #166](https://github.com/axross/runners/issues/166),
+invoking the registered command in a checkout path containing spaces exited
+127 with zero reminders. In a plain path, forcing the settings copy to exit 42
+produced status 42 and zero reminders.
+
+The [regression fixture](../../.claude/tests/session-start.test.mjs) behind
+`mise run check:claude` invoked the commands from the checked-in registration
+in disposable checkout directories with an isolated home, mise and Rust
+stand-ins, and a failing copy stand-in for the fatal case.
+
+| Case                                                          | Reminder on stdout                 | Bootstrap result                                                       |
+| ------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------- |
+| Remote, checkout path with spaces                             | One before provisioning            | Exit 0, environment written and settings copied                        |
+| Remote, Rust installer failed                                 | One before provisioning            | Warning on stderr, exit 0, environment written and settings copied     |
+| Remote, settings copy failed, plain path and path with spaces | One when invoked after the failure | Copy error on stderr, exit 42, environment written and settings absent |
+| Local, remote flag unset                                      | Zero                               | Exit 0, silent, no provisioning or settings writes                     |
+
+The fixture exercised command execution. Actual host dispatch, delivery to an
+actor and the actor's compliance were unobserved. Live actor trials and changes
+to shared Cloud configuration require separate authorization.
 
 ## The Claude Code Quality Hooks
 

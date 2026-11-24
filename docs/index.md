@@ -53,8 +53,9 @@ names every other document the change corrects.
   the change loop, tracking-issue completion, the delivery grant, branch naming,
   bumping the runner, cutting a release and renewing its signing certificates,
   and the independent review route.
-- [operations/agent-sessions.md](./operations/agent-sessions.md) - how Claude
-  Code and Amp sessions start, their hooks, Amp's and Codex's delivery
+- [operations/agent-sessions.md](./operations/agent-sessions.md) - how to launch Codex in the
+  intended checkout, how Claude Code and Amp sessions start, their hooks,
+  Amp's and Codex's delivery
   authorization, asking the maintainer (launched sessions and subagents
   included), the plan-gate delivery confirmation, Amp's plan-gate archive
   confirmation for review child threads, the write-fidelity rules and read-back

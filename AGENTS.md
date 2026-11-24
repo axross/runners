@@ -28,12 +28,26 @@ the maintainer, `@axross`.
 
 ## Response Approach
 
+For a code or documentation change, enter the intended runners checkout and read
+its scoped AGENTS.md. Follow the prerequisites and Loop Engineering route below
+before planning, delegating, or editing, including when the request names a
+skill or asks to continue an issue. For launch examples, see
+[Agent Sessions](./docs/operations/agent-sessions.md#starting-codex-in-the-intended-checkout).
+
 For each requested runners change, the first progress update MUST precede the
 first implementation edit and report:
 
 - The current phase
 - The tracking issue or its absence
 - The plan-approval state
+
+Report tracking or approval as unknown while checking it. For a named issue,
+follow [Retrieve state on resume](./docs/operations/development-workflow.md#retrieve-state-on-resume)
+to recover the canonical plan revision, human approval, pending phase, and
+existing work. If the request expands scope, preserve existing edits and obtain
+approval for the revised plan before implementing or delegating the expansion.
+For unchanged approved scope, resume at the pending phase, check the grant and
+host conditions for each effect, and hold an uncovered effect.
 
 The existing Development Workflow remains the owner of the gates.
 
