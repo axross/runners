@@ -82,7 +82,7 @@ toml_parser = { version = "1.1.5", default-features = false, features = ["std"] 
 # router's hardware address.
 [target.'cfg(windows)'.dependencies]
 interprocess = { version = "2.4.7", default-features = false, features = ["tokio"] }
-netdev = { version = "0.47.0", default-features = false, features = ["gateway"] }
+netdev = { version = "0.48.0", default-features = false, features = ["gateway"] }
 windows-native-keyring-store = { version = "1.1.0", default-features = false }
 winsafe = { version = "0.0.29", default-features = false, features = ["advapi"] }
 win32job = { version = "2.0.3", default-features = false }
