@@ -38,5 +38,3 @@ fi
 if [ -f .claude/settings.local-example.json ]; then
   cp -f .claude/settings.local-example.json .claude/settings.local.json
 fi
-
-echo "REMINDER: read AGENTS.md and follow its Response Approach for every task."
