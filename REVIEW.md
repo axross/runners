@@ -442,7 +442,8 @@ Apply the lens for each kind of file in the diff.
 [Code Review's review scoping](./.claude/skills/code-review/SKILL.md#review-scoping)
 owns boundary checks; its
 [Boundary Claims](./.claude/skills/code-review/references/scoping.md#boundary-claims)
-section states how to check the owners and neighbors a change names. For
+section states how to check the owners a change names and the neighbors whose
+scope overlaps it. For
 installed-skill changes, follow
 [Agent Skills](./docs/agent-work/skill-installation.md); installed directories are
 generated and must match their selected lockfile inventory.
