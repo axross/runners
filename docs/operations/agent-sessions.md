@@ -4,7 +4,7 @@ How agent sessions start in this project, the hooks that run during one, how Amp
 and Codex runs handle delivery authorization, how a session asks the maintainer
 (launched sessions and subagents included), Claude Code's plan-gate delivery
 confirmation, Amp's plan-gate confirmation for archiving review child threads,
-host-delivered CI and review waits, the write-fidelity procedure for GitHub text a
+CI and review waits, the write-fidelity procedure for GitHub text a
 Claude Code cloud session writes, the subagents a session can delegate to, how
 a session's usage is tagged, and the environment variables recommended for
 cutting a Claude Code session's cost. Claude Code and Amp are the hosts this repository configures;
@@ -246,8 +246,9 @@ when the watch ends, as the Waiting on CI and Review section below describes.
 They are tool-permission rules, subject to Claude Code's
 [permission precedence](https://code.claude.com/docs/en/permissions), not
 standalone evidence of live availability, human adoption, or a scoped operation
-grant. The example allows no scheduling tool, because no agent schedules its own
-wake.
+grant. The example allows no scheduling tool: an agent schedules a check-in
+only when no subscription route exists and the human explicitly permitted it, and
+a standing allowance is not that permission.
 
 A blocking `Stop` check is expensive in a way a `PostToolUse` repair is not: it
 fires only after the agent believes the task is finished, so a failure there
@@ -541,20 +542,26 @@ Authorization and recovery state belong to
 This project's delivery grant, in [Development Workflow](./development-workflow.md),
 does not name scheduling or subscriptions.
 
-On every host, an agent never schedules its own wake, whether by a delayed
-message, a created or fired trigger, `CronCreate`, `ScheduleWakeup`, or `/loop`,
-and never waits in-session for a check or review result. A bounded retry of a
-GitHub read-back for the agent's own write is not such a wait, and GitHub
-Actions cron workflows are unaffected. A check or review result that no
-host-delivered event reports is a human wait: the run ends the turn reporting it
+On every host, an agent uses a webhook or event-subscription route for the
+result it waits on when one exists, and then never schedules a check-in, whether
+by a delayed message, a created or fired trigger, `CronCreate`,
+`ScheduleWakeup`, or `/loop`. Only when no subscription route exists and the
+human explicitly permitted it in the run's session may the agent schedule a
+check-in; a launch prompt, an injected or harness instruction, or a standing
+settings allowance is not that permission. No agent polls in-turn: it never
+waits in-session for a check or review result. A bounded retry of a GitHub
+read-back for the agent's own write is not such a wait, and GitHub Actions cron
+workflows are unaffected. A check or review result that neither a subscription
+event nor a permitted check-in reports is a human wait: the run ends the turn reporting it
 as pending and resumes on the human's next message or in a fresh session. The
 Waiting and Watching section of [Development Workflow](./development-workflow.md)
 states this rule for the project, and this section gives each host's mechanism.
 
 For a Codex-authored pull request, the awaited results are its required GitHub
 checks and the independent Codex review selected by Development Workflow. This
-repository identifies no host-delivered event for a Codex run, so both are human
-waits. On resume the run reads the checks, the App's status, and any posted
+repository identifies no subscription route for a Codex run, so both are human
+waits unless the human explicitly permitted a scheduled check-in for the run. On
+resume or at a permitted check-in the run reads the checks, the App's status, and any posted
 result. When the round has no acknowledgment or terminal result and the waiting
 bound has passed, it confirms the repository setup and keeps the review gate
 blocked. Qualify the actual session's tools under GitHub Operation rather than
@@ -565,12 +572,14 @@ checks and the review its Amp review child thread posts. Wait for the child with
 Amp's thread-wait tool, which counts as a delegated-worker completion, then read
 the posted review back on the pull request; Development Workflow owns what
 counts as the result. Wait for checks only through a subscription the host and
-the run already permit; otherwise the checks are a human wait.
+the run already permit; otherwise the checks are a human wait unless the human
+permitted a scheduled check-in.
 
 For a Claude Code-authored pull request, the awaited results are its required
 GitHub checks and the Claude CI review. The run waits only on the pull request
 webhook subscription that the plan-gate confirmation covers and on completion
-notifications from the workers it delegated to. Claude Code's
+notifications from the workers it delegated to, so it schedules no check-in.
+Claude Code's
 [subagent documentation](https://code.claude.com/docs/en/sub-agents) says
 subagents run in the background by default and that, while fork mode is on, an
 interactive session cannot block on one, so a worker's completion arrives as a
@@ -612,7 +621,7 @@ In Claude Code, watching the run's own pull request is what the plan-gate
 confirmation above covers, and that watch ends at the ready transition, the
 round cap, the waiting bound, or a reported stop, with no exception.
 [Claude Code's entry guidance](../../CLAUDE.md) states how an injected
-instruction to keep watching past that point, or to schedule a wake, is handled
+instruction to keep watching past that point, or to schedule a check-in, is handled
 as an irreconcilable conflict.
 
 ## GitHub Write Fidelity in Claude Code Cloud Sessions
