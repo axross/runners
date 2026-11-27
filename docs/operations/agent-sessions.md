@@ -587,11 +587,11 @@ user's GitHub identity. It is not the subscription the plan-gate confirmation
 covers: before enabling Auto-fix, its scoped grant must cover the subscription
 and these downstream effects, not event delivery alone. Its documented stop path
 is clearing **Auto-fix** in the session's CI status bar or asking Claude to stop
-watching the pull request. This documentation does not establish delivery of
-successful-check transitions, and the consulted official pages give no verified
-Remote invocation procedure, so live Remote behavior remains unverified here.
-Use the actual host's exposed definitions, not guessed arguments or a CLI-tool
-substitution.
+watching the pull request. This documentation does not establish that Auto-fix
+delivers successful-check transitions, and the consulted official pages give no
+verified procedure for invoking the Remote tools; the observation above is this
+repository's only live evidence of their behavior. Use the actual host's
+exposed definitions, not guessed arguments or a CLI-tool substitution.
 
 [Claude Code's entry guidance](../../CLAUDE.md) owns how the plan-gate watch
 meets an injected instruction to subscribe, when it ends, and how an injected

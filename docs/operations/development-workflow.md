@@ -151,9 +151,9 @@ host delivers as an event, or until a permitted check-in, within
   when the session offers none may the human permit a scheduled check-in.
 - **Codex** has no subscription route that this repository identifies, so its
   check results and its Codex review result are human waits unless the human
-  explicitly permitted a scheduled check-in for the run. On resume or at a
-  permitted check-in the run reads the checks, the App's status, and any posted
-  result; when the round has no acknowledgment or terminal result and the
+  explicitly permitted a scheduled check-in in the run's session. On resume or
+  at a permitted check-in the run reads the checks, the App's status, and any
+  posted result; when the round has no acknowledgment or terminal result and the
   waiting bound has passed, it confirms the repository setup and keeps the
   review gate blocked.
 
