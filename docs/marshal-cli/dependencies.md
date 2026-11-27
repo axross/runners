@@ -138,4 +138,4 @@ the licence.
 `windows-implement`, and `windows-interface` run at build time, with
 `synstructure` as the helper of the `yoke` and `zerofrom` derives. A new
 procedural-macro crate needs the maintainer's review; see
-[Security](../security/index.md).
+[the dependency pinning convention](../security/dependency-pins.md#pinning-convention).

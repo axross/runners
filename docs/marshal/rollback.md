@@ -28,9 +28,7 @@ one code object. The name `marshal-app.exe` never collides with a leftover
 
 ## Rolling Back
 
-Before uninstalling Marshal, select the target release and verify that it supports
-this host's profile and configuration. If no compatible target is verified, keep
-the installed app. For an app target, follow [Updating, Repairing, Uninstalling and Rolling Back](../marshal-cli/install-on-windows.md#updating-repairing-uninstalling-and-rolling-back).
+Complete [step 1 of the Windows host rollback procedure](../runner-hosts/windows-recovery.md#rolling-back) before uninstalling Marshal. Keep the installed app if you cannot verify a compatible target. If the target might handle retained diagnostic containers differently, recover them with the installed version before continuing. For an app target, follow [Updating, Repairing, Uninstalling and Rolling Back](../marshal-cli/install-on-windows.md#updating-repairing-uninstalling-and-rolling-back).
 
 Before the first app release, the previous release is the last command-line
 release. For a recovery CLI target, open

@@ -15,7 +15,7 @@ The web view calls the Rust side through sixteen commands, declared in
 its capability grants it, and two capabilities, each limited to one window, grant
 nothing else. On macOS two more, each limited to one window, grant only dragging a
 window by its top band, and for the main window zooming it, which
-[Security](../security/index.md) lists:
+[the app security policy](../security/app-trust.md#the-app-surface) lists:
 
 | Command                                                                                  | Called by               | Does                                                                                                                                      |
 | ---------------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |

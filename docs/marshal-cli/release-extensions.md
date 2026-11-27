@@ -260,7 +260,7 @@ archive commands, and its `darwin-aarch64` feed entry follows W4's contract.
 
 An extension MUST add its jobs or steps to `check-release-shape.mjs` and its
 mutation tests in the same pull request, under REVIEW.md's release lens and the
-maintainer's review. [Security](../security/index.md) owns the active release
+maintainer's review. [CLI recovery release authority](../security/release-authority.md#temporary-cli-recovery) owns the active release
 boundary, including the permitted signing Environment. The check guards against
 mistakes, not a hostile pull request that edits the check itself. It does not see
 a write to `SHA256SUMS` in either build's `assemble` job other than by a

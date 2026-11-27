@@ -13,7 +13,7 @@ that session calls its own assessment. The Codex route also runs under a
 separate reviewer identity, and so does the explicitly selected Claude CI
 alternative, except when a run posts its request through the Claude GitHub App,
 whose `claude[bot]` identity the reviewer shares (see
-[Security](../security/index.md)). The Amp and Claude Code routes do not:
+[the review identity policy](../security/workflow-permissions.md#the-review-gate-admits-one-bot-identity-by-login-not-association)). The Amp and Claude Code routes do not:
 their reviewer, an Amp review child thread or a Claude Code review subagent,
 may post under the same GitHub operator account and runs on
 the same infrastructure as its author. The maintainer accepts context

@@ -167,7 +167,7 @@ script, so the `rustup-init` version and hash live in the script alone. Refresh
 them together, with the hash computed from the real download and checked against
 the `.sha256` file Rust publishes beside it; Dependabot does not cover them. The
 Rust toolchain itself is the recorded exception to the checksum rule in
-[Security](../security/index.md).
+[the dependency pinning convention](../security/dependency-pins.md#pinning-convention).
 
 A Rust task run without the toolchain fails at once with one line that names this
 script, never with a long tool error and never by skipping, so a session cannot

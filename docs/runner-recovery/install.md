@@ -26,7 +26,7 @@ needs `gh` 2.102 or later, signed in (`gh auth status`). Without the check, you 
 a file that nothing has checked, and the file runs before anything else can catch a
 replaced one: an MSI runs as you, and a pkg runs as root once you enter the
 administrator password.
-[Security](../security/index.md)
+[The CLI recovery release policy](../security/release-authority.md#temporary-cli-recovery)
 records that risk.
 
 Before copying a check block, replace its `version` placeholder with the actual

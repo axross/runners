@@ -150,7 +150,7 @@ view or screen-reader behaviour.
 `mise run test:app-render` renders the bundled page in the pinned Chromium on
 Linux x64. [Development Setup](../operations/development-setup.md#rendering-gate) says how to
 prepare it, [Testing](../conventions/testing.md) where it runs, and
-[Security](../security/index.md) how its controller and browser are
+[the dependency pinning convention](../security/dependency-pins.md#pinning-convention) how its controller and browser are
 pinned. It drives `playwright-core`'s browser API, not the Playwright test runner
 or Puppeteer, and writes its screenshots and measurements under
 `app/target/render/output/`.

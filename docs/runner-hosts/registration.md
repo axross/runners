@@ -56,10 +56,8 @@ describe those controls.
 Enter each token in Marshal's window: **Open Marshal**, the **Tokens** tab, then
 **Set Token** on the repository's row, paste the token and **Save**. Marshal keeps it
 in the Windows Credential Manager, one entry per repository, and never shows it
-again; the pools of that repository share it. The token rules are in
-The Agent Keeps Tokens in the Operating System's Store
-and Per-Repository Isolation on a Runner Host sections of
-[Security](../security/index.md).
+again; the pools of that repository share it. See how [the agent stores and reads tokens](../security/local-agent.md#the-agent-keeps-tokens-in-the-operating-systems-store)
+and [which repository pools may share them](../security/pool-isolation.md#per-repository-isolation-on-a-runner-host).
 
 The agent reads the token from the store at every registration, so a rotated token
 applies to the next job in every slot with no restart. Rotate a token with

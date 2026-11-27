@@ -92,7 +92,7 @@ label and have the same `os`, and accepts them when `os` differs. In a TOML file
 also rejects an organisation pool and another pool of the same organisation, or of
 one of its repositories, under the same condition; [the TOML schema](./toml-configuration.md#schema-version-1) states that rule. On axpc every entry is Linux, so the existing rule and message
 stand for JSON.
-[Security](../security/index.md) owns the rule, including what a consumer
+[Per-repository isolation](../security/pool-isolation.md#per-repository-isolation-on-a-runner-host) owns the rule, including what a consumer
 names in `runs-on` and the cross-host case that `validate` cannot see.
 
 ### The Checkout Rule

@@ -200,7 +200,7 @@ In PowerShell 5.1 or 7:
   entry and the HKCU Run value `Marshal`. It keeps the configuration, the stored
   tokens, any old token files, the logs and the web view's data folder, and the
   command line's files when its MSI is installed too.
-- **Roll back.** First verify a [compatible target for the host and its configuration](../marshal/rollback.md#rolling-back). If that check fails, keep the installed app. For a verified target, uninstall and follow steps 1 to 5 to install the older version. The MSI
+- **Roll back.** Complete [step 1 of the Windows host rollback procedure](../runner-hosts/windows-recovery.md#rolling-back). Keep the installed app if no compatible target is verified. Recover retained diagnostics with the installed release first if the target might handle them differently. For an older app release, uninstall and follow steps 1 to 5 to install that version. The MSI
   refuses a lower version while a newer one is installed, with the message "A newer
   version of Marshal is already installed.", and the installed version stays, so
   uninstall first.
