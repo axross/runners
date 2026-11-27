@@ -148,8 +148,7 @@ Smart App Control On, could be blocked.
 
 CI builds the image and runs a smoke test on it for every
 pull request, on linux/amd64 and on linux/arm64, and runs the CLI's tests on GitHub-hosted Linux, Windows, and macOS
-runners; [CLI](../marshal-cli/index.md) says what each covers. The CLI's tests check the
-configuration rules against the fixtures in
+runners. The [runtime test coverage](../marshal-cli/pool-runtime.md#what-the-tests-cover) identifies the checks for the backend and slot lifecycle. The [configuration tests](../marshal-cli/configuration-fixtures.md#fixtures-and-tests) apply the validation rules to the fixtures in
 [`tests/host-configuration/`](../../tests/host-configuration). The checks that
 used Docker Desktop, `icacls`, and a released `marshal` on a real machine were
 described from the CLI's specification and the tools' documentation, and most were

@@ -29,7 +29,7 @@ From the notification-area icon's menu:
 | **Build image**       | Builds the runner image while the runners are stopped; see [Building the Runner Image](./windows-image.md#building-the-runner-image) |
 | **Quit Marshal**      | Stops every runner as Stop all runners does, cancelling a build first, then ends the agent and the app                               |
 
-[App](../marshal/index.md) says what each item and the window do, and when an item is greyed.
+See the [window and notification-area presentation](../marshal/window.md#the-windows-page) and the [commands and events](../marshal/webview-commands.md#commands-and-events) that connect operator actions to the agent.
 The agent's states, waits and reasons are in [Agent State](../marshal-cli/resident-agent.md#agent-state).
 
 Stop the host with **Stop all runners**, or with **Quit Marshal**. A stop gives the

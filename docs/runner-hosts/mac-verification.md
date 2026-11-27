@@ -85,7 +85,7 @@ boot of 28 to 32 s; and a rebuild within the 100 GB reserve.
   reasons, a resume that records the network afresh, no VM cloned without a default
   route, and the keep-awake hold's state.
 
-[CLI](../marshal-cli/index.md) says what each test file covers.
+The [runtime test coverage](../marshal-cli/pool-runtime.md#what-the-tests-cover) identifies the suites that exercise the Tart backend and the VM shim.
 
 **What no run has confirmed.** Each of these rests on a source or on the output
 of an Apple tool as the source prints it, and not on a run:
