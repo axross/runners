@@ -1066,8 +1066,8 @@ when delegation is unavailable or disallowed, and mandatory verification and
 post-push review remain unchanged. Deleting a file never lets the loop skip the
 post-push review gate. Without the implementer, the loop delegates to a
 generic agent or runs single-agent. Without the reviewer, the pre-push review
-stage is skipped rather than performed by the main actor, which is what keeps it from
-collapsing into self-review, as
+stage is skipped rather than performed by the main actor, which is what keeps it
+from collapsing into self-review, as
 [Record an unavailable role](#record-an-unavailable-role), below, states.
 Without the investigator, the main actor reads the payload itself.
 

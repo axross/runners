@@ -7,13 +7,14 @@ Every skill under `.claude/skills/` is **installed**, not written here. All of
 them come from the shared [axross/skills](https://github.com/axross/skills)
 library and are copied in with the
 [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI.
-[`skills-lock.json`](../../skills-lock.json) records the installed set and each
-copy's content hash, and no revision: this project pins none, a refresh takes
-the latest upstream, except that the [register](#the-register) holds
-`living-project-documentation` at its installed copy until #176, and nothing
-updates skills automatically. This project owns no skill of its own; its
-conventions and operating procedures are the documents under
-[`docs/`](../index.md). Two costs come with that choice. Refreshing needs
+[`skills-lock.json`](../../skills-lock.json) records the installed set, each
+copy's content hash, and, for the entries the current CLI wrote, the upstream
+commit the copy came from; the `living-project-documentation` entry has none.
+This project pins no revision, a refresh takes the latest upstream, except that
+the [register](#the-register) holds `living-project-documentation` at its
+installed copy until #176, and nothing updates skills automatically. This
+project owns no skill of its own; its conventions and operating procedures are
+the documents under [`docs/`](../index.md). Two costs come with that choice. Refreshing needs
 Node and network access, because `npx skills` fetches from the library over the
 network; the installed skills themselves are plain Markdown, so this cost falls
 on refreshing, not on every session. And the library is not this project's own:
@@ -41,8 +42,9 @@ changes.
 
 While the register holds a skill at its installed copy, a refresh MUST leave
 that skill out. The command above derives its list from every key of the
-lockfile, so it filters the held skill out, as the
-[hold entry](#deviation---living-project-documentation-is-held-at-its-installed-copy) shows.
+lockfile, so while the register holds a skill, a refresh runs the filtered form
+in the [hold entry](#deviation---living-project-documentation-is-held-at-its-installed-copy)
+instead, which leaves the held skill out.
 
 Adopting a new skill means naming it explicitly, and `--skill` takes exactly one
 skill per flag: repeat the flag (`--skill a --skill b`) rather than passing a
@@ -283,8 +285,8 @@ as it reads at `aa471aa`, collide with the hold. Its
 guideline asks for `--skill '*'` to refresh every managed skill after a broad
 change, and its
 [Installed-Copy Drift Check](../../.claude/skills/agent-skill-management/SKILL.md#installed-copy-drift-check)
-guideline reads exit 1 as a forgotten reinstall or a hand-edited copy. Two
-statements of this project collide with it too: this document's statements that
+guideline reads exit 1 as a forgotten reinstall or a hand-edited copy. Three
+statements of this project collide with the hold too: this document's statements that
 a refresh takes the latest upstream and that every skill named in
 `skills-lock.json` reports `OK`, and the sentence in the Skill maintenance
 section of [AGENTS.md](../../AGENTS.md) that a refresh takes the latest upstream,

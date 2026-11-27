@@ -337,8 +337,10 @@ as written by an agent. `<!-- agent -->` is a retired marker, recognized in
 history and never written.
 
 **Installed Skill** - a directory under `.claude/skills/` copied from
-`axross/skills` and listed in `skills-lock.json`, which records the installed set
-and content hashes but no revision. A refresh takes the latest upstream, except
-for `living-project-documentation`, which the register holds at its installed
-copy until #176, and nothing updates skills automatically. It is generated and never edited by hand;
-see [operations/agent-skills.md](./operations/agent-skills.md).
+`axross/skills` and listed in `skills-lock.json`, which records the installed set,
+each copy's content hash, and, for entries the current CLI wrote, the upstream
+commit the copy came from; the `living-project-documentation` entry has none.
+This project pins no revision. A refresh takes the latest upstream, except for
+`living-project-documentation`, which the register holds at its installed copy
+until #176, and nothing updates skills automatically. It is generated and never
+edited by hand; see [operations/agent-skills.md](./operations/agent-skills.md).

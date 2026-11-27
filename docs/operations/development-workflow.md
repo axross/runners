@@ -446,9 +446,8 @@ An Amp review child thread can:
 An Amp review child thread's review supplies no GitHub approval and no APPROVE
 verdict; a shared operator account is not a distinct bot identity. The selected
 route supplies context-independent post-push review for this project's delivery
-gate. This
-grant covers neither unrelated threads or sessions nor reconfiguration to make
-an unavailable route work.
+gate. This grant covers neither unrelated threads or sessions nor
+reconfiguration to make an unavailable route work.
 
 These are the consequences the maintainer accepted in issuing the grant. They document
 that acceptance; an agent does not re-disclose them or ask about them before a
