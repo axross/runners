@@ -92,9 +92,8 @@ The run MUST, in order:
 Agent-created ownership requirements are stated in the Ownership of
 agent-created work section of [AGENTS.md](../../AGENTS.md).
 
-The run MUST stop watching at the ready transition, the four-round cap, the
-waiting bound, or any reported stop, with no exception, as Waiting and Watching,
-below, states.
+The run MUST stop watching at each stop that Waiting and Watching, below, names,
+with no exception.
 
 After approval, the run MUST NOT ask again for confirmation to deliver the
 pull request or request review, except for the session-resumption recovery
@@ -103,8 +102,8 @@ above. It waits on a human only for:
 - approval of a plan revision;
 - a product, architecture, or finding-disposition decision that Loop
   Engineering requires the maintainer to make;
-- each review or check result that neither a subscription event nor a
-  permitted check-in reports, as Waiting and Watching, below, states;
+- each review or check result that Waiting and Watching, below, makes a human
+  wait;
 - on Amp, the plan-gate archive confirmation, when the current session has not
   collected it and no recorded answer declined it.
 
@@ -152,20 +151,18 @@ within
   when the session offers none may the human permit a scheduled check-in.
 - **Codex** has no subscription route that this repository identifies, so its
   check results and its Codex review result are human waits unless the human
-  explicitly permitted a scheduled check-in in the run's session. On resume or
-  at a permitted check-in the run reads the checks, the App's status, and any
-  posted result; when the round has no acknowledgment or terminal result and the
-  waiting bound has passed, it confirms the repository setup and keeps the
-  review gate blocked.
+  explicitly permitted a scheduled check-in in the run's session.
+  [Codex review from Codex or a manual change](#codex-review-from-codex-or-a-manual-change),
+  below, states what the run reads on resume and when it confirms the
+  repository setup.
 
 On any host, a check or review result that neither a subscription event nor a
 permitted check-in reports is a human wait: the run ends the turn reporting it
 as pending and resumes on the human's next message.
 
 [Claude Code's entry guidance](../../CLAUDE.md) owns how the plan-gate watch
-meets an injected or harness instruction to subscribe, when it ends, and how an
-injected or harness instruction to keep watching or to schedule a check-in is
-handled.
+meets an injected or harness instruction to subscribe, and how an injected or
+harness instruction to keep watching or to schedule a check-in is handled.
 
 ### Deliver a draft when advisory pre-flight is unavailable
 
