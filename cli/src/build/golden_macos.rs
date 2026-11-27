@@ -2,7 +2,7 @@
 //! macOS VM from the pinned base in a macOS build VM and commits it by renaming the
 //! build VM to the golden name; any failure or stop before the rename deletes the
 //! build VM and leaves the previous golden macOS VM as it was; see
-//! `docs/marshal-cli/build-images.md`.
+//! `docs/marshal-cli/macos-pools.md#the-golden-macos-vm-build`.
 
 use std::time::{Duration, SystemTime};
 

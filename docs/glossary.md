@@ -71,7 +71,7 @@ explains how contributors choose new terms.
 
 **Job VM** — A per-job clone named `marshal-job-<pool>-<slot>-<time>`. A slot boots it to wait for work. It uses Softnet, has no shared folder, clipboard, audio, USB accessories or Rosetta and is deleted after its job. Linux and macOS pools select different golden VMs. [Per-job isolation](./security/vm-isolation.md).
 
-**Build VM** — The temporary `marshal-build-linux-<time>` or `marshal-build-macos-<time>` used to make a new golden VM. A completed build renames it to its golden name; failure or interruption removes the temporary VM and preserves the previous golden VM. [Building the golden VM](./runner-hosts/golden-build.md).
+**Build VM** — The temporary `marshal-build-linux-<time>` or `marshal-build-macos-<time>` used to make a new golden VM. The rename commits the new golden VM. After an interrupted build, cleanup can fall to the shim or the next build, and the outcome of an interrupted rename can be unknown. [Interrupted builds and cleanup](./marshal-cli/build-images.md#stop-and-failure).
 
 **macOS VM Limit** — The two concurrent macOS VMs allowed on a Mac by Apple’s licence. Marshal counts a macOS build VM in any state, including when it is stopped. Linux build VMs are excluded. A macOS slot checks the count before cloning and waits when both places are occupied. [Capacity and waiting](./marshal-cli/macos-pools.md#the-two-vm-count).
 

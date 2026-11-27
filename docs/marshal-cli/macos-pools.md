@@ -281,7 +281,7 @@ slots over a fake Tart.
 ### The Golden macOS VM Build
 
 `build --profile axmc` builds the Linux golden VM when a Linux pool is configured,
-as [Tart Backend](./tart-backend.md#tart-backend) describes, and then the golden macOS VM when a
+as [the Linux build specification](./build-images.md#the-golden-vm-build) describes, and then the golden macOS VM when a
 macOS pool is. Each golden VM is replaced only when its own build succeeds; a
 failure of either is reported with its message and makes `build` exit 1, and a
 golden VM that was built stays. `build::golden_macos` runs the macOS build:

@@ -89,13 +89,13 @@ console close can leave one too. The next `build` removes it.
 On axmc, exit 0 means the golden VM holds the new image. Exit 1 is a refused, failed or
 stopped build. It deletes its build VM and keeps the previous golden VM, with two
 exceptions: at the exit deadline the build VM is left to its shim or the next build, and
-when the commit is unknown the rename may have made a new golden VM. Stop and failure in
-[The Golden VM Build](#the-golden-vm-build) describes both.
+when the commit is unknown the rename may have made a new golden VM. See [Stop and failure](#stop-and-failure) for both cases.
 
 ### The Golden VM Build
 
-In the [foreground test helper](./entry-points.md#running-it), `build --profile axmc` makes the golden VM that every job VM is cloned from
-(`build::golden`). It takes the lock, validates, contains and opens the control channel
+In the [foreground test helper](./entry-points.md#running-it), `build --profile axmc` builds a golden Linux VM when the configuration includes a Linux pool. Linux job VMs clone that template. A macOS-only configuration goes straight to [the golden macOS VM build](./macos-pools.md#the-golden-macos-vm-build). With both kinds of pool, the Linux build runs first.
+
+The foreground process takes the lock, validates, contains and opens the control channel
 as above, and answers `status` and `stop` the same way, but it calls `tart`, not
 `docker`. A debug build runs the `tart` that `MARSHAL_TEST_TART` names, and a release
 build always runs `tart` from `PATH`, as the [Tart Backend](./tart-backend.md#tart-backend) does. It
@@ -173,7 +173,9 @@ restarted. The image build therefore runs `sudo -n docker`
 which would add a boot and a second wait for the agent. Job VMs, which boot from the
 golden VM, run `docker` as `admin` without `sudo`.
 
-**Stop and failure.** Any failure, and `stop`, SIGINT, SIGTERM and SIGHUP at any step
+#### Stop and failure
+
+Any failure, and `stop`, SIGINT, SIGTERM and SIGHUP at any step
 before the rename, drop the call in flight, which kills its `tart` client, and delete
 the build VM: a graceful stop and then a forced stop if that fails, then `tart delete`,
 within 15 s as one `teardown` budget (7.5 s, 3 s, 3 s and 1.5 s for a listing). The previous golden VM is not touched.
