@@ -10,17 +10,17 @@ library and are copied in with the
 [`skills-lock.json`](../../skills-lock.json) records the installed set, each
 copy's content hash, and, for the entries the current CLI wrote, the upstream
 commit the copy came from; the `living-project-documentation` entry has none.
-This project pins no revision, a refresh takes the latest upstream, except that
+This project pins no revision; a refresh takes the latest upstream, except that
 the [register](#the-register) holds `living-project-documentation` at its
 installed copy until #176, and nothing updates skills automatically. This
 project owns no skill of its own; its conventions and operating procedures are
-the documents under [`docs/`](../index.md). Two costs come with that choice. Refreshing needs
-Node and network access, because `npx skills` fetches from the library over the
-network; the installed skills themselves are plain Markdown, so this cost falls
-on refreshing, not on every session. And the library is not this project's own:
-a rule that turns out wrong, outdated, or silent on a case here cannot be fixed
-by editing the installed copy, because the next install discards the edit while
-it poses as a rule the library agrees with. See
+the documents under [`docs/`](../index.md). Two costs come with that choice.
+Refreshing needs Node and network access, because `npx skills` fetches from the
+library over the network; the installed skills themselves are plain Markdown, so
+this cost falls on refreshing, not on every session. And the library is not this
+project's own: a rule that turns out wrong, outdated, or silent on a case here
+cannot be fixed by editing the installed copy, because the next install discards
+the edit while it poses as a rule the library agrees with. See
 [Deviations and Gaps](#deviations-and-gaps) for how that is handled instead.
 
 The installed set is exactly the keys of `skills-lock.json`; that file, not this
@@ -286,11 +286,13 @@ guideline asks for `--skill '*'` to refresh every managed skill after a broad
 change, and its
 [Installed-Copy Drift Check](../../.claude/skills/agent-skill-management/SKILL.md#installed-copy-drift-check)
 guideline reads exit 1 as a forgotten reinstall or a hand-edited copy. Three
-statements of this project collide with the hold too: this document's statements that
-a refresh takes the latest upstream and that every skill named in
-`skills-lock.json` reports `OK`, and the sentence in the Skill maintenance
-section of [AGENTS.md](../../AGENTS.md) that a refresh takes the latest upstream,
-which the change that adds this entry leaves unchanged.
+statements of this project collide with the hold too. Two are this document's
+statements that a refresh takes the latest upstream and that every skill named
+in `skills-lock.json` reports `OK`, as it read before this entry; each now
+states the exception. The third is the sentence in the Skill maintenance section
+of [AGENTS.md](../../AGENTS.md) that a refresh takes the latest upstream, which
+the change that adds this entry leaves unchanged, so it still reads without the
+exception.
 
 The bounded counterexample is the refresh itself. Refreshing the skill to
 `aa471aa` makes `mise run check:docs` fail: the check runs every `check-*.mjs`
@@ -311,6 +313,7 @@ other skill named in `skills-lock.json`.
 
 This entry, and each amendment to it, is adopted the same way as the standing
 delivery grant: by the maintainer's merge of the pull request that carries it,
-with the plan approval on #180. Its scope is this skill only. Reassess it when #176
-lands. This exception changes no installed skill, host restriction, operation
-grant, or plan and review gate, and authorizes no upstream publication.
+with the plan approval on #180. Its scope is this skill only. Reassess it
+when #176 lands. This exception changes no installed skill, host restriction,
+operation grant, or plan and review gate, and authorizes no upstream
+publication.
