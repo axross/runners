@@ -2021,7 +2021,7 @@ log, not in a process listing.
 `claude-review.yaml`'s reviewer job gates on the comment's `author_association`,
 admitting only `OWNER`, `MEMBER`, and `COLLABORATOR`. The gate exists to keep an
 untrusted author from spending this repository's tokens or steering the
-reviewer. Every Claude Code pull request requests its independent review from
+reviewer. Every Claude Code pull request requests its post-push review from
 this job, so the exposure this section and the marketplace record above describe
 applies to each of them. A request posted through the installed Claude GitHub
 App carries the `claude[bot]` identity, whose association GitHub reports as

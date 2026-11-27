@@ -286,7 +286,7 @@ waits for work on an agent host rather than showing an interface.
 
 **Authoring Host** - the agent product a change is written with, Claude Code,
 Codex, or Amp, or "manual" when no agent is involved. It determines the
-independent-review provider and is recorded with that provider so a run can be
+post-push review provider and is recorded with that provider so a run can be
 resumed.
 
 **Standing Delivery Grant** - the maintainer's authorization, adopted in
@@ -302,12 +302,12 @@ Claude CI review request on it each round, and watching its activity. See
 [operations/agent-sessions.md](./operations/agent-sessions.md).
 
 **Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
-independent-review round; it posts its own review on the pull request and is
+post-push review round; it posts its own review on the pull request and is
 archived afterwards when the plan-gate archive confirmation allows it. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Claude CI Review** - the review a Claude Code run requests for each
-independent-review round with the Claude review trigger phrase in one top-level
+post-push review round with the Claude review trigger phrase in one top-level
 pull request comment. The `claude-review.yaml` workflow runs it on a GitHub-hosted
 runner and posts the result as `claude[bot]`. See
 [operations/development-workflow.md](./operations/development-workflow.md).
@@ -322,7 +322,7 @@ fresh session reads to resume the run. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Review Coverage Evidence** - the facts a run keeps separate when it assesses
-an independent review: which policy was available, what input the reviewer is
+a post-push review: which policy was available, what input the reviewer is
 known to have consumed, what it reported, and what it published. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 

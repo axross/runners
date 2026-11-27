@@ -57,7 +57,7 @@ After loading Professional Behavior, use
 project changes, including small code or document edits. Establish the current
 phase before planning or implementation. Standalone read-only work stays outside
 the change gates. This agreement is the maintainer's explicit request that every
-change run deliver through its required verification and the independent review
+change run deliver through its required verification and the post-push review
 selected by
 [Development Workflow](./docs/operations/development-workflow.md), then reach
 ready or a reported stop naming an unmet gate, without a further prompt.
@@ -112,16 +112,16 @@ capabilities by task instead of applying every change gate to read-only work:
   [Asking the Maintainer](./docs/operations/agent-sessions.md#asking-the-maintainer)
   when a session holds a maintainer decision, was launched by another session, or
   launches one.
-- MUST delegate investigation, implementation, and advisory pre-flight review
+- MUST delegate investigation, implementation, and pre-push review
   to the qualifying subagents configured in
   [Agent sessions](./docs/operations/agent-sessions.md#subagents) when the host
   permits them. This agreement is the standing request for those roles; record
   when no qualifying agent is available or the host refuses the spawn. On
-  Claude Code, a missing or refused `reviewer` leaves only the advisory
-  pre-flight unavailable, under the draft-delivery exception in
-  [Development Workflow](./docs/operations/development-workflow.md#deliver-a-draft-when-advisory-pre-flight-is-unavailable);
-  the independent review does not depend on it, and the `reviewer`'s advisory
-  pre-flight use never counts as that review.
+  Claude Code, a missing or refused `reviewer` leaves only the pre-push
+  review unavailable, under the draft-delivery exception in
+  [Development Workflow](./docs/operations/development-workflow.md#deliver-a-draft-when-pre-push-review-is-unavailable);
+  the post-push review does not depend on it, and the `reviewer`'s pre-push
+  review use never counts as that review.
 
 ## Host and delivery routing
 
@@ -147,7 +147,7 @@ Choose guidance from the actual session and changed surface:
 - **GitHub:** load
   [GitHub Operation](./.claude/skills/github-operation/SKILL.md) for reads and
   writes. [Development Workflow](./docs/operations/development-workflow.md)
-  owns this project's delivery path, branch policy, and independent-review
+  owns this project's delivery path, branch policy, and post-push-review
   route.
 - **Reviews:** load [Code Review](./.claude/skills/code-review/SKILL.md) for
   review methodology; the Code Review Rules section below routes the
@@ -183,7 +183,7 @@ governs where posted-report instructions differ. Consult
 invocation and completion evidence; routing alone does not establish provider
 consumption or review completion.
 
-For mandatory independent review after opening the draft pull request, use the
+For mandatory post-push review after opening the draft pull request, use the
 route selected for the authoring host:
 
 - **Claude Code:** the Claude CI review: post the Claude review trigger phrase
@@ -196,18 +196,18 @@ route selected for the authoring host:
 - **Codex, and changes made without an agent:** the Codex review.
 
 The Amp child thread MUST have a fresh non-author context, not a fork of the
-author's conversation or a resumed or reused thread, and carry no advisory
-pre-flight findings. The actor assigned an independent review reviews and posts
+author's conversation or a resumed or reused thread, and carry no pre-push
+findings. The actor assigned a post-push review reviews and posts
 its review itself and does not delegate; the subagent-delegation rule above does
-not apply to it. Advisory pre-flight remains a separate checkpoint and does not
-satisfy independent review, and neither do phase-deliverable reviewers or the
-author's own checks. The Independent Review lists every exclusion. Follow
-[The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
+not apply to it. Pre-push review remains a separate checkpoint and does not
+satisfy post-push review, and neither do plan reviewers or the
+author's own checks. The Post-Push Review lists every exclusion. Follow
+[The Post-Push Review](./docs/operations/development-workflow.md#the-post-push-review)
 for qualification, review rounds, publication verification, how a round's
 reviewer is ended or handed over, and the Claude CI review's request, result, and
 failure rules.
 Current host and tool restrictions still apply; an unavailable selected route
-leaves the independent-review gate unmet rather than authorizing a substitute.
+leaves the post-push-review gate unmet rather than authorizing a substitute.
 
 ## Skill maintenance
 

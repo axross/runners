@@ -175,7 +175,7 @@ instead:
   well-formedness (hadolint, shellcheck, PSScriptAnalyzer, actionlint);
 - [Security](../conventions/security.md), which states the supply-chain and
   runner trust-boundary rules;
-- the language lenses in [REVIEW.md](../../REVIEW.md), which the independent
+- the language lenses in [REVIEW.md](../../REVIEW.md), which the post-push
   reviewer applies;
 - `application-security` and `code-maintainability` for the generic rules they
   already state.

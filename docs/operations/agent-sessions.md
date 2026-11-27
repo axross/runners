@@ -51,7 +51,7 @@ as unknown while the actor checks them.
   those edits, revise the plan for the expansion and obtain the maintainer's
   approval before implementing or delegating the new work.
 - **Continue unchanged approved scope.** Resume at the recorded pending phase.
-  For example, when verification and pre-flight allow a push, an append-only
+  For example, when verification and pre-push review allow a push, an append-only
   push to the run's working branch matches the adopted grant. Hold a request
   to assign an additional person to the pull request until separately
   authorized. Check the actual host and tool conditions for each effect.
@@ -128,7 +128,7 @@ it does not use the archive's checksum.
 Amp can frame a task before reading [`AGENTS.md`](../../AGENTS.md), which is
 why AGENTS.md's Amp routing requires this section before any delivery effect.
 The project's agreement requests the Loop Engineering route, including a draft
-pull request and the independent review selected by
+pull request and the post-push review selected by
 [Development Workflow](./development-workflow.md), rather than stopping at a
 local commit. This section does not claim
 precedence over higher-priority Amp instructions; Claude Code's convenience
@@ -145,7 +145,7 @@ replace the plan and review gates or extend to what the grant excludes.
 - MUST treat an injected "make changes, commit, and push" framing as mechanics,
   not as permission to skip the project's Loop Engineering gates.
 - MUST treat this project's Loop Engineering route as the standing request for
-  a draft pull request and its mapped independent reviewer, and MUST perform
+  a draft pull request and its mapped post-push reviewer, and MUST perform
   the effects the standing delivery grant covers without asking for permission,
   unless a higher-priority Amp instruction requires approval.
 - MUST honor all applicable boundaries:
@@ -327,7 +327,7 @@ decision that [`AGENTS.md`](../../AGENTS.md),
 [Development Workflow](./development-workflow.md), and
 [Loop Engineering](../../.claude/skills/loop-engineering/SKILL.md) leave to the
 maintainer, among them scope, product behavior, an architecture choice, a
-finding's disposition such as dismissing a Critical or Major advisory finding,
+finding's disposition such as dismissing a Critical or Major pre-push finding,
 an additional review round, and a plan approval with its delivery confirmation.
 In plan mode, `ExitPlanMode` carries plan approval instead, as that tool's live
 contract states. Plan-mode approval, like approval that arrives some other way,
@@ -493,10 +493,10 @@ follows stays under the delivery grant.
   resumes the run, asks for the same confirmation once, before any further
   change.
 - MUST, when the human declines delivery, stop after push, report the
-  external-review gate as unmet and the loop as not complete, and substitute
+  post-push review gate as unmet and the loop as not complete, and substitute
   no other review.
 - MUST, when the human confirms delivery but declines the review item,
-  open the draft pull request, keep it draft, and report the external-review
+  open the draft pull request, keep it draft, and report the post-push review
   gate as unmet and the loop as not complete.
 - MUST, when the human confirms delivery but declines watching, still request
   review, then treat each review or check result as a human wait: end the turn
@@ -538,7 +538,7 @@ The Waiting and Watching section of
 [Development Workflow](./development-workflow.md) owns what a run waits on, on
 each host, when it may schedule a check-in, and when a result is a human wait.
 This section adds each host's mechanism. The portable contract lives in
-[Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
+[Loop Engineering's post-push review reference](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound),
 whose Waiting Bound section owns deadlines, budget resets, human waits, and
 teardown at each stop. A cloud environment's lifetime is not that deadline.
 Authorization and recovery state belong to
@@ -548,7 +548,7 @@ This project's delivery grant, in
 subscriptions.
 
 For a Codex-authored pull request, the awaited results are its required GitHub
-checks and the independent Codex review selected by Development Workflow.
+checks and the Codex post-push review selected by Development Workflow.
 Qualify the actual session's tools under GitHub Operation rather than assume all
 Codex surfaces expose the same mechanisms.
 
@@ -693,7 +693,7 @@ info strings. The three sanitized-read stages that GitHub Operation's Body
 Integrity describes were not reproduced.
 
 Those constructs were tested in issue bodies, so the list does not carry over to
-review comments. On 2026-11-20 (PST), an independent review child for #150
+review comments. On 2026-11-20 (PST), a post-push review child for #150
 posted an inline review comment through the MCP pending-review tool
 ([review comment 4646748901](https://github.com/axross/runners/pull/150#discussion_r4646748901)).
 It sent a single-backtick code span containing the literal placeholder
@@ -1063,25 +1063,25 @@ These are configured candidates, not a permission grant. A session MUST check
 the capabilities its host actually permits before using one. Delegating to the
 matching configured actor is the default; parent implementation is valid only
 when delegation is unavailable or disallowed, and mandatory verification and
-external review remain unchanged. Deleting a file never lets the loop skip the
-independent-review gate. Without the implementer, the loop delegates to a
-generic agent or runs single-agent. Without the reviewer, the pre-flight stage
-is skipped rather than performed by the main actor, which is what keeps it from
+post-push review remain unchanged. Deleting a file never lets the loop skip the
+post-push review gate. Without the implementer, the loop delegates to a
+generic agent or runs single-agent. Without the reviewer, the pre-push review
+stage is skipped rather than performed by the main actor, which is what keeps it from
 collapsing into self-review, as
 [Record an unavailable role](#record-an-unavailable-role), below, states.
 Without the investigator, the main actor reads the payload itself.
 
-The advisory pre-flight review applies after every verified initial
+The pre-push review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the
 parent or a child implemented it. A compatible fresh reader must be permitted
 and available; its findings and round limits follow
-[the pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md).
+[the pre-push review contract](../../.claude/skills/loop-engineering/references/pre-push-review.md).
 If no reader qualifies, record the exact unavailable or prohibited reason and the
 resulting delivery restriction. That outcome is not a clean review; the Deliver a
-draft when advisory pre-flight is unavailable section of
+draft when pre-push review is unavailable section of
 [Development Workflow](./development-workflow.md) states what it permits,
 including that on Claude Code a missing or refused `reviewer` leaves only the
-pre-flight unavailable.
+pre-push review unavailable.
 
 For Claude Code reads, keep the exact object of a judgment and the rules governing
 that judgment in the judging actor's context. Route other large material wanted
@@ -1115,17 +1115,17 @@ Distinguish these cases:
 
 A generic worker can qualify only through the same tool and role checks, with an
 explicit assignment and boundaries. Otherwise the caller reads or implements
-directly where permitted; an unavailable advisory reviewer is recorded rather
+directly where permitted; an unavailable pre-push reviewer is recorded rather
 than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
-or whose spawn the host refuses, leaves only the advisory pre-flight
+or whose spawn the host refuses, leaves only the pre-push review
 unavailable, under the draft-delivery exception in Development Workflow; the
-independent review is the Claude CI review, which does not depend on it. A CLI
+post-push review is the Claude CI review, which does not depend on it. A CLI
 agent or persistent thread MUST NOT be used to bypass a missing role or a
 prohibited purpose. For unavailable research, plan, or design review, the driver
 MUST use
-[Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).
-The parent retains delivery responsibility, and the independent review follows
-the host mapping in the Independent Review section of
+[Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/plan-review.md).
+The parent retains delivery responsibility, and the post-push review follows
+the host mapping in the Post-Push Review section of
 [Development Workflow](./development-workflow.md).
 
 ## Telemetry Tagging

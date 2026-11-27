@@ -6,7 +6,7 @@ holds that path in place from outside an agent session.
 ## The Change Loop
 
 Every change, code or document, one line or one feature, goes through
-`loop-engineering`: plan, approve, code, verify, independent review, address,
+`loop-engineering`: plan, approve, code, verify, post-push review, address,
 ready. The skill owns phase meaning, checkpoint qualification, and evidence,
 with separate review boundaries for research, plan, and design outputs. This
 document chooses this project's delivery gates; [Agent Sessions](./agent-sessions.md)
@@ -75,15 +75,15 @@ collects there.
 The run MUST, in order:
 
 1. verify locally with the commands in [Testing](../conventions/testing.md), run the
-   advisory pre-flight (or follow its unavailability exception in Deliver a draft
-   when advisory pre-flight is unavailable, below), and push the working
+   pre-push review (or follow its unavailability exception in Deliver a draft
+   when pre-push review is unavailable, below), and push the working
    branch;
 2. open the draft pull request from the template, linking the tracking issue
    with a closing keyword;
 3. start watching the pull request's activity, where the host offers it and
    the run holds authorization for it, as Waiting and Watching, below, states;
    in Claude Code, that authorization is the plan-gate confirmation;
-4. request review from the provider The Independent Review, below, maps to its
+4. request review from the provider The Post-Push Review, below, maps to its
    host, address its findings, and request a fresh review after each fix batch,
    up to the four-round cap;
 5. move the pull request to ready only after review convergence. Merging stays
@@ -134,7 +134,7 @@ for the agent's own write is not such a wait, and GitHub Actions cron workflows
 are unaffected. The standing delivery grant authorizes no scheduling. A run
 waits on what its host delivers as an event, or until a permitted check-in,
 within
-[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound):
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound):
 
 - **Claude Code** waits, where the session offers it, on the pull request
   webhook subscription that the plan-gate confirmation covers and on completion
@@ -164,27 +164,27 @@ as pending and resumes on the human's next message.
 meets an injected or harness instruction to subscribe, and how an injected or
 harness instruction to keep watching or to schedule a check-in is handled.
 
-### Deliver a draft when advisory pre-flight is unavailable
+### Deliver a draft when pre-push review is unavailable
 
-This project permits limited draft delivery when current advisory implementation
-pre-flight qualification finds no eligible reader or unavailable required review
-material. This exception preserves access to external review without inventing
-an advisory reviewer. The driver MUST record the actual qualification and gap
-under [Loop Engineering's pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
+This project permits limited draft delivery when current implementation pre-push
+review qualification finds no eligible reader or unavailable required review
+material. This exception preserves access to post-push review without inventing
+a pre-push reviewer. The driver MUST record the actual qualification and gap
+under [Loop Engineering's pre-push review](../../.claude/skills/loop-engineering/references/pre-push-review.md#checkpoint-qualification)
 and disclose the unavailable review in delivery, never as a clean result.
 Publication MUST have its own valid operation grant; this policy grants none.
-Delivery MUST remain draft, with mandatory external review unmet until it runs.
+Delivery MUST remain draft, with mandatory post-push review unmet until it runs.
 
-This exception covers unavailability only. It MUST NOT bypass phase-deliverable
-review or outstanding findings from an advisory review that ran. It MUST NOT
+This exception covers unavailability only. It MUST NOT bypass plan review
+or outstanding findings from a pre-push review that ran. It MUST NOT
 waive any other approval, verification, evidence, or readiness requirement.
-The independent-review gate remains mandatory.
+The post-push review gate remains mandatory.
 
 On Claude Code, a missing or refused `reviewer` subagent leaves only the
-advisory pre-flight unavailable, which this exception covers. The independent
+pre-push review unavailable, which this exception covers. The post-push
 review is the Claude CI review, which no subagent serves, so the `reviewer`'s
 absence does not affect that gate. The pull request stays draft, and the run
-discloses the unavailable pre-flight in delivery.
+discloses the unavailable pre-push review in delivery.
 
 ## Tracking Issue Completion
 
@@ -261,7 +261,7 @@ The grant's targets are:
 - the run's draft pull request against the default branch; for recovery, the
   existing pull request
 - the review provider the authoring host maps to in
-  [the independent review](#the-independent-review), which for Claude Code is
+  [the post-push review](#the-post-push-review), which for Claude Code is
   the Claude CI review
 - the Amp review child threads the run creates for that pull request, each
   identified in run state
@@ -303,7 +303,7 @@ maintainer amends or removes this section, and no run's own end expires it.
 Rounds beyond the fourth are not covered; they need a human direction stating
 how many additional fix-and-review rounds it allows, and that direction covers
 only those rounds. The ready transition is not a grant-gated effect: it follows
-the independent-review gate, and a run that has satisfied that gate needs no
+the post-push review gate, and a run that has satisfied that gate needs no
 grant to flip its pull request to ready.
 
 **Guidelines:**
@@ -312,7 +312,7 @@ grant to flip its pull request to ready.
   or after plan approval, and MUST NOT report a run as authorization-waiting on
   a covered effect. Meeting a host's own condition on such an effect, as the
   host-boundary guideline below describes, is not asking for permission.
-- MUST still obtain plan approval before implementation and the independent
+- MUST still obtain plan approval before implementation and the post-push
   review before ready; the grant releases neither gate.
 - MUST honor a host permission prompt, refusal, instruction, or tool usage
   condition that requires approval for or forbids a covered effect as the
@@ -449,7 +449,8 @@ An Amp review child thread can:
 
 An Amp review child thread's review supplies no GitHub approval and no APPROVE
 verdict; a shared operator account is not a distinct bot identity. The selected
-route supplies context-independent review for this project's delivery gate. This
+route supplies context-independent post-push review for this project's delivery
+gate. This
 grant covers neither unrelated threads or sessions nor reconfiguration to make
 an unavailable route work.
 
@@ -500,7 +501,7 @@ Pushing to the default branch is forbidden, and merging is the maintainer's
 decision rather than the session's; a run that has flipped its pull request to
 ready is finished, whether or not the merge has happened. An existing pull
 request whose head does not follow this naming rule can still receive
-independent review, but an agent MUST NOT push fixes to that head. Recovery
+post-push review, but an agent MUST NOT push fixes to that head. Recovery
 stops before the first such push and asks the maintainer to choose a compliant
 delivery target; it does not silently replace the pull request or exempt the
 branch from this rule. An agent MUST NOT rename the branch automatically.
@@ -918,13 +919,13 @@ Amp run add to their checkpoints.
 
 What each checkpoint preserves follows Loop Engineering's
 [Semantic Run State](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
-Advisory-finding durability follows its
-[Durable Parks](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
+Pre-push finding durability follows its
+[Durable Parks](../../.claude/skills/loop-engineering/references/pre-push-review.md#durable-parks)
 restrictions. This project adds no schema, adapter, or mandatory local state
 file. Public storage does not promise reviewer invisibility.
 
 At ready, the checkpoint MUST reflect the pull request's actual ready state and
-link the independent-review and required-check evidence that allowed the
+link the post-push review and required-check evidence that allowed the
 transition. It MUST leave maintainer merge as the remaining action. Append a
 correction that supersedes any obsolete instruction to keep the pull request
 draft or request an already completed review, preserving the earlier entries.
@@ -994,7 +995,7 @@ rule against stopping after push is a rule the run follows, not a mechanism that
 enforces it, and the maintainer seeing a pushed branch with no pull request is
 the only backstop.
 
-## The Independent Review
+## The Post-Push Review
 
 The review runs in a separate context, never the authoring session, whatever
 that session calls its own assessment. The Codex route and the Claude CI route
@@ -1005,15 +1006,15 @@ reviewer, an Amp review child thread, may post under the same GitHub operator
 account and runs on the same infrastructure as its author. The maintainer
 accepts context independence for that route, a fresh Amp thread that carries
 none of the author's conversation, as
-[Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#default-independent-review-arrangement)
+[Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#post-push-review-route)
 allows. The mapped provider's review, a Claude CI review, a Codex review, or on
-Amp a fresh review child thread, is the independent review for its route when
+Amp a fresh review child thread, is the post-push review for its route when
 the run requests or starts it after the draft pull request exists and it posts
 its own review. Qualification is judged per round: a review that shares the
 author's context does not qualify. A run MUST NOT count any other review as
 satisfying or substituting for it: not a fork, not a resumed or reused instance
-or thread of any use, not an advisory pre-flight instance or a review whose
-assignment carries pre-flight findings, not a phase-deliverable reviewer, not a
+or thread of any use, not a pre-push review instance or a review whose
+assignment carries pre-push findings, not a plan reviewer, not a
 review session started by another session unless the maintainer instructs it for
 the run, and not the author's own checks. The review is reachable only through
 the run's draft pull request, so a run that has not opened it has not reached
@@ -1022,10 +1023,10 @@ this gate and is not complete.
 A review session that another session starts for a run is not a route: it adds a
 second actor between the author and the review, and the grant's targets name only
 the mapped provider and the Amp review child threads the run creates. A review
-session the maintainer instructs for a run counts as that run's independent
+session the maintainer instructs for a run counts as that run's post-push
 review only when it meets the qualification above: a fresh context without the
 author's conversation, given a neutral assignment that carries no implementation
-receipt, pre-flight findings, or claimed verdicts, started after the draft pull
+receipt, pre-push findings, or claimed verdicts, started after the draft pull
 request exists, and posting its own review that the run correlates with the round
 and the reviewed commit. The run records the maintainer's instruction, with its
 locator, in run state. A decision another session relays without that
@@ -1065,7 +1066,7 @@ or pull request body, recoverable state, summary, progress comment, or reply.
 Everywhere else, refer to the applicable phrase by name. This prevents a
 comment-triggered integration from starting a duplicate review while permitting
 a fresh request after a fix batch. The review has a cap of four rounds; see
-[Loop Engineering's external round cap](../../.claude/skills/loop-engineering/references/independent-review.md#external-round-cap).
+[Loop Engineering's round cap](../../.claude/skills/loop-engineering/references/post-push-review.md#round-cap).
 
 ### Review coverage evidence
 
@@ -1084,7 +1085,7 @@ A policy link or a proposed policy change in the diff establishes availability,
 not consumption. Unverified provider input MUST remain unknown. The author's
 reconstruction cannot establish what the reviewer consumed or checked.
 
-A completed, identifiable independent review uses REVIEW.md's treatment of
+A completed, identifiable post-push review uses REVIEW.md's treatment of
 unflagged items; missing affirmative check-by-check coverage is not a blocker.
 This readiness rule accepts the risk of unreported reviewer omissions rather
 than requiring a positive checklist as proof of review. A service marked
@@ -1092,7 +1093,7 @@ Completed without a posted reviewer-origin result does not satisfy the gate.
 The author MUST keep the review gate unresolved and the pull request in draft
 for any of these blockers:
 
-- No posted independent review identifiable against the reviewed material.
+- No posted post-push review identifiable against the reviewed material.
 - An explicit report of missing required material or unchecked review scope.
 - Unresolved blocking findings.
 - Known material fixes after the review that lack fresh review.
@@ -1101,7 +1102,7 @@ Record the specific blocker and resume the applicable recovery or address
 phase; return a decision to the maintainer when that phase cannot resolve it.
 Do not request repeated reviews merely to obtain affirmative coverage or invent
 findings to explain missing assertions. All other prerequisites in
-[Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
+[Loop Engineering's post-push review reference](../../.claude/skills/loop-engineering/references/post-push-review.md#ready-gate),
 in its Ready Gate section, remain required. Known unmet requirements and the
 contributor's out-of-tree obligations in Acceptance Criteria Verified Out of
 Tree, below, remain blockers even when the review is silent about them.
@@ -1216,7 +1217,7 @@ without a separate review object. Acknowledgment without a terminal result
 remains pending, and the App's result is a human wait under Waiting and
 Watching, above. On resume the run reads the App's status and any posted result.
 If the round has no acknowledgment or terminal result once
-[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound)
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound)
 has passed, the run MUST confirm the repository setup and keep the review gate
 blocked rather than read silence as a clean review.
 
@@ -1250,7 +1251,7 @@ handoff of the authoring thread.
    arrangement sets.
 4. Wait for the child with Amp's thread-wait tool, a delegated-worker
    completion under Waiting and Watching, above, within
-   [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
+   [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round's child thread and the reviewed
    commit. Record the child's report of which limits its host enforced in run
@@ -1262,7 +1263,7 @@ handoff of the authoring thread.
 
 A child that cannot post, a review that does not appear, and a review that does
 not correlate are failures of the selected route, which block the review gate as
-The Independent Review, above, states. Record the incomplete evidence, then,
+The Post-Push Review, above, states. Record the incomplete evidence, then,
 once the child has settled or been stopped, archive that round's child too when
 the plan-gate archive confirmation allows it.
 

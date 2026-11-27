@@ -504,7 +504,7 @@ When required material remains unavailable or review scope remains unchecked,
 MUST name that material or scope and why. MUST reference findings instead of
 repeating them.
 
-An identifiable completed independent review treats unflagged items as
+An identifiable completed post-push review treats unflagged items as
 satisfied for the review gate, without positive per-check assertions. This
 review outcome is not proof that each rule was consumed or each check ran; the
 [delivery procedure](./docs/operations/development-workflow.md#review-coverage-evidence)
@@ -516,7 +516,7 @@ verification or evidence obligations.
 
 - Model-authored review prose MUST NOT include any provider's review trigger
   phrase, documented in
-  [the independent review](./docs/operations/development-workflow.md#the-independent-review),
+  [the post-push review](./docs/operations/development-workflow.md#the-post-push-review),
   anywhere in a summary or an inline comment. Refer to it by name instead, for
   example "the review request". App-generated status and help text are exempt;
   the model does not control that fixed text. The Claude workflow's loop guard

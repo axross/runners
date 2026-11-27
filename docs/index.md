@@ -52,7 +52,7 @@ names every other document the change corrects.
 - [operations/development-workflow.md](./operations/development-workflow.md) -
   the change loop, tracking-issue completion, the delivery grant, branch naming,
   bumping the runner, cutting a release and renewing its signing certificates,
-  the independent review route, and how a run waits and watches.
+  the post-push review route, and how a run waits and watches.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how to launch Codex in the
   intended checkout, how Claude Code and Amp sessions start, their hooks,
   Amp's and Codex's delivery
