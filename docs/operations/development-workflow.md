@@ -230,65 +230,16 @@ request that closes
 [issue #1](https://github.com/axross/runners/issues/1), which added this
 section following the plan approved in that issue. An amendment to this section
 is adopted the same way, by the maintainer's merge of the pull request that
-carries it. The amendment for
-[issue #35](https://github.com/axross/runners/issues/35), which replaces the
-branch prefix in the targets and exclusions with the naming rule in Branches and
-Merging, below, adds the operator-assignment
-effect, and adds the Claude Code explicit-request sentence below, takes effect
-only on the maintainer's merge of the pull request that closes that issue. The
-amendment for [issue #96](https://github.com/axross/runners/issues/96), which
-adds the Amp review child thread's effects and consequences below, likewise
-takes effect only on the maintainer's merge of the pull request that closes
-that issue. The amendments for
-[issue #127](https://github.com/axross/runners/issues/127), which add the
-execution-plan-issue and review-child targets, the issue-closing effect, the
-Claude Code review child session's effects and consequences, and the explicitly
-selected Claude CI alternative below, likewise take effect only on the
-maintainer's merge of the pull request that closes that issue; that pull
-request, authored by an Amp run, is reviewed under the grant as merged before it.
-The amendment for [issue #151](https://github.com/axross/runners/issues/151),
-which replaces the Claude Code review child session route those amendments added
-with the Claude Code review subagent, and rewrites the targets, covered effects,
-and accepted consequences below to match, follows the plan the maintainer
-approved in that issue
-([recorded here](https://github.com/axross/runners/issues/151#issuecomment-7049089352))
-and, like the earlier ones, takes effect only on the maintainer's merge of the
-pull request that closes it; that pull request is reviewed under the grant as
-merged before it. Agent runs share the maintainer's operator identity, so the
-signal that distinguishes such a merge as a human act is that agents never merge
-on their own: merge is excluded from this grant, and it is the maintainer's
-decision, per [Branches and Merging](#branches-and-merging). The grant is
-separate from plan approval, which releases implementation and is not what
-authorizes a delivery effect, but every run already holds it, so no run asks
-for it.
-
-The pull request that adds this section cannot rely on it, because the grant
-takes effect only on merge. That pull request's delivery is authorized by the
-maintainer's approval of the plan in issue #1, which requested the authorization
-to push a `claude/` branch and open a draft pull request for it. That pull
-request was in fact delivered from the host-assigned head branch
-`ccr-fd09e38c-631o65`, because the authoring cloud session could push only to
-that branch, and `main` was seeded with an empty root commit with the
-maintainer's explicit permission. This is a one-time exception for the adopting
-pull request.
-
-The pull request that closes issue #35 cannot rely on its own amendment either,
-because the amendment takes effect only on merge, and the branch target in the
-grant as merged does not cover the head branch the authoring cloud session was
-assigned. That pull request is delivered from the host-assigned head branch
-`ccr-315645f9-p43xyx`, which the maintainer explicitly permitted for that run in
-the authoring session. This is a second one-time exception for an adopting pull
-request; later changes use a branch named under
-Branches and Merging, below, subject to the host-assigned branch rule there.
-
-The pull request that closes issue #96 cannot rely on its own amendment either.
-The grant before that amendment maps an Amp run to the Codex review, but the
-maintainer chose, in that run's plan-approval exchange, to have that pull
-request reviewed by an Amp review child thread instead. For that run only, this
-third one-time exception covers creating one review child thread per round, the
-child's COMMENT-type review on that pull request, and archiving the child
-thread, under the Amp arrangement that pull request adds to
-[REVIEW.md](../../REVIEW.md).
+carries it, and takes effect only on that merge; the run on the amending pull
+request works under the grant as merged. The
+[evidence ledger](#appendix-grant-adoption-evidence) lists each adoption with its
+issue, closing pull request, merge date, and plan-approval record. Agent runs
+share the maintainer's operator identity, so the signal that distinguishes such
+a merge as a human act is that agents never merge on their own: merge is
+excluded from this grant, and it is the maintainer's decision, per
+[Branches and Merging](#branches-and-merging). The grant is separate from plan
+approval, which releases implementation and is not what authorizes a delivery
+effect, but every run already holds it, so no run asks for it.
 
 The grant's targets are:
 
@@ -1338,3 +1289,35 @@ Changing a designation, method, destination, or required timing needs an approve
 plan revision. [REVIEW.md](../../REVIEW.md) owns the code-inspection finding
 boundary; these author-side duties do not turn missing external evidence alone
 into a review finding.
+
+## Appendix: Grant Adoption Evidence
+
+This ledger records where the human evidence for each adoption lives: the
+standing delivery grant in Authorizing delivery operations, above, and the
+delivery, review, and watching entry in the register of
+[Agent Skills](./agent-skills.md#the-register). It names what each adoption
+changed in one line and does not restate it; git history and the closed issues
+keep the rest. A row's closing pull request and merge date come from GitHub, the
+date is the calendar date of the merge in Pacific time (written PST, as
+elsewhere in this repository), and the approval record is the issue comment that
+records the maintainer's plan approval.
+
+### The standing delivery grant
+
+| Issue                                                | Change                                                                                                                                                       | Closing pull request and merge date                            | Plan-approval record                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [#1](https://github.com/axross/runners/issues/1)     | Adds the grant.                                                                                                                                              | [#2](https://github.com/axross/runners/pull/2), 2026-09-30     | [Comment](https://github.com/axross/runners/issues/1#issuecomment-5918893211)   |
+| [#35](https://github.com/axross/runners/issues/35)   | Replaces the branch prefix with the naming rule, adds the operator-assignment effect, and adds Claude Code's explicit-request condition.                     | [#36](https://github.com/axross/runners/pull/36), 2026-10-21   | [Comment](https://github.com/axross/runners/issues/35#issuecomment-6330845230)  |
+| [#96](https://github.com/axross/runners/issues/96)   | Adds the Amp review child thread's effects and consequences.                                                                                                 | [#97](https://github.com/axross/runners/pull/97), 2026-11-11   | [Comment](https://github.com/axross/runners/issues/96#issuecomment-6802814824)  |
+| [#127](https://github.com/axross/runners/issues/127) | Adds the execution-plan-issue and review-child targets, the issue-closing effect, the Claude Code review child session route, and the Claude CI alternative. | [#128](https://github.com/axross/runners/pull/128), 2026-11-17 | [Comment](https://github.com/axross/runners/issues/127#issuecomment-6965806499) |
+| [#151](https://github.com/axross/runners/issues/151) | Replaces the Claude Code review child session route with the review subagent.                                                                                | [#159](https://github.com/axross/runners/pull/159), 2026-11-20 | [Comment](https://github.com/axross/runners/issues/151#issuecomment-7049089352) |
+| [#177](https://github.com/axross/runners/issues/177) | Names the Claude CI review as Claude Code's mapped provider and removes the review subagent target, effect, and consequences.                                | pending (the pull request that closes #177), on merge          | [Comment](https://github.com/axross/runners/issues/177#issuecomment-7207567498) |
+
+### The register entry for the combined plan-gate confirmation
+
+| Issue                                                | Change                                                                                                                                        | Closing pull request and merge date                            | Plan-approval record                                                            |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [#35](https://github.com/axross/runners/issues/35)   | Adds the entry with the plan-gate confirmation it serves.                                                                                     | [#36](https://github.com/axross/runners/pull/36), 2026-10-21   | [Comment](https://github.com/axross/runners/issues/35#issuecomment-6330845230)  |
+| [#127](https://github.com/axross/runners/issues/127) | Makes the review item a Claude Code review child session or the Claude CI review, and adds the deviation for that route's limits and closure. | [#128](https://github.com/axross/runners/pull/128), 2026-11-17 | [Comment](https://github.com/axross/runners/issues/127#issuecomment-6965806499) |
+| [#151](https://github.com/axross/runners/issues/151) | Makes the review item the `reviewer` subagent and amends the limits-and-closure deviation to match.                                           | [#159](https://github.com/axross/runners/pull/159), 2026-11-20 | [Comment](https://github.com/axross/runners/issues/151#issuecomment-7049089352) |
+| [#177](https://github.com/axross/runners/issues/177) | Makes the review item the Claude CI review request and removes the limits-and-closure deviation, whose route no longer exists.                | pending (the pull request that closes #177), on merge          | [Comment](https://github.com/axross/runners/issues/177#issuecomment-7207567498) |
