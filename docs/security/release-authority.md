@@ -69,7 +69,7 @@ CLI instructions remain valid. This is not a permanent dual-product selector.
 The following describes the app publication baseline to reconcile on restoration,
 not the active recovery dispatch. Its app build and tests remain active.
 
-The [last app publication workflow before CLI recovery](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/workflows/release.yaml) released the app with
+The [last app publication workflow before CLI recovery](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/workflows/release.yaml) was configured to publish the app with
 semantic-release. The current
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the app
 executable and its MSI; [CLI](../marshal-cli/release-artifacts.md#releases) owns the steps. This is the
