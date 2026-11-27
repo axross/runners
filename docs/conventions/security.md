@@ -2020,17 +2020,17 @@ log, not in a process listing.
 
 `claude-review.yaml`'s reviewer job gates on the comment's `author_association`,
 admitting only `OWNER`, `MEMBER`, and `COLLABORATOR`. The gate exists to keep an
-untrusted author from spending this repository's tokens or steering the reviewer.
-Every Claude Code pull request requests its independent review from this job, so
-the exposure this section and the marketplace record above describe applies to
-each of them. A request posted through the installed Claude GitHub App carries
-the `claude[bot]` identity, whose association GitHub reports as `NONE`, the same
-value an outside contributor's comment carries, so those requests were gated out
-identically to an outsider's. The gate's fourth
-clause admits that one login directly, and further requires the comment to carry
-no Markdown heading anywhere in it. That test does less than it looks like it does:
-the reviewer's summary opens with a one-line tally, not a heading, so the test
-normally does not exclude it.
+untrusted author from spending this repository's tokens or steering the
+reviewer. Every Claude Code pull request requests its independent review from
+this job, so the exposure this section and the marketplace record above describe
+applies to each of them. A request posted through the installed Claude GitHub
+App carries the `claude[bot]` identity, whose association GitHub reports as
+`NONE`, the same value an outside contributor's comment carries, so without the
+clause below those requests would be gated out identically to an outsider's. The
+gate's fourth clause admits that one login directly, and further requires the
+comment to carry no Markdown heading anywhere in it. That test does less than it
+looks like it does: the reviewer's summary opens with a one-line tally, not a
+heading, so the test normally does not exclude it.
 
 Admitting a login rather than widening the association list does not widen who can
 trigger a paid run: a comment under the `claude[bot]` identity can only be

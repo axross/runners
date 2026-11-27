@@ -241,14 +241,14 @@ That example file also contains `permissions.allow` entries for
 `mcp__claude-code-remote__subscribe_pr_activity` and
 `mcp__claude-code-remote__unsubscribe_pr_activity`, and for no other tool. They
 exist only to spare a permission prompt when a Claude Code Remote session
-subscribes to its own pull request's activity at the plan gate and unsubscribes
-when the watch ends, as the Waiting on CI and Review section below describes.
-They are tool-permission rules, subject to Claude Code's
+subscribes to its own pull request's activity under the plan-gate confirmation
+and unsubscribes when the watch ends, as the Waiting on CI and Review section
+below describes. They are tool-permission rules, subject to Claude Code's
 [permission precedence](https://code.claude.com/docs/en/permissions), not
 standalone evidence of live availability, human adoption, or a scoped operation
-grant. The example allows no scheduling tool: an agent schedules a check-in
-only when no subscription route exists and the human explicitly permitted it, and
-a standing allowance is not that permission.
+grant. The example allows no scheduling tool: an agent schedules a check-in only
+when no subscription route exists and the human explicitly permitted it, and a
+standing allowance is not that permission.
 
 A blocking `Stop` check is expensive in a way a `PostToolUse` repair is not: it
 fires only after the agent believes the task is finished, so a failure there
@@ -460,13 +460,13 @@ ask the human to confirm, in the same answer:
 - watching that pull request's activity, where the host offers it, until the
   ready transition, the round cap, the waiting bound, or a reported stop.
 
-Only pull request creation carries a host condition. The maintainer chose
-to settle the review item and the watch in the same answer, so that one
-answer covers the whole delivery path. This bounded exception to dependent
-question ordering is recorded in the delivery, review, and watching deviation in the register of
-[Agent Skills](./agent-skills.md).
-The run MUST offer coherent combined outcomes in that single question, with
-review and watching inapplicable when delivery is declined.
+Only pull request creation carries a host condition. The maintainer chose to
+settle the review item and the watch in the same answer, so that one answer
+covers the whole delivery path. This bounded exception to dependent question
+ordering is recorded in the delivery, review, and watching deviation in the
+register of [Agent Skills](./agent-skills.md). The run MUST offer coherent
+combined outcomes in that single question, with review and watching inapplicable
+when delivery is declined.
 
 A confirming answer is the user's explicit request for that run's pull
 request. The run then follows the post-approval sequence in
@@ -581,8 +581,9 @@ checks and the review its Amp review child thread posts. Wait for the child with
 Amp's thread-wait tool, which counts as a delegated-worker completion, then read
 the posted review back on the pull request; Development Workflow owns what
 counts as the result. Wait for checks only through a subscription the host and
-the run already permit; otherwise the checks are a human wait unless the human
-permitted a scheduled check-in.
+the run already permit. A subscription the session offers but the run may not
+use still bars a check-in, so the checks are a human wait; only when the session
+offers none may the human permit a scheduled check-in.
 
 For a Claude Code-authored pull request, the awaited results are its required
 GitHub checks and the Claude CI review. Where the session offers it, the run
@@ -1155,10 +1156,10 @@ A generic worker can qualify only through the same tool and role checks, with an
 explicit assignment and boundaries. Otherwise the caller reads or implements
 directly where permitted; an unavailable advisory reviewer is recorded rather
 than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
-or whose spawn the host refuses, leaves only the advisory pre-flight unavailable,
-under the draft-delivery exception in Development Workflow; the independent
-review is the Claude CI review, which does not depend on it. A
-CLI agent or persistent thread MUST NOT be used to bypass a missing role or a
+or whose spawn the host refuses, leaves only the advisory pre-flight
+unavailable, under the draft-delivery exception in Development Workflow; the
+independent review is the Claude CI review, which does not depend on it. A CLI
+agent or persistent thread MUST NOT be used to bypass a missing role or a
 prohibited purpose. For unavailable research, plan, or design review, the driver
 MUST use
 [Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).

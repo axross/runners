@@ -56,11 +56,11 @@ under [Loop Engineering](.claude/skills/loop-engineering/SKILL.md).
 
 ## Severity labels for posted reviews
 
-Claude and Amp review use Code Review's two posted
-labels, **Important** and **Nit**, instead of its internal
-Critical/Major/Minor/Nit triage or an Approve/Request-Changes verdict. Codex
-managed review uses native priority labels; its presentation and reporting
-scope follow the adopted arrangements above. In this repository, a hard project rule includes every MUST rule of a
+Claude and Amp review use Code Review's two posted labels, **Important** and
+**Nit**, instead of its internal Critical/Major/Minor/Nit triage or an
+Approve/Request-Changes verdict. Codex managed review uses native priority
+labels; its presentation and reporting scope follow the adopted arrangements
+above. In this repository, a hard project rule includes every MUST rule of a
 skill whose `description` matches the changed files and every applicable MUST
 rule in project conventions, such as [Security](./docs/conventions/security.md),
 subject to registered deviations in the
@@ -71,9 +71,9 @@ boundary.
 **Guidelines:**
 
 - MUST flag an applicable hard-rule violation and cite its owning skill or
-  project convention and rule. Claude and Amp
-  review MUST label it Important; Codex review uses its native priority label
-  without implying an exact equivalence.
+  project convention and rule. Claude and Amp review MUST label it Important;
+  Codex review uses its native priority label without implying an exact
+  equivalence.
 
 ## Mandatory checks
 
