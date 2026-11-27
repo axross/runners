@@ -59,8 +59,8 @@ names every other document the change corrects.
   authorization, asking the maintainer (launched sessions and subagents
   included), the plan-gate delivery confirmation, Amp's plan-gate archive
   confirmation for review child threads, the write-fidelity rules and read-back
-  for GitHub text written from a Claude Code cloud session, subagents including
-  the Claude Code review subagent, and telemetry.
+  for GitHub text written from a Claude Code cloud session, subagents, and
+  telemetry.
 - [operations/development-setup.md](./operations/development-setup.md) - the
   pinned tools a contributor installs, the Rust toolchain, and the hooks.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -
