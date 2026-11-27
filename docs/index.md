@@ -52,15 +52,15 @@ names every other document the change corrects.
 - [operations/development-workflow.md](./operations/development-workflow.md) -
   the change loop, tracking-issue completion, the delivery grant, branch naming,
   bumping the runner, cutting a release and renewing its signing certificates,
-  and the independent review route.
+  the independent review route, and how a run waits and watches.
 - [operations/agent-sessions.md](./operations/agent-sessions.md) - how to launch Codex in the
   intended checkout, how Claude Code and Amp sessions start, their hooks,
   Amp's and Codex's delivery
   authorization, asking the maintainer (launched sessions and subagents
   included), the plan-gate delivery confirmation, Amp's plan-gate archive
   confirmation for review child threads, the write-fidelity rules and read-back
-  for GitHub text written from a Claude Code cloud session, subagents including
-  the Claude Code review subagent, and telemetry.
+  for GitHub text written from a Claude Code cloud session, subagents, and
+  telemetry.
 - [operations/development-setup.md](./operations/development-setup.md) - the
   pinned tools a contributor installs, the Rust toolchain, and the hooks.
 - [operations/windows-runner-host.md](./operations/windows-runner-host.md) -

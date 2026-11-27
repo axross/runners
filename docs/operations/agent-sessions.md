@@ -4,13 +4,12 @@ How agent sessions start in this project, the hooks that run during one, how Amp
 and Codex runs handle delivery authorization, how a session asks the maintainer
 (launched sessions and subagents included), Claude Code's plan-gate delivery
 confirmation, Amp's plan-gate confirmation for archiving review child threads,
-host-owned CI and review waits, the write-fidelity procedure for GitHub text a
-Claude Code cloud session writes, the subagents a session can delegate to,
-including the Claude Code review subagent, how a session's usage is
-tagged, and the environment variables recommended for cutting a Claude Code
-session's cost. Claude Code and Amp are the hosts this repository configures;
-they share the pinned toolchain in [`mise.toml`](../../mise.toml) and nothing
-else. Codex uses the project entry in the intended checkout.
+CI and review waits, the write-fidelity procedure for GitHub text a Claude Code
+cloud session writes, the subagents a session can delegate to, how a session's
+usage is tagged, and the environment variables recommended for cutting a Claude
+Code session's cost. Claude Code and Amp are the hosts this repository
+configures; they share the pinned toolchain in [`mise.toml`](../../mise.toml)
+and nothing else. Codex uses the project entry in the intended checkout.
 
 ## Starting Codex in the intended checkout
 
@@ -239,14 +238,17 @@ cloud session; Claude Code hot-reloads them for that session. A local session
 skips the hook entirely, so opting in there stays a manual copy.
 
 That example file also contains `permissions.allow` entries for
-`mcp__Claude_Code_Remote__send_later` and `mcp__Claude_Code_Remote__delete_trigger`.
-They exist only to spare a permission prompt when a host exposes those tools.
-They are tool-permission rules, subject to Claude Code's
+`mcp__claude-code-remote__subscribe_pr_activity` and
+`mcp__claude-code-remote__unsubscribe_pr_activity`, and for no other tool. They
+exist only to spare a permission prompt when a Claude Code Remote session
+subscribes to its own pull request's activity under the plan-gate confirmation
+and unsubscribes when the watch ends, as the Waiting on CI and Review section
+below describes. They are tool-permission rules, subject to Claude Code's
 [permission precedence](https://code.claude.com/docs/en/permissions), not
 standalone evidence of live availability, human adoption, or a scoped operation
-grant. Waiting belongs to the host; `loop-engineering` requires no scheduler or
-particular wake tool. The Waiting on CI and Review section below
-distinguishes Claude's documented mechanisms from those configured names.
+grant. The example allows no scheduling tool; the Waiting and Watching section
+of [Development Workflow](./development-workflow.md) says when a check-in is
+allowed.
 
 A blocking `Stop` check is expensive in a way a `PostToolUse` repair is not: it
 fires only after the agent believes the task is finished, so a failure there
@@ -425,8 +427,8 @@ takes.
   request the host conditions on the user's own request.
 - MUST NOT put to the maintainer a decision that a launched session reports as
   asked and still pending, since the maintainer answers it in that session.
-- This rule does not cover subagent assignments or the independent-review
-  child's assignment.
+- This rule does not cover subagent assignments or the Amp review child
+  thread's assignment, which Development Workflow defines.
 
 ### Return a decision from a subagent
 
@@ -436,8 +438,7 @@ listed in the `tools` field" (Available tools). That is documented, not
 exercised in this repository. The configured implementer, reviewer, and
 investigator therefore MUST return an unresolved maintainer decision and their
 partial results to their caller, which asks it, as the practice's Returning a
-Question You Cannot Ask section states. The independent-review child is such a
-subagent, and its assignment MUST stay as Development Workflow defines it.
+Question You Cannot Ask section states.
 
 The same page says a fork receives its parent conversation's exact tool pool, so
 a fork is inferred to keep `AskUserQuestion`, which is also not exercised here. A
@@ -455,20 +456,17 @@ Every plan-approval question, including the one for a revised plan, MUST also
 ask the human to confirm, in the same answer:
 
 - delivery of the run's draft pull request;
-- spawning a new `reviewer` subagent instance each round that reviews it and
-  publishes directly to it, or, when the maintainer has selected the Claude CI
-  alternative for the run, the Claude CI review request on it;
+- requesting the Claude CI review of it each round, which is the review item;
 - watching that pull request's activity, where the host offers it, until the
-  ready transition or a reported stop.
+  ready transition, the round cap, the waiting bound, or a reported stop.
 
-Only pull request creation, and `TaskStop` where its live contract conditions
-it, carry a host condition. The maintainer chose
-to settle the review item and the watch in the same answer, so that one
-answer covers the whole delivery path. This bounded exception to dependent
-question ordering is recorded in the delivery, review, and watching deviation in the register of
-[Agent Skills](./agent-skills.md).
-The run MUST offer coherent combined outcomes in that single question, with
-review and watching inapplicable when delivery is declined.
+Only pull request creation carries a host condition. The maintainer chose to
+settle the review item and the watch in the same answer, so that one answer
+covers the whole delivery path. This bounded exception to dependent question
+ordering is recorded in the delivery, review, and watching deviation in the
+register of [Agent Skills](./agent-skills.md). The run MUST offer coherent
+combined outcomes in that single question, with review and watching inapplicable
+when delivery is declined.
 
 A confirming answer is the user's explicit request for that run's pull
 request. The run then follows the post-approval sequence in
@@ -497,22 +495,13 @@ follows stays under the delivery grant.
 - MUST, when the human declines delivery, stop after push, report the
   external-review gate as unmet and the loop as not complete, and substitute
   no other review.
-- MUST, when composing the plan-approval question, check the live `TaskStop`
-  contract; when it requires the human's request, ask for it as a separate
-  question after approval, as the Amp section below does for archiving, and
-  record the answer in run state. A run with no plan gate, such as review-only
-  recovery, asks once before its first `TaskStop`, and a fresh session that
-  resumes the run and lacks that exchange in its own conversation asks once
-  before its first `TaskStop`, even when run state records an earlier
-  confirmation. A recorded decline carries forward, so no later session asks
-  again, and a review subagent still running is handed over as one the run
-  cannot stop.
 - MUST, when the human confirms delivery but declines the review item,
   open the draft pull request, keep it draft, and report the external-review
   gate as unmet and the loop as not complete.
 - MUST, when the human confirms delivery but declines watching, still request
-  review, then treat each review or check result as a human wait: end the
-  turn and resume on the human's next message, with no scheduling.
+  review, then treat each review or check result as a human wait: end the turn
+  and resume on the human's next message, with no scheduling, as the Waiting and
+  Watching section of Development Workflow requires.
 
 ## Confirming Review-Thread Cleanup at the Plan Gate in Amp
 
@@ -545,43 +534,43 @@ first archive.
 
 ## Waiting on CI and Review
 
-The host supplies the wait mechanism. The portable contract lives in
+The Waiting and Watching section of
+[Development Workflow](./development-workflow.md) owns what a run waits on, on
+each host, when it may schedule a check-in, and when a result is a human wait.
+This section adds each host's mechanism. The portable contract lives in
 [Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
-whose Waiting Bound section owns capability resolution, deadlines, budget
-resets, human waits, and teardown at each stop. A scheduler's expiry or cloud
-environment's lifetime is not that deadline. Authorization and recovery state
-belong to [Loop Engineering's grant and run-state reference](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
-This project's delivery grant, in [Development Workflow](./development-workflow.md),
-does not name scheduling or subscriptions.
+whose Waiting Bound section owns deadlines, budget resets, human waits, and
+teardown at each stop. A cloud environment's lifetime is not that deadline.
+Authorization and recovery state belong to
+[Loop Engineering's grant and run-state reference](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
+This project's delivery grant, in
+[Development Workflow](./development-workflow.md), does not name scheduling or
+subscriptions.
 
 For a Codex-authored pull request, the awaited results are its required GitHub
 checks and the independent Codex review selected by Development Workflow.
-A permitted in-session wait followed by sanctioned GitHub reads can retrieve
-those results; a missing scheduler alone does not establish inability.
-Qualify the actual session's tools under GitHub Operation rather than assume
-all Codex surfaces expose the same mechanisms.
+Qualify the actual session's tools under GitHub Operation rather than assume all
+Codex surfaces expose the same mechanisms.
 
 For an Amp-authored pull request, the awaited results are its required GitHub
-checks and the review its Amp review child thread posts. Wait for the child with
-Amp's thread-wait tool, then read the posted review back on the pull request;
-Development Workflow owns what counts as the result. Wait for checks with an in-session
-wait followed by sanctioned GitHub reads, or with a subscription only where the
-host and the run already permit it.
+checks and the review its Amp review child thread posts. The
+[Amp review child thread from Amp](./development-workflow.md#amp-review-child-thread-from-amp)
+procedure in Development Workflow owns the wait, the read-back, and what counts
+as the result.
 
 For a Claude Code-authored pull request, the awaited results are its required
-GitHub checks and the review its Claude Code review subagent posts, or, when the
-maintainer selected the Claude CI alternative for the run, the Claude CI review.
-Claude Code's [subagent documentation](https://code.claude.com/docs/en/sub-agents)
-says subagents run in the background by default and that, while fork mode is
-on, an interactive session cannot block on one, so the instance's completion
-arrives as a notification rather than as the result of a blocking wait; this
-has not yet been exercised for the review subagent, and
-[#155](https://github.com/axross/runners/issues/155) tracks its first live
-round. After it arrives, read the posted review back on the pull request. A
-review subagent's permission prompt appears in the
-authoring session, and one the run cannot answer for the human is a human wait,
-as the After Approval section of [Development Workflow](./development-workflow.md)
-lists.
+GitHub checks and the Claude CI review. Claude Code's
+[subagent documentation](https://code.claude.com/docs/en/sub-agents) says
+subagents run in the background by default and that, while fork mode is on, an
+interactive session cannot block on one, so a worker's completion arrives as a
+notification. The subscription is the Remote `subscribe_pr_activity` tool, and
+`unsubscribe_pr_activity` ends it. Under the tools' live contracts, a subscribed
+pull request's comments, reviews, and check results reach the conversation as
+events, to one session at a time; a subscribe result that says another session
+already watches the pull request means this session receives none. In this
+repository, Claude CI rounds have delivered their inline findings and tally
+comment this way, and a notice that the head's check suites completed without a
+failure has arrived as an event.
 
 Use the current pull request head when reading check results. A connector read
 can return only a first page of workflow runs, so it cannot establish complete
@@ -590,37 +579,23 @@ its findings through the tools the session exposes, and respect each read's
 pagination and completeness limits; missing output is not a successful check or
 completed review. Development Workflow owns review-completion evidence.
 
-Claude's documented mechanisms have different scopes. The summary below follows
-the linked pages and has not been exercised in this repository; the tools the
-actual host exposes decide what a run can use:
+Claude Code on the web also documents
+[PR auto-fix](https://code.claude.com/docs/en/claude-code-on-the-web), which
+delivers review comments and CI failures when enabled. It also investigates
+events, pushes clear fixes, and can publish review-thread replies under the
+user's GitHub identity. It is not the subscription the plan-gate confirmation
+covers: before enabling Auto-fix, its scoped grant must cover the subscription
+and these downstream effects, not event delivery alone. Its documented stop path
+is clearing **Auto-fix** in the session's CI status bar or asking Claude to stop
+watching the pull request. This documentation does not establish that Auto-fix
+delivers successful-check transitions, and the consulted official pages give no
+verified procedure for invoking the Remote tools; the observation above is this
+repository's only live evidence of their behavior. Use the actual host's
+exposed definitions, not guessed arguments or a CLI-tool substitution.
 
-- **Local CLI session:** [session scheduling](https://code.claude.com/docs/en/scheduled-tasks)
-  uses `/loop` or `CronCreate`, with `CronList` to inspect tasks and
-  `CronDelete` to cancel by ID. A self-paced `/loop` can stop with `Esc` or
-  `ScheduleWakeup` with `stop: true`; `Esc` does not delete separately scheduled
-  tasks. Tasks fire only while Claude Code is running and idle. These are not
-  the Remote MCP tools `send_later` and `delete_trigger` that the example
-  settings permit. If these are the only available wait mechanisms and no
-  separate scheduling authorization exists, the run MUST treat each review or
-  check result as a human wait.
-- **Cloud session:** [PR auto-fix](https://code.claude.com/docs/en/claude-code-on-the-web)
-  delivers review comments and CI failures when enabled. It also investigates
-  events, pushes clear fixes, and can publish review-thread replies under the
-  user's GitHub identity. Before enabling Auto-fix, its scoped grant must cover
-  the subscription and these downstream effects, not event delivery alone.
-  Its documented stop path is clearing **Auto-fix** in the session's CI status
-  bar or asking Claude to stop watching the pull request. This documentation
-  does not establish delivery of successful-check transitions, or specify the
-  `send_later` / `delete_trigger` schemas. The consulted official pages provide
-  no verified Remote invocation procedure; live Remote behavior remains
-  unverified here. Use the actual host's exposed definitions, not guessed
-  arguments or a CLI-tool substitution.
-
-In Claude Code, watching the run's own pull request is what the plan-gate
-confirmation above covers, and that watch ends at the ready transition or at any
-reported stop. [Claude Code's entry guidance](../../CLAUDE.md) states how an
-injected instruction to watch a pull request until it merges or closes is
-evaluated against this project's run, which ends at ready.
+[Claude Code's entry guidance](../../CLAUDE.md) owns how the plan-gate watch
+meets an injected or harness instruction to subscribe, and how an injected or
+harness instruction to keep watching or to schedule a check-in is handled.
 
 ## GitHub Write Fidelity in Claude Code Cloud Sessions
 
@@ -1017,8 +992,7 @@ delegated merely by choosing this actor. It states its delivery boundary, that
 commits stay local and pushing and publishing belong to whoever asked, in its
 own prose rather than by withdrawing a tool.
 
-`reviewer.md` is the reader for the advisory pre-flight review and, under an
-assignment that names it so, the Claude Code independent review. It denies
+`reviewer.md` is the reader for the advisory pre-flight review. It denies
 exactly two things, editing and spawning, which are the Edit, Write, and
 NotebookEdit tools and the Agent tool, and nothing else. Widening that deny-list
 is the tempting mistake and MUST be resisted: judging a change means confirming
@@ -1029,18 +1003,41 @@ exactly those checks, and an under-equipped review reads exactly like a clean
 one. The denial covers editing tools and nested spawning, not every possible
 shell write. Without an assignment that names the instance as a round's
 independent review and carries that round's token, it returns its report
-privately and posts nothing; with one, it posts exactly one COMMENT-type review.
-Of these limits, only that denial is one Claude Code documents enforcing; no
-live round has confirmed it yet, and
-[#155](https://github.com/axross/runners/issues/155) tracks the first. Every
-other limit is instruction-only for every instance: shell writes and commits,
-push and merge, approve or request-changes verdicts, GitHub writes beyond the
-round's one review, starting or messaging actors through non-Agent routes, and
-the posting condition itself.
-The standing delivery grant in [Development Workflow](./development-workflow.md)
-owns that list. An instance used for
-the pre-flight is advisory and is never the independent review; only a new
-instance the run assigns that role counts.
+privately and posts nothing; with one, its prose permits one COMMENT-type
+review. No standing route issues that assignment, which only a review session
+the maintainer instructs could, so an instance used for the pre-flight is
+advisory and is never the independent review.
+
+The limits on a pre-flight `reviewer` instance are of two kinds. Its definition
+declares, and Claude Code documents enforcing, one set: the Edit, Write,
+NotebookEdit, and Agent denial. No pre-flight round here has confirmed that
+enforcement yet. Every other limit is instruction-only:
+
+- no shell write to the repository and no commit;
+- no push and no merge;
+- no approve or request-changes verdict;
+- no GitHub write;
+- no starting or messaging of other actors through a route other than the Agent
+  tool, such as a session-starting or messaging tool;
+- no posting at all, since no standing route issues the independent-review
+  assignment that enables the definition's posting permission, and the host does
+  not enforce that the condition holds.
+
+The definition leaves GitHub write tools and session-starting and messaging tools
+undenied, because a deny-list naming some connectors' tools would not cover the
+others and the reader still needs the shell and the tracker to read the change.
+The accepted exposures follow from that:
+
+- An instance holds the session's GitHub write access and every tool other than
+  the four its definition denies, so the instruction-only limits bind only as far
+  as the assignment and the definition instruct.
+- An instance raises permission prompts in the authoring session, where an answer
+  that lasts for the session also applies to the authoring conversation, and
+  where a "don't ask again" answer for a Bash command, a web fetch domain, or web
+  search is saved to the repository's `.claude/settings.local.json` and applies to
+  later sessions and their subagents anywhere in this repository, as Claude
+  Code's [permissions documentation](https://code.claude.com/docs/en/permissions)
+  states.
 
 `investigator.md` is the reader for a payload the main actor needs only one
 conclusion from: a log, a long thread, a wide search across files or history, a
@@ -1052,9 +1049,8 @@ local lookup or when the host prohibits that delegation purpose.
 
 Each of these exists to keep some context out of the main actor's own: the
 implementer so it does not inherit the planning phase's accumulated context, the
-reviewer so it does not inherit the implementer's reasoning state or, as the
-independent review, the author's conversation; and the investigator so a large
-payload never enters the main actor's context at all.
+reviewer so it does not inherit the implementer's reasoning state, and the
+investigator so a large payload never enters the main actor's context at all.
 All three run Sonnet at `effort: high`. The investigator runs at `high` rather
 than a lower level because its output is a judgment the main actor cannot check
 without re-reading the payload it delegated away; the maintainer approved that
@@ -1071,9 +1067,9 @@ external review remain unchanged. Deleting a file never lets the loop skip the
 independent-review gate. Without the implementer, the loop delegates to a
 generic agent or runs single-agent. Without the reviewer, the pre-flight stage
 is skipped rather than performed by the main actor, which is what keeps it from
-collapsing into self-review, and the Claude Code independent-review gate stays
-unmet, as [Record an unavailable role](#record-an-unavailable-role), below,
-states. Without the investigator, the main actor reads the payload itself.
+collapsing into self-review, as
+[Record an unavailable role](#record-an-unavailable-role), below, states.
+Without the investigator, the main actor reads the payload itself.
 
 The advisory pre-flight review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the
@@ -1084,23 +1080,8 @@ If no reader qualifies, record the exact unavailable or prohibited reason and th
 resulting delivery restriction. That outcome is not a clean review; the Deliver a
 draft when advisory pre-flight is unavailable section of
 [Development Workflow](./development-workflow.md) states what it permits,
-including that on Claude Code a missing `reviewer` leaves both gates unmet.
-
-The independent review's Claude Code review subagent is one more use of
-`reviewer.md`, not a fourth definition. Each round spawns a new instance with
-`isolation: worktree` on the call itself, never as a fork, because a fork
-inherits the author's conversation, and never by resuming an earlier instance.
-The pinned model and effort are not overridden at spawn time. Claude Code's
-[subagent documentation](https://code.claude.com/docs/en/sub-agents) says a
-subagent loads the project's CLAUDE.md, which here imports AGENTS.md; this has
-not yet been exercised for `reviewer`, and
-[#155](https://github.com/axross/runners/issues/155) tracks it. AGENTS.md's Code
-Review Rules exempt the instance from the delegation rule. The Claude Code
-review subagent procedure in [Development Workflow](./development-workflow.md)
-owns its assignment, isolation check, checkpoints, and ending, and states why a
-review session started by another session is not a route; the register in
-[Agent Skills](./agent-skills.md) records where the route departs from Loop
-Engineering's review-child defaults.
+including that on Claude Code a missing or refused `reviewer` leaves only the
+pre-flight unavailable.
 
 For Claude Code reads, keep the exact object of a judgment and the rules governing
 that judgment in the judging actor's context. Route other large material wanted
@@ -1136,11 +1117,10 @@ A generic worker can qualify only through the same tool and role checks, with an
 explicit assignment and boundaries. Otherwise the caller reads or implements
 directly where permitted; an unavailable advisory reviewer is recorded rather
 than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
-or whose spawn the host refuses, is also an unavailable independent-review
-route: that gate stays unmet, and no other subagent, provider, or session the
-run chooses replaces it; the Claude CI alternative, or a review session the
-maintainer instructs, applies only when the maintainer selects it for the run. A
-CLI agent or persistent thread MUST NOT be used to bypass a missing role or a
+or whose spawn the host refuses, leaves only the advisory pre-flight
+unavailable, under the draft-delivery exception in Development Workflow; the
+independent review is the Claude CI review, which does not depend on it. A CLI
+agent or persistent thread MUST NOT be used to bypass a missing role or a
 prohibited purpose. For unavailable research, plan, or design review, the driver
 MUST use
 [Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).

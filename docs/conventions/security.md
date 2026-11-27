@@ -2020,16 +2020,17 @@ log, not in a process listing.
 
 `claude-review.yaml`'s reviewer job gates on the comment's `author_association`,
 admitting only `OWNER`, `MEMBER`, and `COLLABORATOR`. The gate exists to keep an
-untrusted author from spending this repository's tokens or steering the reviewer.
-Review requests from the explicitly selected Claude CI alternative, when posted
-through the installed
-Claude GitHub App, carry the `claude[bot]` identity, whose association GitHub
-reports as `NONE`, the same value an outside contributor's comment carries, so
-those requests were gated out identically to an outsider's. The gate's fourth
-clause admits that one login directly, and further requires the comment to carry
-no Markdown heading anywhere in it. That test does less than it looks like it does:
-the reviewer's summary opens with a one-line tally, not a heading, so the test
-normally does not exclude it.
+untrusted author from spending this repository's tokens or steering the
+reviewer. Every Claude Code pull request requests its independent review from
+this job, so the exposure this section and the marketplace record above describe
+applies to each of them. A request posted through the installed Claude GitHub
+App carries the `claude[bot]` identity, whose association GitHub reports as
+`NONE`, the same value an outside contributor's comment carries, so without the
+clause below those requests would be gated out identically to an outsider's. The
+gate's fourth clause admits that one login directly, and further requires the
+comment to carry no Markdown heading anywhere in it. That test does less than it
+looks like it does: the reviewer's summary opens with a one-line tally, not a
+heading, so the test normally does not exclude it.
 
 Admitting a login rather than widening the association list does not widen who can
 trigger a paid run: a comment under the `claude[bot]` identity can only be
@@ -2073,10 +2074,10 @@ Two properties keep the admission bounded, and a third does not hold:
   damage, and is a maintainer decision made outside this repository.
 
 The cost is a silent-skip failure mode. The gate trusts a login string; if that
-login changes, the gate silently reverts to skipping the explicitly selected
-Claude CI alternative's requests, with no failed run and no comment. The trigger-phrase rule carries the
-opposite risk: if the reviewer quotes the phrase, a review starts that nobody
-asked for. Neither is mechanically detected; both are found only by noticing that
-reviews stopped arriving, or arrived when they should not have. Admitting the
-`NONE` association itself was rejected outright, since that would admit every
-outside author.
+login changes, the gate silently reverts to skipping Claude CI review requests
+posted as `claude[bot]`, with no failed run and no comment. The trigger-phrase
+rule carries the opposite risk: if the reviewer quotes the phrase, a review
+starts that nobody asked for. Neither is mechanically detected; both are found
+only by noticing that reviews stopped arriving, or arrived when they should not
+have. Admitting the `NONE` association itself was rejected outright, since that
+would admit every outside author.

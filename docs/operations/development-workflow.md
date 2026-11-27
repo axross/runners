@@ -81,8 +81,8 @@ The run MUST, in order:
 2. open the draft pull request from the template, linking the tracking issue
    with a closing keyword;
 3. start watching the pull request's activity, where the host offers it and
-   the run holds authorization for it; in Claude Code, that is the plan-gate
-   confirmation;
+   the run holds authorization for it, as Waiting and Watching, below, states;
+   in Claude Code, that authorization is the plan-gate confirmation;
 4. request review from the provider The Independent Review, below, maps to its
    host, address its findings, and request a fresh review after each fix batch,
    up to the four-round cap;
@@ -92,9 +92,8 @@ The run MUST, in order:
 Agent-created ownership requirements are stated in the Ownership of
 agent-created work section of [AGENTS.md](../../AGENTS.md).
 
-The run MUST stop watching at the ready transition or at any reported stop,
-unless a higher-priority host instruction requires otherwise; the run then
-follows that instruction and reports the project requirement as unmet.
+The run MUST stop watching at each stop that Waiting and Watching, below, names,
+with no exception.
 
 After approval, the run MUST NOT ask again for confirmation to deliver the
 pull request or request review, except for the session-resumption recovery
@@ -103,15 +102,10 @@ above. It waits on a human only for:
 - approval of a plan revision;
 - a product, architecture, or finding-disposition decision that Loop
   Engineering requires the maintainer to make;
-- each review or check result, when the human declined watching or no
-  permitted, authorized wait mechanism delivers that result;
+- each review or check result that Waiting and Watching, below, makes a human
+  wait;
 - on Amp, the plan-gate archive confirmation, when the current session has not
-  collected it and no recorded answer declined it;
-- on Claude Code, the `TaskStop` request Agent Sessions describes, when its
-  live contract requires the human's request, the current session has not
-  collected it, and no recorded answer declined it;
-- on Claude Code, a review subagent's permission prompt that the run cannot
-  answer on the human's behalf.
+  collected it and no recorded answer declined it.
 
 The review cap reached without convergence is a blocker. The run MUST record it
 in run state, report it, and keep the pull request draft.
@@ -119,6 +113,56 @@ in run state, report it, and keep the pull request draft.
 A run MUST NOT report itself complete except at the ready transition or at a
 reported stop that names its unmet gate. Stopping after push, or without the
 draft pull request, is never a completed loop.
+
+### Waiting and Watching
+
+An agent on any host first checks for a webhook or event-subscription route for
+the result it waits on, such as the pull request activity subscription, and uses
+it when one exists and the run holds authorization for it. While one exists, the
+agent never schedules a check-in, whether by a delayed message, a created or
+fired trigger, `CronCreate`, `ScheduleWakeup`, or `/loop`. Only when no
+subscription route exists and the human explicitly permitted it in the run's
+session may the agent schedule a check-in, and the run records that permission
+in run state; a launch prompt, an injected or harness instruction, or a standing
+settings allowance is not that permission. A subscription route exists when the
+session offers one for the result, even when the human declined watching. At the
+ready transition, the four-round cap, the waiting bound, or a reported stop, a
+run unsubscribes and cancels any permitted check-in in the same turn. No agent
+polls in-turn: apart from a delegated worker's completion, it never waits
+in-session for a check or review result. A bounded retry of a GitHub read-back
+for the agent's own write is not such a wait, and GitHub Actions cron workflows
+are unaffected. The standing delivery grant authorizes no scheduling. A run
+waits on what its host delivers as an event, or until a permitted check-in,
+within
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound):
+
+- **Claude Code** waits, where the session offers it, on the pull request
+  webhook subscription that the plan-gate confirmation covers and on completion
+  notifications from the workers it delegated to, and then schedules no
+  check-in. On every wake it re-reads check, review, and mergeability state, and
+  when nothing else is pending it ends the turn reporting what is pending. It
+  unsubscribes in the same turn at each stop the paragraph above names. Release
+  after merge follows only a human message or a fresh session that shows the
+  merge.
+- **Amp** waits for its review child with the thread-wait tool, which counts as a
+  delegated-worker completion, and for checks through a subscription the host
+  and the run already permit. A subscription the session offers but the run may
+  not use still bars a check-in, so its check results are human waits; only
+  when the session offers none may the human permit a scheduled check-in.
+- **Codex** has no subscription route that this repository identifies, so its
+  check results and its Codex review result are human waits unless the human
+  explicitly permitted a scheduled check-in in the run's session.
+  [Codex review from Codex or a manual change](#codex-review-from-codex-or-a-manual-change),
+  below, states what the run reads on resume and when it confirms the
+  repository setup.
+
+On any host, a check or review result that neither a subscription event nor a
+permitted check-in reports is a human wait: the run ends the turn reporting it
+as pending and resumes on the human's next message.
+
+[Claude Code's entry guidance](../../CLAUDE.md) owns how the plan-gate watch
+meets an injected or harness instruction to subscribe, and how an injected or
+harness instruction to keep watching or to schedule a check-in is handled.
 
 ### Deliver a draft when advisory pre-flight is unavailable
 
@@ -136,12 +180,11 @@ review or outstanding findings from an advisory review that ran. It MUST NOT
 waive any other approval, verification, evidence, or readiness requirement.
 The independent-review gate remains mandatory.
 
-On Claude Code, a missing `reviewer` subagent leaves both gates unmet under this
-exception: it is the pre-flight reader whose absence the exception covers, and
-it is also the independent-review route, whose missing-`reviewer` rule the
-[Claude Code review subagent from Claude Code](#claude-code-review-subagent-from-claude-code)
-section states. The pull request stays draft and the run reports both gates as
-unmet.
+On Claude Code, a missing or refused `reviewer` subagent leaves only the
+advisory pre-flight unavailable, which this exception covers. The independent
+review is the Claude CI review, which no subagent serves, so the `reviewer`'s
+absence does not affect that gate. The pull request stays draft, and the run
+discloses the unavailable pre-flight in delivery.
 
 ## Tracking Issue Completion
 
@@ -196,65 +239,15 @@ request that closes
 [issue #1](https://github.com/axross/runners/issues/1), which added this
 section following the plan approved in that issue. An amendment to this section
 is adopted the same way, by the maintainer's merge of the pull request that
-carries it. The amendment for
-[issue #35](https://github.com/axross/runners/issues/35), which replaces the
-branch prefix in the targets and exclusions with the naming rule in Branches and
-Merging, below, adds the operator-assignment
-effect, and adds the Claude Code explicit-request sentence below, takes effect
-only on the maintainer's merge of the pull request that closes that issue. The
-amendment for [issue #96](https://github.com/axross/runners/issues/96), which
-adds the Amp review child thread's effects and consequences below, likewise
-takes effect only on the maintainer's merge of the pull request that closes
-that issue. The amendments for
-[issue #127](https://github.com/axross/runners/issues/127), which add the
-execution-plan-issue and review-child targets, the issue-closing effect, the
-Claude Code review child session's effects and consequences, and the explicitly
-selected Claude CI alternative below, likewise take effect only on the
-maintainer's merge of the pull request that closes that issue; that pull
-request, authored by an Amp run, is reviewed under the grant as merged before it.
-The amendment for [issue #151](https://github.com/axross/runners/issues/151),
-which replaces the Claude Code review child session route those amendments added
-with the Claude Code review subagent, and rewrites the targets, covered effects,
-and accepted consequences below to match, follows the plan the maintainer
-approved in that issue
-([recorded here](https://github.com/axross/runners/issues/151#issuecomment-7049089352))
-and, like the earlier ones, takes effect only on the maintainer's merge of the
-pull request that closes it; that pull request is reviewed under the grant as
-merged before it. Agent runs share the maintainer's operator identity, so the
-signal that distinguishes such a merge as a human act is that agents never merge
-on their own: merge is excluded from this grant, and it is the maintainer's
-decision, per [Branches and Merging](#branches-and-merging). The grant is
-separate from plan approval, which releases implementation and is not what
-authorizes a delivery effect, but every run already holds it, so no run asks
-for it.
-
-The pull request that adds this section cannot rely on it, because the grant
-takes effect only on merge. That pull request's delivery is authorized by the
-maintainer's approval of the plan in issue #1, which requested the authorization
-to push a `claude/` branch and open a draft pull request for it. That pull
-request was in fact delivered from the host-assigned head branch
-`ccr-fd09e38c-631o65`, because the authoring cloud session could push only to
-that branch, and `main` was seeded with an empty root commit with the
-maintainer's explicit permission. This is a one-time exception for the adopting
-pull request.
-
-The pull request that closes issue #35 cannot rely on its own amendment either,
-because the amendment takes effect only on merge, and the branch target in the
-grant as merged does not cover the head branch the authoring cloud session was
-assigned. That pull request is delivered from the host-assigned head branch
-`ccr-315645f9-p43xyx`, which the maintainer explicitly permitted for that run in
-the authoring session. This is a second one-time exception for an adopting pull
-request; later changes use a branch named under
-Branches and Merging, below, subject to the host-assigned branch rule there.
-
-The pull request that closes issue #96 cannot rely on its own amendment either.
-The grant before that amendment maps an Amp run to the Codex review, but the
-maintainer chose, in that run's plan-approval exchange, to have that pull
-request reviewed by an Amp review child thread instead. For that run only, this
-third one-time exception covers creating one review child thread per round, the
-child's COMMENT-type review on that pull request, and archiving the child
-thread, under the Amp arrangement that pull request adds to
-[REVIEW.md](../../REVIEW.md).
+carries it, and takes effect only on that merge; the run on the amending pull
+request works under the grant as merged. GitHub records that merge, and the
+amendment's tracking issue records its plan approval. Agent runs share the
+maintainer's operator identity, so the signal that distinguishes such a merge as
+a human act is that agents never merge on their own: merge is excluded from this
+grant, and it is the maintainer's decision, per
+[Branches and Merging](#branches-and-merging). The grant is separate from plan
+approval, which releases implementation and is not what authorizes a delivery
+effect, but every run already holds it, so no run asks for it.
 
 The grant's targets are:
 
@@ -268,10 +261,10 @@ The grant's targets are:
 - the run's draft pull request against the default branch; for recovery, the
   existing pull request
 - the review provider the authoring host maps to in
-  [the independent review](#the-independent-review), or the Claude CI
-  alternative when the maintainer explicitly selects it for the run
-- the Claude Code review subagent instances and the Amp review child threads the
-  run creates for that pull request, each identified in run state
+  [the independent review](#the-independent-review), which for Claude Code is
+  the Claude CI review
+- the Amp review child threads the run creates for that pull request, each
+  identified in run state
 
 Its covered effects, each performed without asking, are:
 
@@ -296,20 +289,14 @@ Its covered effects, each performed without asking, are:
 - publication of evidence at the destination named in the approved plan when an
   acceptance criterion carries the
   `(verified out of tree: <where the evidence will be published>)` marker
-- review requests on that pull request through the mapped provider, or the
-  Claude CI alternative when the maintainer explicitly selects it for the run,
-  one per round, including fresh reviews after fixes, up to the four-round cap, with
-  the consequences listed below
+- review requests on that pull request through the mapped provider, which for a
+  Claude Code run is the Claude CI review, one per round, including fresh
+  reviews after fixes, up to the four-round cap, with the consequences listed
+  below
 - for an Amp run, which the Amp review child thread route serves: creation of
   one review child thread per round, that child's COMMENT-type review on the
   run's pull request, and archiving of the child thread once its result is
   verified or its round has failed
-- for a Claude Code run, which the Claude Code review subagent route serves:
-  spawning one new `reviewer` instance per round in its own worktree, that
-  instance's reading of the pull request and the required repository and policy
-  material, its one COMMENT-type review on the run's pull request, and stopping
-  it with `TaskStop` when it is still running once its result is verified or its
-  round has failed, as the Claude Code review subagent procedure below defines
 
 The grant is standing: it holds across runs, sessions, and executors until the
 maintainer amends or removes this section, and no run's own end expires it.
@@ -426,7 +413,7 @@ the maintainer triages it. Codex review may:
 - read the pull request and repository content, including files outside the diff
 - publish findings and a review to that pull request
 
-An explicitly selected alternative Claude CI review request can:
+A Claude CI review request, which is a Claude Code run's mapped provider, can:
 
 - start the GitHub-hosted `claude-review.yaml` job, which runs a third-party
   artificial intelligence action with repository-reading and shell tools
@@ -460,60 +447,9 @@ An Amp review child thread can:
 - publish a COMMENT-type review on the pull request under the same GitHub
   operator account as the run that authored the change
 
-A Claude Code review subagent can:
-
-- incur usage charges within the operator's existing account and model
-  settings, without changing payment policy, providers, or configuration
-- read the repository, the pull request, and files outside the diff
-- hold the authoring session's GitHub write access and tools other than the
-  four its definition denies, so the limits listed below bind only as far as the
-  assignment and the definition instruct
-- work in a separate worktree of this repository, which the run confirms is
-  distinct from the author's checkout before relying on the round, and which
-  can remain on disk afterwards; whether it does is inspected and reported, not
-  asserted
-- raise permission prompts in the authoring session, where an answer that lasts
-  for the session also applies to the authoring conversation, and where a
-  "don't ask again" answer for a Bash command, a web fetch domain, or web
-  search is saved to the repository's `.claude/settings.local.json` and applies
-  to later sessions and their subagents anywhere in this repository, as Claude
-  Code's [permissions documentation](https://code.claude.com/docs/en/permissions)
-  states
-- be steered within those tools by pull request content it reads, such as a
-  comment any GitHub user can post on this public repository
-- publish a COMMENT-type review on the pull request under the identity of the
-  session's GitHub access: the operator account through the operator's
-  credentials, or `claude[bot]` through the installed Claude GitHub App
-
-The definition declares, and Claude Code documents enforcing, one set of limits
-on a `reviewer` instance: it denies the Edit, Write, NotebookEdit, and Agent
-tools. No live round has confirmed that enforcement yet;
-[#155](https://github.com/axross/runners/issues/155) tracks the first. Every
-other limit is instruction-only, whether the instance is the advisory
-pre-flight reader or a round's independent review:
-
-- no shell write to the repository beyond fetching the reviewed commit and
-  checking it out in its own confirmed worktree, and no commit; an advisory
-  pre-flight instance has no such worktree and makes no shell write;
-- no push and no merge;
-- no approve or request-changes verdict;
-- no GitHub write other than those that compose the round's one review;
-- no starting or messaging of other actors through a route other than the Agent
-  tool, such as a session-starting or messaging tool;
-- no posting at all by an instance that is not assigned as the round's
-  independent review.
-
-The last item follows from one definition serving both uses: every `reviewer`
-instance carries the conditional posting permission in its prose, and the host
-does not enforce that the condition holds. The definition leaves GitHub write
-tools and session-starting and messaging tools undenied, for the reasons the
-register deviation in [Agent Skills](./agent-skills.md#deviation---the-claude-code-review-subagents-limits-and-closure)
-records as its counterexample.
-
-An Amp review child thread's or a Claude Code review subagent's review supplies
-no GitHub approval and no APPROVE verdict; a shared operator account is not a
-distinct bot identity. The selected route supplies context-independent review
-for this project's delivery gate. This
+An Amp review child thread's review supplies no GitHub approval and no APPROVE
+verdict; a shared operator account is not a distinct bot identity. The selected
+route supplies context-independent review for this project's delivery gate. This
 grant covers neither unrelated threads or sessions nor reconfiguration to make
 an unavailable route work.
 
@@ -569,13 +505,12 @@ stops before the first such push and asks the maintainer to choose a compliant
 delivery target; it does not silently replace the pull request or exempt the
 branch from this rule. An agent MUST NOT rename the branch automatically.
 
-A host can restrict a session to pushing only a branch it assigns, as Claude
-Code cloud sessions have done for this repository's adopting pull requests.
-When the assigned branch does not follow this naming rule and the session
-cannot push a compliant one, the run MUST surface that at the plan gate and
-push only on the maintainer's explicit exception for that run, recorded in run
-state; without it, the run stops before the first push and reports delivery as
-blocked.
+A host can restrict a session to pushing only a branch it assigns, as a Claude
+Code cloud session can. When the assigned branch does not follow this naming
+rule and the session cannot push a compliant one, the run MUST surface that at
+the plan gate and push only on the maintainer's explicit exception for that run,
+recorded in run state; without it, the run stops before the first push and
+reports delivery as blocked.
 
 When the base branch moves and a topic branch conflicts, merge the current base
 into the topic branch and record any resolution in a new commit. Do not rebase,
@@ -1062,50 +997,53 @@ the only backstop.
 ## The Independent Review
 
 The review runs in a separate context, never the authoring session, whatever
-that session calls its own assessment. The Codex route also runs under a
-separate reviewer identity, and so does the explicitly selected Claude CI
-alternative, except when a run posts its request through the Claude GitHub App,
-whose `claude[bot]` identity the reviewer shares (see
-[Security](../conventions/security.md)). The Amp and Claude Code routes do not:
-their reviewer, an Amp review child thread or a Claude Code review subagent,
-may post under the same GitHub operator account and runs on
-the same infrastructure as its author. The maintainer accepts context
-independence for those routes, a fresh Amp thread or Claude Code review
-subagent that carries none of the author's conversation, as
+that session calls its own assessment. The Codex route and the Claude CI route
+also run under a separate reviewer identity, except when a run posts a Claude CI
+request through the Claude GitHub App, whose `claude[bot]` identity the reviewer
+shares (see [Security](../conventions/security.md)). The Amp route does not: its
+reviewer, an Amp review child thread, may post under the same GitHub operator
+account and runs on the same infrastructure as its author. The maintainer
+accepts context independence for that route, a fresh Amp thread that carries
+none of the author's conversation, as
 [Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#default-independent-review-arrangement)
-allows. A fresh Amp review child thread, or on Claude Code a new, non-fork
-`reviewer` instance assigned as that round's independent review, that the run
-starts after the draft pull request exists and that posts its own review, is
-the independent review for its route. Qualification is judged per instance and
-per assignment: sharing the `reviewer` definition with advisory or
-phase-deliverable instances does not disqualify an instance, and sharing their
-context does. A run MUST NOT count any other review as satisfying or
-substituting for it: not a fork, not a resumed or reused instance of any use,
-not an instance that is not so assigned or whose assignment carries pre-flight
-findings, not a phase-deliverable reviewer, not a review session started by
-another session unless the maintainer instructs it for the run, and not the
-author's own checks. The review is reachable only
-through the run's draft pull request, so a run that has not opened it has not
-reached this gate and is not complete.
+allows. The mapped provider's review, a Claude CI review, a Codex review, or on
+Amp a fresh review child thread, is the independent review for its route when
+the run requests or starts it after the draft pull request exists and it posts
+its own review. Qualification is judged per round: a review that shares the
+author's context does not qualify. A run MUST NOT count any other review as
+satisfying or substituting for it: not a fork, not a resumed or reused instance
+or thread of any use, not an advisory pre-flight instance or a review whose
+assignment carries pre-flight findings, not a phase-deliverable reviewer, not a
+review session started by another session unless the maintainer instructs it for
+the run, and not the author's own checks. The review is reachable only through
+the run's draft pull request, so a run that has not opened it has not reached
+this gate and is not complete.
+
+A review session that another session starts for a run is not a route: it adds a
+second actor between the author and the review, and the grant's targets name only
+the mapped provider and the Amp review child threads the run creates. A review
+session the maintainer instructs for a run counts as that run's independent
+review only when it meets the qualification above: a fresh context without the
+author's conversation, given a neutral assignment that carries no implementation
+receipt, pre-flight findings, or claimed verdicts, started after the draft pull
+request exists, and posting its own review that the run correlates with the round
+and the reviewed commit. The run records the maintainer's instruction, with its
+locator, in run state. A decision another session relays without that
+instruction is not one. Reviews already completed that way are unaffected.
 
 The authoring host determines the provider and request route:
 
-| Authoring host         | Review provider             | Request                                                                                  |
-| ---------------------- | --------------------------- | ---------------------------------------------------------------------------------------- |
-| Claude Code            | Claude Code review subagent | Spawn a new `reviewer` instance in a worktree that posts its review on the pull request. |
-| Codex                  | Codex review                | Post `@codex review` as a top-level pull request comment.                                |
-| Amp                    | Amp review child thread     | Start a fresh Amp thread that posts its review on the pull request.                      |
-| Manual (no agent host) | Codex review                | Post `@codex review` as a top-level pull request comment.                                |
+| Authoring host         | Review provider         | Request                                                                                                                         |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code            | Claude CI review        | Post the Claude review trigger phrase as a top-level pull request comment, under the round rules in the Claude CI review below. |
+| Codex                  | Codex review            | Post `@codex review` as a top-level pull request comment.                                                                       |
+| Amp                    | Amp review child thread | Start a fresh Amp thread that posts its review on the pull request.                                                             |
+| Manual (no agent host) | Codex review            | Post `@codex review` as a top-level pull request comment.                                                                       |
 
-The Claude workflow is an alternative a Claude Code run uses only when the
-maintainer explicitly selects it for that run, not the default for every change
-just because it exists here. Codex uses the external Codex App. Amp and Claude
-Code use a fresh reviewer, an Amp review child thread and a Claude Code review
-subagent, described below, and request no comment-triggered review; a Claude
-Code run requests the Claude CI review only when the maintainer selects that
-alternative. Manual changes
-have no agent host, so they use Codex rather than claiming a Claude Code
-route.
+Claude Code uses the Claude CI review, an in-repository workflow. Codex uses the
+external Codex App. Amp uses a fresh review child thread, described below, and
+requests no comment-triggered review. Manual changes have no agent host, so they
+use Codex rather than claiming a Claude Code route.
 
 Before the first request, an agent run MUST record its authoring host and the
 selected provider in recoverable Loop Engineering run state, through
@@ -1119,12 +1057,12 @@ selection first. Each round invokes exactly one provider. A failed, silent, or
 unavailable selected route blocks the review gate; it never causes an automatic
 request to another provider.
 
-The literals above and in Alternative Claude CI review, below, are reference
-documentation, not requests. In each review
-round of a comment-triggered route, write the trigger literal in exactly one
-GitHub comment, that round's intentional top-level request. Do not copy it into
-a plan or pull request body, recoverable state, summary, progress comment, or
-reply. Everywhere else, refer to the applicable phrase by name. This prevents a
+The literals above and in Claude CI review from Claude Code, below, are
+reference documentation, not requests. In each review round of a
+comment-triggered route, write the trigger literal in exactly one GitHub
+comment, that round's intentional top-level request. Do not copy it into a plan
+or pull request body, recoverable state, summary, progress comment, or reply.
+Everywhere else, refer to the applicable phrase by name. This prevents a
 comment-triggered integration from starting a duplicate review while permitting
 a fresh request after a fix batch. The review has a cap of four rounds; see
 [Loop Engineering's external round cap](../../.claude/skills/loop-engineering/references/independent-review.md#external-round-cap).
@@ -1170,12 +1108,9 @@ Tree, below, remain blockers even when the review is silent about them.
 
 <a id="claude-review-from-claude-code"></a>
 
-### Alternative Claude CI review
+### Claude CI review from Claude Code
 
-A Claude Code run uses this route only when the maintainer explicitly selects it
-for that run, under the provider-change rule in The Independent Review, above;
-the run requests it by posting `@claude review` as a top-level pull request
-comment, once per round. The Claude CI review is the in-repository reviewer in
+The Claude CI review is the in-repository reviewer in
 [`claude-review.yaml`](../../.github/workflows/claude-review.yaml), which runs on
 a GitHub-hosted runner and applies [`REVIEW.md`](../../REVIEW.md) through its
 system prompt. It is inert until a one-time operator setup is done, and its
@@ -1191,12 +1126,55 @@ trigger phrase into a summary or comment, per [REVIEW.md](../../REVIEW.md). The 
 unless that identity is named in its own `allowed_bots` input, which
 `claude-review.yaml` does for `claude[bot]`. See
 [Security](../conventions/security.md#the-review-gate-admits-one-bot-identity-by-login-not-association)
-for the rationale.
+for the rationale. A request from any other author, a missing operator setup,
+and an unnamed bot all end without findings.
 
-A request from any other author, a missing operator setup, and an unnamed bot
-all end without findings. A Claude CI review request that gets no review MUST confirm the
-operator setup and, where a bot posted the request, that its identity is named in
-`allowed_bots`. Do not read the absence as approval.
+Each round follows these rules:
+
+- **Request.** The round's request is the Claude review trigger phrase,
+  `@claude review`, written in exactly one top-level pull request comment for
+  that round and nowhere else. When `claude[bot]` posts it, the comment carries
+  no Markdown heading and nowhere the sequence of two number signs and a space,
+  because the workflow's `!contains(body, '## ')` gate skips a bot comment that
+  contains it.
+- **No overlap.** The workflow's concurrency group cancels an in-flight review
+  when a new request arrives on the same pull request. A run MUST NOT post a new
+  request while its previous round is pending.
+- **Reviewer.** The reviewer is always `claude[bot]`. It shares an identity with
+  the requester only when `claude[bot]` posted the request.
+- **Result.** A round's result is a `claude[bot]` comment posted after the
+  request that contains the tally line [REVIEW.md](../../REVIEW.md) requires,
+  together with any `claude[bot]` inline findings. The summary names neither
+  commit nor round, so the tally comment and the inline findings are tied to the
+  round by the Head and timing rule, below.
+- **Failed rounds.** A cancelled, failed, or unfinished workflow run, a run the
+  workflow's gate skipped, and inline findings with no tally summary are failed
+  rounds. A workflow run without a conclusion is pending until the waiting bound
+  has passed since the request, which is the job's `timeout-minutes` in
+  `claude-review.yaml` plus Loop Engineering's margin; after that it is
+  unfinished. A workflow run that concluded as a success does not by itself show
+  that a review was posted.
+- **Detection.** On each wake or resume, read the workflow run the request
+  comment triggered and the comments posted after the request, then classify the
+  round from both. That run is the `issue_comment` run created at or just after
+  the request comment's timestamp, not the latest run in the repository. Runs
+  that other comments start, including the reviewer's tally comment, are not the
+  round's run and are ignored.
+- **Gate.** A failed, silent, or unavailable round blocks the review gate, and
+  no other provider substitutes for it. A request that gets no review MUST lead
+  the run to confirm the operator setup and, where `claude[bot]` posted the
+  request, that its identity is named in `allowed_bots`. Do not read the absence
+  as approval.
+- **Head and timing.** A round covers the pull request head that was current
+  when its request was posted, which the run records with the round. Its inline
+  findings MUST carry that head as their `original_commit_id`. A summary-only
+  round is tied to the head only by being posted after the request and before any
+  later request or head move. A round whose head moved does not cover the new
+  head, which needs a new request.
+- **Cap.** Every request counts against the four-round cap, including a failed
+  round and one whose result no longer covers the head. After a failed round,
+  the run may post a new request once the cause is addressed, and that request
+  counts toward the cap.
 
 ### Codex review from Codex or a manual change
 
@@ -1232,13 +1210,15 @@ An initial eyes reaction or Running activity status acknowledges the request;
 neither completes the review. A run MUST correlate the request, reviewed
 revision, terminal App status, and actual final result before evaluating the
 review gate. Completed status proves the round ended, not that it found nothing:
-read any posted review and inline findings. The App's native no-findings response or
-final thumbs-up reaction on the request can confirm a clean round without a
-separate review object. Acknowledgment without a terminal result remains pending
-within [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
-If the App does not acknowledge or complete the round within that bound, the run
-MUST confirm the repository setup and keep the review gate blocked rather than
-read silence as a clean review.
+read any posted review and inline findings. The App's native no-findings
+response or final thumbs-up reaction on the request can confirm a clean round
+without a separate review object. Acknowledgment without a terminal result
+remains pending, and the App's result is a human wait under Waiting and
+Watching, above. On resume the run reads the App's status and any posted result.
+If the round has no acknowledgment or terminal result once
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound)
+has passed, the run MUST confirm the repository setup and keep the review gate
+blocked rather than read silence as a clean review.
 
 A run MUST assess the correlated result under REVIEW.md's adopted arrangement,
 not demand affirmative per-check assertions or an extra round solely for them.
@@ -1268,8 +1248,8 @@ handoff of the authoring thread.
    state, through Save and resume run state, above.
 3. The child posts its review on the pull request in the form REVIEW.md's Amp
    arrangement sets.
-4. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
-   within
+4. Wait for the child with Amp's thread-wait tool, a delegated-worker
+   completion under Waiting and Watching, above, within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round's child thread and the reviewed
@@ -1294,126 +1274,6 @@ and choose **Archive** in its More Actions menu, or run `amp threads archive`
 with its thread ID. Report the remaining thread. On
 resume, check what each recorded child posted and whether it is archived before
 starting another child or counting another round.
-
-### Claude Code review subagent from Claude Code
-
-The Claude Code route follows
-[Loop Engineering's review workflow](../../.claude/skills/loop-engineering/references/review-workflow.md)
-with this project's choices and the deviation registered in
-[Agent Skills](./agent-skills.md). It has not yet been exercised in this
-repository; [#155](https://github.com/axross/runners/issues/155) tracks the host
-facts only its first live round can confirm. Each round runs in a new instance
-of the project's `reviewer` subagent that the run spawns and owns; no instance
-is reused or resumed across rounds or from any other use, and an instance is
-never a fork of the authoring conversation.
-
-1. Before spawning, confirm that the session can discover and spawn the
-   `reviewer` subagent and exposes a GitHub publication route the instance can
-   use, `gh` through `Bash` or a GitHub MCP tool; otherwise the route is
-   unavailable and the review gate stays blocked. When the live `TaskStop`
-   contract requires the human's request, use the answer this session collected
-   as Agent Sessions' plan-gate confirmation section describes.
-2. Spawn the instance with `isolation: worktree` on the call, never as a fork
-   and never by resuming an earlier instance, and without overriding the
-   definition's pinned model or effort. Give it a neutral assignment that names
-   the repository, the pull request, the reviewed head commit, the author's
-   checkout path, [`REVIEW.md`](../../REVIEW.md), the pull request body's
-   acceptance criteria, and the round token: the tracking issue number, or the pull request number
-   when there is no issue, plus the round number. The assignment names the
-   instance as that round's independent review. Beyond what Loop Engineering's
-   review workflow excludes, which includes the author's conversation, the
-   implementation receipt, and the pre-flight ledger and findings, carry none of
-   the author's claimed verdicts. Tell the instance to stop and post nothing if
-   its working directory is the author's checkout; otherwise to fetch the
-   reviewed commit and check it out inside its confirmed worktree, since the
-   worktree branches from the default branch; to read the actual change and
-   surrounding code; not to edit, push, or delegate, and to make no write other
-   than that fetch and checkout and the writes that compose its review; to post
-   one COMMENT-type review itself; and to report the review's URL, the commit it
-   read, which of those limits its host enforced and which it followed by
-   instruction, which GitHub identity it posted under, and any limitations.
-3. Right after the spawn, checkpoint the round token, the agent ID the spawn
-   returned, and the instance's worktree in run state, through Save and resume
-   run state, above. The round token, the posted review, and the worktree are
-   the instance's durable identity; Claude Code's subagent documentation says
-   subagents work within a single session, so the agent ID is a handle only the
-   spawning session can use.
-4. Before relying on the round, confirm from the spawn result that the
-   instance's worktree path differs from the author's checkout. When the spawn
-   result does not report the worktree path, confirm it from the instance's
-   returned report, which is not yet exercised
-   ([#155](https://github.com/axross/runners/issues/155)); the round counts only
-   once the path is confirmed. A spawn result or report that gives the author's
-   checkout, and an instance that reports its working directory is the author's
-   checkout, each fail the isolation check: record the failure, stop the
-   instance if it is still running, and keep the gate unmet. A review that an
-   instance posted despite failing the check does not count; report it.
-5. The instance posts its review on the pull request in the form REVIEW.md's
-   Claude Code review subagent arrangement sets.
-6. Wait for the instance as Agent Sessions' Waiting on CI and Review describes,
-   within
-   [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
-   Then read the posted review back, confirm that it is submitted rather than
-   pending, and correlate it with the round token and the reviewed commit.
-   Record the instance's report of the commit it read, the limits its host
-   enforced and the limits it followed by instruction, and its posting identity
-   in run state. Review coverage evidence, above, applies to the result.
-7. After each round, and before any next commit or the ready transition,
-   confirm that the author's checkout is unchanged and that the pull request
-   head is still the reviewed commit, and inspect whether the instance's
-   worktree remains. Claude Code's documentation says a worktree is removed
-   automatically only when the subagent made no changes, which this repository
-   has not verified, so record what the inspection found and report a remaining
-   worktree; never assert that it was cleaned up.
-8. Record a completed instance as completed, with the review's URL, in run
-   state. Never resume or message a completed or stopped instance. The
-   documented host operations offer no way to close a completed or stopped
-   instance, so that record ends the round without a handoff, as the deviation
-   in Agent Skills registers.
-9. Report the reviewer's pinned model and effort as declared, not measured,
-   under
-   [Loop Engineering's Model and Effort Certainty contract](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
-
-An instance that cannot post, a review that does not appear, a review that does
-not correlate, and a failed isolation check are failures of the selected route,
-which block the review gate as The Independent Review, above, states. A missing
-or refused `reviewer` is one too, and no other subagent, provider, or session
-the run chooses substitutes for it; the Claude CI alternative, or a review
-session the maintainer instructs, applies only when the maintainer selects it
-for the run. Record the incomplete evidence. Stop any round's instance
-that is still running after its result is verified or its round has failed with
-`TaskStop`, and record it as stopped.
-
-When the run cannot stop a running instance, give the maintainer the agent ID,
-the reason it remains, and the step: in a local interactive session, press `x`
-on its row in `/tasks`. In a cloud session, where `/tasks` is not documented,
-say that no human step is verified there. Report the remaining instance. On
-resume, check what each recorded instance posted, by its round token, and its
-worktree. A session other than the one that spawned the instance cannot see its
-state: record whether it completed or was stopped as unknown and hand it over
-with its agent ID as an instance the run cannot stop, before starting another
-instance or counting another round.
-
-One `reviewer.md` serves both the advisory pre-flight and this route, with an
-assignment-keyed posting exception, and its `sonnet` and `high` pin is kept and
-not overridden at spawn time. Both are the maintainer's decisions of 2026-11-20,
-[recorded in issue #151](https://github.com/axross/runners/issues/151#issuecomment-7047417917),
-and no further rationale was given for them. The cost of the shared definition
-is the accepted instruction-only exposure listed with the grant, above.
-
-A review session that another session starts for a run is not a route. Earlier
-runs used one on a decision relayed for a single run, but no document described
-it and the grant's targets cover only the actors the run itself creates, so it
-adds a second actor outside the grant between the author and the review.
-Reviews already completed that way are unaffected. A review session the
-maintainer instructs for a run counts as that run's independent review only
-when it meets the qualification in The Independent Review, above: a fresh
-context without the author's conversation, given a neutral assignment that
-carries no implementation receipt, pre-flight findings, or claimed verdicts,
-started after the draft pull request exists, and posting its own COMMENT-type
-review that the run correlates with a round token and the reviewed commit. The
-run records the maintainer's instruction, with its locator, in run state. A
-decision another session relays without that instruction is not one.
 
 ## Acceptance Criteria Verified Out of Tree
 

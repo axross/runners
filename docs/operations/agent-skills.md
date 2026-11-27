@@ -6,16 +6,18 @@ one of them turns out to be wrong, silent, or missing for this repository.
 Every skill under `.claude/skills/` is **installed**, not written here. All of
 them come from the shared [axross/skills](https://github.com/axross/skills)
 library and are copied in with the
-[vercel-labs/skills](https://github.com/vercel-labs/skills) CLI, pinned by
-[`skills-lock.json`](../../skills-lock.json). This project owns no skill of its
-own; its conventions and operating procedures are the documents under
-[`docs/`](../index.md). Two costs come with that choice. Refreshing needs Node and
-network access, because `npx skills` fetches from the library over the network;
-the installed skills themselves are plain Markdown, so this cost falls on
-refreshing, not on every session. And the library is not this project's own: a
-rule that turns out wrong, outdated, or silent on a case here cannot be fixed by
-editing the installed copy, because the next install discards the edit while it
-poses as a rule the library agrees with. See
+[vercel-labs/skills](https://github.com/vercel-labs/skills) CLI.
+[`skills-lock.json`](../../skills-lock.json) records the installed set and each
+copy's content hash, and no revision: this project pins none, a refresh takes
+the latest upstream, and nothing updates skills automatically. This project owns
+no skill of its own; its conventions and operating procedures are the documents
+under [`docs/`](../index.md). Two costs come with that choice. Refreshing needs
+Node and network access, because `npx skills` fetches from the library over the
+network; the installed skills themselves are plain Markdown, so this cost falls
+on refreshing, not on every session. And the library is not this project's own:
+a rule that turns out wrong, outdated, or silent on a case here cannot be fixed
+by editing the installed copy, because the next install discards the edit while
+it poses as a rule the library agrees with. See
 [Deviations and Gaps](#deviations-and-gaps) for how that is handled instead.
 
 The installed set is exactly the keys of `skills-lock.json`; that file, not this
@@ -147,9 +149,13 @@ An additive, nonconflicting local convention is not a deviation. A conflicting
 choice is only valid after human adoption under
 [Agent Skill Management](../../.claude/skills/agent-skill-management/SKILL.md)'s
 installed-rule change contract. This project's register MUST retain that
-contract's required exception and adoption evidence. The contract owns validity
-and reassessment; this register owns their local record, not permission to
-override a host restriction or publish upstream.
+contract's required exception and adoption evidence. For an entry adopted by the
+maintainer's merge, that evidence is GitHub's record of the merge and the plan
+approval on the change's tracking issue, as
+[Development Workflow](./development-workflow.md#authorizing-delivery-operations)
+states for the standing delivery grant. The contract owns validity and
+reassessment; this register owns their local record, not permission to override
+a host restriction or publish upstream.
 
 The exposing task continues under applicable installed rules and any separately
 valid deviation. A pending upstream proposal never puts its proposed rule into
@@ -229,11 +235,9 @@ dependency order."
 Claude Code's plan-gate confirmation is the bounded counterexample: declining
 delivery removes the pull request on which review and watching depend, but
 splitting those confirmations would replace the single delivery answer the
-maintainer chose to prevent repeated delivery prompts. This entry is adopted
-the same way as the standing delivery grant: by the maintainer's merge of the
-pull request that closes
-[issue #35](https://github.com/axross/runners/issues/35), which adds it together
-with the plan-gate confirmation it serves.
+maintainer chose to prevent repeated delivery prompts. This entry, and each
+amendment to it, is adopted the same way as the standing delivery grant: by the
+maintainer's merge of the pull request that carries it.
 
 For this confirmation only, the maintainer retains the combined interaction
 governed by the Confirming Delivery at the Plan Gate in Claude Code section of
@@ -246,99 +250,6 @@ the installed ordering rule or the delivery confirmation's dependencies change,
 or the maintainer withdraws this choice. A host rule requiring sequential
 questions takes precedence over this project exception.
 
-Since the merge of the pull request that closes
-[issue #127](https://github.com/axross/runners/issues/127), the confirmation's
-review item is the creation of a Claude Code review child session for the pull
-request, or the Claude CI review request when the maintainer has selected that
-alternative for the run. Since the merge of the pull request that closes
-[issue #151](https://github.com/axross/runners/issues/151), the first of those
-is the spawning of a new `reviewer` subagent instance for each round; the
-dependency this entry records is unchanged.
-
-### Deviation - the Claude Code review subagent's limits and closure
-
-The project installation of `loop-engineering`, from `axross/skills` revision
-`cce7ecf` (the refresh in #96), whose capability hash in `skills-lock.json` is
-`6a7dc5702473917c880c2f783265d099d555fa5e4e063ac411a2fed599118806`, requires in
-its
-[review workflow](../../.claude/skills/loop-engineering/references/review-workflow.md):
-
-- "MUST use available, permitted tool restrictions for a review child while
-  retaining required material access and direct publication through the
-  target's review mechanism."
-- "MUST close each review child the run created after verifying its posted
-  result, using an available supported end/close/archive operation and
-  preserving review history and posted evidence."
-- For Claude Code, "end the review child session using its supported lifecycle
-  operation. Automatic one-shot termination counts when observed; an idle
-  resumable session is not proof of closure."
-- "MUST tell the human when cleanup cannot be completed for another reason, or
-  permission remains unavailable, identify the exact session/thread and reason,
-  and ask them to close it with concrete host-specific steps."
-
-The Claude Code review subagent in
-[Development Workflow](./development-workflow.md) departs from these in four
-bounded ways, each the maintainer's choice:
-
-- The instance is the project's `reviewer` subagent, spawned with
-  `isolation: worktree`. Its definition declares, and Claude Code documents
-  enforcing, the denial of the Edit, Write, NotebookEdit, and Agent tools; no
-  live round has confirmed it yet, and
-  [#155](https://github.com/axross/runners/issues/155) tracks the first. The
-  other limits are instruction-only, as the accepted-consequences list in
-  Development Workflow's grant section gives them. The definition leaves
-  available restrictions on GitHub write tools and on session-starting and
-  messaging tools unused, for the reasons the counterexample below gives. The
-  same `reviewer.md` still serves as the advisory pre-flight reader, and its
-  prose permits posting only under an independent-review assignment that
-  carries a round token.
-- The host documentation describes no operation that makes a completed subagent
-  non-resumable, so a completed instance is recorded as completed in run state
-  rather than closed, and that record ends the round without a per-round
-  handoff. The run never resumes a completed instance.
-- An instance still running after its result is verified or its round has
-  failed is stopped with `TaskStop`. The host documentation says an instance
-  stopped this way resumes when messaged, so, like a completed instance, it is
-  recorded as stopped rather than closed, and the run never messages or resumes
-  it. An instance the run cannot stop, including one an earlier session
-  spawned, whose agent ID only that session can use, is handed to the
-  maintainer with its agent ID, the reason, and, in a local interactive
-  session, the step "press `x` on its row in `/tasks`" in the session that
-  spawned it.
-- In a cloud session, where `/tasks` is not documented, the handoff says that
-  no human step is verified there instead of naming one.
-
-The concrete counterexample to the first quoted rule is the review subagent
-itself: denying every GitHub write tool would remove the direct publication that
-rule requires; a deny-list naming only one connector's non-review GitHub write
-tools, or one session's connector-provided session-starting or messaging tools,
-would not cover other sessions' connectors and would leave the same writes
-reachable through the shell; and a reader still needs the shell and the tracker
-to read the change. The accepted exposure is
-that a `reviewer` instance, whose definition carries the conditional posting
-permission, can still write through the shell or the tracker, or start another
-actor through a non-Agent tool, and the host would not stop it. The alternatives
-are a second, posting-capable definition and a deny-list that also names GitHub
-write tools, all of them or only the non-review ones, and session-starting and
-messaging tools; the maintainer chose one definition and left the rest
-instruction-only, and accepted the exposure.
-
-The deviation described before this amendment, a general-purpose subagent child
-whose limits beyond the worktree were all instructions, was adopted by the
-maintainer's merge of the pull request that closes
-[issue #127](https://github.com/axross/runners/issues/127), together with the
-review route and grant amendments it served. This amendment follows the plan the
-maintainer approved in
-[issue #151](https://github.com/axross/runners/issues/151), recorded at
-[this run-state comment](https://github.com/axross/runners/issues/151#issuecomment-7049089352),
-and, like the earlier ones, is adopted by the maintainer's merge of the pull
-request that closes that issue, which is its adoption evidence. Its scope
-is the Claude Code independent-review route only; the Amp and Codex routes are
-unaffected. It changes no installed skill, host restriction, or plan and review
-gate, and authorizes no upstream publication. Reassess it when the installed
-review-workflow rules change, when Claude Code documents an operation that ends
-a completed subagent, enforces the posting condition or the remaining limits on
-a project subagent, or documents `/tasks` for cloud sessions, when
-[#155](https://github.com/axross/runners/issues/155) records a host fact that
-contradicts what the route assumes, or when the maintainer withdraws this
-choice.
+The confirmation's review item is the Claude CI review request on the pull
+request for each round. The dependency this entry records is unchanged by which
+review the item names.
