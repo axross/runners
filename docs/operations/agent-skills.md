@@ -6,9 +6,11 @@ one of them turns out to be wrong, silent, or missing for this repository.
 Every skill under `.claude/skills/` is **installed**, not written here. All of
 them come from the shared [axross/skills](https://github.com/axross/skills)
 library and are copied in with the
-[vercel-labs/skills](https://github.com/vercel-labs/skills) CLI, pinned by
-[`skills-lock.json`](../../skills-lock.json). This project owns no skill of its
-own; its conventions and operating procedures are the documents under
+[vercel-labs/skills](https://github.com/vercel-labs/skills) CLI.
+[`skills-lock.json`](../../skills-lock.json) records the installed set and each
+copy's content hash, and no revision: this project pins none, a refresh takes
+the latest upstream, and nothing updates skills automatically. This project owns
+no skill of its own; its conventions and operating procedures are the documents under
 [`docs/`](../index.md). Two costs come with that choice. Refreshing needs Node and
 network access, because `npx skills` fetches from the library over the network;
 the installed skills themselves are plain Markdown, so this cost falls on

@@ -20,7 +20,8 @@ glossary.
 This repository is public, so its GitHub Actions CI and review jobs run on
 GitHub-hosted runners only, never on a self-hosted one.
 
-This project's fixed agent-comment marker is `<!-- ai-agent -->`. Never push to
+This project's fixed agent-comment marker is `<!-- ai-agent -->`; `<!-- agent -->`
+is a retired marker, recognized in history and never written. Never push to
 the default branch. Choose a working branch under
 [Branches and Merging](./docs/operations/development-workflow.md#branches-and-merging)
 as adopted on the default branch, not an unmerged amendment. Leave merging to
@@ -211,8 +212,11 @@ leaves the independent-review gate unmet rather than authorizing a substitute.
 ## Skill maintenance
 
 Every directory under `.claude/skills/` is an installed copy from
-[`axross/skills`](https://github.com/axross/skills), selected and pinned by
-[`skills-lock.json`](./skills-lock.json). Never hand-edit an installed copy.
+[`axross/skills`](https://github.com/axross/skills), selected by
+[`skills-lock.json`](./skills-lock.json), which records the installed set and
+each copy's content hash. runners pins no revision: a refresh takes the latest
+upstream, and nothing updates skills automatically. Never hand-edit an installed
+copy.
 For refreshes, inventory changes, loading diagnostics, or an upstream gap,
 load
 [Agent Skill Management](./.claude/skills/agent-skill-management/SKILL.md) and

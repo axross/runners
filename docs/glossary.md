@@ -333,8 +333,11 @@ wrote it. See
 [operations/development-workflow.md](./operations/development-workflow.md).
 
 **Agent Marker** - the `<!-- ai-agent -->` comment that marks an issue or comment
-as written by an agent.
+as written by an agent. `<!-- agent -->` is a retired marker, recognized in
+history and never written.
 
 **Installed Skill** - a directory under `.claude/skills/` copied from
-`axross/skills` and pinned in `skills-lock.json`. It is generated and never
-edited by hand; see [operations/agent-skills.md](./operations/agent-skills.md).
+`axross/skills` and listed in `skills-lock.json`, which records the installed set
+and content hashes but no revision. A refresh takes the latest upstream, and
+nothing updates skills automatically. It is generated and never edited by hand;
+see [operations/agent-skills.md](./operations/agent-skills.md).
