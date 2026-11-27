@@ -60,7 +60,7 @@ entries grow the error output with the square too, because every error is report
 8,000 entries in one repository with the default labels print about 32 million error
 lines and use about 8.4 GB of memory, and several collisions per pair or shorter entries
 (the 1 MiB limit fits about 11,900) give more. The 1 MiB limit bounds both. A TOML
-pool is shorter than a JSON entry, so the limit admits more of them; TOML Problems
+pool is shorter than a JSON entry, so the limit admits more of them; [TOML Problems](./toml-configuration.md#toml-problems)
 gives the figures. Real configurations are expected to have about ten entries.
 
 Known limitation: when `validate` cannot write its output, for example a closed

@@ -1,5 +1,5 @@
 ---
-type: Procedure
+type: Specification
 title: "Building the host image or golden VM"
 description: "What does a build replace, and what happens to the previous image on failure?"
 ---
@@ -7,6 +7,14 @@ description: "What does a build replace, and what happens to the previous image 
 # Building the host image or golden VM
 
 ## Build
+
+The current library exposes the foreground `build` entry point through the
+[test-only commands helper](./entry-points.md#running-it). The lock, control
+channel and exit codes below describe that foreground process. In the app,
+the [resident agent](./resident-agent.md#the-agent) keeps its lock and accepts a
+build request while runners are stopped. Windows operators can follow the
+[Build image menu procedure](../runner-hosts/windows-image.md#building-the-runner-image).
+For the historical CLI executable, use the [recovery instructions to find the guide for the installed tag](../runner-recovery/install.md).
 
 `build` builds the image the configuration names, from the definition embedded in
 the binary, and reads nothing from a checkout or the working directory. It does
@@ -25,8 +33,8 @@ these in order:
    the build; `stop` aborts it.
 4. Docker must answer `docker info` within 30 s, or `build` exits 1 before any
    build. A `docker info` that fails ends it at once, and the message gives the
-   client's output, or why the client could not start. `build` is run by hand, so
-   it does not wait for Docker as `start` does.
+   client's output, or why the client could not start. The foreground build returns this failure
+   immediately. During startup, `start` waits for Docker.
 5. It removes the temporary tags of the image's repository that carry the image
    label, which an earlier `build` that was killed left. A failed removal is a
    warning.
@@ -86,7 +94,7 @@ when the commit is unknown the rename may have made a new golden VM. Stop and fa
 
 ### The Golden VM Build
 
-`build --profile axmc` makes the golden VM that every job VM is cloned from
+In the [foreground test helper](./entry-points.md#running-it), `build --profile axmc` makes the golden VM that every job VM is cloned from
 (`build::golden`). It takes the lock, validates, contains and opens the control channel
 as above, and answers `status` and `stop` the same way, but it calls `tart`, not
 `docker`. A debug build runs the `tart` that `MARSHAL_TEST_TART` names, and a release
