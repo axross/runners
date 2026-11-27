@@ -119,6 +119,12 @@ Content review asks whether each skill owns one coherent responsibility and supp
 
 > Does the skill explain a local command, fragile behavior, or convention that affects real work?
 
+For a changed reference route, use the [paired routing example](./progressive-disclosure.md#triggering-conditions-on-reference-links) to ask:
+
+- Which assigned task can skip this file and still meet its output obligations?
+- Which decision needs it, and what can the actor recognize before that decision, even if a required element is missing?
+- Which observed site, role, checkpoint and material revision support a usage-based conclusion? Record the limits if delivery or outcome is unknown.
+
 **Guidelines:**
 
 - MUST identify duplicated source-of-truth rules across sibling skills.

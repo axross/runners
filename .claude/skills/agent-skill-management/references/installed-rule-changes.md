@@ -57,7 +57,7 @@ An additional naming convention that conflicts with no rule needs no deviation.
 - MUST check the exception against the actual host's priority and tool restrictions using its entry or operations guidance. This skill defines no host precedence and cannot make a lower-priority exception override a host prohibition.
 - MUST apply a deviation only while its adoption, scope, and assumptions remain valid. Unapproved, hypothetical, out-of-scope, expired, or resolved exceptions do not authorize departures.
 - MUST reassess a deviation when installed rules, relevant assumptions, or its stated reassessment conditions change; stop relying on it when the conflict is resolved or its basis no longer holds.
-- MUST keep exception adoption separate from authorization to post feedback or perform other effects. No exception record supplies that grant or waives applicable change, verification, or independent-review gates.
+- MUST keep exception adoption separate from authorization to post feedback or perform other effects. No exception record supplies that grant or waives applicable change, verification, or post-push review (review of the opened pull request by someone other than the author) gates.
 
 ## Publish a third-party proposal only with permission
 
