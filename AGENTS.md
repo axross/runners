@@ -147,7 +147,7 @@ Choose guidance from the actual session and changed surface:
 - **GitHub:** load
   [GitHub Operation](./.claude/skills/github-operation/SKILL.md) for reads and
   writes. [Development Workflow](./docs/operations/development-workflow.md)
-  owns this project's delivery path, branch policy, and post-push-review
+  owns this project's delivery path, branch policy, and post-push review
   route.
 - **Reviews:** load [Code Review](./.claude/skills/code-review/SKILL.md) for
   review methodology; the Code Review Rules section below routes the
@@ -207,7 +207,7 @@ for qualification, review rounds, publication verification, how a round's
 reviewer is ended or handed over, and the Claude CI review's request, result, and
 failure rules.
 Current host and tool restrictions still apply; an unavailable selected route
-leaves the post-push-review gate unmet rather than authorizing a substitute.
+leaves the post-push review gate unmet rather than authorizing a substitute.
 
 ## Skill maintenance
 
