@@ -282,9 +282,7 @@ slots over a fake Tart.
 
 `build --profile axmc` builds the Linux golden VM when a Linux pool is configured,
 as [the Linux build specification](./build-images.md#the-golden-vm-build) describes, and then the golden macOS VM when a
-macOS pool is. Each golden VM is replaced only when its own build succeeds; a
-failure of either is reported with its message and makes `build` exit 1, and a
-golden VM that was built stays. `build::golden_macos` runs the macOS build:
+macOS pool is. The rename commits each golden VM independently. A failure of either build is reported with its message and makes `build` exit 1. A VM already committed stays available. `build::golden_macos` runs the macOS build:
 
 1. It checks Tart and Softnet as `start` does, and refuses a Mac whose macOS is
    older than the base's, with
@@ -308,8 +306,7 @@ golden VM that was built stays. `build::golden_macos` runs the macOS build:
    retired base digests; a failure there is a warning, and the next build tries
    again.
 
-Any failure, and a stop at any step, deletes the build VM within the stop sequence
-and leaves the previous golden macOS VM in place. The disk keeps the base's layout,
+A stop before the rename leaves the previous golden macOS VM in place. If a stop interrupts the rename and Tart cannot list the VMs, check the reported golden name: the new VM may already be active. A stop after the rename skips the remaining cleanup. See [Stop and failure](./build-images.md#stop-and-failure) for the cleanup deadline and how to determine the outcome. The disk keeps the base's layout,
 recovery partition included: the first Mac check on
 [#80](https://github.com/axross/runners/issues/80) found that the guest agent grows
 the disk at boot with it kept. `cli/tests/golden_macos_build.rs` runs the build over

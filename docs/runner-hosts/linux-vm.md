@@ -103,5 +103,4 @@ defines it, in `runtime::tart`, `golden` and `build::golden`.
   next `start`, which deletes a configured pool's leftovers without exporting their
   diagnostic evidence and reports the loss in the log. A build makes its VM under the
   build name, renames it to the golden name only when it is complete, and deletes
-  every other golden VM only after that. A failed or interrupted build leaves the
-  previous golden VM in place.
+  every other golden VM only after that. Before the rename, the previous golden VM stays in place. If the rename was interrupted, check the reported golden name when the outcome is unknown. A stop after the rename leaves the new VM active and skips the remaining cleanup. See [Stop and failure](../marshal-cli/build-images.md#stop-and-failure).

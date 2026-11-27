@@ -11,8 +11,7 @@ description: "Configure the macOS base and disk, update an aging image and diagn
 A pool with `os: "macos"` runs each job in a macOS VM cloned from the golden macOS
 VM, `marshal-golden-macos-g<golden VM version>-r<runner version>-<yyyyMMddHHmmss>`.
 `build` makes it from the pinned Cirrus Labs base
-`ghcr.io/cirruslabs/macos-tahoe-base`, after the Linux golden VM, whenever a macOS
-pool is configured; [CLI](../marshal-cli/macos-pools.md#the-golden-macos-vm-build) gives its steps.
+`ghcr.io/cirruslabs/macos-tahoe-base` when a macOS pool is configured. With both Linux and macOS pools, the Linux build runs first. A macOS-only configuration goes directly to [the golden macOS VM build](../marshal-cli/macos-pools.md#the-golden-macos-vm-build).
 Build it again when the runtime reports it missing or mismatched, and when its
 warnings ask for it.
 

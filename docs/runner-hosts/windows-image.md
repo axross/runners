@@ -26,9 +26,7 @@ place. After a successful build `build` removes the earlier images it built that
 build left untagged: the prune is limited to images carrying the label `com.github.axross.runners.image=actions-runner`,
 so it does not touch other dangling images or images built by hand. It does not
 reclaim installation stages, build caches, or tagged rollback images. A failed prune
-is a warning, not a failed build. [CLI](../marshal-cli/build-images.md#build) gives every step, and
-its section The Agent's Configuration gives what the agent's build
-logs.
+is a warning, not a failed build. See the [build specification](../marshal-cli/build-images.md#build) for each step and [the resident agent’s logging rules](../marshal-cli/resident-agent.md#the-agents-configuration) for how it records build output.
 
 While it builds, the window says the image is building, and **Stop the Build** or
 **Stop all runners** aborts it within 30 s; an abort before the retag leaves the

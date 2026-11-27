@@ -67,9 +67,7 @@ freshness warnings ask for it. The historical CLI runs it as
 `build` writes its steps to its standard error, and the image build's own output
 line by line, masked as a job's output is.
 
-**If it fails or is interrupted.** A stop, by a signal or a client's `stop`, and a
-failure at any step before the rename delete the build VM within the 30 s stop
-sequence and leave the previous golden VM as it was, so `start` is not affected.
+**If it fails or is interrupted.** A stop or failure before the rename leaves the previous golden VM in place. If cleanup reaches the exit deadline, the shim or next build removes the temporary VM. If a stop interrupts the rename and Tart cannot list the VMs, check the reported golden name to see whether the new VM took over. [Stop and failure](../marshal-cli/build-images.md#stop-and-failure) describes how the build checks and reports the outcome.
 After the rename the new golden VM stays, and a stop only skips the clean-up in step 8. If the build's process is killed or crashes mid-build, a helper process stops and deletes the
 build VM within 15 s; if that fails too, the next `build` deletes it by its
 name. `tart list` shows whatever is left: `marshal-build-linux-<time>` is a build VM
