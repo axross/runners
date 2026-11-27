@@ -99,10 +99,8 @@ not consumption. Unverified provider input MUST remain unknown. The author's
 reconstruction cannot establish what the reviewer consumed or checked.
 
 A completed, identifiable post-push review uses REVIEW.md's treatment of
-unflagged items; missing affirmative check-by-check coverage is not a blocker.
-This readiness rule accepts the risk of unreported reviewer omissions rather
-than requiring a positive checklist as proof of review. A service marked
-Completed without a posted reviewer-origin result does not satisfy the gate.
+unflagged items, and [Loop Engineering's Review Completion Evidence](../../.claude/skills/loop-engineering/references/post-push-review.md#review-completion-evidence)
+states what establishes completion.
 The author MUST keep the review gate unresolved and the pull request in draft
 for any of these blockers:
 
@@ -144,11 +142,8 @@ within
 - **Claude Code** waits, where the session offers it, on the pull request
   webhook subscription that the plan-gate confirmation covers and on completion
   notifications from the workers it delegated to, and then schedules no
-  check-in. On every wake it re-reads check, review, and mergeability state, and
-  when nothing else is pending it ends the turn reporting what is pending. It
-  unsubscribes in the same turn at each stop the paragraph above names. Release
-  after merge follows only a human message or a fresh session that shows the
-  merge.
+  check-in. Release after merge follows only a human message or a fresh session
+  that shows the merge.
 - **Amp** waits for its review child with the thread-wait tool, which counts as a
   delegated-worker completion, and for checks through a subscription the host
   and the run already permit. A subscription the session offers but the run may

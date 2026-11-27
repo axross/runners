@@ -110,16 +110,15 @@ draft pull request, is never a completed loop.
 This project permits limited draft delivery when current implementation pre-push
 review qualification finds no eligible reader or unavailable required review
 material. This exception preserves access to post-push review without inventing
-a pre-push reviewer. The driver MUST record the actual qualification and gap
-under [Loop Engineering's pre-push review contract](../../.claude/skills/loop-engineering/references/pre-push-review.md#checkpoint-qualification)
-and disclose the unavailable review in delivery, never as a clean result.
+a pre-push reviewer. [Loop Engineering's pre-push review](../../.claude/skills/loop-engineering/references/pre-push-review.md#checkpoint-qualification)
+states how the driver records the qualification and gap, discloses it in
+delivery, keeps delivery draft, requires separate publication authorization, and
+keeps post-push review required and unmet.
 Publication MUST have its own valid operation grant; this policy grants none.
-Delivery MUST remain draft, with mandatory post-push review unmet until it runs.
 
 This exception covers unavailability only. It MUST NOT bypass plan review
 or outstanding findings from a pre-push review that ran. It MUST NOT
 waive any other approval, verification, evidence, or readiness requirement.
-The post-push review gate remains mandatory.
 
 On Claude Code, a missing or refused `reviewer` subagent leaves only the
 pre-push review unavailable, which this exception covers. The post-push
