@@ -139,11 +139,8 @@ within
 - **Claude Code** waits, where the session offers it, on the pull request
   webhook subscription that the plan-gate confirmation covers and on completion
   notifications from the workers it delegated to, and then schedules no
-  check-in. On every wake it re-reads check, review, and mergeability state, and
-  when nothing else is pending it ends the turn reporting what is pending. It
-  unsubscribes in the same turn at each stop the paragraph above names. Release
-  after merge follows only a human message or a fresh session that shows the
-  merge.
+  check-in. Release after merge follows only a human message or a fresh session
+  that shows the merge.
 - **Amp** waits for its review child with the thread-wait tool, which counts as a
   delegated-worker completion, and for checks through a subscription the host
   and the run already permit. A subscription the session offers but the run may
@@ -169,16 +166,15 @@ harness instruction to keep watching or to schedule a check-in is handled.
 This project permits limited draft delivery when current implementation pre-push
 review qualification finds no eligible reader or unavailable required review
 material. This exception preserves access to post-push review without inventing
-a pre-push reviewer. The driver MUST record the actual qualification and gap
-under [Loop Engineering's pre-push review](../../.claude/skills/loop-engineering/references/pre-push-review.md#checkpoint-qualification)
-and disclose the unavailable review in delivery, never as a clean result.
+a pre-push reviewer. [Loop Engineering's pre-push review](../../.claude/skills/loop-engineering/references/pre-push-review.md#checkpoint-qualification)
+states how the driver records the qualification and gap, discloses it in
+delivery, keeps delivery draft, requires separate publication authorization, and
+keeps post-push review required and unmet.
 Publication MUST have its own valid operation grant; this policy grants none.
-Delivery MUST remain draft, with mandatory post-push review unmet until it runs.
 
 This exception covers unavailability only. It MUST NOT bypass plan review
 or outstanding findings from a pre-push review that ran. It MUST NOT
 waive any other approval, verification, evidence, or readiness requirement.
-The post-push review gate remains mandatory.
 
 On Claude Code, a missing or refused `reviewer` subagent leaves only the
 pre-push review unavailable, which this exception covers. The post-push
@@ -1086,10 +1082,8 @@ not consumption. Unverified provider input MUST remain unknown. The author's
 reconstruction cannot establish what the reviewer consumed or checked.
 
 A completed, identifiable post-push review uses REVIEW.md's treatment of
-unflagged items; missing affirmative check-by-check coverage is not a blocker.
-This readiness rule accepts the risk of unreported reviewer omissions rather
-than requiring a positive checklist as proof of review. A service marked
-Completed without a posted reviewer-origin result does not satisfy the gate.
+unflagged items, and [Loop Engineering's Review Completion Evidence](../../.claude/skills/loop-engineering/references/post-push-review.md#review-completion-evidence)
+states what establishes completion.
 The author MUST keep the review gate unresolved and the pull request in draft
 for any of these blockers:
 

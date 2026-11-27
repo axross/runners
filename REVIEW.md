@@ -440,8 +440,10 @@ Apply the lens for each kind of file in the diff.
 ## Reading beyond the diff
 
 [Code Review's review scoping](./.claude/skills/code-review/SKILL.md#review-scoping)
-owns boundary checks: open each owner a change names and every scope-overlapping
-neighbor, even outside the diff. For installed-skill changes, follow
+owns boundary checks; its
+[Boundary Claims](./.claude/skills/code-review/references/scoping.md#boundary-claims)
+section states how to check the owners and neighbors a change names. For
+installed-skill changes, follow
 [Agent Skills](./docs/operations/agent-skills.md); installed directories are
 generated and must match their selected lockfile inventory.
 
@@ -449,7 +451,6 @@ generated and must match their selected lockfile inventory.
 
 - MUST verify every deferral against the named owner and open undeclared
   overlapping owners that could expose duplication or a conflicting rule.
-- MUST NOT infer whole-change compliance from one compliant instance.
 
 ## Reporting exclusions
 
