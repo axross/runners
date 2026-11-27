@@ -14,7 +14,7 @@ Skills authored here follow the agentskills.io format. For the host project's ac
 
 - MUST run the bundled validator that owns what a change touched — `scripts/check-skill-frontmatter.mjs` after editing frontmatter, `scripts/check-skill-body.mjs` after editing prose, `scripts/check-skill-references.mjs` after adding, moving, or renaming a reference file — and all three when unsure; together they are the enforcement path for the frontmatter, naming, discovery length-cap, and reference-linkage rules this skill states nowhere else (see [audit-checklist.md](./references/audit-checklist.md)).
 - SHOULD propose or implement a skill update when any task exposes a reusable convention, outdated guidance, a recurring review issue, or a missing project rule — skill maintenance happens when work reveals durable learning, not after every narrow fix.
-- SHOULD skip skill maintenance when the work produced no generalizable learning, and state that it was skipped.
+- SHOULD skip skill maintenance when the work produced no generalizable learning, and state that it was skipped, including in the skill-maintenance report where the project's skill-management practices require one.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html).
 
