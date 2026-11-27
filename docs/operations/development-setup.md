@@ -1,14 +1,19 @@
+---
+type: Procedure
+title: "Development setup"
+description: "Prepare the toolchain, documentation validators and rendering gate for a local checkout."
+---
+
 # Development Setup
 
 How to prepare a local checkout so the project's checks run with the same tool
 versions as CI. [Testing](../conventions/testing.md) lists the commands those
-tools run; [Agent Sessions](./agent-sessions.md) describes how an agent session
+tools run; [Agent Sessions](../agent-work/session-setup.md) describes how an agent session
 provisions the same tools for itself.
 
 ## Pinned Tools
 
-[mise](https://mise.jdx.dev/) pins every tool the checks use, so a local run and
-CI use the same versions. Install mise, then from the repository root:
+[mise](https://mise.jdx.dev/) installs the pinned toolchain used by local checks and CI. Install mise, then from the repository root:
 
 ```bash
 mise trust
@@ -21,6 +26,16 @@ PSScriptAnalyzer is a PowerShell module rather than a mise tool, so
 `mise run lint:powershell` downloads its pinned version from the PowerShell
 Gallery the first time it runs, and refuses it unless its SHA-256 matches the pin
 in `mise.toml`. `cargo-deny` and `cargo-about` are mise tools too.
+
+## Documentation checks
+
+The first `mise run check:docs` needs Node and npm, Python 3 with `venv` and
+pip, and network access. It installs locked JavaScript parsers, PyYAML 6.0.3
+and the pinned OKF v0.3 validator under `node_modules/.cache/runners-docs/`.
+The [dependency pins](../security/dependency-pins.md#pinning-convention) identify
+the parser lockfile and approved PyYAML wheel hashes. Subsequent runs can use the cache
+offline. See [Checking a Documentation Change](../conventions/documentation.md#checking-a-documentation-change)
+for checkout and standalone bundle checks.
 
 ## Rust Toolchain
 
@@ -35,7 +50,7 @@ put `~/.cargo/bin` on `PATH`:
 
 The agent session setup and the Claude Code session-start hook run it for you. On
 another platform, install `rustup` yourself.
-[Rust Provisioning](./agent-sessions.md#rust-provisioning) in Agent Sessions
+[Rust Provisioning](../agent-work/session-setup.md#rust-provisioning) in Agent Sessions
 describes what the script installs, when it does nothing, and how a Rust task
 fails without the toolchain.
 
@@ -52,5 +67,5 @@ does not install Chromium's OS libraries.
 ## Hooks
 
 The agent configuration is described in
-[Agent Sessions](./agent-sessions.md), which states the command each format and
+[Agent Sessions](../agent-work/session-setup.md), which states the command each format and
 check hook runs; they use the pinned tools above.

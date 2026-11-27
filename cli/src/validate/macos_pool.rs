@@ -1,6 +1,6 @@
 //! the fields of an axmc pool with `os: "macos"`: the defaults that make `slots`,
 //! `cpus`, `memoryGb` and `diskGb` optional, and the minimums the golden macOS VM
-//! needs; see `docs/operations/cli.md`. a value below its minimum is recorded as an
+//! needs; see `docs/marshal-cli/macos-pools.md`. a value below its minimum is recorded as an
 //! error but still read, so the pool takes part in the cross-entry and budget checks.
 
 use crate::json::Value;

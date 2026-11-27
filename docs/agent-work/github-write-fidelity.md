@@ -1,0 +1,375 @@
+---
+type: Procedure
+title: Verify a GitHub write from Claude Code cloud
+description: Compose and verify the stored text, recognize observed rewrites and recover within the permitted correction limits.
+---
+
+# Verify a GitHub write from Claude Code cloud
+
+## GitHub Write Fidelity in Claude Code Cloud Sessions
+
+In a Claude Code cloud session, an agent writes issue bodies, comments, and pull
+request bodies through the host's hosted GitHub MCP tools. On 2026-11-19 (PST),
+two `issue_write` updates stored a 151-character link destination wrapped in a
+double-backtick code span, which stops it working as a link. The model's tool
+input had no wrapper. The layer that adds it is unknown: the client's MCP
+transport, the Anthropic gateway, the hosted `github-mcp-server`, or GitHub. A
+session can observe only its tool input and what GitHub then stores.
+
+This section gives the rules that keep composed text clear of the rewrites
+observed so far, the commands that check it, and the read-back that shows what
+GitHub stored. The evidence is the
+[tracking issue](https://github.com/axross/runners/issues/144) and its
+[probe-results comment](https://github.com/axross/runners/issues/144#issuecomment-7033840359).
+The findings are observations, not guarantees. The rewrites belong to the hosted
+write path and can change without notice, so the read-back stays mandatory. A
+check before writing cannot see what GitHub stores; it only prevents the
+rewrites already known.
+
+The section covers writes from a Claude Code cloud session through those MCP
+tools. Amp and Codex use other write paths, which were not tested. Neither were
+the MCP tools that write file contents. Commits pushed with git are expected to
+go through the session's git remote instead of this path; that was not tested
+either.
+
+The probe wrote issue bodies with `issue_write`, both creating and updating, and
+one issue comment. The Rewrites Observed lists the writes checked since.
+Reviews, review replies, comment edits, and URLs already inside code remain
+untested, and one review comment was checked through MCP only, as The Rewrites
+Observed records. The rules and the read-back below still apply to those
+surfaces.
+
+### The Rewrites Observed
+
+A probe on a scratch issue, run on 2026-11-19 (PST) with the maintainer's
+approval, wrote URLs of known lengths and read back what GitHub stored. Each
+cell lists the lengths tested, how many URLs were written at them, and in how
+many probe writes. The counts cover issue bodies only. Each distinct body is
+counted once; a body re-sent unchanged to test determinism stored the same
+result and is not counted twice.
+
+| Form                              | Stored intact                                                                                                                                       | Stored wrapped in a code span                                                                                             |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Inline link destination           | 59, 65, 91, 104, 107, 115, 130, 139, and each of 140 to 149 characters (18 lengths; 21 URLs in 3 writes, with 107, 130, and 149 each written twice) | 150 (1 URL), 151 (5), and 160 (1) characters in the probe (7 URLs in 6 writes); 151 characters in the two incident writes |
+| Titled link, reference definition | Not tested below 150 characters (no samples)                                                                                                        | 150 characters (1 titled link and 1 reference definition, in 1 write)                                                     |
+| Bare URL, autolink                | 25 characters (1 autolink); 149 and 150 characters (1 bare URL and 1 autolink at each); 5 URLs in 2 writes in all                                   | 200 characters (1 bare URL and 1 autolink, in 1 write)                                                                    |
+
+The threshold for a bare URL or an autolink lies above 150 and at or below 200
+characters. The rewrite was deterministic, did not depend on the URL's content
+or the surrounding line, and applied to every qualifying URL in a body. One
+comment was tested, and its 151-character link was wrapped too. Once, for the
+160-character inline link, the closing run of backticks landed after the link's
+`)`, so the parenthesis went inside the code span. A wrapped inline link or
+reference definition no longer works as a link, and a wrapped autolink also
+shows `&lt;` and `&gt;` to readers.
+
+Three more rewrites were observed:
+
+- **The comment footer.** The host instructs agents to end every comment,
+  review, and reply with `\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_`.
+  One comment sent without it was stored with it appended (comment 7032656088,
+  2026-11-19 PST). Four comments that already ended with it were stored with no
+  second copy of it (comments 7032949620, 7033812409, 7033840359, and
+  7044614711, 2026-11-19 and 2026-11-20 PST); comment 7033812409's long link
+  was still wrapped. Whitespace after the footer was not tested.
+- **The pull request attribution.** The host instructs agents to end each pull
+  request description with a "Generated with Claude Code" line and the session's
+  link. The body of #150, created with `create_pull_request` on 2026-11-20
+  (PST), was stored with that attribution replaced by the comment footer, and
+  every other byte matched what was sent
+  ([comment 7046296956](https://github.com/axross/runners/issues/144#issuecomment-7046296956)).
+  That is one write, by create. The first two writes by `update_pull_request`,
+  to #150's description on 2026-11-20 (PST), were read back through REST search
+  at their update times and were byte-identical to the sent files, attribution
+  included, with no footer
+  ([comment 7047943100](https://github.com/axross/runners/issues/144#issuecomment-7047943100)
+  and
+  [comment 7048354239](https://github.com/axross/runners/issues/144#issuecomment-7048354239)).
+  Another session reported that `update_pull_request` kept the attribution on
+  #138 (three writes) and #139, compared byte for byte with what MCP's get
+  returned, with no REST read, so the replacement may be specific to creating a
+  pull request. A body sent without the attribution, and whitespace after the
+  attribution, were not tested.
+- **U+200B.** It was removed when an issue was created, the only write path
+  tested. MCP reads also drop it; REST reads keep it. U+200C, U+200D, U+2060,
+  and U+FEFF were not tested.
+
+No other unintended change was found for the constructs tested. These were
+stored byte-identical, and MCP reads returned them unchanged: the character
+references `&amp;`, `&#x27;`, `&lt;`, `&gt;`, `&quot;`, and `&#39;`; raw
+`& < > ' "`; angle-bracket placeholders; HTML comments; `<details>`; and fence
+info strings. The three sanitized-read stages that GitHub Operation's Body
+Integrity describes were not reproduced.
+
+Those constructs were tested in issue bodies, so the list does not carry over to
+review comments. On 2026-11-20 (PST), an independent review child for #150
+posted an inline review comment through the MCP pending-review tool
+([review comment 4646748901](https://github.com/axross/runners/pull/150#discussion_r4646748901)).
+It sent a single-backtick code span containing the literal placeholder
+`<149-character URL>`, not a real URL. MCP's review-comments read returned the
+placeholder's angle brackets as `&lt;` and `&gt;`, set in a double-backtick code
+span of its own, which splits the original span. The comment was checked only
+through MCP, so its exact stored content is unverified, and whether the write
+path or the read path changed it is not established.
+
+An open report, `github/github-mcp-server#3299`, was still open on 2026-11-19
+(PST), as read through a model-summarized fetch of its public page. It reports
+long URLs wrapped in code spans, including link destinations, bare URLs, and
+autolinks. It also reports an autolink's angle brackets escaped and the closing
+backticks sometimes landing after the link's `)`, a shape seen once here too.
+Its threshold of 104 characters and its wrapper shape otherwise differ from what
+was measured here, so it may be the same defect, but that is not established.
+
+### Rules Before Writing
+
+The rules apply to every issue body, comment, review, reply, and pull request
+body an agent writes from the session. The 149-character cap rests on the
+threshold measured for this endpoint, not on the 104 characters the open report
+gives. If that lower threshold ever applies here, the read-back catches it.
+
+The probe measured ASCII URLs only, so the cap counts ASCII characters. The URL
+check counts UTF-16 code units, which equal characters for ASCII; a
+percent-encoded URL is ASCII and is counted as written. For a URL with other
+non-ASCII characters no threshold was measured, so keep it well under the cap;
+the mandatory read-back catches a rewrite.
+
+**Guidelines:**
+
+- MUST compose the text in a local file that holds exactly what will be sent,
+  and keep the file and the sent text in agreement. An issue body may end with a
+  newline or not; every stored probe body kept its trailing newline. Keep the
+  composed file out of the commit: run every command in this section from the
+  session's scratch directory, or from a directory made with `mktemp -d` when the
+  session has none, so that `body.md`, `footer.txt`, `stored.json`, and
+  `expected.md` never land in the repository.
+- MUST keep every URL at 149 characters or fewer, in any form.
+- MUST NOT write U+200B, U+200C, U+200D, U+2060, or U+FEFF.
+- MUST end each comment, review, and reply with the exact host footer and
+  nothing after it. A pull request body ends as the host prescribes, with its
+  attribution and no newline after it, not with the footer; the
+  attribution-aware comparison below recognises only that ending.
+
+### Checks Before Writing
+
+Run these on the composed file, named `body.md` below. Each prints an explicit
+result when it finds nothing, and none reports a pass for a file it cannot read.
+The checks need `node`, GNU `grep`, `tail`, `wc`, and `cmp`. The read-back
+commands below need `gh`, `jq`, `cmp`, and `diff`, plus `node` for the
+attribution-aware comparison, run from `bash`, whose process substitution the
+diff command uses. Run outside the checkout, `node` and `jq` are the ones on the
+session's `PATH`; mise applies the versions pinned in
+[`mise.toml`](../../mise.toml) only inside the checkout.
+
+The URL check lists every `http` or `https` URL of 150 or more characters with
+its line number and length. It does not count a closing `)` that belongs to the
+link syntax when that `)` ends the match. When punctuation follows the `)`, as
+in `[text](URL),`, it counts both the `)` and the punctuation, which errs on the
+safe side. It does not check relative or non-`http` destinations, which were not
+tested.
+
+```sh
+node -e '
+const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n");
+let found = false;
+lines.forEach((line, i) => {
+  for (const [match] of line.matchAll(/https?:\/\/[^\s<>]+/g)) {
+    let url = match;
+    while (url.endsWith(")") && url.split(")").length > url.split("(").length) url = url.slice(0, -1);
+    if (url.length >= 150) { found = true; console.log(`${i + 1}: ${url.length} characters`); }
+  }
+});
+console.log(found ? "shorten the URLs above" : "ok: no URL of 150 or more characters");
+' body.md
+```
+
+The invisible-character check lists every line that contains one of the five
+characters.
+
+```sh
+if LC_ALL=C.UTF-8 grep -nP '[\x{200B}-\x{200D}\x{2060}\x{FEFF}]' body.md
+then echo "remove the characters above"
+elif [ $? -eq 1 ]; then echo "ok: no invisible characters"
+else echo "check failed"; fi
+```
+
+The footer check applies to a comment, review, or reply. It accepts text that
+ends exactly with the footer and rejects text with no footer or with a newline
+after it.
+
+```sh
+printf '\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_' > footer.txt
+tail -c "$(wc -c < footer.txt)" body.md | cmp -s - footer.txt \
+  && echo "ok: ends with the footer" || echo "footer missing or not at the end"
+```
+
+### Reading Back a Body
+
+The read-back starts from the update time that an MCP get of the item shows
+after the write. The stored body is then read as structured data through a route
+qualified under
+[GitHub Operation](../../.claude/skills/github-operation/references/channel-selection.md):
+
+- **The direct REST read** of the issue or pull request, where the session may
+  use it.
+- **The REST search read**, otherwise: `is:issue` or `is:pr`, sorted by update
+  time, newest first, 100 per page, with the item selected by number. No title
+  goes in the query, so quotes or apostrophes in a title cannot break it.
+
+MCP reads are a quick check only: they drop U+200B, and their result reaches the
+agent's context but not a command, so they cannot supply a byte comparison.
+
+The direct read writes the item to a file, prints its update time, and compares
+the body. Use `pulls/<number>` in place of `issues/<number>` for a pull request.
+
+```sh
+gh api repos/axross/runners/issues/<number> > stored.json
+jq -r .updated_at stored.json
+jq -j .body stored.json | cmp - body.md && echo "ok: stored body is identical"
+```
+
+The search read selects the item by number. Use `is:issue` for an issue.
+
+```sh
+gh api -X GET search/issues -f q='repo:axross/runners is:pr' \
+  -f sort=updated -f order=desc -f per_page=100 > stored.json
+jq -r '.items[] | select(.number == <number>) | .updated_at' stored.json
+jq -j '.items[] | select(.number == <number>) | .body' stored.json \
+  | cmp - body.md && echo "ok: stored body is identical"
+```
+
+`jq -j` writes the raw string with nothing added, and the pipe feeds it straight
+to `cmp`. No shell variable holds the body, so a trailing newline cannot be lost
+or added. The command therefore compares the exact structured field, as Body
+Integrity requires. A difference prints a `cmp` line and no `ok`, including a
+difference of one trailing newline.
+
+When the write path replaces a pull request body's attribution with the comment
+footer, as it did when #150 was created, the comparison above reports a
+difference. This command builds the expected stored text from the composed
+file, with the attribution replaced by the footer, and compares the stored body
+with that, reusing the `stored.json` of the search read. With the direct read,
+use `jq -j .body stored.json` in place of the `jq` filter that selects the item
+from the search result. It accepts the attribution only in its exact form at the
+very end of the file, and otherwise says so without comparing.
+
+```sh
+node -e '
+const fs = require("fs");
+const sent = fs.readFileSync(process.argv[1], "utf8");
+const tail = /\n\n🤖 Generated with \[Claude Code\]\(https:\/\/claude\.com\/claude-code\)\n\nhttps:\/\/claude\.ai\/code\/session_\w+$/;
+if (!tail.test(sent)) { console.log("no attribution in its exact form at the very end"); process.exit(1); }
+fs.writeFileSync("expected.md", sent.replace(tail, "\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_"));
+' body.md && jq -j '.items[] | select(.number == <number>) | .body' stored.json \
+  | cmp - expected.md && echo "ok: identical except the attribution replacement"
+```
+
+**Guidelines:**
+
+- MUST read back each issue or pull request body after writing it and compare
+  it with the sent file by command, not by eye, as above.
+- MUST treat an item missing from search, or an update time older than the one
+  noted, as a read that is not current yet, not as a mismatch. Retry up to three
+  times over about five minutes, using only a wait the session itself provides,
+  never a scheduler. When the session has no such wait, or the read is still not
+  current, report the write as unverified.
+- MUST run the plain comparison first, and the attribution-aware one only when
+  the plain one reports a difference for a pull request body that ends with the
+  host's attribution. MUST record a match from the attribution-aware one as
+  verified, naming the replacement. Any other result is a difference to handle
+  under Recovering from a Difference.
+
+### Reading Back a Comment
+
+An issue or pull request conversation comment can be checked in two ways; the
+guidelines below say which applies. The first compares the comment by
+command through the direct REST read of it, as a body is compared. Here
+`body.md` is the composed comment, footer included.
+
+```sh
+gh api repos/axross/runners/issues/comments/<comment id> > stored.json
+jq -r .updated_at stored.json
+jq -j .body stored.json | cmp - body.md && echo "ok: stored comment is identical"
+```
+
+The second checks the comment as MCP's comments read returns it: each URL is
+unwrapped, and the footer appears exactly once, at the end. This check does not
+establish the stored content, for the reason given under Reading Back a Body.
+
+**Guidelines:**
+
+- MUST check each issue or pull request conversation comment after writing it,
+  by the command above where the session may use the direct REST read of a
+  comment, under
+  [GitHub Operation](../../.claude/skills/github-operation/references/channel-selection.md)'s
+  channel qualification, and otherwise as MCP returns it.
+- MUST report a comment checked only through MCP as checked through MCP only,
+  with its exact stored content unverified, as GitHub Operation requires.
+- MUST check each review and review reply as MCP returns it, and report it as
+  unverified, unless the session compares it by command through an exact read.
+
+### Recovering from a Difference
+
+To confirm that the stored text differs from the intended text only by the known
+patterns, show the differences line by line. `<` lines come from `body.md` and
+`>` lines from the stored text. When the search read was used, select the body
+as the search read-back does, with
+`jq -j '.items[] | select(.number == <number>) | .body' stored.json`.
+
+```sh
+diff body.md <(jq -j .body stored.json)
+```
+
+Each known pattern looks like this in the output:
+
+- **A wrapped URL** appears inside a run of backticks with a space on each
+  side; the closing run lands before the link's `)` or, as seen once, after it,
+  and a wrapped autolink also shows its angle brackets as `&lt;` and `&gt;`.
+- **An appended footer** appears as added lines at the end.
+- **A replaced attribution** appears as the attribution lines removed at the end
+  and the footer lines added in their place.
+- **A removed invisible character** makes a line differ with no visible change.
+  It can appear only if the file held one despite the check before writing.
+
+For a comment read only through MCP there is no `stored.json`. Compare the text
+the read returns with `body.md` by eye, against the same patterns, and record
+that the comparison was not byte-exact.
+
+**Guidelines:**
+
+- MUST NOT re-send identical text; the rewrite is deterministic, so identical
+  text written again is stored the same way.
+- MUST confirm, before any corrective write, that the stored text differs from
+  the intended text only by the known patterns listed above. Any other
+  difference, including a change someone else made in the meantime, stops the
+  operation for reconciliation under GitHub Operation's
+  [Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
+  and is reported as an unverified write, not worked around.
+- MUST NOT make a corrective write for an appended footer or a replaced
+  attribution alone; neither needs one.
+- MUST, for a body on a target the delivery grant in
+  [Development Workflow](./delivery-grant.md#authorizing-delivery-operations) covers, compose the
+  corrected text from the intended text with the URL shortened, write it once,
+  and read it back again.
+- MUST, for a status comment on the run's tracking issue, append a corrected
+  status comment that supersedes the original instead of editing it, because
+  Development Workflow keeps run state in append-only status comments.
+- MUST, when a corrective body or status comment also differs, report the write
+  as unverified and stop that operation.
+- MUST, for any other comment, report it as unverified and ask the maintainer,
+  because the delivery grant names no corrective comment for it.
+
+### The Plan Body
+
+A plan's identity is derived from its stored bytes, so a rewrite of the plan
+body changes what the maintainer approves. An identity mismatch after approval
+is handled under Plan Revision Identity in
+[Loop Engineering's plan document reference](../../.claude/skills/loop-engineering/references/plan-document.md).
+
+**Guidelines:**
+
+- MUST re-derive the plan's identity from the stored bytes after publishing or
+  revising it, through the body read-back above.
+- MUST fix a difference found before approval with a corrective write, which
+  produces a new revision for plan review.
+- MUST treat replacing a URL in an approved plan as a plan revision that needs
+  new approval.

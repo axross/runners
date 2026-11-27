@@ -10,7 +10,7 @@ through its system prompt, the assignments of the Claude Code review subagent
 and the Amp review child thread name it, and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
 reviewer-origin result against this policy, and treat unobserved provider input
 as unknown, not as proof of a failed review.
-[Development Workflow](./docs/operations/development-workflow.md) owns provider
+[Independent review](./docs/agent-work/independent-review.md) owns provider
 invocation and completion evidence. Code Review's
 [Posted and CI Reviews](./.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
 section owns the default posted-review rules.
@@ -67,9 +67,9 @@ Critical/Major/Minor/Nit triage or an Approve/Request-Changes verdict. Codex
 managed review uses native priority labels; its presentation and reporting
 scope follow the adopted arrangements above. In this repository, a hard project rule includes every MUST rule of a
 skill whose `description` matches the changed files and every applicable MUST
-rule in project conventions, such as [Security](./docs/conventions/security.md),
+rule in project conventions, such as [Security](./docs/security/index.md),
 subject to registered deviations in the
-[Agent Skills register](./docs/operations/agent-skills.md#the-register), the
+[Agent Skills register](./docs/agent-work/skill-exceptions.md#the-register), the
 reporting exclusions below, and Code Review's acceptance-criteria finding
 boundary.
 
@@ -87,7 +87,7 @@ Run the following checks on every review and raise findings within their scope:
 - **Skills and project conventions conformance** - verify the change against
   every skill whose `description` matches the changed files and every applicable
   project convention. Honor the
-  [Agent Skills register](./docs/operations/agent-skills.md#the-register). Cite
+  [Agent Skills register](./docs/agent-work/skill-exceptions.md#the-register). Cite
   the owning skill or convention and rule for each deviation, without
   reintroducing external-evidence absence-only findings.
 - **Acceptance criteria** - assess every criterion in the pull request body
@@ -101,7 +101,7 @@ Run the following checks on every review and raise findings within their scope:
   Do not re-run or judge external evidence in this inspection check.
   Contributor verification and required evidence remain separate readiness
   obligations in
-  [Development Workflow](./docs/operations/development-workflow.md).
+  [Out-of-tree acceptance evidence](./docs/agent-work/acceptance-evidence.md).
 - **Public-repository safety** - this repository is public and is meant to hold
   nothing that identifies a person or a machine. Verify the
   [safety lenses](#public-repository-safety-lenses) below for every changed
@@ -144,10 +144,10 @@ review label a violation Important; Codex review uses its native priority label.
   requirement that a later CLI record may hold, and the maintainer's update-feed
   public key in `app/crates/app/tauri.conf.json` and the test that pins it, as
   Security records (see
-  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+  [Security](./docs/security/disclosure.md#nothing-identifying-or-secret-is-committed)).
   Verbatim third-party licence and copyright text in the notices under
   `app/notices/` and the licence copies they draw on, the crates' published
-  repository URLs in those notices, and `docs/operations/app.md`'s references to a
+  repository URLs in those notices, and `docs/marshal/notices.md`'s references to a
   third-party crate's public repository are the exception Security records for
   personal names, account names and email addresses, so they are not reported; such
   a name or address anywhere else still is.
@@ -170,11 +170,11 @@ review label a violation Important; Codex review uses its native priority label.
   latest release tag, with that tag as a trailing comment
   (`uses: owner/action@<sha> # vX.Y.Z`). The SHA must be the tag's peeled
   commit. `actions/*` stays on a major tag by the recorded decision in
-  [Security](docs/conventions/security.md#actions-stays-on-major-tags); do not
+  [Security](./docs/security/dependency-pins.md#actions-stays-on-major-tags); do not
   report it. A reusable workflow, a `docker://` reference, and a `run:` step
   that downloads and executes remote code without a checksum are held to the
   same standard. There are three recorded exceptions, all in
-  [Security](docs/conventions/security.md#pinning-convention): a step that
+  [Security](./docs/security/dependency-pins.md#pinning-convention): a step that
   installs the Rust toolchain `cli/rust-toolchain.toml` or
   `app/rust-toolchain.toml` names through `rustup`, the Node that
   `actions/setup-node` installs in `release.yaml`, and `tauri-cli`, installed
@@ -183,20 +183,20 @@ review label a violation Important; Codex review uses its native priority label.
 - **Least-privilege workflow permissions.** Every workflow declares a
   top-level `permissions:` block that starts from `contents: read`. A broader
   scope is granted on the job that needs it, is justified in a comment or in
-  [Security](docs/conventions/security.md), and never on a job that runs
+  [Workflow permissions](./docs/security/workflow-permissions.md#workflow-permissions-start-from-read-only), and never on a job that runs
   pull-request-controlled code. `pull_request_target` and `workflow_run` need a
   stated reason; `issue_comment` workflows check out the default branch, never
   the pull request's head.
 - **Cache and volume boundaries.** A runner image, host script, or workflow
   that shares a cache or volume between jobs is judged against the threat model
-  in [Security](docs/conventions/security.md): what a job can write for a
+  in [Shared runner storage](./docs/security/pool-isolation.md#shared-runner-storage-is-a-cache-poisoning-surface): what a job can write for a
   later, more privileged job to read. A volume that crosses a repository, a
   trust level, or a fork boundary, a cache keyed by attacker-controlled input,
   and a cache restored into a job that holds a secret are findings. A shared
   mount is justified where it is declared. A volume of installed toolchains
   (the tool cache, `~/.cargo`, `~/.rustup`) is a finding unless it meets all
   three conditions of the bounded exception in
-  [Security](docs/conventions/security.md): one target repository, no
+  [Per-repository isolation](./docs/security/pool-isolation.md#per-repository-isolation-on-a-runner-host): one target repository, no
   deployment-secret job on its labels, and no pull request from a fork on its
   labels. Any volume on an entry whose labels run a deployment-secret job or a
   fork pull request is a finding.
@@ -207,7 +207,7 @@ review label a violation Important; Codex review uses its native priority label.
   directory without a stated need are findings. The one socket that has a stated
   need is the VM-local Docker socket that the axmc VM runtime mounts into the
   runner container of a per-job VM; see
-  [Security](docs/conventions/security.md#the-vm-local-docker-socket). Any other
+  [Security](./docs/security/vm-isolation.md#the-vm-local-docker-socket). Any other
   socket mount, and any socket mount on axpc, is a finding.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
@@ -217,7 +217,7 @@ review label a violation Important; Codex review uses its native priority label.
   arguments for the notary key's ID and issuer ID. The `.p8` key reaches
   `notarytool` only as a file path. Any other change to how the key's ID, issuer ID
   or `.p8` reaches `notarytool` is a finding to raise (see
-  [Security](docs/conventions/security.md#nothing-identifying-or-secret-is-committed)).
+  [Security](./docs/security/disclosure.md#nothing-identifying-or-secret-is-committed)).
 
 ## VM runtime lenses
 
@@ -226,7 +226,7 @@ These lenses apply to a change of the axmc VM runtime: `cli/src/runtime/tart/`,
 `cli/src/build/build_vm.rs`,
 `cli/src/image/macos_base.rs`, the golden VMs' provisioning assets, and the macOS
 host document. Each is a hard project rule, owned by
-[Security](docs/conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
+[Security](./docs/security/vm-isolation.md#a-linux-job-on-axmc-runs-in-a-per-job-vm)
 and the sections after it. Claude, Claude Code review subagent, and Amp review
 label a violation Important; Codex review uses its native priority label.
 
@@ -251,7 +251,7 @@ label a violation Important; Codex review uses its native priority label.
   `build`. No shim or other child inherits the instance lock.
 - **The Softnet check and rules on every boot.** Every `tart run` follows a Softnet
   file check and a version check, and carries the two Softnet rules from
-  [Security](docs/conventions/security.md#softnet-confines-a-job-vms-network) and no
+  [Security](./docs/security/vm-isolation.md#softnet-confines-a-job-vms-network) and no
   other network option. A boot path that skips the check, a cached result, the
   runtime setting Softnet's SUID bit, and a fallback to Tart's default network
   are findings.
@@ -323,7 +323,7 @@ Apply the lens for each kind of file in the diff.
   `Install Blocks` job in `merge-checks.yaml`, the scripts under `.github/scripts/`,
   the release tooling under [`release/`](./release), or `cli/.cargo/config.toml` is
   checked against each bullet of the release record in
-  [Security](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  [Security](./docs/security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
   During temporary CLI recovery, apply Security's active recovery record instead
   of the app-only asset/MSI and no-Environment clauses below. Only inline
   `sign-macos` may reach `release`; it checks out and executes no repository code
@@ -356,7 +356,7 @@ Apply the lens for each kind of file in the diff.
   job or a signing secret read by any job is a finding; the signing job that returns
   brings its rules back to this list, to `check-release-shape.mjs` and to its test in
   the same change, and keeps
-  [Security's held record](docs/conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main).
+  [Security's held record](./docs/security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
   A job or step that a later job can pass without, such as `continue-on-error`, a
   job-level `always()`, `!cancelled()` or `failure()`, a step condition in
   `assemble-signed`, or one in `attest` or `release` that skips a step, which the
@@ -367,10 +367,10 @@ Apply the lens for each kind of file in the diff.
 - **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
   `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
   indexing). The CLI collects every error in the order
-  [CLI](docs/operations/cli.md) states under Validation Rules rather than returning
+  [Validation rules](./docs/marshal-cli/json-validation.md#validation-rules) specifies rather than returning
   the first. A new CLI crate has an
-  entry in [CLI](docs/operations/cli.md) and passes `cli/deny.toml`; a new direct
-  dependency of an app crate is recorded in [Security](docs/conventions/security.md#the-apps-dependencies)
+  entry in [Library dependencies](./docs/marshal-cli/dependencies.md) and passes `cli/deny.toml`; a new direct
+  dependency of an app crate is recorded in [Security](./docs/security/dependency-pins.md#the-apps-dependencies)
   and passes `app/deny.toml`. A new
   procedural-macro crate, such as one a derive feature brings, is flagged for the
   maintainer's review, and so is a new duplicate-version skip. No token or JIT
@@ -378,12 +378,12 @@ Apply the lens for each kind of file in the diff.
   line, a control-channel response, or, in the app, the page, a view state or an
   event; a new log line or response that could carry
   one unmasked is a finding (see
-  [Security](docs/conventions/security.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)).
+  [Security](./docs/security/local-agent.md#tokens-stay-out-of-the-log-and-job-clients-end-with-start)).
   A change to a validation rule changes the shared fixtures
   and their expectations in the same change. Give `file:line` evidence as in the other
   lenses.
 - **The app's web view.** A change under `app/` is also checked against the app's
-  record in [Security](docs/conventions/security.md#the-app-surface), its web view,
+  record in [Security](./docs/security/app-trust.md#the-app-surface), its web view,
   capability and token bullets. The content security policy in `tauri.conf.json`
   stays the one Security states in full, and `tauri.conf.json` keeps the web view
   on bundled files with no developer tools in the release build. The four
@@ -414,15 +414,15 @@ Apply the lens for each kind of file in the diff.
   cases: a second SIGINT, a `start` that ends while it still holds the VM (the VM
   shim), and a leftover at the next `start`, each reporting the diagnostic gap. A
   fourth export-less deletion of a VM, or any of the three that reports no gap, is a
-  finding (see [CLI](docs/operations/cli.md#tart-backend), the paragraph "Evidence a
+  finding (see [CLI](./docs/marshal-cli/tart-backend.md#tart-backend), the paragraph "Evidence a
   VM loses"). The sink checks refuse and never create, repair, or relax, and a new
   log line, warning, or channel answer names only the pool, the container, and the
   gap, never bundle contents. The exporter child and each of its clients, the
   `docker` clients on axpc and the `tart exec` clients on axmc, end by their
   deadline and with `start`; a new wait in that path that has no bound,
   or that polls for liveness instead of a closed pipe or a process handle, is a
-  finding (see [CLI](docs/operations/cli.md#diagnostics) and
-  [Security](docs/conventions/security.md#diagnostic-evidence-stays-private)).
+  finding (see [CLI](./docs/marshal-cli/diagnostics.md#diagnostics) and
+  [Security](./docs/security/local-agent.md#diagnostic-evidence-stays-private)).
 - **Image contract.** A change to the run contract, which is the argument lists,
   the launcher, and the labels the CLI reads, or to what the runner image must
   provide for it, such as a path, user, group, or tool the launcher or a job
@@ -437,7 +437,7 @@ Apply the lens for each kind of file in the diff.
   `cli/src/image/runner.rs`. The
   tests that depend on the declared values read them from the Dockerfiles or the
   CLI's contract version, so neither change edits any other test; see
-  [CLI](docs/operations/cli.md#the-image-contract).
+  [CLI](./docs/marshal-cli/runner-images.md#the-image-contract).
 - **Documentation.** A claim about runner behavior is either verified or
   described as planned. A document that describes a file, image, or script
   that does not exist yet says so.
@@ -447,7 +447,7 @@ Apply the lens for each kind of file in the diff.
 [Code Review's review scoping](./.claude/skills/code-review/SKILL.md#review-scoping)
 owns boundary checks: open each owner a change names and every scope-overlapping
 neighbor, even outside the diff. For installed-skill changes, follow
-[Agent Skills](./docs/operations/agent-skills.md); installed directories are
+[Agent Skills](./docs/agent-work/skill-installation.md); installed directories are
 generated and must match their selected lockfile inventory.
 
 **Guidelines:**
@@ -512,7 +512,7 @@ repeating them.
 An identifiable completed independent review treats unflagged items as
 satisfied for the review gate, without positive per-check assertions. This
 review outcome is not proof that each rule was consumed or each check ran; the
-[delivery procedure](./docs/operations/development-workflow.md#review-coverage-evidence)
+[delivery procedure](./docs/agent-work/independent-review.md#review-coverage-evidence)
 owns the remaining readiness blockers. Review completion and contributor
 readiness are separate; a quiet review cannot discharge author-side
 verification or evidence obligations.
@@ -521,7 +521,7 @@ verification or evidence obligations.
 
 - Model-authored review prose MUST NOT include any provider's review trigger
   phrase, documented in
-  [the independent review](./docs/operations/development-workflow.md#the-independent-review),
+  [the independent review](./docs/agent-work/independent-review.md#the-independent-review),
   anywhere in a summary or an inline comment. Refer to it by name instead, for
   example "the review request". App-generated status and help text are exempt;
   the model does not control that fixed text. The Claude workflow's loop guard

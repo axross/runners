@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    runs the Windows install blocks of docs/operations/cli-recovery.md against stand-ins.
+    runs the Windows install blocks of docs/runner-recovery/install.md against stand-ins.
 
 .DESCRIPTION
     runs the optional check, migration, uninstall, and bare-binary blocks, each
@@ -11,10 +11,10 @@
     asserts what ran and what did not. LOCALAPPDATA points into a temporary
     directory. the cases that write the user PATH in the registry run on Windows
     only and put the value back; elsewhere they print SKIP. runs under Windows
-    PowerShell 5.1 and PowerShell 7. see docs/operations/cli-recovery.md.
+    PowerShell 5.1 and PowerShell 7. see docs/runner-recovery/install.md.
 #>
 param(
-    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli-recovery.md')
+    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/runner-recovery/install.md')
 )
 
 $ErrorActionPreference = 'Stop'

@@ -1,6 +1,6 @@
 //! the count of macOS VMs against Apple's limit of two, as pure logic over Tart's
 //! VM list: which VMs count and why, and which VMs the OS lookup, `tart get`, must
-//! be asked about. The rule is the counting table in `docs/operations/cli.md`.
+//! be asked about. The rule is the counting table in `docs/marshal-cli/macos-pools.md`.
 
 use std::future::Future;
 

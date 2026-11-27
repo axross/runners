@@ -1,7 +1,7 @@
 //! the agent: the instance in a resident form, started stopped or running, that
 //! stops and starts all runners, builds the runner image, quits, and stays up when
 //! its configuration, image or pools fail; it serves protocol version 2 on the
-//! instance's channel and reads tokens from the token store; `docs/operations/cli.md`
+//! instance's channel and reads tokens from the token store; `docs/marshal-cli/resident-agent.md`
 //! describes it.
 
 pub mod api;

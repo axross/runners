@@ -1,5 +1,5 @@
 //! the management CLI for the runner hosts in this repository; see
-//! `docs/operations/cli.md`.
+//! `docs/marshal-cli/entry-points.md`.
 
 pub mod affinity;
 pub mod agent;

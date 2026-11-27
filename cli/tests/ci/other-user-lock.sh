@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shows that another OS user cannot take the instance lock while this user holds
 # it, with a copy of the debug helper run as nobody through sudo;
-# docs/operations/cli.md describes the test. CI runs it on the Linux and macOS
+# docs/marshal-cli/foreground-instance.md describes the test. CI runs it on the Linux and macOS
 # hosted runners, whose account has passwordless sudo.
 set -euo pipefail
 

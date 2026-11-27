@@ -1,6 +1,6 @@
 //! the parsed JSON tree as a serde data format, read-only as the crate writes its one
 //! JSON body by hand: [`Deserializer`] reads any `Deserialize` type from a [`Value`],
-//! and a failed read is an [`Error`], never a panic; see `docs/operations/cli.md`.
+//! and a failed read is an [`Error`], never a panic; see `docs/marshal-cli/entry-points.md`.
 
 use std::fmt;
 

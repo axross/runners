@@ -1,6 +1,6 @@
 //! `build --profile axmc`: makes the golden VM in a build VM and commits it by renaming
 //! the build VM to the golden name; any failure or stop before the rename deletes the
-//! build VM and leaves the previous golden VM as it was; see `docs/operations/cli.md`.
+//! build VM and leaves the previous golden VM as it was; see `docs/marshal-cli/build-images.md`.
 
 use std::time::{Duration, SystemTime};
 

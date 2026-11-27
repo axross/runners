@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # installs the Rust toolchain that cli/rust-toolchain.toml pins, and rustup
-# first when it is absent; docs/operations/agent-sessions.md describes it.
+# first when it is absent; docs/agent-work/session-setup.md describes it.
 # rustup comes from a pinned rustup-init release verified by SHA-256; rustup
-# fetches the toolchain over HTTPS, the exception docs/conventions/security.md
+# fetches the toolchain over HTTPS, the exception docs/security/dependency-pins.md
 # records.
 set -euo pipefail
 

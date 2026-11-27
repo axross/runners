@@ -1,6 +1,6 @@
 //! the `docker` steps of `build`, and what a stop does at each of them; the configured
 //! name changes only at the commit, the final retag, so a stop before it keeps the
-//! previous image; see `docs/operations/cli.md`.
+//! previous image; see `docs/marshal-cli/build-images.md`.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;

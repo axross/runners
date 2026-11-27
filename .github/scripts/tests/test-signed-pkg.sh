@@ -27,7 +27,7 @@
 # it then installs the signed package with installer, runs codesign --verify and
 # --version on the installed file, and removes it. every tool is called through
 # SYSTEM_BIN and SYSTEM_SBIN, whose defaults are the macOS paths. macOS ships bash
-# 3.2, so this uses nothing newer. see docs/operations/cli.md.
+# 3.2, so this uses nothing newer. see docs/marshal-cli/signing.md.
 set -euo pipefail
 
 if [[ $# -ne 6 ]]; then

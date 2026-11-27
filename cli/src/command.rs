@@ -1,7 +1,7 @@
 //! the hidden modes the app's executable relaunches itself in (the diagnostics
 //! exporter, and on Unix the container and VM shims), and reading a host
 //! configuration file for the agent, `start` and `build`. there are no user-facing
-//! commands; see `docs/operations/cli.md`.
+//! commands; see `docs/marshal-cli/entry-points.md`.
 
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
@@ -23,7 +23,7 @@ pub const EXIT_OK: u8 = 0;
 pub const EXIT_FAILED: u8 = 1;
 pub const EXIT_USAGE: u8 = 2;
 
-// the four test-override variables below: only a debug build honours them, see docs/operations/cli.md
+// the four test-override variables below: only a debug build honours them, see docs/marshal-cli/entry-points.md
 pub const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
 
 pub const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";

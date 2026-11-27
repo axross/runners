@@ -3,7 +3,7 @@
 //! only the CLI holds, closes; a diagnostic container is ended and kept, so its
 //! evidence survives for the next finalisation; only the client gets the JIT
 //! configuration, through the environment the shim inherits, never the removal's
-//! client; see `docs/operations/cli.md`.
+//! client; see `docs/marshal-cli/docker-backend.md`.
 
 use std::ffi::{OsStr, OsString};
 use std::os::fd::AsFd;
