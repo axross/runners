@@ -276,7 +276,7 @@ and `cp` with a scripted archive or a stall, and stand in for the exporter child
 
 Verified on axpc (maintainer's report,
 [#56](https://github.com/axross/runners/issues/56#issuecomment-6511420845)): a
-diagnostic job on Docker Desktop, and the Windows console-close handling below,
+diagnostic job on Docker Desktop, and [Windows console-close handling](./foreground-commands.md#console-close-on-windows),
 apart from its timing.
 Not verified: the macOS behaviour of the process-group signal the SIGINT tests
 send, beyond what the hosted runners show.
