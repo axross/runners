@@ -66,6 +66,4 @@ does not install Chromium's OS libraries.
 
 ## Hooks
 
-The agent configuration is described in
-[Agent Sessions](../agent-work/session-setup.md), which states the command each format and
-check hook runs; they use the pinned tools above.
+The format and check hooks use the pinned tools above. See [Agent quality hooks](../agent-work/quality-hooks.md) for the commands Amp and Claude Code run after edits and at turn end.
