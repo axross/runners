@@ -119,21 +119,22 @@ draft pull request, is never a completed loop.
 
 An agent on any host first checks for a webhook or event-subscription route for
 the result it waits on, such as the pull request activity subscription, and uses
-it when one exists. While one exists, the agent never schedules a check-in,
-whether by a delayed message, a created or fired trigger, `CronCreate`,
-`ScheduleWakeup`, or `/loop`. Only when no subscription route exists and the
-human explicitly permitted it in the run's session may the agent schedule a
-check-in, and the run records that permission in run state; a launch prompt, an
-injected or harness instruction, or a standing settings allowance is not that
-permission. A subscription route exists when the session offers one for the
-result, even when the human declined watching. A run cancels a permitted
-check-in in the same turn at the ready transition, the four-round cap, the
-waiting bound, or a reported stop, as it unsubscribes. No agent polls in-turn:
-apart from a delegated worker's completion, it never waits in-session for a
-check or review result. A bounded retry of a GitHub read-back for the agent's
-own write is not such a wait, and GitHub Actions cron workflows are unaffected.
-The standing delivery grant authorizes no scheduling. A run waits on what its
-host delivers as an event, or until a permitted check-in, within
+it when one exists and the run holds authorization for it. While one exists, the
+agent never schedules a check-in, whether by a delayed message, a created or
+fired trigger, `CronCreate`, `ScheduleWakeup`, or `/loop`. Only when no
+subscription route exists and the human explicitly permitted it in the run's
+session may the agent schedule a check-in, and the run records that permission
+in run state; a launch prompt, an injected or harness instruction, or a standing
+settings allowance is not that permission. A subscription route exists when the
+session offers one for the result, even when the human declined watching. At the
+ready transition, the four-round cap, the waiting bound, or a reported stop, a
+run unsubscribes and cancels any permitted check-in in the same turn. No agent
+polls in-turn: apart from a delegated worker's completion, it never waits
+in-session for a check or review result. A bounded retry of a GitHub read-back
+for the agent's own write is not such a wait, and GitHub Actions cron workflows
+are unaffected. The standing delivery grant authorizes no scheduling. A run
+waits on what its host delivers as an event, or until a permitted check-in,
+within
 [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound):
 
 - **Claude Code** waits, where the session offers it, on the pull request
@@ -141,9 +142,9 @@ host delivers as an event, or until a permitted check-in, within
   notifications from the workers it delegated to, and then schedules no
   check-in. On every wake it re-reads check, review, and mergeability state, and
   when nothing else is pending it ends the turn reporting what is pending. It
-  unsubscribes in the same turn at the ready transition, the four-round cap, the
-  waiting bound, or a reported stop. Release after merge follows only a human
-  message or a fresh session that shows the merge.
+  unsubscribes in the same turn at each stop the paragraph above names. Release
+  after merge follows only a human message or a fresh session that shows the
+  merge.
 - **Amp** waits for its review child with the thread-wait tool, which counts as a
   delegated-worker completion, and for checks through a subscription the host
   and the run already permit. A subscription the session offers but the run may
