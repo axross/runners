@@ -107,11 +107,11 @@ explains how contributors choose new terms.
 
 **Tracking Issue** — The GitHub issue whose body holds the change plan. The plan gate is the maintainer’s approval of that plan. [Change loop](./agent-work/change-delivery.md#the-change-loop).
 
-**Plan-Gate Delivery Confirmation** — The Claude Code session’s answer about delivering the draft pull request, starting the selected review and watching it. The independent reviewer is the Claude Code review subagent unless the maintainer selects the Claude CI alternative. [Claude Code delivery confirmation](./agent-work/host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
+**Plan-Gate Delivery Confirmation** — The answer a Claude Code session collects with each plan-approval question about delivering the draft pull request, requesting Claude CI review each round and watching the pull request for activity. [Claude Code delivery confirmation](./agent-work/host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
 
 **Amp Review Child Thread** — A fresh Amp thread for one independent review round. It posts directly on the pull request. Archiving depends on the plan-gate archive confirmation. [Amp review](./agent-work/amp-review.md#amp-review-child-thread-from-amp).
 
-**Claude Code Review Subagent** — A fresh non-fork instance of the project’s `reviewer` in its own worktree, assigned to review and post one independent round. It is the Claude Code counterpart of an Amp Review Child Thread. [Claude Code review](./agent-work/claude-subagent-review.md#claude-code-review-subagent-from-claude-code).
+**Claude CI Review** — The independent review a Claude Code run requests each round by posting the Claude review trigger phrase in one top-level pull request comment. The `claude-review.yaml` workflow runs on a GitHub-hosted runner and posts the result as `claude[bot]`. [Requesting Claude CI review](./agent-work/claude-ci-review.md#claude-ci-review-from-claude-code).
 
 **Plan-Gate Archive Confirmation** — The human’s answer on whether an Amp run archives its review child threads. Collect it at the plan gate or before archiving when the run lacks a confirmation, including on resume. [Amp archive confirmation](./agent-work/host-permissions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 
@@ -121,6 +121,6 @@ explains how contributors choose new terms.
 
 **Branch Naming Rule** — A working branch identifies the issue that sourced the change or marks that it has none. The name identifies the origin of the change independently of the authoring host. [Branch convention](./agent-work/branches.md#branches-and-merging).
 
-**Agent Marker** — The `<!-- ai-agent -->` comment marking an issue or comment written by an agent. [Agent working agreement](./../AGENTS.md).
+**Agent Marker** — The `<!-- ai-agent -->` comment marking an issue or comment written by an agent. The retired marker `<!-- agent -->` identifies historical material only. [Agent working agreement](../AGENTS.md).
 
-**Installed Skill** — A directory under `.claude/skills/` installed from `axross/skills` and pinned in `skills-lock.json`. Reinstall it from its source to update the generated copy. [Skill installation](./agent-work/skill-installation.md#install-and-refresh).
+**Installed Skill** — A directory copied from `axross/skills` into `.claude/skills/`. The `skills-lock.json` lockfile records each installed skill’s source commit and content hash. The refresh command takes the latest upstream when run. Updates are manual, and installed copies are never hand-edited. [Skill installation](./agent-work/skill-installation.md#install-and-refresh).

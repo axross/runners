@@ -9,8 +9,11 @@ description: Reinstall the locked skill set, handle a rename and verify source a
 Every skill under `.claude/skills/` is **installed**, not written here. All of
 them come from the shared [axross/skills](https://github.com/axross/skills)
 library and are copied in with the
-[vercel-labs/skills](https://github.com/vercel-labs/skills) CLI, pinned by
-[`skills-lock.json`](../../skills-lock.json). This project owns no skill of its
+[vercel-labs/skills](https://github.com/vercel-labs/skills) CLI.
+[`skills-lock.json`](../../skills-lock.json) records the installed set, each copy's
+content hash, and the upstream commit used for that installation. The manual
+refresh below takes the latest upstream revision. Nothing updates installed
+skills automatically. This project owns no skill of its
 own; its conventions and operating procedures are the documents under
 [`docs/`](../index.md). Two costs come with that choice. Refreshing needs Node and
 network access, because `npx skills` fetches from the library over the network;

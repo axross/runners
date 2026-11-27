@@ -46,4 +46,4 @@ description: Find the installation procedure or the adopted decision that govern
 
 ### Deviation - the Claude Code review subagent's limits and closure
 
-[Deviation - the Claude Code review subagent's limits and closure](../agent-work/skill-exceptions.md#deviation---the-claude-code-review-subagents-limits-and-closure)
+[Retired deviation and current Claude Code review route](../agent-work/skill-exceptions.md#deviation---the-claude-code-review-subagents-limits-and-closure)

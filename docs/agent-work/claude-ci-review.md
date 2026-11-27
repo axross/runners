@@ -1,21 +1,22 @@
 ---
 type: Procedure
-title: Request the alternative Claude CI review
-description: Request the workflow review only when selected by the maintainer and identify its eligible output.
+title: Request and verify the Claude CI review
+description: Request one Claude CI review round and verify its workflow, reviewer output and head commit.
 ---
 
-# Request the alternative Claude CI review
+<a id="request-the-alternative-claude-ci-review"></a>
+
+# Request and verify the Claude CI review
 
 <a id="claude-review-from-claude-code"></a>
 
-## Alternative Claude CI review
+<a id="alternative-claude-ci-review"></a>
+
+## Claude CI review from Claude Code
 
 Check [the selected provider](./independent-review.md#the-independent-review), [the standing grant](./delivery-grant.md#authorizing-delivery-operations) and the session's [delivery confirmation](./host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code) before posting a review trigger.
 
-A Claude Code run uses this route only when the maintainer explicitly selects it
-for that run, under the provider-change rule in [The Independent Review](./independent-review.md#the-independent-review);
-the run requests it by posting `@claude review` as a top-level pull request
-comment, once per round. The Claude CI review is the in-repository reviewer in
+The Claude CI review is the in-repository reviewer in
 [`claude-review.yaml`](../../.github/workflows/claude-review.yaml), which runs on
 a GitHub-hosted runner and applies [`REVIEW.md`](../../REVIEW.md) through its
 system prompt. It is inert until a one-time operator setup is done, and its
@@ -31,9 +32,52 @@ trigger phrase into a summary or comment, per [REVIEW.md](../../REVIEW.md). The 
 unless that identity is named in its own `allowed_bots` input, which
 `claude-review.yaml` does for `claude[bot]`. See
 [Security](../security/workflow-permissions.md#the-review-gate-admits-one-bot-identity-by-login-not-association)
-for the rationale.
+for the rationale. A request from any other author, a missing operator setup,
+and an unnamed bot all end without findings.
 
-A request from any other author, a missing operator setup, and an unnamed bot
-all end without findings. A Claude CI review request that gets no review MUST confirm the
-operator setup and, where a bot posted the request, that its identity is named in
-`allowed_bots`. Do not read the absence as approval.
+Each round follows these rules:
+
+- **Request.** The round's request is the Claude review trigger phrase,
+  `@claude review`, written in exactly one top-level pull request comment for
+  that round and nowhere else. When `claude[bot]` posts it, the comment carries
+  no Markdown heading and nowhere the sequence of two number signs and a space,
+  because the workflow's `!contains(body, '## ')` gate skips a bot comment that
+  contains it.
+- **No overlap.** The workflow's concurrency group cancels an in-flight review
+  when a new request arrives on the same pull request. A run MUST NOT post a new
+  request while its previous round is pending.
+- **Reviewer.** The reviewer is always `claude[bot]`. It shares an identity with
+  the requester only when `claude[bot]` posted the request.
+- **Result.** A round's result is a `claude[bot]` comment posted after the
+  request that contains the tally line [REVIEW.md](../../REVIEW.md) requires,
+  together with any `claude[bot]` inline findings. The summary names neither
+  commit nor round, so the tally comment and the inline findings are tied to the
+  round by the Head and timing rule, below.
+- **Failed rounds.** A cancelled, failed, or unfinished workflow run, a run the
+  workflow's gate skipped, and inline findings with no tally summary are failed
+  rounds. A workflow run without a conclusion is pending until the waiting bound
+  has passed since the request, which is the job's `timeout-minutes` in
+  `claude-review.yaml` plus [Loop Engineering's margin](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound); after that it is
+  unfinished. A workflow run that concluded as a success does not by itself show
+  that a review was posted.
+- **Detection.** On each wake or resume, read the workflow run the request
+  comment triggered and the comments posted after the request, then classify the
+  round from both. That run is the `issue_comment` run created at or just after
+  the request comment's timestamp, not the latest run in the repository. Runs
+  that other comments start, including the reviewer's tally comment, are not the
+  round's run and are ignored.
+- **Gate.** A failed, silent, or unavailable round blocks the review gate, and
+  no other provider substitutes for it. A request that gets no review MUST lead
+  the run to confirm the operator setup and, where `claude[bot]` posted the
+  request, that its identity is named in `allowed_bots`. Do not read the absence
+  as approval.
+- **Head and timing.** A round covers the pull request head that was current
+  when its request was posted, which the run records with the round. Its inline
+  findings MUST carry that head as their `original_commit_id`. A summary-only
+  round is tied to the head only by being posted after the request and before any
+  later request or head move. A round whose head moved does not cover the new
+  head, which needs a new request.
+- **Cap.** Every request counts against the four-round cap, including a failed
+  round and one whose result no longer covers the head. After a failed round,
+  the run may post a new request once the cause is addressed, and that request
+  counts toward the cap.

@@ -60,24 +60,20 @@ the user. The checked-in request in [`AGENTS.md`](../../AGENTS.md) does not
 establish that on its own, so a Claude Code run collects that request where the
 human is already answering: in the plan-approval question.
 
-Every plan-approval question, including the one for a revised plan, MUST also
-ask the human to confirm, in the same answer:
+Every plan-approval question, including one for a revised plan, MUST ask the
+human to confirm in the same answer whether the run should:
 
-- delivery of the run's draft pull request;
-- spawning a new `reviewer` subagent instance each round that reviews it and
-  publishes directly to it, or, when the maintainer has selected the Claude CI
-  alternative for the run, the Claude CI review request on it;
-- watching that pull request's activity, where the host offers it, until the
-  ready transition or a reported stop.
+- deliver its draft pull request;
+- request the [Claude CI review](./claude-ci-review.md#claude-ci-review-from-claude-code) on it each round;
+- watch its activity where the host offers it, until the ready transition, the
+  round cap, the waiting bound, or a reported stop.
 
-Only pull request creation, and `TaskStop` where its live contract conditions
-it, carry a host condition. The maintainer chose
-to settle the review item and the watch in the same answer, so that one
-answer covers the whole delivery path. This bounded exception to dependent
-question ordering is recorded in the delivery, review, and watching deviation in the register of
-[Agent Skills](./skill-exceptions.md#deviation---delivery-review-and-watching-share-one-confirmation).
-The run MUST offer coherent combined outcomes in that single question, with
-review and watching inapplicable when delivery is declined.
+Only pull request creation carries a host condition. The maintainer chose to
+settle the review item and watch in the same answer. The
+[register entry](./skill-exceptions.md#deviation---delivery-review-and-watching-share-one-confirmation)
+records this bounded exception to dependent question ordering. The run MUST
+offer coherent combined outcomes in that single question, with review and
+watching inapplicable when delivery is declined.
 
 A confirming answer is the user's explicit request for that run's pull
 request. The run then follows the post-approval sequence in
@@ -106,22 +102,13 @@ follows stays under the delivery grant.
 - MUST, when the human declines delivery, stop after push, report the
   external-review gate as unmet and the loop as not complete, and substitute
   no other review.
-- MUST, when composing the plan-approval question, check the live `TaskStop`
-  contract; when it requires the human's request, ask for it as a separate
-  question after approval, as the [Amp cleanup confirmation](#confirming-review-thread-cleanup-at-the-plan-gate-in-amp) does for archiving, and
-  record the answer in run state. A run with no plan gate, such as review-only
-  recovery, asks once before its first `TaskStop`, and a fresh session that
-  resumes the run and lacks that exchange in its own conversation asks once
-  before its first `TaskStop`, even when run state records an earlier
-  confirmation. A recorded decline carries forward, so no later session asks
-  again, and a review subagent still running is handed over as one the run
-  cannot stop.
 - MUST, when the human confirms delivery but declines the review item,
   open the draft pull request, keep it draft, and report the external-review
   gate as unmet and the loop as not complete.
 - MUST, when the human confirms delivery but declines watching, still request
   review, then treat each review or check result as a human wait: end the
-  turn and resume on the human's next message, with no scheduling.
+  turn and resume on the human's next message, with no scheduling, under
+  [Waiting and Watching](./independent-review.md#waiting-and-watching).
 
 ## Confirming Review-Thread Cleanup at the Plan Gate in Amp
 

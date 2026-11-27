@@ -14,11 +14,12 @@ Deliver a change, operate an agent session and maintain the skills it runs.
 ## Review
 
 - [Select and verify an independent review](./independent-review.md) — Select the provider for the authoring host and decide whether its posted result meets the review gate.
+- [Wait for checks or a review result](./independent-review.md#waiting-and-watching) — Determine when the run can wait for a notification, resume with an approved check-in, or hand off to the maintainer.
 - [Request the Codex review](./codex-review.md) — Request the review for a Codex or manual change and qualify the outcome of the external service.
 - [Run an Amp review round](./amp-review.md) — Start a fresh child thread, verify its review and end the thread under the host conditions.
-- [Run a Claude Code review round](./claude-subagent-review.md) — Qualify an independent reviewer, isolate its worktree, verify its posted result and account for its ending.
-- [Request the alternative Claude CI review](./claude-ci-review.md) — Request the workflow review only when selected by the maintainer and identify its eligible output.
-- [Wait for review and CI](./wait-for-checks.md) — Qualify a host wait mechanism and determine when the run must report an unmet wait instead.
+- [Request a Claude CI review](./claude-ci-review.md) — Start the mapped review for Claude Code and verify the workflow and its posted result.
+- [Interpret a historical Claude subagent review](./claude-subagent-review.md) — Identify the procedure used before Claude CI became the project’s review route for Claude Code.
+- [Receive review and CI results on each host](./wait-for-checks.md) — Identify the host mechanism that delivers a check or review result and verify what arrived.
 
 ## Sessions
 

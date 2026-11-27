@@ -36,13 +36,12 @@ stops before the first such push and asks the maintainer to choose a compliant
 delivery target; it does not silently replace the pull request or exempt the
 branch from this rule. An agent MUST NOT rename the branch automatically.
 
-A host can restrict a session to pushing only a branch it assigns, as Claude
-Code cloud sessions have done for this repository's adopting pull requests.
-When the assigned branch does not follow this naming rule and the session
-cannot push a compliant one, the run MUST surface that at the plan gate and
-push only on the maintainer's explicit exception for that run, recorded in run
-state; without it, the run stops before the first push and reports delivery as
-blocked.
+A host can restrict a session to pushing only a branch it assigns, as a Claude
+Code cloud session can. When the assigned branch does not follow this naming
+rule and the session cannot push a compliant one, the run MUST surface that at
+the plan gate and push only on the maintainer's explicit exception for that run,
+recorded in run state; without it, the run stops before the first push and
+reports delivery as blocked.
 
 When the base branch moves and a topic branch conflicts, merge the current base
 into the topic branch and record any resolution in a new commit. Do not rebase,

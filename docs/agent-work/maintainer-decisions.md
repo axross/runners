@@ -43,7 +43,7 @@ confirmation.
   the last outcome, MUST NOT end the turn with the dependent work blocked before
   that section's turn-output fallback has been used.
 - MUST NOT ask a question for a wait on review or check results. Those waits are
-  as [Waiting on CI and Review](./wait-for-checks.md#waiting-on-ci-and-review) describes.
+  governed by [Waiting and Watching](./independent-review.md#waiting-and-watching).
 
 ### Judge eligibility from the session
 
@@ -123,8 +123,7 @@ takes.
   request the host conditions on the user's own request.
 - MUST NOT put to the maintainer a decision that a launched session reports as
   asked and still pending, since the maintainer answers it in that session.
-- This rule does not cover subagent assignments or the independent-review
-  child's assignment.
+- This rule does not cover subagent assignments or the [Amp review child thread's assignment](./amp-review.md#amp-review-child-thread-from-amp).
 
 ### Return a decision from a subagent
 
@@ -134,8 +133,7 @@ listed in the `tools` field" (Available tools). That is documented, not
 exercised in this repository. The configured implementer, reviewer, and
 investigator therefore MUST return an unresolved maintainer decision and their
 partial results to their caller, which asks it, as the practice's Returning a
-Question You Cannot Ask section states. The independent-review child is such a
-subagent, and its assignment MUST stay as Development Workflow defines it.
+Question You Cannot Ask section states.
 
 The same page says a fork receives its parent conversation's exact tool pool, so
 a fork is inferred to keep `AskUserQuestion`, which is also not exercised here. A

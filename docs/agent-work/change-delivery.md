@@ -73,8 +73,8 @@ The run MUST, in order:
 2. open the draft pull request from the template, linking the tracking issue
    with a closing keyword;
 3. start watching the pull request's activity, where the host offers it and
-   the run holds authorization for it; in Claude Code, that is the plan-gate
-   confirmation;
+   the run holds authorization for it under [Waiting and Watching](./independent-review.md#waiting-and-watching);
+   in Claude Code, that authorization is the plan-gate confirmation;
 4. request review from [the provider assigned to the authoring host](./independent-review.md#the-independent-review), address its findings, and request a fresh review after each fix batch,
    up to the four-round cap;
 5. move the pull request to ready only after review convergence. Merging stays
@@ -83,9 +83,7 @@ The run MUST, in order:
 Agent-created ownership requirements are stated in the Ownership of
 agent-created work section of [AGENTS.md](../../AGENTS.md).
 
-The run MUST stop watching at the ready transition or at any reported stop,
-unless a higher-priority host instruction requires otherwise; the run then
-follows that instruction and reports the project requirement as unmet.
+The run MUST stop watching at each stop that [Waiting and Watching](./independent-review.md#waiting-and-watching) names, with no exception.
 
 After approval, the run MUST NOT ask again for confirmation to deliver the
 pull request or request review, except for the session-resumption recovery
@@ -94,15 +92,9 @@ above. It waits on a human only for:
 - approval of a plan revision;
 - a product, architecture, or finding-disposition decision that Loop
   Engineering requires the maintainer to make;
-- each review or check result, when the human declined watching or no
-  permitted, authorized wait mechanism delivers that result;
+- each review or check result that [Waiting and Watching](./independent-review.md#waiting-and-watching) makes a human wait;
 - on Amp, the plan-gate archive confirmation, when the current session has not
-  collected it and no recorded answer declined it;
-- on Claude Code, the `TaskStop` request Agent Sessions describes, when its
-  live contract requires the human's request, the current session has not
-  collected it, and no recorded answer declined it;
-- on Claude Code, a review subagent's permission prompt that the run cannot
-  answer on the human's behalf.
+  collected it and no recorded answer declined it.
 
 The review cap reached without convergence is a blocker. The run MUST record it
 in run state, report it, and keep the pull request draft.
@@ -127,12 +119,11 @@ review or outstanding findings from an advisory review that ran. It MUST NOT
 waive any other approval, verification, evidence, or readiness requirement.
 The independent-review gate remains mandatory.
 
-On Claude Code, a missing `reviewer` subagent leaves both gates unmet under this
-exception: it is the pre-flight reader whose absence the exception covers, and
-it is also the independent-review route, whose missing-`reviewer` rule the
-[Claude Code review subagent from Claude Code](./claude-subagent-review.md#claude-code-review-subagent-from-claude-code)
-section states. The pull request stays draft and the run reports both gates as
-unmet.
+On Claude Code, a missing or refused `reviewer` subagent leaves only the
+advisory pre-flight unavailable, which this exception covers. The independent
+review is [the Claude CI review](./claude-ci-review.md#claude-ci-review-from-claude-code), which no subagent serves, so the `reviewer`'s
+absence does not affect that gate. The pull request stays draft, and the run
+discloses the unavailable pre-flight in delivery.
 
 ## Tracking Issue Completion
 

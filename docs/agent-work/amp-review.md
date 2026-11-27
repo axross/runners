@@ -28,8 +28,8 @@ handoff of the authoring thread.
    state, through [Save and resume run state](./run-state.md#save-and-resume-run-state).
 3. The child posts its review on the pull request in the form REVIEW.md's Amp
    arrangement sets.
-4. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
-   within
+4. Wait for the child with Amp's thread-wait tool, a delegated-worker
+   completion under [Waiting and Watching](./independent-review.md#waiting-and-watching), within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round's child thread and the reviewed

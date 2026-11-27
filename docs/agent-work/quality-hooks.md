@@ -48,15 +48,16 @@ which the session-start hook copies to the gitignored `settings.local.json` in a
 cloud session; Claude Code hot-reloads them for that session. A local session
 skips the hook entirely, so opting in there stays a manual copy.
 
-That example file also contains `permissions.allow` entries for
-`mcp__Claude_Code_Remote__send_later` and `mcp__Claude_Code_Remote__delete_trigger`.
-They exist only to spare a permission prompt when a host exposes those tools.
-They are tool-permission rules, subject to Claude Code's
-[permission precedence](https://code.claude.com/docs/en/permissions), not
-standalone evidence of live availability, human adoption, or a scoped operation
-grant. Waiting belongs to the host; `loop-engineering` requires no scheduler or
-particular wake tool. [Waiting on CI and Review](./wait-for-checks.md#waiting-on-ci-and-review)
-distinguishes Claude's documented mechanisms from those configured names.
+The example's `permissions.allow` entries cover only
+`mcp__claude-code-remote__subscribe_pr_activity` and
+`mcp__claude-code-remote__unsubscribe_pr_activity`. They spare a permission
+prompt when a Claude Code Remote session subscribes to its own pull request
+under the [plan-gate confirmation](./host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code) and unsubscribes at the
+end of the watch. Claude Code's [permission precedence](https://code.claude.com/docs/en/permissions)
+applies. The entries establish neither tool availability, human adoption, nor a
+scoped operation grant. The example allows no scheduling tool.
+[Waiting on CI and Review](./wait-for-checks.md#waiting-on-ci-and-review) describes the subscription.
+[Waiting and Watching](./independent-review.md#waiting-and-watching) governs when a check-in is allowed.
 
 A blocking `Stop` check is expensive in a way a `PostToolUse` repair is not: it
 fires only after the agent believes the task is finished, so a failure there

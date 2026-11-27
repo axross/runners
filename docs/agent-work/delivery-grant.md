@@ -18,64 +18,15 @@ request that closes
 [issue #1](https://github.com/axross/runners/issues/1), which added this
 section following the plan approved in that issue. An amendment to this section
 is adopted the same way, by the maintainer's merge of the pull request that
-carries it. The amendment for
-[issue #35](https://github.com/axross/runners/issues/35), which replaces the
-branch prefix in the targets and exclusions with the naming rule in [Branches and Merging](./branches.md#branches-and-merging), adds the operator-assignment
-effect, and adds the Claude Code explicit-request sentence below, takes effect
-only on the maintainer's merge of the pull request that closes that issue. The
-amendment for [issue #96](https://github.com/axross/runners/issues/96), which
-adds the Amp review child thread's effects and consequences below, likewise
-takes effect only on the maintainer's merge of the pull request that closes
-that issue. The amendments for
-[issue #127](https://github.com/axross/runners/issues/127), which add the
-execution-plan-issue and review-child targets, the issue-closing effect, the
-Claude Code review child session's effects and consequences, and the explicitly
-selected Claude CI alternative below, likewise take effect only on the
-maintainer's merge of the pull request that closes that issue; that pull
-request, authored by an Amp run, is reviewed under the grant as merged before it.
-The amendment for [issue #151](https://github.com/axross/runners/issues/151),
-which replaces the Claude Code review child session route those amendments added
-with the Claude Code review subagent, and rewrites the targets, covered effects,
-and accepted consequences below to match, follows the plan the maintainer
-approved in that issue
-([recorded here](https://github.com/axross/runners/issues/151#issuecomment-7049089352))
-and, like the earlier ones, takes effect only on the maintainer's merge of the
-pull request that closes it; that pull request is reviewed under the grant as
-merged before it. Agent runs share the maintainer's operator identity, so the
-signal that distinguishes such a merge as a human act is that agents never merge
-on their own: merge is excluded from this grant, and it is the maintainer's
-decision, per [Branches and Merging](./branches.md#branches-and-merging). The grant is
-separate from plan approval, which releases implementation and is not what
-authorizes a delivery effect, but every run already holds it, so no run asks
-for it.
-
-The pull request that adds this section cannot rely on it, because the grant
-takes effect only on merge. That pull request's delivery is authorized by the
-maintainer's approval of the plan in issue #1, which requested the authorization
-to push a `claude/` branch and open a draft pull request for it. That pull
-request was in fact delivered from the host-assigned head branch
-`ccr-fd09e38c-631o65`, because the authoring cloud session could push only to
-that branch, and `main` was seeded with an empty root commit with the
-maintainer's explicit permission. This is a one-time exception for the adopting
-pull request.
-
-The pull request that closes issue #35 cannot rely on its own amendment either,
-because the amendment takes effect only on merge, and the branch target in the
-grant as merged does not cover the head branch the authoring cloud session was
-assigned. That pull request is delivered from the host-assigned head branch
-`ccr-315645f9-p43xyx`, which the maintainer explicitly permitted for that run in
-the authoring session. This is a second one-time exception for an adopting pull
-request; later changes use a branch named under
-[Branches and Merging](./branches.md#branches-and-merging), subject to the host-assigned branch rule there.
-
-The pull request that closes issue #96 cannot rely on its own amendment either.
-The grant before that amendment maps an Amp run to the Codex review, but the
-maintainer chose, in that run's plan-approval exchange, to have that pull
-request reviewed by an Amp review child thread instead. For that run only, this
-third one-time exception covers creating one review child thread per round, the
-child's COMMENT-type review on that pull request, and archiving the child
-thread, under the Amp arrangement that pull request adds to
-[REVIEW.md](../../REVIEW.md).
+carries it, and takes effect only on that merge; the run on the amending pull
+request works under the grant as merged. GitHub records that merge, and the
+amendment's tracking issue records its plan approval. Agent runs share the
+maintainer's operator identity, so the signal that distinguishes such a merge as
+a human act is that agents never merge on their own: merge is excluded from this
+grant, and it is the maintainer's decision, per
+[Branches and Merging](./branches.md#branches-and-merging). The grant is separate from plan
+approval, which releases implementation and is not what authorizes a delivery
+effect, but every run already holds it, so no run asks for it.
 
 The grant's targets are:
 
@@ -89,10 +40,10 @@ The grant's targets are:
 - the run's draft pull request against the default branch; for recovery, the
   existing pull request
 - the review provider the authoring host maps to in
-  [the independent review](./independent-review.md#the-independent-review), or the Claude CI
-  alternative when the maintainer explicitly selects it for the run
-- the Claude Code review subagent instances and the Amp review child threads the
-  run creates for that pull request, each identified in run state
+  [the independent review](./independent-review.md#the-independent-review), which for Claude Code is
+  [the Claude CI review](./claude-ci-review.md#claude-ci-review-from-claude-code)
+- the Amp review child threads the run creates for that pull request, each
+  identified in run state
 
 Its covered effects, each performed without asking, are:
 
@@ -117,20 +68,14 @@ Its covered effects, each performed without asking, are:
 - publication of evidence at the destination named in the approved plan when an
   acceptance criterion carries the
   `(verified out of tree: <where the evidence will be published>)` marker
-- review requests on that pull request through the mapped provider, or the
-  Claude CI alternative when the maintainer explicitly selects it for the run,
-  one per round, including fresh reviews after fixes, up to the four-round cap, with
-  the consequences listed below
+- review requests on that pull request through the mapped provider, which for a
+  Claude Code run is the Claude CI review, one per round, including fresh
+  reviews after fixes, up to the four-round cap, with the consequences listed
+  below
 - for an Amp run, which the Amp review child thread route serves: creation of
   one review child thread per round, that child's COMMENT-type review on the
   run's pull request, and archiving of the child thread once its result is
   verified or its round has failed
-- for a Claude Code run, which the Claude Code review subagent route serves:
-  spawning one new `reviewer` instance per round in its own worktree, that
-  instance's reading of the pull request and the required repository and policy
-  material, its one COMMENT-type review on the run's pull request, and stopping
-  it with `TaskStop` when it is still running once its result is verified or its
-  round has failed, as the [Claude Code review procedure](./claude-subagent-review.md#claude-code-review-subagent-from-claude-code) defines
 
 The grant is standing: it holds across runs, sessions, and executors until the
 maintainer amends or removes this section, and no run's own end expires it.
@@ -247,7 +192,7 @@ the maintainer triages it. Codex review may:
 - read the pull request and repository content, including files outside the diff
 - publish findings and a review to that pull request
 
-An explicitly selected [alternative Claude CI review](./claude-ci-review.md#alternative-claude-ci-review) request can:
+A [Claude CI review](./claude-ci-review.md#claude-ci-review-from-claude-code) request, which is a Claude Code run's mapped provider, can:
 
 - start the GitHub-hosted `claude-review.yaml` job, which runs a third-party
   artificial intelligence action with repository-reading and shell tools
@@ -281,60 +226,9 @@ An Amp review child thread can:
 - publish a COMMENT-type review on the pull request under the same GitHub
   operator account as the run that authored the change
 
-A Claude Code review subagent can:
-
-- incur usage charges within the operator's existing account and model
-  settings, without changing payment policy, providers, or configuration
-- read the repository, the pull request, and files outside the diff
-- hold the authoring session's GitHub write access and tools other than the
-  four its definition denies, so the limits listed below bind only as far as the
-  assignment and the definition instruct
-- work in a separate worktree of this repository, which the run confirms is
-  distinct from the author's checkout before relying on the round, and which
-  can remain on disk afterwards; whether it does is inspected and reported, not
-  asserted
-- raise permission prompts in the authoring session, where an answer that lasts
-  for the session also applies to the authoring conversation, and where a
-  "don't ask again" answer for a Bash command, a web fetch domain, or web
-  search is saved to the repository's `.claude/settings.local.json` and applies
-  to later sessions and their subagents anywhere in this repository, as Claude
-  Code's [permissions documentation](https://code.claude.com/docs/en/permissions)
-  states
-- be steered within those tools by pull request content it reads, such as a
-  comment any GitHub user can post on this public repository
-- publish a COMMENT-type review on the pull request under the identity of the
-  session's GitHub access: the operator account through the operator's
-  credentials, or `claude[bot]` through the installed Claude GitHub App
-
-The definition declares, and Claude Code documents enforcing, one set of limits
-on a `reviewer` instance: it denies the Edit, Write, NotebookEdit, and Agent
-tools. No live round has confirmed that enforcement yet;
-[#155](https://github.com/axross/runners/issues/155) tracks the first. Every
-other limit is instruction-only, whether the instance is the advisory
-pre-flight reader or a round's independent review:
-
-- no shell write to the repository beyond fetching the reviewed commit and
-  checking it out in its own confirmed worktree, and no commit; an advisory
-  pre-flight instance has no such worktree and makes no shell write;
-- no push and no merge;
-- no approve or request-changes verdict;
-- no GitHub write other than those that compose the round's one review;
-- no starting or messaging of other actors through a route other than the Agent
-  tool, such as a session-starting or messaging tool;
-- no posting at all by an instance that is not assigned as the round's
-  independent review.
-
-The last item follows from one definition serving both uses: every `reviewer`
-instance carries the conditional posting permission in its prose, and the host
-does not enforce that the condition holds. The definition leaves GitHub write
-tools and session-starting and messaging tools undenied, for the reasons the
-register deviation in [Agent Skills](./skill-exceptions.md#deviation---the-claude-code-review-subagents-limits-and-closure)
-records as its counterexample.
-
-An Amp review child thread's or a Claude Code review subagent's review supplies
-no GitHub approval and no APPROVE verdict; a shared operator account is not a
-distinct bot identity. The selected route supplies context-independent review
-for this project's delivery gate. This
+An Amp review child thread's review supplies no GitHub approval and no APPROVE
+verdict; a shared operator account is not a distinct bot identity. The selected
+route supplies context-independent review for this project's delivery gate. This
 grant covers neither unrelated threads or sessions nor reconfiguration to make
 an unavailable route work.
 

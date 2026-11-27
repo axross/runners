@@ -16,6 +16,10 @@ description: Choose the delivery, release or review procedure that answers your 
 
 [After Approval: Delivery Without Another Prompt](../agent-work/change-delivery.md#after-approval-delivery-without-another-prompt)
 
+### Waiting and Watching
+
+[Waiting and Watching](../agent-work/independent-review.md#waiting-and-watching)
+
 ### Deliver a draft when advisory pre-flight is unavailable
 
 [Deliver a draft when advisory pre-flight is unavailable](../agent-work/change-delivery.md#deliver-a-draft-when-advisory-pre-flight-is-unavailable)
@@ -90,9 +94,11 @@ description: Choose the delivery, release or review procedure that answers your 
 
 <a id="claude-review-from-claude-code"></a>
 
-### Alternative Claude CI review
+<a id="alternative-claude-ci-review"></a>
 
-[Alternative Claude CI review](../agent-work/claude-ci-review.md#alternative-claude-ci-review)
+### Claude CI review from Claude Code
+
+[Request and verify the Claude CI review](../agent-work/claude-ci-review.md#claude-ci-review-from-claude-code)
 
 ### Codex review from Codex or a manual change
 
@@ -104,7 +110,7 @@ description: Choose the delivery, release or review procedure that answers your 
 
 ### Claude Code review subagent from Claude Code
 
-[Claude Code review subagent from Claude Code](../agent-work/claude-subagent-review.md#claude-code-review-subagent-from-claude-code)
+[Former Claude Code subagent route and its replacement](../agent-work/claude-subagent-review.md#claude-code-review-subagent-from-claude-code)
 
 ## Acceptance Criteria Verified Out of Tree
 

@@ -42,13 +42,14 @@ An initial eyes reaction or Running activity status acknowledges the request;
 neither completes the review. A run MUST correlate the request, reviewed
 revision, terminal App status, and actual final result before evaluating the
 review gate. Completed status proves the round ended, not that it found nothing:
-read any posted review and inline findings. The App's native no-findings response or
-final thumbs-up reaction on the request can confirm a clean round without a
-separate review object. Acknowledgment without a terminal result remains pending
-within [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
-If the App does not acknowledge or complete the round within that bound, the run
-MUST confirm the repository setup and keep the review gate blocked rather than
-read silence as a clean review.
+read any posted review and inline findings. The App's native no-findings
+response or final thumbs-up reaction on the request can confirm a clean round
+without a separate review object. Acknowledgment without a terminal result
+remains pending, and the App's result is a human wait under [Waiting and Watching](./independent-review.md#waiting-and-watching). On resume the run reads the App's status and any posted result.
+If the round has no acknowledgment or terminal result once
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound)
+has passed, the run MUST confirm the repository setup and keep the review gate
+blocked rather than read silence as a clean review.
 
 A run MUST assess the correlated result under REVIEW.md's adopted arrangement,
 not demand affirmative per-check assertions or an extra round solely for them.

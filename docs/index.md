@@ -33,7 +33,7 @@ Apple silicon Macs with Tart. Start with the job you are doing. The
 ## Change or release the project
 
 - [Contributing](./contributing/index.md) covers development setup, project layout, testing, and where to document a change.
-- [Agent work and change delivery](./agent-work/index.md) covers planning, authorization, sessions, review, and resuming interrupted work.
+- [Agent work and change delivery](./agent-work/index.md) covers planning, authorization, sessions, review, waiting for checks, and resuming interrupted work.
 - [Releases](./releases/index.md) covers runner updates, versioning, signing, publication, and recovery from a partial release.
 
 Requirements in these guides use MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY
