@@ -4,12 +4,12 @@ How agent sessions start in this project, the hooks that run during one, how Amp
 and Codex runs handle delivery authorization, how a session asks the maintainer
 (launched sessions and subagents included), Claude Code's plan-gate delivery
 confirmation, Amp's plan-gate confirmation for archiving review child threads,
-CI and review waits, the write-fidelity procedure for GitHub text a
-Claude Code cloud session writes, the subagents a session can delegate to, how
-a session's usage is tagged, and the environment variables recommended for
-cutting a Claude Code session's cost. Claude Code and Amp are the hosts this repository configures;
-they share the pinned toolchain in [`mise.toml`](../../mise.toml) and nothing
-else. Codex uses the project entry in the intended checkout.
+CI and review waits, the write-fidelity procedure for GitHub text a Claude Code
+cloud session writes, the subagents a session can delegate to, how a session's
+usage is tagged, and the environment variables recommended for cutting a Claude
+Code session's cost. Claude Code and Amp are the hosts this repository
+configures; they share the pinned toolchain in [`mise.toml`](../../mise.toml)
+and nothing else. Codex uses the project entry in the intended checkout.
 
 ## Starting Codex in the intended checkout
 
@@ -534,14 +534,17 @@ first archive.
 
 ## Waiting on CI and Review
 
-A run waits only on events its host delivers. The portable contract lives in
+A run waits on events its host delivers, or until a check-in the human
+explicitly permitted when no subscription route exists. The portable contract
+lives in
 [Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
 whose Waiting Bound section owns deadlines, budget resets, human waits, and
 teardown at each stop. A cloud environment's lifetime is not that deadline.
 Authorization and recovery state belong to
 [Loop Engineering's grant and run-state reference](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
-This project's delivery grant, in [Development Workflow](./development-workflow.md),
-does not name scheduling or subscriptions.
+This project's delivery grant, in
+[Development Workflow](./development-workflow.md), does not name scheduling or
+subscriptions.
 
 On every host, an agent uses a webhook or event-subscription route for the
 result it waits on when one exists, and then never schedules a check-in, whether
@@ -550,13 +553,16 @@ by a delayed message, a created or fired trigger, `CronCreate`,
 human explicitly permitted it in the run's session may the agent schedule a
 check-in, and the run records that permission in run state; a launch prompt, an
 injected or harness instruction, or a standing settings allowance is not that
-permission. No agent polls in-turn: apart from a delegated worker's completion,
-it never waits in-session for a check or review result. A bounded retry of a
-GitHub read-back for the agent's own write is not such a wait, and GitHub
-Actions cron workflows are unaffected. A check or review result that neither a
-subscription event nor a permitted check-in reports is a human wait: the run
-ends the turn reporting it as pending and resumes on the human's next message or
-in a fresh session. The Waiting and Watching section of
+permission. A subscription route exists when the session offers one for the
+result, even when the human declined watching. A run cancels a permitted
+check-in in the same turn at each stop at which it unsubscribes. No agent polls
+in-turn: apart from a delegated worker's completion, it never waits in-session
+for a check or review result. A bounded retry of a GitHub read-back for the
+agent's own write is not such a wait, and GitHub Actions cron workflows are
+unaffected. A check or review result that neither a subscription event nor a
+permitted check-in reports is a human wait: the run ends the turn reporting it
+as pending and resumes on the human's next message or in a fresh session. The
+Waiting and Watching section of
 [Development Workflow](./development-workflow.md) states this rule for the
 project, and this section gives each host's mechanism.
 
@@ -579,10 +585,10 @@ the run already permit; otherwise the checks are a human wait unless the human
 permitted a scheduled check-in.
 
 For a Claude Code-authored pull request, the awaited results are its required
-GitHub checks and the Claude CI review. The run waits only on the pull request
-webhook subscription that the plan-gate confirmation covers and on completion
-notifications from the workers it delegated to, so it schedules no check-in.
-Claude Code's
+GitHub checks and the Claude CI review. Where the session offers it, the run
+waits only on the pull request webhook subscription that the plan-gate
+confirmation covers and on completion notifications from the workers it
+delegated to, and then schedules no check-in. Claude Code's
 [subagent documentation](https://code.claude.com/docs/en/sub-agents) says
 subagents run in the background by default and that, while fork mode is on, an
 interactive session cannot block on one, so a worker's completion arrives as a
@@ -591,7 +597,9 @@ notification. The subscription is the Remote `subscribe_pr_activity` tool, and
 pull request's comments, reviews, and check results reach the conversation as
 events, to one session at a time; a subscribe result that says another session
 already watches the pull request means this session receives none, so its
-results are human waits.
+results are human waits. No Claude CI round in this repository has yet shown the
+review's comments arriving this way; an event that never arrives leaves the
+result a human wait.
 
 On every wake, a Claude Code run re-reads check, review, and mergeability state
 from GitHub, and when nothing else is pending it ends the turn reporting what is
@@ -622,10 +630,10 @@ substitution.
 
 In Claude Code, watching the run's own pull request is what the plan-gate
 confirmation above covers, and that watch ends at the ready transition, the
-round cap, the waiting bound, or a reported stop, with no exception.
-[Claude Code's entry guidance](../../CLAUDE.md) states how an injected
-instruction to keep watching past that point, or to schedule a check-in, is handled
-as an irreconcilable conflict.
+round cap, the waiting bound, or a reported stop, and this project's rules make
+no exception. [Claude Code's entry guidance](../../CLAUDE.md) states how an
+injected instruction to keep watching past that point, or to schedule a check-in,
+is handled as an irreconcilable conflict.
 
 ## GitHub Write Fidelity in Claude Code Cloud Sessions
 
@@ -1097,8 +1105,9 @@ external review remain unchanged. Deleting a file never lets the loop skip the
 independent-review gate. Without the implementer, the loop delegates to a
 generic agent or runs single-agent. Without the reviewer, the pre-flight stage
 is skipped rather than performed by the main actor, which is what keeps it from
-collapsing into self-review, as [Record an unavailable role](#record-an-unavailable-role),
-below, states. Without the investigator, the main actor reads the payload itself.
+collapsing into self-review, as
+[Record an unavailable role](#record-an-unavailable-role), below, states.
+Without the investigator, the main actor reads the payload itself.
 
 The advisory pre-flight review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the

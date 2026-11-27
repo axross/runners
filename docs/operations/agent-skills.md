@@ -10,14 +10,14 @@ library and are copied in with the
 [`skills-lock.json`](../../skills-lock.json) records the installed set and each
 copy's content hash, and no revision: this project pins none, a refresh takes
 the latest upstream, and nothing updates skills automatically. This project owns
-no skill of its own; its conventions and operating procedures are the documents under
-[`docs/`](../index.md). Two costs come with that choice. Refreshing needs Node and
-network access, because `npx skills` fetches from the library over the network;
-the installed skills themselves are plain Markdown, so this cost falls on
-refreshing, not on every session. And the library is not this project's own: a
-rule that turns out wrong, outdated, or silent on a case here cannot be fixed by
-editing the installed copy, because the next install discards the edit while it
-poses as a rule the library agrees with. See
+no skill of its own; its conventions and operating procedures are the documents
+under [`docs/`](../index.md). Two costs come with that choice. Refreshing needs
+Node and network access, because `npx skills` fetches from the library over the
+network; the installed skills themselves are plain Markdown, so this cost falls
+on refreshing, not on every session. And the library is not this project's own:
+a rule that turns out wrong, outdated, or silent on a case here cannot be fixed
+by editing the installed copy, because the next install discards the edit while
+it poses as a rule the library agrees with. See
 [Deviations and Gaps](#deviations-and-gaps) for how that is handled instead.
 
 The installed set is exactly the keys of `skills-lock.json`; that file, not this
