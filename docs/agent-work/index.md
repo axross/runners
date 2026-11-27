@@ -13,7 +13,7 @@ Deliver a change, operate an agent session and maintain the skills it runs.
 
 ## Review
 
-- [Select and verify an independent review](./independent-review.md) — Select the provider for the authoring host and decide whether its posted result meets the review gate.
+- [Select and verify a post-push review](./independent-review.md) — Select the provider for the authoring host and decide whether its posted result meets the review gate.
 - [Wait for checks or a review result](./independent-review.md#waiting-and-watching) — Determine when the run can wait for a notification, resume with an approved check-in, or hand off to the maintainer.
 - [Request the Codex review](./codex-review.md) — Request the review for a Codex or manual change and qualify the outcome of the external service.
 - [Run an Amp review round](./amp-review.md) — Start a fresh child thread, verify its review and end the thread under the host conditions.

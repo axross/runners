@@ -54,5 +54,5 @@ Another agent's assessment adds scrutiny, not decision authority. Keep subject j
 
 **Guidelines:**
 
-- MUST keep review advisory. The agent responsible for the requested outcome retains synthesis and integration responsibility; receiving an artifact alone transfers neither. Review does not replace factual verification, human approval, operation authorization, or external review.
+- MUST keep review advisory. The agent responsible for the requested outcome retains synthesis and integration responsibility; receiving an artifact alone transfers neither. Review does not replace factual verification, human approval, operation authorization, or post-push review (review of the opened pull request by someone other than the author).
 - MUST use applicable subject practices to judge evidence and design quality, and applicable finding-disposition rules to settle findings. When none exists, unsupported or non-blocking suggestions may be rejected with evidence; unresolved substantive concerns and human choices stay visible.

@@ -56,6 +56,7 @@ See [asking-the-human.md](./references/asking-the-human.md) for:
 
 - submitting an unresolved decision to the human during an interview or a single mid-task question
 - using a dedicated question mechanism when its purpose and usage conditions qualify, and the permitted fallback when no dedicated mechanism is eligible
+- reading a launch prompt's instruction to communicate through the launcher, which does not replace asking the human through an eligible mechanism
 - handling an unanswered decision after an async submission receipt, or matching a later answer to the open question
 - recovering closed, errored, or reported-missing questions while retaining matched answers, and reading a bare answer token as answering the still-open question
 - framing a decision as concrete options, each with its consequence and the default marked with its reason and evidence

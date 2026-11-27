@@ -31,7 +31,7 @@ make it during the task that exposed the problem.
 - MUST follow applicable change and approval gates before correcting an owned source; ownership alone does not require an immediate edit or authorize one. Once a distributable correction is approved, edit the source and regenerate the installation and lockfile under [Install and Refresh](../SKILL.md#distributable-skills-install-and-refresh).
 - SHOULD record a project-only addition as a local convention, and treat a conflicting choice as a proposed deviation requiring the separate validity check below.
 - MUST continue the exposing task under the applicable installed rules and any separately valid deviation, subject to the actual host's priority and tool restrictions. Filing a proposal alone never puts its proposed rule into force; if those constraints prevent continuing, report the blocker rather than assume an exception.
-- SHOULD name filed or pending proposals in the completion report, keeping unresolved feedback visible without making publication a prerequisite for otherwise permitted work.
+- SHOULD name filed or pending proposals in the skill-maintenance completion report that [SKILL.md](../SKILL.md) requires, keeping unresolved feedback visible without making publication a prerequisite for otherwise permitted work.
 
 ## Distinguish addition, exception, and proposal
 
@@ -57,7 +57,23 @@ An additional naming convention that conflicts with no rule needs no deviation.
 - MUST check the exception against the actual host's priority and tool restrictions using its entry or operations guidance. This skill defines no host precedence and cannot make a lower-priority exception override a host prohibition.
 - MUST apply a deviation only while its adoption, scope, and assumptions remain valid. Unapproved, hypothetical, out-of-scope, expired, or resolved exceptions do not authorize departures.
 - MUST reassess a deviation when installed rules, relevant assumptions, or its stated reassessment conditions change; stop relying on it when the conflict is resolved or its basis no longer holds.
-- MUST keep exception adoption separate from authorization to post feedback or perform other effects. No exception record supplies that grant or waives applicable change, verification, or independent-review gates.
+- MUST keep exception adoption separate from authorization to post feedback or perform other effects. No exception record supplies that grant or waives applicable change, verification, or post-push review (review of the opened pull request by someone other than the author) gates.
+
+## Deviation Register
+
+A project that wants its deviations in one place can keep a register. The format
+below is optional; adopting a deviation never depends on it.
+
+**Example:**
+
+> The register's index lists one Active deviation, D-2, a retry cap in one skill, whose entry carries the exception-record fields: rule, source and revision; counterexample; alternative; rationale; adoption evidence; scope; reassessment conditions. D-1 is Resolved, closed because the upstream rule changed, and stays listed in the register but not in the index.
+
+**Guidelines:**
+
+- MAY keep a register using the exception-record fields above, one entry per deviation.
+- MUST give each entry a status: Active for an adopted deviation that is still valid under the rules above, or Resolved for one that was fixed, withdrawn or expired.
+- SHOULD keep an index of the Active entries, so a reader finds the deviations in force without reading resolved ones.
+- MUST, where the project declares its register exhaustive, treat a departure that no Active entry lists as a finding; otherwise judge an unlisted departure under the validity rules above.
 
 ## Publish a third-party proposal only with permission
 

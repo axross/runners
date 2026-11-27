@@ -20,9 +20,11 @@ description: Choose the delivery, release or review procedure that answers your 
 
 [Waiting and Watching](../agent-work/independent-review.md#waiting-and-watching)
 
-### Deliver a draft when advisory pre-flight is unavailable
+<a id="deliver-a-draft-when-advisory-pre-flight-is-unavailable"></a>
 
-[Deliver a draft when advisory pre-flight is unavailable](../agent-work/change-delivery.md#deliver-a-draft-when-advisory-pre-flight-is-unavailable)
+### Deliver a draft when pre-push review is unavailable
+
+[Deliver a draft when pre-push review is unavailable](../agent-work/change-delivery.md#deliver-a-draft-when-pre-push-review-is-unavailable)
 
 ## Tracking Issue Completion
 
@@ -84,9 +86,11 @@ description: Choose the delivery, release or review procedure that answers your 
 
 [What Catches a Loop Stopped Mid-Flight](../agent-work/change-delivery.md#what-catches-a-loop-stopped-mid-flight)
 
-## The Independent Review
+<a id="the-independent-review"></a>
 
-[The Independent Review](../agent-work/independent-review.md#the-independent-review)
+## The Post-Push Review
+
+[The Post-Push Review](../agent-work/independent-review.md#the-post-push-review)
 
 ### Review coverage evidence
 

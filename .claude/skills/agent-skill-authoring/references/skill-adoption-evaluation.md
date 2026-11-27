@@ -82,7 +82,7 @@ For three planned cells with one completed pass, one started partial result, and
 
 Compare a changed route at a decision the assigned actor actually reached. For
 example, a review reference with no recorded reads might have served no reached
-reviews, or an external reviewer might have received equivalent host guidance.
+reviews, or a reviewer outside the recorded session might have received equivalent host guidance.
 Separate those cases from a reviewer who missed a required rule and produced an
 incorrect result. Marginal file-read totals cannot establish co-reads by the
 same actor at the same checkpoint.

@@ -40,7 +40,7 @@ The grant's targets are:
 - the run's draft pull request against the default branch; for recovery, the
   existing pull request
 - the review provider the authoring host maps to in
-  [the independent review](./independent-review.md#the-independent-review), which for Claude Code is
+  [the post-push review](./independent-review.md#the-post-push-review), which for Claude Code is
   [the Claude CI review](./claude-ci-review.md#claude-ci-review-from-claude-code)
 - the Amp review child threads the run creates for that pull request, each
   identified in run state
@@ -82,7 +82,7 @@ maintainer amends or removes this section, and no run's own end expires it.
 Rounds beyond the fourth are not covered; they need a human direction stating
 how many additional fix-and-review rounds it allows, and that direction covers
 only those rounds. The ready transition is not a grant-gated effect: it follows
-the independent-review gate, and a run that has satisfied that gate needs no
+the post-push review gate, and a run that has satisfied that gate needs no
 grant to flip its pull request to ready.
 
 **Guidelines:**
@@ -91,7 +91,7 @@ grant to flip its pull request to ready.
   or after plan approval, and MUST NOT report a run as authorization-waiting on
   a covered effect. Meeting a host's own condition on such an effect, as the
   host-boundary guideline below describes, is not asking for permission.
-- MUST still obtain plan approval before implementation and the independent
+- MUST still obtain plan approval before implementation and the post-push
   review before ready; the grant releases neither gate.
 - MUST honor a host permission prompt, refusal, instruction, or tool usage
   condition that requires approval for or forbids a covered effect as the

@@ -48,7 +48,7 @@ as unknown while the actor checks them.
   those edits, revise the plan for the expansion and obtain the maintainer's
   approval before implementing or delegating the new work.
 - **Continue unchanged approved scope.** Resume at the recorded pending phase.
-  For example, when verification and pre-flight allow a push, an append-only
+  For example, when verification and pre-push review allow a push, an append-only
   push to the run's working branch matches the adopted grant. Hold a request
   to assign an additional person to the pull request until separately
   authorized. Check the actual host and tool conditions for each effect.

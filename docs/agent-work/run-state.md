@@ -45,13 +45,13 @@ Record the host-specific confirmation for [Claude Code delivery](./host-permissi
 
 What each checkpoint preserves follows Loop Engineering's
 [Semantic Run State](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
-Advisory-finding durability follows its
-[Durable Parks](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
+Pre-push finding durability follows its
+[Durable Parks](../../.claude/skills/loop-engineering/references/pre-push-review.md#durable-parks)
 restrictions. This project adds no schema, adapter, or mandatory local state
 file. Public storage does not promise reviewer invisibility.
 
 At ready, the checkpoint MUST reflect the pull request's actual ready state and
-link the independent-review and required-check evidence that allowed the
+link the post-push review and required-check evidence that allowed the
 transition. It MUST leave maintainer merge as the remaining action. Append a
 correction that supersedes any obsolete instruction to keep the pull request
 draft or request an already completed review, preserving the earlier entries.

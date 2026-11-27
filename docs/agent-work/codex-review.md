@@ -8,7 +8,7 @@ description: Request the review for a Codex or manual change and qualify the out
 
 ## Codex review from Codex or a manual change
 
-Start from [the provider selection and review gate](./independent-review.md#the-independent-review). For an agent-authored change, verify that [the standing grant](./delivery-grant.md#authorizing-delivery-operations) covers the request and that the host permits the write. For a manual change, record the authoring route in the pull request description.
+Start from [the provider selection and review gate](./independent-review.md#the-post-push-review). For an agent-authored change, verify that [the standing grant](./delivery-grant.md#authorizing-delivery-operations) covers the request and that the host permits the write. For a manual change, record the authoring route in the pull request description.
 
 The Codex route is the external Codex GitHub App, not an in-repository workflow.
 The root [`AGENTS.md`](../../AGENTS.md) `Code Review Rules` section instructs
@@ -47,7 +47,7 @@ response or final thumbs-up reaction on the request can confirm a clean round
 without a separate review object. Acknowledgment without a terminal result
 remains pending, and the App's result is a human wait under [Waiting and Watching](./independent-review.md#waiting-and-watching). On resume the run reads the App's status and any posted result.
 If the round has no acknowledgment or terminal result once
-[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound)
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound)
 has passed, the run MUST confirm the repository setup and keep the review gate
 blocked rather than read silence as a clean review.
 
