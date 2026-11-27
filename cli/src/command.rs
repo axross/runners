@@ -23,7 +23,8 @@ pub const EXIT_OK: u8 = 0;
 pub const EXIT_FAILED: u8 = 1;
 pub const EXIT_USAGE: u8 = 2;
 
-// the four test-override variables below: only a debug build honours them, see docs/marshal-cli/entry-points.md
+// Only debug builds honour the four test overrides below.
+// See docs/marshal-cli/foreground-commands.md#start.
 pub const TEST_ROOT_VARIABLE: &str = "MARSHAL_TEST_ROOT";
 
 pub const TEST_GITHUB_API_VARIABLE: &str = "MARSHAL_TEST_GITHUB_API";
