@@ -149,9 +149,13 @@ An additive, nonconflicting local convention is not a deviation. A conflicting
 choice is only valid after human adoption under
 [Agent Skill Management](../../.claude/skills/agent-skill-management/SKILL.md)'s
 installed-rule change contract. This project's register MUST retain that
-contract's required exception and adoption evidence. The contract owns validity
-and reassessment; this register owns their local record, not permission to
-override a host restriction or publish upstream.
+contract's required exception and adoption evidence. For an entry adopted by the
+maintainer's merge, that evidence is GitHub's record of the merge and the plan
+approval on the change's tracking issue, as
+[Development Workflow](./development-workflow.md#authorizing-delivery-operations)
+states for the standing delivery grant. The contract owns validity and
+reassessment; this register owns their local record, not permission to override
+a host restriction or publish upstream.
 
 The exposing task continues under applicable installed rules and any separately
 valid deviation. A pending upstream proposal never puts its proposed rule into

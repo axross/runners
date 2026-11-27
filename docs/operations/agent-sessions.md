@@ -548,15 +548,15 @@ This project's delivery grant, in
 subscriptions.
 
 For a Codex-authored pull request, the awaited results are its required GitHub
-checks and the independent Codex review selected by Development Workflow. This
-repository identifies no subscription route for a Codex run. Qualify the actual
-session's tools under GitHub Operation rather than assume all Codex surfaces
-expose the same mechanisms.
+checks and the independent Codex review selected by Development Workflow.
+Qualify the actual session's tools under GitHub Operation rather than assume all
+Codex surfaces expose the same mechanisms.
 
 For an Amp-authored pull request, the awaited results are its required GitHub
-checks and the review its Amp review child thread posts. Amp's thread-wait tool
-reports the child's completion; the run then reads the posted review back on the
-pull request, and Development Workflow owns what counts as the result.
+checks and the review its Amp review child thread posts. The
+[Amp review child thread from Amp](./development-workflow.md#amp-review-child-thread-from-amp)
+procedure in Development Workflow owns the wait, the read-back, and what counts
+as the result.
 
 For a Claude Code-authored pull request, the awaited results are its required
 GitHub checks and the Claude CI review. Claude Code's
@@ -594,8 +594,8 @@ repository's only live evidence of their behavior. Use the actual host's
 exposed definitions, not guessed arguments or a CLI-tool substitution.
 
 [Claude Code's entry guidance](../../CLAUDE.md) owns how the plan-gate watch
-meets an injected instruction to subscribe, when it ends, and how an injected
-instruction to keep watching or to schedule a check-in is handled.
+meets an injected or harness instruction to subscribe, and how an injected or
+harness instruction to keep watching or to schedule a check-in is handled.
 
 ## GitHub Write Fidelity in Claude Code Cloud Sessions
 

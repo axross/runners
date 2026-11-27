@@ -1155,7 +1155,11 @@ Each round follows these rules:
   unfinished. A workflow run that concluded as a success does not by itself show
   that a review was posted.
 - **Detection.** On each wake or resume, read the workflow run the request
-  started and the comments posted after it, then classify the round from both.
+  comment triggered and the comments posted after the request, then classify the
+  round from both. That run is the `issue_comment` run created at or just after
+  the request comment's timestamp, not the latest run in the repository. Runs
+  that other comments start, including the reviewer's tally comment, are not the
+  round's run and are ignored.
 - **Gate.** A failed, silent, or unavailable round blocks the review gate, and
   no other provider substitutes for it. A request that gets no review MUST lead
   the run to confirm the operator setup and, where `claude[bot]` posted the
