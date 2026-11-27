@@ -73,11 +73,17 @@ Each round follows these rules:
   as approval.
 - **Head and timing.** A round covers the pull request head that was current
   when its request was posted, which the run records with the round. Its inline
-  findings MUST carry that head as their `original_commit_id`. A summary-only
-  round is tied to the head only by being posted after the request and before any
-  later request or head move. A round whose head moved does not cover the new
-  head, which needs a new request.
+  findings MUST carry that head, or a head pushed while the round was pending, as
+  their `original_commit_id`. A summary-only result is tied to its round by being
+  posted after the round's request and before any later request. This project
+  accepts a completion race for this route: a head move while a round is pending
+  does not invalidate that round. A later change needs a new request only where
+  Loop Engineering's
+  [Start and Rounds](../../.claude/skills/loop-engineering/references/post-push-review.md#start-and-rounds),
+  [Mergeability and Conflict Remediation](../../.claude/skills/loop-engineering/references/post-push-review.md#mergeability-and-conflict-remediation),
+  or [Ready Gate](../../.claude/skills/loop-engineering/references/post-push-review.md#ready-gate) requires a fresh
+  post-push round for it, whether it was pushed while a round was pending or
+  after, and no earlier round is claimed to cover it.
 - **Cap.** Every request counts against the four-round cap, including a failed
-  round and one whose result no longer covers the head. After a failed round,
-  the run may post a new request once the cause is addressed, and that request
-  counts toward the cap.
+  round. After a failed round, the run may post a new request once the cause is
+  addressed, and that request counts toward the cap.
