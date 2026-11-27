@@ -9,9 +9,11 @@ library and are copied in with the
 [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI.
 [`skills-lock.json`](../../skills-lock.json) records the installed set and each
 copy's content hash, and no revision: this project pins none, a refresh takes
-the latest upstream, and nothing updates skills automatically. This project owns
-no skill of its own; its conventions and operating procedures are the documents
-under [`docs/`](../index.md). Two costs come with that choice. Refreshing needs
+the latest upstream, except that the [register](#the-register) holds
+`living-project-documentation` at its installed copy until #176, and nothing
+updates skills automatically. This project owns no skill of its own; its
+conventions and operating procedures are the documents under
+[`docs/`](../index.md). Two costs come with that choice. Refreshing needs
 Node and network access, because `npx skills` fetches from the library over the
 network; the installed skills themselves are plain Markdown, so this cost falls
 on refreshing, not on every session. And the library is not this project's own:
@@ -36,6 +38,11 @@ npx skills add axross/skills --agent claude-code --yes --copy \
 library's _entire_ catalogue, not the subset in `skills-lock.json`. The command
 above derives the list from the lockfile instead, so it stays correct as the set
 changes.
+
+While the register holds a skill at its installed copy, a refresh MUST leave
+that skill out. The command above derives its list from every key of the
+lockfile, so it filters the held skill out, as the
+[hold entry](#deviation---living-project-documentation-is-held-at-its-installed-copy) shows.
 
 Adopting a new skill means naming it explicitly, and `--skill` takes exactly one
 skill per flag: repeat the flag (`--skill a --skill b`) rather than passing a
@@ -73,8 +80,10 @@ Two checks cover two different failures:
     <path-to-axross-skills-clone>/skills .claude/skills
   ```
 
-  Every skill named in `skills-lock.json` MUST report `OK`. The command also
-  reports `DRIFT ... no installed copy` for each library skill this project has
+  Every skill named in `skills-lock.json` MUST report `OK`, except a skill the
+  register holds at its installed copy, which reports `DRIFT` while the hold
+  lasts; no other skill named there may. The command also reports
+  `DRIFT ... no installed copy` for each library skill this project has
   not adopted; that is expected, because the project installs a subset, and it is
   not a fault. It needs a checkout of the library, so it is run by hand when
   refreshing or diagnosing, not in CI.
@@ -96,7 +105,9 @@ The refresh command above breaks on a rename rather than absorbing it: the
 lockfile still holds the old name, so the `--skill` list it derives asks the
 library for a name that no longer resolves, and the run fails on that one name
 instead of refreshing anything. Run the install once by hand in that case, naming
-every surviving skill plus the new name explicitly:
+every surviving skill plus the new name explicitly, and leaving out any skill the
+register holds at its installed copy, as the
+[hold entry](#deviation---living-project-documentation-is-held-at-its-installed-copy) shows:
 
 ```bash
 npx skills add axross/skills --agent claude-code --yes --copy \
@@ -190,12 +201,12 @@ as pending.
 
 The project installation of `github-operation`, whose computed hash in
 `skills-lock.json` is
-`cbe366fe59843dd47925eae36d341bec28397e25835884d303b23e8e52037d40`, has all six
+`bf6b7bb0c859af1224532968001483cf20e94cd1b0d49a240c314386ae92eac1`, has all six
 of its files byte-identical to `axross/skills` at commit
-`69a254dd6b368732a6f8a153f5826784b7df6746`: `SKILL.md`,
+`aa471aabb83fbd1a31e631559e5e304454dc2b34`: `SKILL.md`,
 `references/body-integrity.md`, `references/channel-selection.md`,
 `references/identity-and-targets.md`, `references/publication-and-recovery.md`,
-and `scripts/decode-sanitized-read.mjs`. They were compared on 2026-11-20 (PST).
+and `scripts/decode-sanitized-read.mjs`. They were compared on 2026-11-27 (PST).
 The upstream hash was not recomputed.
 
 The skill requires reading back each write, comparing the exact stored fields
@@ -223,11 +234,12 @@ names it.
 ### Deviation - delivery, review, and watching share one confirmation
 
 The project installation of `professional-behavior`, from `axross/skills`
-revision `cce7ecf` (the refresh in #96), whose capability hash in
+revision `aa471aa` (the refresh in #180), whose capability hash in
 `skills-lock.json` is
-`e970d2315042396152616b29559545e115b622c7b524f7e8e75416db2fc51789`,
+`7c2b21e407e9a756f071e4fae7ed17a573f2449e9e1d3d7601bf98e4027f464d`,
 requires in
-[Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md):
+[Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md),
+under Decisions in One Prompt:
 "MUST NOT put two decisions in one prompt when the answer to one would change,
 prune, or reframe the other; hold the dependent one for a later round, in
 dependency order."
@@ -253,3 +265,50 @@ questions takes precedence over this project exception.
 The confirmation's review item is the Claude CI review request on the pull
 request for each round. The dependency this entry records is unchanged by which
 review the item names.
+
+### Deviation - living-project-documentation is held at its installed copy
+
+The project installation of `living-project-documentation`, whose computed hash
+in `skills-lock.json` is
+`2a9537ab1e0c4584211573ad13c63c2e9afd865cb5b5edbfb79351b899844d07`, stays at its
+installed copy, and `axross/skills` revision `aa471aa`, which the refresh in #180
+installed for the other installed skills, is not adopted for it. The installed
+copy arrived in #55, whose commit does not name the upstream revision it came
+from, so that revision is not recorded here.
+
+Two installed rules of
+[Agent Skill Management](../../.claude/skills/agent-skill-management/SKILL.md),
+as it reads at `aa471aa`, collide with the hold. Its
+[Install and Refresh](../../.claude/skills/agent-skill-management/SKILL.md#distributable-skills-install-and-refresh)
+guideline asks for `--skill '*'` to refresh every managed skill after a broad
+change, and its
+[Installed-Copy Drift Check](../../.claude/skills/agent-skill-management/SKILL.md#installed-copy-drift-check)
+guideline reads exit 1 as a forgotten reinstall or a hand-edited copy. Two
+statements of this project collide with it too: this document's statements that
+a refresh takes the latest upstream and that every skill named in
+`skills-lock.json` reports `OK`, and the sentence in the Skill maintenance
+section of [AGENTS.md](../../AGENTS.md) that a refresh takes the latest upstream,
+which the change that adds this entry leaves unchanged.
+
+The bounded counterexample is the refresh itself. Refreshing the skill to
+`aa471aa` makes `mise run check:docs` fail: the check runs every `check-*.mjs`
+the skill ships, and the new `check-docs.mjs` needs an OKF v0.3 validator that
+this project does not provide. This project's documentation has not moved to
+OKF v0.3, which #176 plans, and that is the rationale for the hold.
+
+The alternative is to keep the installed copy and its checks, and to refresh
+with the lockfile-derived command filtered to leave the skill out:
+
+```bash
+npx skills add axross/skills --agent claude-code --yes --copy \
+  $(node -p "Object.keys(require('./skills-lock.json').skills).filter(s => s !== 'living-project-documentation').map(s => '--skill ' + s).join(' ')")
+```
+
+While the hold lasts, the drift check reports `DRIFT` for this skill and for no
+other skill named in `skills-lock.json`.
+
+This entry, and each amendment to it, is adopted the same way as the standing
+delivery grant: by the maintainer's merge of the pull request that carries it,
+with the plan approval on #180. Its scope is this skill only. Reassess it when #176
+lands. This exception changes no installed skill, host restriction, operation
+grant, or plan and review gate, and authorizes no upstream publication.

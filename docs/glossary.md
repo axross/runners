@@ -338,6 +338,7 @@ history and never written.
 
 **Installed Skill** - a directory under `.claude/skills/` copied from
 `axross/skills` and listed in `skills-lock.json`, which records the installed set
-and content hashes but no revision. A refresh takes the latest upstream, and
-nothing updates skills automatically. It is generated and never edited by hand;
+and content hashes but no revision. A refresh takes the latest upstream, except
+for `living-project-documentation`, which the register holds at its installed
+copy until #176, and nothing updates skills automatically. It is generated and never edited by hand;
 see [operations/agent-skills.md](./operations/agent-skills.md).
