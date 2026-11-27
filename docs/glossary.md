@@ -73,7 +73,7 @@ explains how contributors choose new terms.
 
 **Build VM** — The temporary `marshal-build-linux-<time>` or `marshal-build-macos-<time>` used to make a new golden VM. A completed build renames it to its golden name; failure or interruption removes the temporary VM and preserves the previous golden VM. [Building the golden VM](./runner-hosts/golden-build.md).
 
-**macOS VM Limit** — The two concurrent macOS VMs allowed on a Mac by Apple’s licence. A running macOS build VM counts; Linux VMs do not. A macOS slot checks the count before cloning and waits when both places are occupied. [Capacity and waiting](./marshal-cli/macos-pools.md#the-two-vm-count).
+**macOS VM Limit** — The two concurrent macOS VMs allowed on a Mac by Apple’s licence. Marshal counts a macOS build VM in any state, including when it is stopped. Linux build VMs are excluded. A macOS slot checks the count before cloning and waits when both places are occupied. [Capacity and waiting](./marshal-cli/macos-pools.md#the-two-vm-count).
 
 **VM-Local Docker Socket** — The `/var/run/docker.sock` of the Docker Engine inside a Linux Job VM. From Image Contract Version 2 the runner container may use that VM’s socket. The VM serves one job and is then deleted; axpc mounts no host socket. [Docker socket boundary](./security/vm-isolation.md#the-vm-local-docker-socket).
 

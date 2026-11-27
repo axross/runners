@@ -233,12 +233,11 @@ describes. The [current CLI recovery release](../security/release-authority.md#t
 
 The [suspended app publication workflow](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/workflows/release.yaml) ran on manual dispatch on main. Its five stages are retained here for restoration. Each job after `plan` depends on it directly and runs only when it produces a version:
 
-1. `plan` runs semantic-release as a dry run. Its gate,
-   [`.github/scripts/verify-release.sh`](../../.github/scripts/verify-release.sh),
-   which `@semantic-release/exec` runs from
-   [`release/.releaserc.json`](../../release/.releaserc.json), hands out the next
-   version. With nothing to release, it hands out none, and the other jobs are
-   skipped.
+1. `plan` ran semantic-release as a dry run. The
+   [app publication configuration](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/release/.releaserc.json)
+   called the [app verifier](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/scripts/verify-release.sh)
+   through `@semantic-release/exec` to emit the next version. If no release was due,
+   it emitted no version and the remaining jobs were skipped.
 2. `build` is the build workflow, which builds and assembles the unsigned files at
    that version into `marshal-release`.
 3. `assemble-signed`, where every file of the release meets, needs `plan` and
@@ -258,11 +257,15 @@ The [suspended app publication workflow](https://github.com/axross/runners/blob/
    uploads the three files, and publishes it. `mise run test:verify-release` tests
    the gate.
 
-A failure of any job stops the run before any tag is pushed. The jobs and their
-`needs` chain are the contract that W4 and M2, other children of roadmap
-[#72](https://github.com/axross/runners/issues/72), extend
-([Extending the Release Workflows](./release-extensions.md#extending-the-release-workflows)), and
-`mise run check:release-shape` fails if they drift from it.
+In the suspended workflow, the publish job could tag a version only after the preceding jobs and its release verifier passed. The
+[app workflow shape check at that revision](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/scripts/check-release-shape.mjs)
+checked the five jobs and their dependencies. The [W4 and M2 extension guidance](./release-extensions.md#extending-the-release-workflows)
+describes how roadmap [#72](https://github.com/axross/runners/issues/72) would extend that baseline after restoration.
+
+During CLI recovery, [`mise run check:release-shape`](../../.github/scripts/check-release-shape.mjs)
+checks the seven-stage CLI recovery workflow and the retained unsigned app dry run.
+The [active publication configuration](../../release/.releaserc.json) calls the
+[CLI recovery verifier](../../.github/scripts/cli-recovery/verify-release.sh) and publishes the five CLI release files.
 
 The runner image's definition is embedded in the library (see [Build](./build-images.md#build)), so a
 change to it, such as a runner bump, reaches a host only through a new release and
