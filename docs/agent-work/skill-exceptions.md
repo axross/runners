@@ -61,7 +61,7 @@ instead:
   well-formedness (hadolint, shellcheck, PSScriptAnalyzer, actionlint);
 - [Security](../security/index.md), which states the supply-chain and
   runner trust-boundary rules;
-- the language lenses in [REVIEW.md](../../REVIEW.md), which the independent
+- the language lenses in [REVIEW.md](../../REVIEW.md), which the post-push
   reviewer applies;
 - `application-security` and `code-maintainability` for the generic rules they
   already state.
@@ -140,7 +140,7 @@ review and the watch depend.
 ### Deviation - the Claude Code review subagent's limits and closure
 
 The maintainer retired this deviation when [pull request #178](https://github.com/axross/runners/pull/178)
-made [Claude CI](./claude-ci-review.md#claude-ci-review-from-claude-code) the independent review route for Claude Code. The
-[`reviewer` subagent](./delegate.md#use-claude-code-subagents) serves the advisory pre-flight.
+made [Claude CI](./claude-ci-review.md#claude-ci-review-from-claude-code) the post-push review route for Claude Code. The
+[`reviewer` subagent](./delegate.md#use-claude-code-subagents) serves the pre-push review.
 The [previous register](https://github.com/axross/runners/blob/a070ff3488b3df526ef5083e77c908ecc383c49c/docs/operations/agent-skills.md#deviation---the-claude-code-review-subagents-limits-and-closure)
 records the former exception, its adoption, and its limits.

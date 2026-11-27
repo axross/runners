@@ -31,7 +31,7 @@ Pushing to the default branch is forbidden, and merging is the maintainer's
 decision rather than the session's; a run that has flipped its pull request to
 ready is finished, whether or not the merge has happened. An existing pull
 request whose head does not follow this naming rule can still receive
-independent review, but an agent MUST NOT push fixes to that head. Recovery
+post-push review, but an agent MUST NOT push fixes to that head. Recovery
 stops before the first such push and asks the maintainer to choose a compliant
 delivery target; it does not silently replace the pull request or exempt the
 branch from this rule. An agent MUST NOT rename the branch automatically.

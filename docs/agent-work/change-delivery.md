@@ -9,7 +9,7 @@ description: Take an approved change through verification, review, handoff and i
 ## The Change Loop
 
 Every change, code or document, one line or one feature, goes through
-`loop-engineering`: plan, approve, code, verify, independent review, address,
+`loop-engineering`: plan, approve, code, verify, post-push review, address,
 ready. The skill owns phase meaning, checkpoint qualification, and evidence,
 with separate review boundaries for research, plan, and design outputs. This project uses the delivery gates below. Use [Assign investigations, implementation and review](./delegate.md#subagents) to qualify a host-specific actor and route the material it must read.
 
@@ -68,14 +68,14 @@ stop after push to ask for it. Use the host's plan-gate procedure for [Claude Co
 The run MUST, in order:
 
 1. verify locally with the commands in [Testing](../conventions/testing.md), run the
-   advisory pre-flight (or follow [the exception for an unavailable advisory review](#deliver-a-draft-when-advisory-pre-flight-is-unavailable)), and push the working
+   pre-push review (or follow [the exception for an unavailable pre-push review](#deliver-a-draft-when-pre-push-review-is-unavailable)), and push the working
    branch;
 2. open the draft pull request from the template, linking the tracking issue
    with a closing keyword;
 3. start watching the pull request's activity, where the host offers it and
    the run holds authorization for it under [Waiting and Watching](./independent-review.md#waiting-and-watching);
    in Claude Code, that authorization is the plan-gate confirmation;
-4. request review from [the provider assigned to the authoring host](./independent-review.md#the-independent-review), address its findings, and request a fresh review after each fix batch,
+4. request review from [the provider assigned to the authoring host](./independent-review.md#the-post-push-review), address its findings, and request a fresh review after each fix batch,
    up to the four-round cap;
 5. move the pull request to ready only after review convergence. Merging stays
    with the maintainer.
@@ -103,27 +103,29 @@ A run MUST NOT report itself complete except at the ready transition or at a
 reported stop that names its unmet gate. Stopping after push, or without the
 draft pull request, is never a completed loop.
 
-### Deliver a draft when advisory pre-flight is unavailable
+<a id="deliver-a-draft-when-advisory-pre-flight-is-unavailable"></a>
 
-This project permits limited draft delivery when current advisory implementation
-pre-flight qualification finds no eligible reader or unavailable required review
-material. This exception preserves access to external review without inventing
-an advisory reviewer. The driver MUST record the actual qualification and gap
-under [Loop Engineering's pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
+### Deliver a draft when pre-push review is unavailable
+
+This project permits limited draft delivery when current implementation pre-push
+review qualification finds no eligible reader or unavailable required review
+material. This exception preserves access to post-push review without inventing
+a pre-push reviewer. The driver MUST record the actual qualification and gap
+under [Loop Engineering's pre-push review contract](../../.claude/skills/loop-engineering/references/pre-push-review.md#checkpoint-qualification)
 and disclose the unavailable review in delivery, never as a clean result.
 Publication MUST have its own valid operation grant; this policy grants none.
-Delivery MUST remain draft, with mandatory external review unmet until it runs.
+Delivery MUST remain draft, with mandatory post-push review unmet until it runs.
 
-This exception covers unavailability only. It MUST NOT bypass phase-deliverable
-review or outstanding findings from an advisory review that ran. It MUST NOT
+This exception covers unavailability only. It MUST NOT bypass plan review
+or outstanding findings from a pre-push review that ran. It MUST NOT
 waive any other approval, verification, evidence, or readiness requirement.
-The independent-review gate remains mandatory.
+The post-push review gate remains mandatory.
 
 On Claude Code, a missing or refused `reviewer` subagent leaves only the
-advisory pre-flight unavailable, which this exception covers. The independent
+pre-push review unavailable, which this exception covers. The post-push
 review is [the Claude CI review](./claude-ci-review.md#claude-ci-review-from-claude-code), which no subagent serves, so the `reviewer`'s
 absence does not affect that gate. The pull request stays draft, and the run
-discloses the unavailable pre-flight in delivery.
+discloses the unavailable pre-push review in delivery.
 
 ## Tracking Issue Completion
 

@@ -104,23 +104,23 @@ These are configured candidates, not a permission grant. A session MUST check
 the capabilities its host actually permits before using one. Delegating to the
 matching configured actor is the default; parent implementation is valid only
 when delegation is unavailable or disallowed, and mandatory verification and
-external review remain unchanged. Deleting a file never lets the loop skip the
-independent-review gate. Without the implementer, the loop delegates to a
-generic agent or runs single-agent. Without the reviewer, the pre-flight stage
-is skipped rather than performed by the main actor, which is what keeps it from
-collapsing into self-review, as
+post-push review remain unchanged. Deleting a file never lets the loop skip the
+post-push review gate. Without the implementer, the loop delegates to a
+generic agent or runs single-agent. Without the reviewer, the pre-push review
+stage is skipped rather than performed by the main actor, which is what keeps it
+from collapsing into self-review, as
 [Record an unavailable role](#record-an-unavailable-role), below, states.
 Without the investigator, the main actor reads the payload itself.
 
-The advisory pre-flight review applies after every verified initial
+The pre-push review applies after every verified initial
 implementation, before the first branch push and draft pull request, whether the
 parent or a child implemented it. A compatible fresh reader must be permitted
 and available; its findings and round limits follow
-[the pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md).
+[the pre-push review contract](../../.claude/skills/loop-engineering/references/pre-push-review.md).
 If no reader qualifies, record the exact unavailable or prohibited reason and the
-resulting delivery restriction. That outcome is not a clean review; [the draft-delivery exception](./change-delivery.md#deliver-a-draft-when-advisory-pre-flight-is-unavailable) states what it permits,
+resulting delivery restriction. That outcome is not a clean review; [the draft-delivery exception](./change-delivery.md#deliver-a-draft-when-pre-push-review-is-unavailable) states what it permits,
 including that on Claude Code a missing or refused `reviewer` leaves only the
-pre-flight unavailable.
+pre-push review unavailable.
 
 For Claude Code reads, keep the exact object of a judgment and the rules governing
 that judgment in the judging actor's context. Route other large material wanted
@@ -154,14 +154,14 @@ Distinguish these cases:
 
 A generic worker can qualify only through the same tool and role checks, with an
 explicit assignment and boundaries. Otherwise the caller reads or implements
-directly where permitted; an unavailable advisory reviewer is recorded rather
+directly where permitted; an unavailable pre-push reviewer is recorded rather
 than replaced with self-approval. On Claude Code, a `reviewer` that is missing,
-or whose spawn the host refuses, leaves only the advisory pre-flight
-unavailable under [the draft-delivery exception](./change-delivery.md#deliver-a-draft-when-advisory-pre-flight-is-unavailable). The
+or whose spawn the host refuses, leaves only the pre-push review
+unavailable under [the draft-delivery exception](./change-delivery.md#deliver-a-draft-when-pre-push-review-is-unavailable). The
 [Claude CI review](./claude-ci-review.md#claude-ci-review-from-claude-code) proceeds independently. A CLI
 agent or persistent thread MUST NOT be used to bypass a missing role or a
 prohibited purpose. For unavailable research, plan, or design review, the driver
 MUST use
-[Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/reviewing-phase-deliverables.md).
-The parent retains delivery responsibility, and the independent review follows
-[the host mapping for independent review](./independent-review.md#the-independent-review).
+[Loop Engineering's non-complete human handoff](../../.claude/skills/loop-engineering/references/plan-review.md).
+The parent retains delivery responsibility, and the post-push review follows
+[the host mapping for post-push review](./independent-review.md#the-post-push-review).

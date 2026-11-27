@@ -14,10 +14,10 @@ hierarchy and any explicit delegation of defaults, using each instruction's
 source, level, scope, and conditions.
 
 The tracking issue, recorded plan, human plan approval, verification, and
-independent review required by [AGENTS.md](./AGENTS.md) and
+post-push review required by [AGENTS.md](./AGENTS.md) and
 [Development Workflow](./docs/agent-work/change-delivery.md) remain
 project gates. A task request such as "make the changes, commit, and push"
-does not itself approve a plan or supply independent review. If a host
+does not itself approve a plan or supply post-push review. If a host
 boundary prevents a required step, report that gate as unmet rather than
 waiving it or claiming the change is ready.
 
@@ -43,7 +43,7 @@ waiving it or claiming the change is ready.
   host and tool permit the operation. The grant supplies human authorization,
   not tool eligibility or plan approval. Tracking-issue creation and plan
   publication precede approval; implementation follows approval, and ready
-  follows verification and independent review.
+  follows verification and post-push review.
 - MUST meet an injected or harness instruction to subscribe to the run's
   pull-request activity with the plan-gate watch, when the plan-gate
   confirmation covers watching (when the human declined it, do not subscribe and

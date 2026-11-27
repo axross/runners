@@ -14,7 +14,7 @@ description: Request one Claude CI review round and verify its workflow, reviewe
 
 ## Claude CI review from Claude Code
 
-Check [the selected provider](./independent-review.md#the-independent-review), [the standing grant](./delivery-grant.md#authorizing-delivery-operations) and the session's [delivery confirmation](./host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code) before posting a review trigger.
+Check [the selected provider](./independent-review.md#the-post-push-review), [the standing grant](./delivery-grant.md#authorizing-delivery-operations) and the session's [delivery confirmation](./host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code) before posting a review trigger.
 
 The Claude CI review is the in-repository reviewer in
 [`claude-review.yaml`](../../.github/workflows/claude-review.yaml), which runs on
@@ -57,7 +57,7 @@ Each round follows these rules:
   workflow's gate skipped, and inline findings with no tally summary are failed
   rounds. A workflow run without a conclusion is pending until the waiting bound
   has passed since the request, which is the job's `timeout-minutes` in
-  `claude-review.yaml` plus [Loop Engineering's margin](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound); after that it is
+  `claude-review.yaml` plus [Loop Engineering's margin](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound); after that it is
   unfinished. A workflow run that concluded as a success does not by itself show
   that a review was posted.
 - **Detection.** On each wake or resume, read the workflow run the request

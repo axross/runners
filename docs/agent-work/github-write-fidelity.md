@@ -102,7 +102,7 @@ info strings. The three sanitized-read stages that GitHub Operation's Body
 Integrity describes were not reproduced.
 
 Those constructs were tested in issue bodies, so the list does not carry over to
-review comments. On 2026-11-20 (PST), an independent review child for #150
+review comments. On 2026-11-20 (PST), a post-push review child for #150
 posted an inline review comment through the MCP pending-review tool
 ([review comment 4646748901](https://github.com/axross/runners/pull/150#discussion_r4646748901)).
 It sent a single-backtick code span containing the literal placeholder

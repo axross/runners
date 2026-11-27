@@ -23,7 +23,7 @@ decision that [`AGENTS.md`](../../AGENTS.md),
 [Development Workflow](./change-delivery.md#the-change-loop), and
 [Loop Engineering](../../.claude/skills/loop-engineering/SKILL.md) leave to the
 maintainer, among them scope, product behavior, an architecture choice, a
-finding's disposition such as dismissing a Critical or Major advisory finding,
+finding's disposition such as dismissing a Critical or Major pre-push finding,
 an additional review round, and a plan approval with its delivery confirmation.
 In plan mode, `ExitPlanMode` carries plan approval instead, as that tool's live
 contract states. Plan-mode approval, like approval that arrives some other way,

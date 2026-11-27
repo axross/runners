@@ -101,7 +101,7 @@ explains how contributors choose new terms.
 
 ## Change Loop
 
-**Authoring Host** — Claude Code, Codex, Amp or “manual” when no agent is involved. It selects the independent-review provider and is recorded with that provider so another session can resume the run. [Selecting review](./agent-work/independent-review.md#the-independent-review).
+**Authoring Host** — Claude Code, Codex, Amp or “manual” when no agent is involved. It selects the post-push review provider and is recorded with that provider so another session can resume the run. [Selecting review](./agent-work/independent-review.md#the-post-push-review).
 
 **Standing Delivery Grant** — The maintainer’s adopted authorization for a named set of delivery effects. Every run holds it within its specified targets, conditions and exclusions. [Grant scope and adoption](./agent-work/delivery-grant.md#authorizing-delivery-operations).
 
@@ -109,15 +109,15 @@ explains how contributors choose new terms.
 
 **Plan-Gate Delivery Confirmation** — The answer a Claude Code session collects with each plan-approval question about delivering the draft pull request, requesting Claude CI review each round and watching the pull request for activity. [Claude Code delivery confirmation](./agent-work/host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
 
-**Amp Review Child Thread** — A fresh Amp thread for one independent review round. It posts directly on the pull request. Archiving depends on the plan-gate archive confirmation. [Amp review](./agent-work/amp-review.md#amp-review-child-thread-from-amp).
+**Amp Review Child Thread** — A fresh Amp thread for one post-push review round. It posts directly on the pull request. Archiving depends on the plan-gate archive confirmation. [Amp review](./agent-work/amp-review.md#amp-review-child-thread-from-amp).
 
-**Claude CI Review** — The independent review a Claude Code run requests each round by posting the Claude review trigger phrase in one top-level pull request comment. The `claude-review.yaml` workflow runs on a GitHub-hosted runner and posts the result as `claude[bot]`. [Requesting Claude CI review](./agent-work/claude-ci-review.md#claude-ci-review-from-claude-code).
+**Claude CI Review** — The post-push review a Claude Code run requests each round by posting the Claude review trigger phrase in one top-level pull request comment. The `claude-review.yaml` workflow runs on a GitHub-hosted runner and posts the result as `claude[bot]`. [Requesting Claude CI review](./agent-work/claude-ci-review.md#claude-ci-review-from-claude-code).
 
 **Plan-Gate Archive Confirmation** — The human’s answer on whether an Amp run archives its review child threads. Collect it at the plan gate or before archiving when the run lacks a confirmation, including on resume. [Amp archive confirmation](./agent-work/host-permissions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 
 **Run State** — The recoverable record that lets a fresh session resume a change loop at its pending phase. [Resume checkpoints](./agent-work/run-state.md#retrieve-state-on-resume).
 
-**Review Coverage Evidence** — The distinct facts a run can establish about the policy available, input consumed by the independent reviewer, findings reported and result published. [Coverage and limits](./agent-work/independent-review.md#review-coverage-evidence).
+**Review Coverage Evidence** — The distinct facts a run can establish about the policy available, input consumed by the post-push reviewer, findings reported and result published. [Coverage and limits](./agent-work/independent-review.md#review-coverage-evidence).
 
 **Branch Naming Rule** — A working branch identifies the issue that sourced the change or marks that it has none. The name identifies the origin of the change independently of the authoring host. [Branch convention](./agent-work/branches.md#branches-and-merging).
 

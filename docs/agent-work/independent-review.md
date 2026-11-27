@@ -1,12 +1,14 @@
 ---
 type: Procedure
-title: Select and verify an independent review
+title: Select and verify a post-push review
 description: Select the provider for the authoring host and decide whether its posted result meets the review gate.
 ---
 
-# Select and verify an independent review
+# Select and verify a post-push review
 
-## The Independent Review
+<a id="the-independent-review"></a>
+
+## The Post-Push Review
 
 The review runs in a separate context, never the authoring session, whatever
 that session calls its own assessment. The Codex route and the Claude CI route
@@ -17,15 +19,15 @@ reviewer, an Amp review child thread, may post under the same GitHub operator
 account and runs on the same infrastructure as its author. The maintainer
 accepts context independence for that route, a fresh Amp thread that carries
 none of the author's conversation, as
-[Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#default-independent-review-arrangement)
+[Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#post-push-review-route)
 allows. The mapped provider's review, a Claude CI review, a Codex review, or on
-Amp a fresh review child thread, is the independent review for its route when
+Amp a fresh review child thread, is the post-push review for its route when
 the run requests or starts it after the draft pull request exists and it posts
 its own review. Qualification is judged per round: a review that shares the
 author's context does not qualify. A run MUST NOT count any other review as
 satisfying or substituting for it: not a fork, not a resumed or reused instance
-or thread of any use, not an advisory pre-flight instance or a review whose
-assignment carries pre-flight findings, not a phase-deliverable reviewer, not a
+or thread of any use, not a pre-push review instance or a review whose
+assignment carries pre-push findings, not a plan reviewer, not a
 review session started by another session unless the maintainer instructs it for
 the run, and not the author's own checks. The review is reachable only through
 the run's draft pull request, so a run that has not opened it has not reached
@@ -34,10 +36,10 @@ this gate and is not complete.
 A review session that another session starts for a run is not a route: it adds a
 second actor between the author and the review, and the grant's targets name only
 the mapped provider and the Amp review child threads the run creates. A review
-session the maintainer instructs for a run counts as that run's independent
+session the maintainer instructs for a run counts as that run's post-push
 review only when it meets the qualification above: a fresh context without the
 author's conversation, given a neutral assignment that carries no implementation
-receipt, pre-flight findings, or claimed verdicts, started after the draft pull
+receipt, pre-push findings, or claimed verdicts, started after the draft pull
 request exists, and posting its own review that the run correlates with the round
 and the reviewed commit. The run records the maintainer's instruction, with its
 locator, in run state. A decision another session relays without that
@@ -77,7 +79,7 @@ a plan or pull request body, recoverable state, summary, progress comment, or
 reply. Everywhere else, refer to the applicable phrase by name. This prevents a
 comment-triggered integration from starting a duplicate review while permitting
 a fresh request after a fix batch. The review has a cap of four rounds; see
-[Loop Engineering's external round cap](../../.claude/skills/loop-engineering/references/independent-review.md#external-round-cap).
+[Loop Engineering's round cap](../../.claude/skills/loop-engineering/references/post-push-review.md#round-cap).
 
 ### Review coverage evidence
 
@@ -96,7 +98,7 @@ A policy link or a proposed policy change in the diff establishes availability,
 not consumption. Unverified provider input MUST remain unknown. The author's
 reconstruction cannot establish what the reviewer consumed or checked.
 
-A completed, identifiable independent review uses REVIEW.md's treatment of
+A completed, identifiable post-push review uses REVIEW.md's treatment of
 unflagged items; missing affirmative check-by-check coverage is not a blocker.
 This readiness rule accepts the risk of unreported reviewer omissions rather
 than requiring a positive checklist as proof of review. A service marked
@@ -104,7 +106,7 @@ Completed without a posted reviewer-origin result does not satisfy the gate.
 The author MUST keep the review gate unresolved and the pull request in draft
 for any of these blockers:
 
-- No posted independent review identifiable against the reviewed material.
+- No posted post-push review identifiable against the reviewed material.
 - An explicit report of missing required material or unchecked review scope.
 - Unresolved blocking findings.
 - Known material fixes after the review that lack fresh review.
@@ -113,7 +115,7 @@ Record the specific blocker and resume the applicable recovery or address
 phase; return a decision to the maintainer when that phase cannot resolve it.
 Do not request repeated reviews merely to obtain affirmative coverage or invent
 findings to explain missing assertions. All other prerequisites in
-[Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
+[Loop Engineering's post-push review reference](../../.claude/skills/loop-engineering/references/post-push-review.md#ready-gate),
 in its Ready Gate section, remain required. Known unmet requirements and the
 contributor's out-of-tree obligations in [Acceptance Criteria Verified Out of Tree](./acceptance-evidence.md#acceptance-criteria-verified-out-of-tree), remain blockers even when the review is silent about them.
 
@@ -137,7 +139,7 @@ for the agent's own write is not such a wait, and GitHub Actions cron workflows
 are unaffected. The [standing delivery grant](./delivery-grant.md#authorizing-delivery-operations) authorizes no scheduling. A run
 waits on what its host delivers as an event, or until a permitted check-in,
 within
-[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound):
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound):
 
 - **Claude Code** waits, where the session offers it, on the pull request
   webhook subscription that the plan-gate confirmation covers and on completion

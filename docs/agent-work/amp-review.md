@@ -8,7 +8,7 @@ description: Start a fresh child thread, verify its review and end the thread un
 
 ## Amp review child thread from Amp
 
-Select the provider under [the independent review gate](./independent-review.md#the-independent-review). Before creating the thread, check [the scope of the standing grant](./delivery-grant.md#authorizing-delivery-operations) and the session's [archive confirmation or recorded refusal](./host-permissions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
+Select the provider under [the post-push review gate](./independent-review.md#the-post-push-review). Before creating the thread, check [the scope of the standing grant](./delivery-grant.md#authorizing-delivery-operations) and the session's [archive confirmation or recorded refusal](./host-permissions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 
 The Amp route follows
 [Loop Engineering's review workflow](../../.claude/skills/loop-engineering/references/review-workflow.md)
@@ -30,7 +30,7 @@ handoff of the authoring thread.
    arrangement sets.
 4. Wait for the child with Amp's thread-wait tool, a delegated-worker
    completion under [Waiting and Watching](./independent-review.md#waiting-and-watching), within
-   [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
+   [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/post-push-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round's child thread and the reviewed
    commit. Record the child's report of which limits its host enforced in run
@@ -42,7 +42,7 @@ handoff of the authoring thread.
 
 A child that cannot post, a review that does not appear, and a review that does
 not correlate are failures of the selected route, which block the review gate as
-[The Independent Review](./independent-review.md#the-independent-review) states. Record the incomplete evidence, then,
+[The Post-Push Review](./independent-review.md#the-post-push-review) states. Record the incomplete evidence, then,
 once the child has settled or been stopped, archive that round's child too when
 the plan-gate archive confirmation allows it.
 

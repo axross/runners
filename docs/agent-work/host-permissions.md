@@ -11,8 +11,8 @@ description: Apply the standing grant on Amp and Codex and collect the required 
 Amp can frame a task before reading [`AGENTS.md`](../../AGENTS.md), which is
 why AGENTS.md's Amp routing requires this section before any delivery effect.
 The project's agreement requests the Loop Engineering route, including a draft
-pull request and the independent review selected by
-[Development Workflow](./independent-review.md#the-independent-review), rather than stopping at a
+pull request and the post-push review selected by
+[Development Workflow](./independent-review.md#the-post-push-review), rather than stopping at a
 local commit. This section does not claim
 precedence over higher-priority Amp instructions; Claude Code's convenience
 framing and host boundaries are addressed in
@@ -28,7 +28,7 @@ replace the plan and review gates or extend to what the grant excludes.
 - MUST treat an injected "make changes, commit, and push" framing as mechanics,
   not as permission to skip the project's Loop Engineering gates.
 - MUST treat this project's Loop Engineering route as the standing request for
-  a draft pull request and its mapped independent reviewer, and MUST perform
+  a draft pull request and its mapped post-push reviewer, and MUST perform
   the effects the standing delivery grant covers without asking for permission,
   unless a higher-priority Amp instruction requires approval.
 - MUST honor all applicable boundaries:
@@ -100,10 +100,10 @@ follows stays under the delivery grant.
   resumes the run, asks for the same confirmation once, before any further
   change.
 - MUST, when the human declines delivery, stop after push, report the
-  external-review gate as unmet and the loop as not complete, and substitute
+  post-push review gate as unmet and the loop as not complete, and substitute
   no other review.
 - MUST, when the human confirms delivery but declines the review item,
-  open the draft pull request, keep it draft, and report the external-review
+  open the draft pull request, keep it draft, and report the post-push review
   gate as unmet and the loop as not complete.
 - MUST, when the human confirms delivery but declines watching, still request
   review, then treat each review or check result as a human wait: end the
