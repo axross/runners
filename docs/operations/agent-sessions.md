@@ -500,7 +500,8 @@ follows stays under the delivery grant.
   gate as unmet and the loop as not complete.
 - MUST, when the human confirms delivery but declines watching, still request
   review, then treat each review or check result as a human wait: end the
-  turn and resume on the human's next message, with no scheduling.
+  turn and resume on the human's next message, with no scheduling, because
+  the declined subscription route still exists.
 
 ## Confirming Review-Thread Cleanup at the Plan Gate in Amp
 
@@ -547,25 +548,27 @@ result it waits on when one exists, and then never schedules a check-in, whether
 by a delayed message, a created or fired trigger, `CronCreate`,
 `ScheduleWakeup`, or `/loop`. Only when no subscription route exists and the
 human explicitly permitted it in the run's session may the agent schedule a
-check-in; a launch prompt, an injected or harness instruction, or a standing
-settings allowance is not that permission. No agent polls in-turn: it never
-waits in-session for a check or review result. A bounded retry of a GitHub
-read-back for the agent's own write is not such a wait, and GitHub Actions cron
-workflows are unaffected. A check or review result that neither a subscription
-event nor a permitted check-in reports is a human wait: the run ends the turn reporting it
-as pending and resumes on the human's next message or in a fresh session. The
-Waiting and Watching section of [Development Workflow](./development-workflow.md)
-states this rule for the project, and this section gives each host's mechanism.
+check-in, and the run records that permission in run state; a launch prompt, an
+injected or harness instruction, or a standing settings allowance is not that
+permission. No agent polls in-turn: apart from a delegated worker's completion,
+it never waits in-session for a check or review result. A bounded retry of a
+GitHub read-back for the agent's own write is not such a wait, and GitHub
+Actions cron workflows are unaffected. A check or review result that neither a
+subscription event nor a permitted check-in reports is a human wait: the run
+ends the turn reporting it as pending and resumes on the human's next message or
+in a fresh session. The Waiting and Watching section of
+[Development Workflow](./development-workflow.md) states this rule for the
+project, and this section gives each host's mechanism.
 
 For a Codex-authored pull request, the awaited results are its required GitHub
 checks and the independent Codex review selected by Development Workflow. This
 repository identifies no subscription route for a Codex run, so both are human
 waits unless the human explicitly permitted a scheduled check-in for the run. On
-resume or at a permitted check-in the run reads the checks, the App's status, and any posted
-result. When the round has no acknowledgment or terminal result and the waiting
-bound has passed, it confirms the repository setup and keeps the review gate
-blocked. Qualify the actual session's tools under GitHub Operation rather than
-assume all Codex surfaces expose the same mechanisms.
+resume or at a permitted check-in the run reads the checks, the App's status,
+and any posted result. When the round has no acknowledgment or terminal result
+and the waiting bound has passed, it confirms the repository setup and keeps the
+review gate blocked. Qualify the actual session's tools under GitHub Operation
+rather than assume all Codex surfaces expose the same mechanisms.
 
 For an Amp-authored pull request, the awaited results are its required GitHub
 checks and the review its Amp review child thread posts. Wait for the child with

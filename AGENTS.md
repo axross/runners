@@ -20,9 +20,9 @@ glossary.
 This repository is public, so its GitHub Actions CI and review jobs run on
 GitHub-hosted runners only, never on a self-hosted one.
 
-This project's fixed agent-comment marker is `<!-- ai-agent -->`; `<!-- agent -->`
-is a retired marker, recognized in history and never written. Never push to
-the default branch. Choose a working branch under
+This project's fixed agent-comment marker is `<!-- ai-agent -->`;
+`<!-- agent -->` is a retired marker, recognized in history and never written.
+Never push to the default branch. Choose a working branch under
 [Branches and Merging](./docs/operations/development-workflow.md#branches-and-merging)
 as adopted on the default branch, not an unmerged amendment. Leave merging to
 the maintainer, `@axross`.

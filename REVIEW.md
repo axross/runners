@@ -6,9 +6,10 @@ repository's highest-priority review-only policy and complements the
 posted-report instructions differ, this file governs. The Claude CI review in
 [claude-review.yaml](./.github/workflows/claude-review.yaml) supplies the policy
 through its system prompt, the assignment of the Amp review child thread names
-it, and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it. Availability does not prove consumption or compliance: check the
-reviewer-origin result against this policy, and treat unobserved provider input
-as unknown, not as proof of a failed review.
+it, and [AGENTS.md](./AGENTS.md) instructs reviewers to read and apply it.
+Availability does not prove consumption or compliance: check the reviewer-origin
+result against this policy, and treat unobserved provider input as unknown, not
+as proof of a failed review.
 [Development Workflow](./docs/operations/development-workflow.md) owns provider
 invocation and completion evidence. Code Review's
 [Posted and CI Reviews](./.claude/skills/code-review/SKILL.md#posted-and-ci-reviews)
