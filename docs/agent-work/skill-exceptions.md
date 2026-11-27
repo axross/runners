@@ -76,12 +76,13 @@ as pending.
 
 The project installation of `github-operation`, whose computed hash in
 `skills-lock.json` is
-`cbe366fe59843dd47925eae36d341bec28397e25835884d303b23e8e52037d40`, has all six
+`138a5a473adf9feafc7d4e6c20c1c7c372634bd0d2e0a46557f79aa43443a7e7`, has all six
 of its files byte-identical to `axross/skills` at commit
-`69a254dd6b368732a6f8a153f5826784b7df6746`: `SKILL.md`,
+`99e6407460d4e477a1a0690e40bee8f7079acbf2`, the upstream commit the lockfile
+records for the refresh in #180: `SKILL.md`,
 `references/body-integrity.md`, `references/channel-selection.md`,
 `references/identity-and-targets.md`, `references/publication-and-recovery.md`,
-and `scripts/decode-sanitized-read.mjs`. They were compared on 2026-11-20 (PST).
+and `scripts/decode-sanitized-read.mjs`. They were compared on 2026-11-27 (PST).
 The upstream hash was not recomputed.
 
 The skill requires reading back each write, comparing the exact stored fields
@@ -109,7 +110,10 @@ names it.
 ### Deviation - delivery, review, and watching share one confirmation
 
 At the [refresh for #96](https://github.com/axross/runners/blob/10e3071db7e7571581c8a1d10baf6d71cdbd134b/skills-lock.json) (upstream `cce7ecf`), the project's lockfile recorded `professional-behavior` with hash
-`e970d2315042396152616b29559545e115b622c7b524f7e8e75416db2fc51789`. The installed rule still reads, in
+`e970d2315042396152616b29559545e115b622c7b524f7e8e75416db2fc51789`. The refresh
+in #180 (upstream `99e6407460d4e477a1a0690e40bee8f7079acbf2`) recorded it with
+hash `d632abe2e2239feb51b1bc611094af2e4c433ae43b71cdc8e8c0ad1e69265865`. The
+installed rule still reads, in the Decisions in One Prompt section of
 [Asking the Human](../../.claude/skills/professional-behavior/references/asking-the-human.md):
 "MUST NOT put two decisions in one prompt when the answer to one would change,
 prune, or reframe the other; hold the dependent one for a later round, in
