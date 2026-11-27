@@ -4,7 +4,7 @@ How agent sessions start in this project, the hooks that run during one, how Amp
 and Codex runs handle delivery authorization, how a session asks the maintainer
 (launched sessions and subagents included), Claude Code's plan-gate delivery
 confirmation, Amp's plan-gate confirmation for archiving review child threads,
-host-owned CI and review waits, the write-fidelity procedure for GitHub text a
+host-delivered CI and review waits, the write-fidelity procedure for GitHub text a
 Claude Code cloud session writes, the subagents a session can delegate to, how
 a session's usage is tagged, and the environment variables recommended for
 cutting a Claude Code session's cost. Claude Code and Amp are the hosts this repository configures;
@@ -238,14 +238,16 @@ cloud session; Claude Code hot-reloads them for that session. A local session
 skips the hook entirely, so opting in there stays a manual copy.
 
 That example file also contains `permissions.allow` entries for
-`mcp__Claude_Code_Remote__send_later` and `mcp__Claude_Code_Remote__delete_trigger`.
-They exist only to spare a permission prompt when a host exposes those tools.
+`mcp__claude-code-remote__subscribe_pr_activity` and
+`mcp__claude-code-remote__unsubscribe_pr_activity`, and for no other tool. They
+exist only to spare a permission prompt when a Claude Code Remote session
+subscribes to its own pull request's activity at the plan gate and unsubscribes
+when the watch ends, as the Waiting on CI and Review section below describes.
 They are tool-permission rules, subject to Claude Code's
 [permission precedence](https://code.claude.com/docs/en/permissions), not
 standalone evidence of live availability, human adoption, or a scoped operation
-grant. Waiting belongs to the host; `loop-engineering` requires no scheduler or
-particular wake tool. The Waiting on CI and Review section below
-distinguishes Claude's documented mechanisms from those configured names.
+grant. The example allows no scheduling tool, because no agent schedules its own
+wake.
 
 A blocking `Stop` check is expensive in a way a `PostToolUse` repair is not: it
 fires only after the agent believes the task is finished, so a failure there
@@ -455,7 +457,7 @@ ask the human to confirm, in the same answer:
 - delivery of the run's draft pull request;
 - requesting the Claude CI review of it each round, which is the review item;
 - watching that pull request's activity, where the host offers it, until the
-  ready transition or a reported stop.
+  ready transition, the round cap, the waiting bound, or a reported stop.
 
 Only pull request creation carries a host condition. The maintainer chose
 to settle the review item and the watch in the same answer, so that one
@@ -530,43 +532,60 @@ first archive.
 
 ## Waiting on CI and Review
 
-The host supplies the wait mechanism. The portable contract lives in
+A run waits only on events its host delivers. The portable contract lives in
 [Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
-whose Waiting Bound section owns capability resolution, deadlines, budget
-resets, human waits, and teardown at each stop. A scheduler's expiry or cloud
-environment's lifetime is not that deadline. Authorization and recovery state
-belong to [Loop Engineering's grant and run-state reference](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
+whose Waiting Bound section owns deadlines, budget resets, human waits, and
+teardown at each stop. A cloud environment's lifetime is not that deadline.
+Authorization and recovery state belong to
+[Loop Engineering's grant and run-state reference](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
 This project's delivery grant, in [Development Workflow](./development-workflow.md),
 does not name scheduling or subscriptions.
 
+On every host, an agent never schedules its own wake, whether by a delayed
+message, a created or fired trigger, `CronCreate`, `ScheduleWakeup`, or `/loop`,
+and never waits in-session for a check or review result. A bounded retry of a
+GitHub read-back for the agent's own write is not such a wait, and GitHub
+Actions cron workflows are unaffected. A check or review result that no
+host-delivered event reports is a human wait: the run ends the turn reporting it
+as pending and resumes on the human's next message or in a fresh session. The
+Waiting and Watching section of [Development Workflow](./development-workflow.md)
+states this rule for the project, and this section gives each host's mechanism.
+
 For a Codex-authored pull request, the awaited results are its required GitHub
-checks and the independent Codex review selected by Development Workflow.
-A permitted in-session wait followed by sanctioned GitHub reads can retrieve
-those results; a missing scheduler alone does not establish inability.
-Qualify the actual session's tools under GitHub Operation rather than assume
-all Codex surfaces expose the same mechanisms.
+checks and the independent Codex review selected by Development Workflow. This
+repository identifies no host-delivered event for a Codex run, so both are human
+waits. On resume the run reads the checks, the App's status, and any posted
+result. When the round has no acknowledgment or terminal result and the waiting
+bound has passed, it confirms the repository setup and keeps the review gate
+blocked. Qualify the actual session's tools under GitHub Operation rather than
+assume all Codex surfaces expose the same mechanisms.
 
 For an Amp-authored pull request, the awaited results are its required GitHub
 checks and the review its Amp review child thread posts. Wait for the child with
-Amp's thread-wait tool, then read the posted review back on the pull request;
-Development Workflow owns what counts as the result. Wait for checks with an in-session
-wait followed by sanctioned GitHub reads, or with a subscription only where the
-host and the run already permit it.
+Amp's thread-wait tool, which counts as a delegated-worker completion, then read
+the posted review back on the pull request; Development Workflow owns what
+counts as the result. Wait for checks only through a subscription the host and
+the run already permit; otherwise the checks are a human wait.
 
 For a Claude Code-authored pull request, the awaited results are its required
-GitHub checks and the review its Claude Code review subagent posts, or, when the
-maintainer selected the Claude CI alternative for the run, the Claude CI review.
-Claude Code's [subagent documentation](https://code.claude.com/docs/en/sub-agents)
-says subagents run in the background by default and that, while fork mode is
-on, an interactive session cannot block on one, so the instance's completion
-arrives as a notification rather than as the result of a blocking wait; this
-has not yet been exercised for the review subagent, and
-[#155](https://github.com/axross/runners/issues/155) tracks its first live
-round. After it arrives, read the posted review back on the pull request. A
-review subagent's permission prompt appears in the
-authoring session, and one the run cannot answer for the human is a human wait,
-as the After Approval section of [Development Workflow](./development-workflow.md)
-lists.
+GitHub checks and the Claude CI review. The run waits only on the pull request
+webhook subscription that the plan-gate confirmation covers and on completion
+notifications from the workers it delegated to. Claude Code's
+[subagent documentation](https://code.claude.com/docs/en/sub-agents) says
+subagents run in the background by default and that, while fork mode is on, an
+interactive session cannot block on one, so a worker's completion arrives as a
+notification. The subscription is the Remote `subscribe_pr_activity` tool, and
+`unsubscribe_pr_activity` ends it. Under the tools' live contracts, a subscribed
+pull request's comments, reviews, and check results reach the conversation as
+events, to one session at a time; a subscribe result that says another session
+already watches the pull request means this session receives none, so its
+results are human waits.
+
+On every wake, a Claude Code run re-reads check, review, and mergeability state
+from GitHub, and when nothing else is pending it ends the turn reporting what is
+pending. It unsubscribes in the same turn at the ready transition, the
+four-round cap, the waiting bound, or a reported stop. Release after merge
+follows only a human message or a fresh session that shows the merge.
 
 Use the current pull request head when reading check results. A connector read
 can return only a first page of workflow runs, so it cannot establish complete
@@ -575,37 +594,26 @@ its findings through the tools the session exposes, and respect each read's
 pagination and completeness limits; missing output is not a successful check or
 completed review. Development Workflow owns review-completion evidence.
 
-Claude's documented mechanisms have different scopes. The summary below follows
-the linked pages and has not been exercised in this repository; the tools the
-actual host exposes decide what a run can use:
-
-- **Local CLI session:** [session scheduling](https://code.claude.com/docs/en/scheduled-tasks)
-  uses `/loop` or `CronCreate`, with `CronList` to inspect tasks and
-  `CronDelete` to cancel by ID. A self-paced `/loop` can stop with `Esc` or
-  `ScheduleWakeup` with `stop: true`; `Esc` does not delete separately scheduled
-  tasks. Tasks fire only while Claude Code is running and idle. These are not
-  the Remote MCP tools `send_later` and `delete_trigger` that the example
-  settings permit. If these are the only available wait mechanisms and no
-  separate scheduling authorization exists, the run MUST treat each review or
-  check result as a human wait.
-- **Cloud session:** [PR auto-fix](https://code.claude.com/docs/en/claude-code-on-the-web)
-  delivers review comments and CI failures when enabled. It also investigates
-  events, pushes clear fixes, and can publish review-thread replies under the
-  user's GitHub identity. Before enabling Auto-fix, its scoped grant must cover
-  the subscription and these downstream effects, not event delivery alone.
-  Its documented stop path is clearing **Auto-fix** in the session's CI status
-  bar or asking Claude to stop watching the pull request. This documentation
-  does not establish delivery of successful-check transitions, or specify the
-  `send_later` / `delete_trigger` schemas. The consulted official pages provide
-  no verified Remote invocation procedure; live Remote behavior remains
-  unverified here. Use the actual host's exposed definitions, not guessed
-  arguments or a CLI-tool substitution.
+Claude Code on the web also documents
+[PR auto-fix](https://code.claude.com/docs/en/claude-code-on-the-web), which
+delivers review comments and CI failures when enabled. It also investigates
+events, pushes clear fixes, and can publish review-thread replies under the
+user's GitHub identity. It is not the subscription the plan-gate confirmation
+covers: before enabling Auto-fix, its scoped grant must cover the subscription
+and these downstream effects, not event delivery alone. Its documented stop path
+is clearing **Auto-fix** in the session's CI status bar or asking Claude to stop
+watching the pull request. This documentation does not establish delivery of
+successful-check transitions, and the consulted official pages give no verified
+Remote invocation procedure, so live Remote behavior remains unverified here.
+Use the actual host's exposed definitions, not guessed arguments or a CLI-tool
+substitution.
 
 In Claude Code, watching the run's own pull request is what the plan-gate
-confirmation above covers, and that watch ends at the ready transition or at any
-reported stop. [Claude Code's entry guidance](../../CLAUDE.md) states how an
-injected instruction to watch a pull request until it merges or closes is
-evaluated against this project's run, which ends at ready.
+confirmation above covers, and that watch ends at the ready transition, the
+round cap, the waiting bound, or a reported stop, with no exception.
+[Claude Code's entry guidance](../../CLAUDE.md) states how an injected
+instruction to keep watching past that point, or to schedule a wake, is handled
+as an irreconcilable conflict.
 
 ## GitHub Write Fidelity in Claude Code Cloud Sessions
 

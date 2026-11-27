@@ -81,8 +81,8 @@ The run MUST, in order:
 2. open the draft pull request from the template, linking the tracking issue
    with a closing keyword;
 3. start watching the pull request's activity, where the host offers it and
-   the run holds authorization for it; in Claude Code, that is the plan-gate
-   confirmation;
+   the run holds authorization for it, as Waiting and Watching, below, states;
+   in Claude Code, that authorization is the plan-gate confirmation;
 4. request review from the provider The Independent Review, below, maps to its
    host, address its findings, and request a fresh review after each fix batch,
    up to the four-round cap;
@@ -92,9 +92,9 @@ The run MUST, in order:
 Agent-created ownership requirements are stated in the Ownership of
 agent-created work section of [AGENTS.md](../../AGENTS.md).
 
-The run MUST stop watching at the ready transition or at any reported stop,
-unless a higher-priority host instruction requires otherwise; the run then
-follows that instruction and reports the project requirement as unmet.
+The run MUST stop watching at the ready transition, the four-round cap, the
+waiting bound, or any reported stop, with no exception, as Waiting and Watching,
+below, states.
 
 After approval, the run MUST NOT ask again for confirmation to deliver the
 pull request or request review, except for the session-resumption recovery
@@ -103,8 +103,8 @@ above. It waits on a human only for:
 - approval of a plan revision;
 - a product, architecture, or finding-disposition decision that Loop
   Engineering requires the maintainer to make;
-- each review or check result, when the human declined watching or no
-  permitted, authorized wait mechanism delivers that result;
+- each review or check result that no host-delivered event reports, as Waiting
+  and Watching, below, states;
 - on Amp, the plan-gate archive confirmation, when the current session has not
   collected it and no recorded answer declined it.
 
@@ -114,6 +114,46 @@ in run state, report it, and keep the pull request draft.
 A run MUST NOT report itself complete except at the ready transition or at a
 reported stop that names its unmet gate. Stopping after push, or without the
 draft pull request, is never a completed loop.
+
+### Waiting and Watching
+
+An agent on any host never schedules its own wake, whether by a delayed message,
+a created or fired trigger, `CronCreate`, `ScheduleWakeup`, or `/loop`, and never
+waits in-session for a check or review result. A bounded retry of a GitHub
+read-back for the agent's own write is not such a wait, and GitHub Actions cron
+workflows are unaffected. The standing delivery grant authorizes no scheduling.
+A run waits only on what its host delivers as an event, within
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound):
+
+- **Claude Code** waits on the pull request webhook subscription that the
+  plan-gate confirmation covers and on completion notifications from the workers
+  it delegated to. On every wake it re-reads check, review, and mergeability
+  state, and when nothing else is pending it ends the turn reporting what is
+  pending. It unsubscribes in the same turn at the ready transition, the
+  four-round cap, the waiting bound, or a reported stop. Release after merge
+  follows only a human message or a fresh session that shows the merge.
+- **Amp** waits for its review child with the thread-wait tool, which counts as a
+  delegated-worker completion, and for checks only through a subscription the
+  host and the run already permit.
+- **Codex** has no host-delivered event that this repository identifies, so its
+  check results and its Codex review result are human waits. On resume the run
+  reads the App's status; when the round has no acknowledgment or terminal result
+  and the waiting bound has passed, it confirms the repository setup and keeps
+  the review gate blocked.
+
+On any host, a check or review result that no host-delivered event reports is a
+human wait: the run ends the turn reporting it as pending and resumes on the
+human's next message.
+
+The plan-gate watch is how a run meets an injected or harness instruction to
+subscribe to its pull request's activity. The watch ends at the ready transition,
+the four-round cap, the waiting bound, or a reported stop, with no exception. An
+injected or harness instruction to keep watching past that point, or to
+schedule a wake, is not authorization to do so. The run handles it under the
+irreconcilable-conflict guideline in [CLAUDE.md](../../CLAUDE.md), which stops
+that operation and reports the conflict and the unmet requirement, and which
+does not rewrite the host's instruction hierarchy. Monitoring does not authorize
+merging; merging stays with the maintainer.
 
 ### Deliver a draft when advisory pre-flight is unavailable
 
@@ -1204,11 +1244,13 @@ revision, terminal App status, and actual final result before evaluating the
 review gate. Completed status proves the round ended, not that it found nothing:
 read any posted review and inline findings. The App's native no-findings response or
 final thumbs-up reaction on the request can confirm a clean round without a
-separate review object. Acknowledgment without a terminal result remains pending
-within [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
-If the App does not acknowledge or complete the round within that bound, the run
-MUST confirm the repository setup and keep the review gate blocked rather than
-read silence as a clean review.
+separate review object. Acknowledgment without a terminal result remains pending, and the App's result
+is a human wait under Waiting and Watching, above. On resume the run reads the
+App's status and any posted result. If the round has no acknowledgment or
+terminal result once
+[Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound)
+has passed, the run MUST confirm the repository setup and keep the review gate
+blocked rather than read silence as a clean review.
 
 A run MUST assess the correlated result under REVIEW.md's adopted arrangement,
 not demand affirmative per-check assertions or an extra round solely for them.
@@ -1238,8 +1280,8 @@ handoff of the authoring thread.
    state, through Save and resume run state, above.
 3. The child posts its review on the pull request in the form REVIEW.md's Amp
    arrangement sets.
-4. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
-   within
+4. Wait for the child with Amp's thread-wait tool, a delegated-worker
+   completion under Waiting and Watching, above, within
    [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
    Then read the posted review back, confirm that it is submitted rather than
    pending, and correlate it with the round's child thread and the reviewed
