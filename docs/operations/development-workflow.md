@@ -1145,8 +1145,9 @@ Each round follows these rules:
 - **Request.** The round's request is the Claude review trigger phrase,
   `@claude review`, written in exactly one top-level pull request comment for
   that round and nowhere else. When `claude[bot]` posts it, the comment carries
-  no Markdown heading and no `## ` anywhere, because the workflow's gate skips a
-  bot comment that contains `## `.
+  no Markdown heading and nowhere the sequence of two number signs and a space,
+  because the workflow's `!contains(body, '## ')` gate skips a bot comment that
+  contains it.
 - **No overlap.** The workflow's concurrency group cancels an in-flight review
   when a new request arrives on the same pull request. A run MUST NOT post a new
   request while its previous round is pending.
