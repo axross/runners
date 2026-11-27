@@ -4,7 +4,7 @@
 # and build at most 65535, so a release X.Y.Z beyond those limits is refused, the
 # dry-run form 0.0.0-dryrun.<n> maps to 0.0.0, and any other prerelease form is
 # refused. the release build calls it before it builds the MSI.
-# see docs/operations/cli.md.
+# see docs/marshal-cli/release-artifacts.md.
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then

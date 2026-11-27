@@ -1,6 +1,6 @@
 //! a strict, order-preserving JSON reader: RFC 8259 and nothing more, with numbers
 //! kept as their literal text so a caller decides what an out-of-range one means.
-//! its duplicate-key rule is stated in `docs/operations/cli.md`.
+//! its duplicate-key rule is stated in `docs/marshal-cli/json-validation.md`.
 
 use std::collections::HashMap;
 

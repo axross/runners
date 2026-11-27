@@ -1,5 +1,5 @@
 //! the resident agent: the state it is in, and what each request, each failure of
-//! the runtime core and a changed executable do to it, as `docs/operations/cli.md`
+//! the runtime core and a changed executable do to it, as `docs/marshal-cli/resident-agent.md`
 //! describes; one task owns the state, so a request that arrives during a transition
 //! is answered at once: `status` tells the truth, a stop is taken, and anything
 //! that would start another transition is `busy`.

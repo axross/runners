@@ -4,7 +4,7 @@ Apply these contracts whenever work or judgment crosses an actor, session, proce
 
 ## Approval Target
 
-Approval identifies the exact plan artifact and revision the human considered, the approval evidence, and any decisions incorporated into it. Approval authorizes implementation against that revision; it does not authorize publication, tool use, or any other effect. An effect that needs human authorization needs an operation grant, which may be a standing grant, as [Scoped Operation Grants](./run-state-and-reporting.md#scoped-operation-grants) defines.
+Approval identifies the exact plan artifact and revision the human considered, the approval evidence, and any decisions incorporated into it. Approval authorizes implementation against that revision; it does not authorize publication, tool use, scheduling, or any other effect. An effect that needs human authorization needs an operation grant, which may be a standing grant, as [Scoped Operation Grants](./run-state-and-reporting.md#scoped-operation-grants) defines.
 
 **Guidelines:**
 
@@ -15,7 +15,7 @@ Approval identifies the exact plan artifact and revision the human considered, t
 
 An assignment says what work is requested and what the executor can rely on. Every repository- or version-dependent assignment—including investigation and review—identifies the source or workspace, target revision or content identifier, actual uncommitted diff and files, and material locations. Naming `HEAD` alone is insufficient when uncommitted work matters.
 
-Writing assignments additionally name permitted paths or effects, protected changes, conflict coordination, verification, self-review expectations and applicable policy, whether commits or another delivery form are expected (the [delegation matrix](./subagent-delegation.md#delegation-matrix) sets the default), and any shared runtime target the executor may claim and resources it may create. Read-only assignments omit writing permissions rather than granting empty ones.
+Writing assignments additionally name permitted paths or effects, protected changes, conflict coordination, verification, self-review expectations and applicable policy, whether commits or another delivery form are expected, and any shared runtime target the executor may claim and resources it may create. Read-only assignments omit writing permissions rather than granting empty ones.
 
 **Guidelines:**
 
@@ -49,7 +49,7 @@ assessment rather than infer a recipient's acquisition from sender access.
 
 An execution result uses exactly one state: **complete**, **partial**, **decision-waiting**, **authorization-waiting**, **unavailable**, **failed**, or **outcome-unknown**. A denied or missing capability is `unavailable`; an operation possible only after permission is `authorization-waiting`. `outcome-unknown` means an effect may have happened but cannot yet be established.
 
-A writing result carries compact self-review evidence for the current loop driver's completion check. It does not reproduce the assignment or plan, supply a review verdict, or certify post-push review.
+A writing result carries compact self-review evidence for the current loop driver's completion check. It does not reproduce the assignment or plan, supply an advisory verdict, or certify independent review.
 
 **Guidelines:**
 
@@ -65,14 +65,14 @@ A writing result carries compact self-review evidence for the current loop drive
 
 An internal review handoff identifies the reviewed source, target revision or content identifier, actual diff and files, policy applied, evidence inspected, and every finding. A clean result requires a complete review of the current required scope and materials under the applicable policy. Historical completion and present coverage are distinct: stale coverage is unusable, not a new result state or a clean current review.
 
-For a plan review of an investigation, plan, or design deliverable, [plan-review.md](./plan-review.md) binds this result to the current deliverable and places it before phase reliance; the conduct practice owns the review method and budget.
+For an investigation, plan, or design artifact review, [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md) binds this result to the current artifact and places it before phase reliance; the conduct practice owns the review method and budget.
 
-For a posted post-push review, [Review Completion Evidence](./post-push-review.md#review-completion-evidence) owns completion instead. The loop driver records observable request/result correlation metadata; that record is not a demand for the reviewer to enumerate passed checks or assert policy consumption. Unobserved inspection details are not the same as missing required review material.
+For a posted independent review, [Review Completion Evidence](./independent-review.md#review-completion-evidence) owns completion instead. The loop driver records observable request/result correlation metadata; that record is not a demand for the reviewer to enumerate passed checks or assert policy consumption. Unobserved inspection details are not the same as missing required review material.
 
 **Guidelines:**
 
-- MUST give every internal handoff finding a stable identifier, severity, precise citation, claim, and suggested correction; preserve posted post-push findings in their project's adopted form rather than imposing this handoff shape.
-- MUST use the same seven result states as execution when classifying a review result, with missing required review material or explicitly unchecked required scope producing `unavailable` or another non-complete state rather than zero findings; assess posted post-push review completion under the reference above.
+- MUST give every internal handoff finding a stable identifier, severity, precise citation, claim, and suggested correction; preserve posted independent findings in their project's adopted form rather than imposing this handoff shape.
+- MUST use the same seven result states as execution when classifying a review result, with missing required review material or explicitly unchecked required scope producing `unavailable` or another non-complete state rather than zero findings; assess posted independent-review completion under the reference above.
 - MUST preserve unavailable, incomplete, failed, stale, and unknown review evidence with its actual target, materials, policy, coverage, and limitations; none establishes a clean current review. A later correction or successful check is not fresh reviewer confirmation.
 
 ## Recovery

@@ -1,6 +1,6 @@
 //! the messages of protocol version 2, one JSON object per line; every field name
 //! here is a promise within version 2, and a reader ignores a field it does not know;
-//! `docs/operations/cli.md` describes them.
+//! `docs/marshal-cli/agent-protocol.md` describes them.
 
 use std::fmt;
 

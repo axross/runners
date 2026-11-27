@@ -1,5 +1,5 @@
 //! what an answer from GitHub means for a display request, as the table in
-//! `docs/operations/cli.md` lists it: a 403 or 429 is a rate limit when its headers
+//! `docs/marshal-cli/github-status.md` lists it: a 403 or 429 is a rate limit when its headers
 //! or message say so, and otherwise a rejected token for the runner list or hidden
 //! job names for a lookup.
 

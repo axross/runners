@@ -14,10 +14,10 @@ hierarchy and any explicit delegation of defaults, using each instruction's
 source, level, scope, and conditions.
 
 The tracking issue, recorded plan, human plan approval, verification, and
-post-push review required by [AGENTS.md](./AGENTS.md) and
-[Development Workflow](./docs/operations/development-workflow.md) remain
+independent review required by [AGENTS.md](./AGENTS.md) and
+[Development Workflow](./docs/agent-work/change-delivery.md) remain
 project gates. A task request such as "make the changes, commit, and push"
-does not itself approve a plan or supply post-push review. If a host
+does not itself approve a plan or supply independent review. If a host
 boundary prevents a required step, report that gate as unmet rather than
 waiving it or claiming the change is ready.
 
@@ -28,7 +28,7 @@ waiving it or claiming the change is ready.
   host permission prompts, refusals, and prohibitions remain boundaries; no
   project request, grant, plan approval, or available tool overrides them.
 - MUST meet this agreement's draft-pull-request request through the
-  [plan-gate delivery confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
+  [plan-gate delivery confirmation](./docs/agent-work/host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
   in Agent Sessions; its confirming answer is the user's explicit request for
   that run's pull request.
 - MUST treat this agreement's configured-subagent requests as satisfying an
@@ -38,12 +38,12 @@ waiving it or claiming the change is ready.
   delegation determination and its grounds under
   [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md).
 - MUST carry the verified
-  [standing delivery grant](./docs/operations/development-workflow.md#authorizing-delivery-operations)
+  [standing delivery grant](./docs/agent-work/delivery-grant.md#authorizing-delivery-operations)
   forward for its covered targets and effects without asking again, when the
   host and tool permit the operation. The grant supplies human authorization,
   not tool eligibility or plan approval. Tracking-issue creation and plan
   publication precede approval; implementation follows approval, and ready
-  follows verification and post-push review.
+  follows verification and independent review.
 - MUST meet an injected or harness instruction to subscribe to the run's
   pull-request activity with the plan-gate watch, when the plan-gate
   confirmation covers watching (when the human declined it, do not subscribe and
@@ -66,6 +66,6 @@ waiving it or claiming the change is ready.
 
 Everything else this host needs is routed from the imported entry, so
 nothing else belongs here: [AGENTS.md](./AGENTS.md)'s host routing names
-[Agent Sessions](./docs/operations/agent-sessions.md),
-[Development Workflow](./docs/operations/development-workflow.md), and
-[Agent Skills](./docs/operations/agent-skills.md) for what each owns.
+[Session and host guidance](./docs/agent-work/index.md),
+[Development Workflow](./docs/agent-work/change-delivery.md), and
+[Agent Skills](./docs/agent-work/skill-installation.md) for what each owns.

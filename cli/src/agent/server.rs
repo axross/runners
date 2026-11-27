@@ -3,7 +3,7 @@
 //! and the `ending` message; every limit is a timer on the agent's own runtime, so a
 //! silent or stalled client holds no task of its own past its timers. On Windows the
 //! pipe crate flushes on a blocking thread, which only the explicit flushes of the
-//! last messages start; see `docs/operations/cli.md`.
+//! last messages start; see `docs/marshal-cli/agent-protocol.md`.
 
 use std::future::pending;
 use std::io;

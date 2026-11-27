@@ -11,7 +11,7 @@ The assignment, not this skill, states the workspace arrangement. Concurrent wri
 - MUST name permitted writes, protected changes, conflict coordination, and commit delivery in every writing assignment.
 - MUST prevent competing writes to the same surface unless explicit isolation and integration make them safe.
 - MUST account for write-capable background processes before transferring responsibility or accepting completion.
-- MUST NOT require a shared checkout, worktree or branch prefix unless project policy or the assignment requires it. Commit delivery defaults to the [delegation matrix](./subagent-delegation.md#delegation-matrix) unless project policy or the assignment says otherwise.
+- MUST NOT require a shared checkout, worktree, branch prefix, or commit creation unless project policy or the assignment requires it.
 - MUST triage a permission request a delegated executor raises by what it asks for: apply the current host permission policy to an approved-scope operation the assignment already covers; deny an out-of-scope or destructive one and ask that executor for a safe alternative; and return a product, security, privacy, or platform decision to the human instead of answering it on their behalf.
 - MUST surface a required human authorization rather than manufacturing one, and leave writing responsibility with the executor while its request is pending.
 - MUST verify actual workspace identity before writing: shared workspaces require coordination; separated workspaces require explicit material transfer, retrieval, integration, and verification. A message is not a file transfer, and a behavioral ownership contract is not an enforced lock.
@@ -29,7 +29,7 @@ Simulators, emulators, attached devices, ports and the app installed on them are
 **Guidelines:**
 
 - MUST, where the project provides a claim mechanism, claim a target before installing, uninstalling, launching, changing or restoring a setting on, or stopping an app on it, and release the claim when the exercise ends.
-- MUST NOT change a target another session holds; report the held target and end the turn, or ask the human, and arm no poll, subscription or check-in to watch the claim.
+- MUST NOT change a target another session holds; report the held target and end the turn, or ask the human, and arm no poll, subscription or wake to watch the claim.
 - MUST NOT break another session's claim without the human, including one whose owner looks finished.
 - MUST, where the project provides no claim mechanism, state that the target is shared, limit the exercise to what the check needs, and report its observation as taken on a target another session could have changed rather than assume exclusive use.
 - MUST treat a claim as a cooperative convention, never as proof that no other session touched the target.
@@ -49,13 +49,13 @@ A clarification explains the approved plan without changing scope, acceptance cr
 
 Each approved plan revision and task phase allows one initial execution plus **2** retries. Exhaustion leaves recovery with the current loop driver; it does not authorize another delegated attempt.
 
-When the effect requests a new plan review, [plan-review.md](./plan-review.md) routes to the separate plan-review budget; an execution retry does not replenish it.
+When the effect requests a new assessment of a phase deliverable, [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md) routes to the separate artifact-review budget; an execution retry does not replenish it.
 
 **Guidelines:**
 
 - MUST count runtime failure, lost response, unexplained stall, and unexpected executor disappearance as attempts.
 - MUST inspect actual files, commits, processes, and external effects before retrying, especially when the prior result is `outcome-unknown`.
-- MUST NOT infer permission to poll or spawn from the retry budget; any waiting follows [Waiting Bound](./post-push-review.md#waiting-bound).
+- MUST NOT infer permission to schedule, poll, or spawn from the retry budget.
 - MUST also count transient API or recoverable tool failures. A newly approved plan, human-requested scope change, new review round, or separate addressing task starts its own budget rather than consuming an earlier phase's retries.
 - MUST reuse a still-valid executor only where permitted and supported; otherwise provide a new executor the complete assignment plus previous attempt, partial changes, failure, processes, and confirmed stopped state. On exhaustion the current loop driver continues from established state, not from a destructive reset.
 
@@ -68,4 +68,4 @@ Recovery preserves evidence. Rewriting or resetting away partial work destroys t
 - MUST preserve history append-only: no destructive reset, amend, squash of distinct stages, or force-push as a recovery shortcut.
 - MUST compare every execution result with actual repository and process state before accepting it.
 - MUST continue from established state, correcting through new changes, and surface conflicts requiring human judgment.
-- MUST inspect unexpected paths and targeted diffs when build, dependency, lock, CI, security, or review-policy surfaces changed; checks failed or were skipped; the receipt disagrees with files; acceptance evidence is thin; or uncertainty or size exceeds the assignment. Acceptance of a receipt never certifies post-push review.
+- MUST inspect unexpected paths and targeted diffs when build, dependency, lock, CI, security, or review-policy surfaces changed; checks failed or were skipped; the receipt disagrees with files; acceptance evidence is thin; or uncertainty or size exceeds the assignment. Acceptance of a receipt never certifies independent review.

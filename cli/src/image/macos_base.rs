@@ -1,6 +1,6 @@
 //! the macOS base the golden macOS VM is built from: its digest-pinned reference,
 //! its macOS version, its publication date and the digests retired from Tart's
-//! cache, and the warnings about its age; see `docs/operations/cli.md`.
+//! cache, and the warnings about its age; see `docs/marshal-cli/macos-pools.md`.
 
 use std::time::SystemTime;
 

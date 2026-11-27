@@ -3,7 +3,7 @@
 Use this reference to establish which applicable skill material a controlled
 internal actor has in its current context. It covers the loop driver,
 implementers, investigators and internal reviewers, not affirmative consumption
-attestations from reviewers in post-push review (review of the opened pull request by someone other than the author). Selection follows the active
+attestations from posted independent reviewers. Selection follows the active
 task's development or review practices and applicable project policy;
 installation and native host selection remain separate observations under
 [active-loading.md](./active-loading.md).
@@ -105,4 +105,4 @@ change; quality assurance judges whether that evidence is adequate.
 - MUST consult development output-verification practices, where present, when performing contributor verification of an integrated output against applicable rules and currently valid exceptions. If that owner is absent, name the unperformed assessment rather than infer conformity from acquisition.
 - MUST consult code-review practices, where present, when a controlled internal reviewer assesses whether a change follows applicable rules and currently valid exceptions. Contributor verification does not replace that assessment. If that owner is absent, name the unperformed assessment rather than infer conformity from acquisition.
 - MUST consult verification-evidence assessment practices, where present, when judging evidence sufficiency, including whether a check can distinguish correct from incorrect output. If that owner is absent, name the assessment limit rather than inventing a QA gate.
-- MUST NOT turn internal acquisition correspondence or coverage into a demand for affirmative load or per-check attestations when completing post-push review (review of the opened pull request by someone other than the author); the applicable review-completion contract remains its owner.
+- MUST NOT turn internal acquisition correspondence or coverage into a demand for affirmative load or per-check attestations in posted independent-review completion; the applicable review-completion contract remains its owner.

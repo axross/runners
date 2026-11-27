@@ -16,28 +16,12 @@ A qualification belongs to one proposed assignment at one checkpoint, not to the
 
 ## Conditional Host Defaults
 
-Use applicable host guidance for the current operation, without requiring a private setting, plugin, named actor, or adapter. Without such guidance, the bounded default is eligible subagent implementation, with driver execution only when delegation is unavailable or disallowed, or when the brief would be longer than the diff, as the [delegation matrix](#delegation-matrix) states. A review still requires an eligible fresh non-author context; driver execution is not that context.
+Use applicable host guidance for the current operation, without requiring a private setting, plugin, named actor, or adapter. Without such guidance, the bounded default is eligible subagent implementation, with driver execution only when delegation is unavailable or disallowed. A review still requires an eligible fresh non-author context; driver execution is not that context.
 
 **Guidelines:**
 
 - MUST follow applicable host guidance within actual tool conditions; when that guidance is absent, use the bounded defaults above and current permitted tool contracts, reporting any required capability that cannot be established.
 - MUST NOT require a universal actor ranking, role name, model, tool, separate checkout, live conversation, or resumable child, or use another invocation mechanism to evade a prohibited purpose.
-
-## Delegation Matrix
-
-This matrix applies only where [Checkpoint Qualification](#checkpoint-qualification) already qualifies delegation for the assignment, and grants no authorization: it neither permits a tool, a publication or an operation grant nor qualifies a route. It says which work goes to which actor once delegation is open.
-
-| Actor    | Work it holds                                                                                                                                                                                               | Work it does not hold                                                                                                                                         |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Driver   | Intake, plan authorship, questions to the human, approvals, finding triage, push and pull request operations (a post-push reviewer posts its own review), the integration check of the diff, and reporting. | A large-input reduction, which a reader takes, and implementation after approval, which a writer takes, except where the brief would be longer than the diff. |
-| Reader   | A task whose input is large and whose conclusion is small: a wide search, a long log (including diagnosing a CI failure), a long pull request thread reduced to a finding list, or history.                 | An exact single lookup, which the driver does directly.                                                                                                       |
-| Writer   | Implementation after approval; running the checks; self-review; committing locally.                                                                                                                         | An edit whose brief would be longer than the diff, which the driver makes; pushing; and the final check, which the driver re-runs on the integrated diff.     |
-| Reviewer | A fresh instance for each round of plan review, pre-push review and post-push review.                                                                                                                       | Resumption, the author's conversation, and an earlier round's findings.                                                                                       |
-
-**Guidelines:**
-
-- MUST assign work to the actor the table names, subject to the exceptions it states and to a post-push reviewer posting its own review.
-- MUST bound a brief or handback by its shape, never by a numeric token cap: a reader hands back its conclusion and locators, and a writer hands back the result record the [execution result contract](./implementation-package.md#execution-result) defines.
 
 ## Compatibility Preflight
 
@@ -58,7 +42,7 @@ judging-actor context rules here still apply.
 
 This boundary applies when an actor assigns a contribution and retains responsibility for the whole change. The contribution's `complete` result closes only that assignment; the responsible actor still verifies integrated evidence and advances the loop.
 
-Before accepting an investigation conclusion or using a returned plan or design in dependent work, apply [plan-review.md](./plan-review.md). Receiving the contribution alone does not establish current plan review.
+Before accepting an investigation conclusion or using a returned plan or design in dependent work, apply [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md). Receiving the contribution alone does not establish current artifact review.
 
 **Guidelines:**
 

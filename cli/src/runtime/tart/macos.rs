@@ -1,7 +1,7 @@
 //! what the Tart backend does differently for a macOS pool, as pure logic: which
 //! golden macOS VM a job VM is cloned from, how Tart's VM-limit refusal is told
 //! apart from another boot failure, and what the probe of a booted job VM must show;
-//! `docs/operations/cli.md` describes the macOS slot cycle.
+//! `docs/marshal-cli/macos-pools.md` describes the macOS slot cycle.
 
 use std::time::Duration;
 

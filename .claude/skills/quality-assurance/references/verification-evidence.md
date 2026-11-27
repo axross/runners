@@ -39,7 +39,7 @@ Compare these independent observations:
 
 - MUST consult contributor-verification practices, when available, for the generation and bounds of integrated-output evidence; without them, assess only independently observed properties, as illustrated above.
 
-This assessment does not require reviewers in post-push review (review of the opened pull request by someone other than the author) to enumerate passed skill loads or checks. Fresh-review input and post-push review completion remain under the applicable review and change-loop practices, not a positive-attestation checklist here.
+This assessment does not require posted independent reviewers to enumerate passed skill loads or checks. Fresh-review input and external completion remain under the applicable review and change-loop practices, not a positive-attestation checklist here.
 
 ## Relevance and Currency
 

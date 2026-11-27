@@ -59,7 +59,7 @@ A stored inline comment proves neither that every intended finding reached the d
   - the associated review, where applicable
 
 - MUST verify the submitted advisory review's [`COMMENTED` state](https://docs.github.com/en/graphql/reference/pulls#enum-pullrequestreviewstate) (the result of the `COMMENT` event) and submission, not merely its creation as a pending draft. Confirm the reviewed commit separately from the PR's current head rather than assuming they still match.
-- MUST account for every required finding and review postcondition before reporting publication complete. Preserve verified object IDs and pending or unknown effects under the recovery rules below; neither partial publication nor a submitted COMMENT alone proves review completion or post-push review (review of the opened pull request by someone other than the author) convergence.
+- MUST account for every required finding and review postcondition before reporting publication complete. Preserve verified object IDs and pending or unknown effects under the recovery rules below; neither partial publication nor a submitted COMMENT alone proves review completion or independent-review convergence.
 
 ### Verify Review-Conversation Effects Separately
 
@@ -75,7 +75,7 @@ For a REST reply, GitHub's [review-comment GET](https://docs.github.com/en/rest/
 - MUST retain the intended parent and body after a lost reply response and inspect current replies for the matching effect before considering a retry; keep outcome-unknown if read-back cannot settle it.
 - MUST apply the existing recovery limits after a lost resolution response: retain the thread identifier and intended effect, inspect actual state before retry, and retain outcome-unknown when read-back cannot establish the result.
 - MUST verify current reply/closure state and disposition evidence on resume, without repeating confirmed replies or resolution, or claiming that the resumed session performed the original action; preserve observed attribution.
-- MUST NOT report resolution as proof of a code fix, reviewer approval, or post-push review convergence; retain the disposition and reviewer evidence separately.
+- MUST NOT report resolution as proof of a code fix, reviewer approval, or independent-review convergence; retain the disposition and reviewer evidence separately.
 
 ## Recover Partial or Unknown Outcomes
 

@@ -1,4 +1,4 @@
-// fails unless the release workflows keep the shape docs/conventions/security.md
+// fails unless the release workflows keep the shape docs/security/release-authority.md
 // records: which job may declare the `release` Environment and read the signing
 // secrets, what that job may hold and run, how the signing jobs chain to the
 // attest and release jobs, and that no job can bypass a failed signing step.

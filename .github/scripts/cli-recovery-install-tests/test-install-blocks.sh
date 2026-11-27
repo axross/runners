@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runs the macOS install blocks of docs/operations/cli-recovery.md (the optional check,
+# runs the macOS install blocks of docs/runner-recovery/install.md (the optional check,
 # migration, uninstall, and bare-binary blocks) under the shell named by the
 # argument, bash or zsh, with stand-ins first on PATH for gh, pkgutil, xattr, cp,
 # sudo, installer, and marshal. each stand-in records its calls, so every refusal is
@@ -13,7 +13,7 @@ set -euo pipefail
 
 shell_under_test="${1:-bash}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-document="$(cd "${here}/../../.." && pwd)/docs/operations/cli-recovery.md"
+document="$(cd "${here}/../../.." && pwd)/docs/runner-recovery/install.md"
 extract="${here}/extract-install-block.sh"
 command -v "$shell_under_test" >/dev/null || {
   echo "error: ${shell_under_test} is not installed" >&2

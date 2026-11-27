@@ -125,7 +125,7 @@ See [actor-local-acquisition.md](./references/actor-local-acquisition.md) for:
 - distinguishing native loading, direct acquisition and retained text, with full, partial, unknown, mismatch or unavailable coverage
 - correlating expected and observed material without inferring acquisition from a parent or reused assignment identifier
 - recovering truncation or lost retention from one verified revision, without redundant reads of complete retained text
-- separating acquisition from output verification and verification-evidence assessment, without adding attestations to post-push review (review of the opened pull request by someone other than the author)
+- separating acquisition from output verification and verification-evidence assessment, without adding external-review attestations
 
 ## Proposing a Change to an Installed Skill
 

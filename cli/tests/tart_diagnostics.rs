@@ -7,7 +7,7 @@
 //! exporter; the stop timeline's gaps behaving as for containers; `diagnostics`
 //! finalising a retained VM as it does a container; and a diagnostic VM deleted without
 //! an export at a forced stop, a crash and the next `start` (the paragraph "Evidence a
-//! VM loses" in the Tart Backend section of docs/operations/cli.md).
+//! VM loses" in the Tart Backend section of docs/marshal-cli/tart-backend.md).
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,

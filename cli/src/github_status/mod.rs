@@ -3,7 +3,7 @@
 //! scope's runner list, looks up jobs for repository runners only, and keeps the
 //! request budget, with conditional requests sent one at a time; the value it
 //! publishes never carries a token, a URL from GitHub or a raw response body.
-//! `docs/operations/cli.md` describes the contract.
+//! `docs/marshal-cli/github-status.md` describes the contract.
 
 pub mod answer;
 pub mod budget;

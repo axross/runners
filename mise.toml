@@ -1,7 +1,7 @@
 # pins the lint and format toolchain, so a local run and CI use the same tool
 # versions; docs/conventions/testing.md documents the tasks,
 # docs/operations/development-setup.md the contributor setup, and
-# docs/operations/agent-sessions.md the hooks that call them.
+# docs/agent-work/quality-hooks.md the hooks that call them.
 # cli/rust-toolchain.toml pins the Rust toolchain, app/ names the same channel,
 # and .agents/install-rust provisions it, so it is not a mise tool.
 
@@ -359,19 +359,8 @@ description = "Check relative links in the agent-facing Markdown, the docs, and 
 run = "node .claude/skills/agent-skill-authoring/scripts/check-links.mjs .claude/agents docs images hosts README.md AGENTS.md CLAUDE.md REVIEW.md"
 
 [tasks."check:docs"]
-description = "Run the living-project-documentation validators over docs/"
-run = '''
-#!/usr/bin/env bash
-# no -e: run every validator and report all failures, not only the first.
-set -uo pipefail
-failed=0
-for check in .claude/skills/living-project-documentation/scripts/check-*.mjs; do
-  echo "::group::$(basename "$check")"
-  node "$check" || failed=1
-  echo "::endgroup::"
-done
-exit "$failed"
-'''
+description = "Validate the checkout documentation or a standalone OKF export"
+run = "python3 .github/scripts/check-docs.py"
 
 [tasks."check:amp"]
 description = "Run the Amp quality-hooks plugin's smoke test with Node's test runner"
