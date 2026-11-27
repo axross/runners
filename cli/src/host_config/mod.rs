@@ -2,7 +2,7 @@
 //! configuration folder, after a migration of `config.json` when only that exists, and
 //! again at each Start all, where a file with problems leaves the configuration the
 //! agent already holds in use. what each load returns is plain data, for the agent to
-//! show; see `docs/operations/cli.md`.
+//! show; see `docs/marshal-cli/toml-configuration.md`.
 //!
 //! the module reads each file only at the start, at Start all and during the
 //! migration, up to 1 MiB and one byte. it writes nothing but a new `config.toml`, and

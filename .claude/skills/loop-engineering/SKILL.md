@@ -20,11 +20,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Phase Progression
 
-Every change advances against current evidence, never a claim inherited from an earlier phase.
-
-The four rules below apply throughout a change and are needed before reference selection: whether this is change work, who owns it, whether checkpoint qualification is current, and what approval authorizes. They stay here under the unconditional-scope carve-out; checkpoint-specific evidence and procedures stay in their references.
-
-Every other phase rule lives in the reference that governs it, including the plan gate and the staleness that follows a changed revision: [plan-document.md](./references/plan-document.md) states both for writing, approving, revising, or comparing a plan.
+The driver advances against current evidence.
 
 **Guidelines:**
 
@@ -33,6 +29,12 @@ Every other phase rule lives in the reference that governs it, including the pla
 - MUST qualify implementation delegation, phase-deliverable review, and implementation pre-flight independently at their own checkpoints under current host conditions; direct implementation and prior role availability or unavailability neither skip nor qualify another checkpoint, and weaken no gate.
 - MUST distinguish plan approval, operation authorization, execution capability, and permitted tool use. Carry forward valid authorization within its original scope, including a verified standing grant a human adopted into project guidance, which is actual authorization; but never infer a grant, or a broader one, from tool availability, project policy that records none, plan approval, or a previous operation.
 
+See [plan-document.md](./references/plan-document.md) for:
+
+- authoring a plan or reviewing its structure, conditional sections, visual choices and required verification
+- binding approval to a plan revision and checking for stale approval when resuming work or proposing an amendment
+- designating out-of-tree checks, their executor, route and evidence destination, or publishing evidence used to settle a planning decision
+
 See [phase-progression.md](./references/phase-progression.md) for:
 
 - anchoring a new change in its tracking target and making its first edit or branch operation, under intake and default gates
@@ -40,14 +42,6 @@ See [phase-progression.md](./references/phase-progression.md) for:
 - choosing available actions when verification fails or review/CI is pending, identifying concrete dependencies and bounded machine waits
 - reevaluating remaining gates after a current machine result, including readiness without a source edit
 - releasing a merged or closed change's recorded branch, working copy, processes, port forwards and installs, on observation rather than by polling
-
-See [plan-document.md](./references/plan-document.md) for:
-
-- writing, approving, revising, or comparing a plan
-- the canonical plan sections and approval target
-- agreeing necessary out-of-tree verification, its executor and route, and its evidence destination during planning
-- where evidence gathered to settle a plan or design choice is published
-- revision identity, amendment approval, and visual choices
 
 See [reviewing-phase-deliverables.md](./references/reviewing-phase-deliverables.md) for:
 
@@ -59,8 +53,8 @@ See [reviewing-phase-deliverables.md](./references/reviewing-phase-deliverables.
 
 See [implementation-package.md](./references/implementation-package.md) for:
 
-- assigning work or accepting an execution or review result through the five prose-compatible contracts
-- repository identity, material fidelity, authorization, and result states
+- defining the approved target, material identity and operation grants for a contribution
+- returning or accepting an execution or review result, including unchecked material, unresolved decisions and recovery state
 
 See [subagent-delegation.md](./references/subagent-delegation.md) for:
 
@@ -90,13 +84,13 @@ See [finding-response.md](./references/finding-response.md) for:
 
 See [pre-flight-review.md](./references/pre-flight-review.md) for:
 
-- running or recovering an advisory pre-flight review
+- the driver entering the advisory pre-flight checkpoint after initial implementation, or recovering a pending assessment
 - advisory review findings, terminal states, deferred human handoffs, dismissal authority, and durable parks
 - the initial implementation plus three autonomous review/fix rounds
 
 See [independent-review.md](./references/independent-review.md) for:
 
-- requesting, addressing, or evaluating an independent review, or publishing the ready transition
+- the driver requesting an independent review, addressing its findings, evaluating the posted result or publishing readiness
 - mandatory external independence, fresh review rounds, and the four-round address cap
 - identifiable posted completion under the project's adopted presentation and reporting scope, without affirmative per-check assertions, distinct from explicit limitations and contributor evidence
 - external fixed, human-dismissed, and outstanding dispositions without rewriting reviewer history
@@ -117,11 +111,12 @@ See [run-state-and-reporting.md](./references/run-state-and-reporting.md) for:
 - writing the evidence-backed ready-to-merge brief, which lists agent-performed checks with their evidence links and leaves only the remainder as human steps, and reporting a spawned role's model and effort as `verified`, `declared`, or `unknown`
 - recording the branches, working copies, processes, port forwards and installs a run creates, by identity a later release can check, and why releasing them needs no separate grant
 
-What follows is the rule itself, not a further reading obligation. It binds every turn this loop takes rather than some narrower situation, so it stands here under the same unconditional-scope carve-out [Phase Progression](#phase-progression) invokes, instead of behind a pointer an agent might not yet have opened. An observation and the action it justifies belong in the same turn. A turn that carries text and calls no tool is not a turn taken while the work continues — the run has not stopped, so reporting first and acting next merely splits one turn's cost across two turns instead of doing the work in the one that already had it.
+A text-only handoff ends the turn. The same-turn action rule applies throughout the run, including after a contribution or machine result arrives.
 
 **Guidelines:**
 
 - MUST act, in the same turn, on any observation that has a next step while the run continues — do not end a turn that reports and calls no tool when there is more to do.
 - MUST treat exactly three cases as exceptions to that rule rather than violations of it: ending the turn at a required human gate, including a machine event escalated to one; recording state before stopping at a waiting bound; and the completion report that closes the run.
 - MUST NOT apply this rule to a progress note posted while an asynchronous machine event is still outstanding — a required check, the independent review, or a delegated actor's run — when no independent next action is available; an outstanding event alone does not establish that condition.
+- MUST apply the project's conduct practices' reporting rule against claiming continued work in a reply that ends the turn. Where that rule is absent, such a reply does not claim the work continues now or will without new input. A turn that ends under an exception or the asynchronous-event carve-out states that ground in plain terms and, except for the completion report, what or whom it awaits and the resumable next action. Sending a report to another actor is not by itself such a ground. [phase-progression.md](./references/phase-progression.md#advance-or-stop) states the full record for a run stop.
 - MUST NOT read this rule as barring reasoning alongside a tool call: it forbids splitting one turn into a text-only turn followed by the turn that acts, not writing prose in the same turn that also calls a tool.

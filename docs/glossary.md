@@ -1,343 +1,126 @@
+---
+type: Definition
+title: Project glossary
+description: Names used by runner operators, Marshal clients and contributors, with routes to the contracts that define their behavior.
+---
+
 # Glossary
 
-The vocabulary this project uses, grouped by the domain that defines it. A
-`specs/` document, once the project has one, pairs with a heading of the same
-name here.
-
-**A general word MUST NOT carry a complex, domain-specific meaning on its own;
-where it would, the name MUST be a compound that bounds the meaning instead** -
-`Runner Host`, not `Machine`; `Runner Image`, not `Image` alone where a container
-image of any other kind could be meant. The one exception is an identifier scoped
-tightly enough that its surroundings already disambiguate it, such as a local
-variable or a private helper.
+A runner executes a GitHub Actions job. A resident agent supervises runners.
+An agent host serves an AI coding session. Use these distinctions when reading
+operator procedures, UI labels or change records. The [naming convention](./conventions/documentation.md#project-names)
+explains how contributors choose new terms.
 
 ## Runners
 
-**Runner** - a GitHub Actions self-hosted runner: the process that takes a
-workflow job from GitHub and executes it.
+### Pools and registration
 
-**Ephemeral Runner** - a runner that takes exactly one job and is then removed,
-so nothing a job leaves behind carries into the next. The opposite is a
-persistent runner, which this project does not use.
+**Runner** — A GitHub Actions self-hosted runner process that takes and executes a workflow job. An **Ephemeral Runner** registers for one job and is then removed. Marshal uses this lifecycle. Persistent volumes have their own lifetime. [Runner registration](./marshal-cli/pool-runtime.md#registration).
 
-**JIT Config** - the just-in-time runner configuration GitHub returns when a
-runner is registered through the API for a repository or an organisation's runner group. It is an encoded
-credential: it is passed to the runner at start, never stored in the repository,
-and is usable once.
+**JIT Config** — The single-use encoded credential GitHub issues when registering a runner for a repository or an organisation’s runner group. Marshal passes it to the new runner at start. It stays out of the repository. [Registration](./marshal-cli/pool-runtime.md#registration).
 
-**Runner Image** - the container image a runner runs in, built from a Dockerfile
-under `images/<name>/`, such as `images/actions-runner/`. It carries the runner
-and the tools jobs need, and declares the **Image Contract Version** it was built
-for.
+**Runner Host** — The machine that builds or stores a runner’s image and starts containers or VMs for its jobs. The **Host Profile** selects platform rules, path forms and labels. The two profiles are `axpc` (Windows with Docker Desktop) and `axmc` (macOS with Tart). [Host profiles](./marshal-cli/json-validation.md#profiles).
 
-**Image Contract Version** - the positive integer a **Runner Image** declares in
-its `com.github.axross.runners.contract` label, naming the run contract it was
-built for: the argument lists, launcher, and labels the **CLI** runs it with, and
-what they need from the image. The **CLI** reads its own from the Dockerfile it
-embeds and runs jobs only in an image that declares the same. See
-[operations/cli.md](./operations/cli.md#the-image-contract).
+**Host Configuration** — The machine-local configuration outside the repository. Its image and pools are validated for the host profile. The agent uses TOML; legacy hosts and migration also have a JSON representation. [TOML and legacy configuration](./marshal-cli/toml-configuration.md).
 
-**Runner Host** - the machine that builds runner images and starts runner
-containers, together with the host configuration under `hosts/<platform>/`. The first
-platform is Windows with Docker Desktop, under `hosts/windows-docker-desktop/`.
+**Execution Pool** — A configured group of **Slots** sharing a registration target, routing labels and a resource namespace. Each **Slot** is one concurrent runner position. When a job ends the slot starts a fresh runner. [Pool resources and slot lifecycle](./marshal-cli/pool-runtime.md#names-and-the-slot-loop).
 
-**Host Configuration** - the machine-local JSON file, kept outside the repository,
-that names a runner host's image and lists its **Execution Pools** for
-**Target Repositories**. The
-**CLI** reads it, checked against a **Host Profile**.
+**Target Repository** — The GitHub repository served by a repository pool. Its pools use the same repository-scoped token. Foreground configurations may name a token file; the resident agent uses the OS credential store. [Token scope](./security/pool-isolation.md#a-token-carries-only-its-pool-kinds-permissions).
 
-**Target Repository** - a GitHub repository a runner host serves. Its
-**Execution Pools** share one repository-scoped token file.
+**Organisation Pool** — An execution pool whose TOML `organization` and `runner_group` select a **Runner Group**. This GitHub group admits repositories to runners. Marshal requires a selected-repositories, non-default, non-inherited group with public access disabled. Its pools use the organisation token and have no persistent volumes. [Runner group trust](./security/pool-isolation.md#organisation-pools-share-a-runner-groups-trust-boundary).
 
-**Execution Pool** - one entry of the **Host Configuration**, with its own
-**Slots**, registration labels, and
-container, runner, and cache-volume namespace.
+**Routing Label** — A `runs-on` label selecting a pool. In JSON, missing or empty host `labels` falls back to the host label; an explicit list replaces it. TOML requires `routing_label`. A **Custom Label** adds a pool-specific choice alongside the runner’s platform labels. [Label selection](./marshal-cli/toml-configuration.md#schema-version-1).
 
-**Organisation Pool** - an **Execution Pool** whose TOML `organization` and
-`runner_group` select one named group in a GitHub organisation instead of one
-repository. Its slots share one organisation token and have no persistent
-volumes.
+**Runner Image** — The container image carrying the runner and job tools, built from a Dockerfile under `images/<name>/`. Its **Image Contract Version** is the positive integer in `com.github.axross.runners.contract`. The CLI compares it with the embedded Dockerfile’s contract before accepting the launcher, arguments and labels. [Image compatibility](./marshal-cli/runner-images.md#the-image-contract).
 
-**Runner Group** - GitHub's admission boundary for organisation-level runners.
-Every repository admitted by one group can send jobs to its runners, so the
-group's repositories form one trust domain. Marshal accepts only a non-default,
-non-inherited group with selected repositories and public access disabled.
+**Shared Volume** — Storage mounted by successive runner containers, such as a package-cache volume. An ephemeral runner can leave data there for a later job. [Shared-storage threat model](./security/pool-isolation.md#shared-runner-storage-is-a-cache-poisoning-surface).
 
-**Routing Label** - the label a workflow uses in `runs-on` to select an
-**Execution Pool**. Missing or empty host `labels` default to the host's own
-label, `axpc` or `axmc`; a non-empty list supplies that pool's routing labels
-instead. In a TOML host configuration the required `routing_label` key supplies
-the default, so no host's label is built in. See
-[operations/cli.md](./operations/cli.md#schema-version-1).
+**Shared Fixtures** — Configuration inputs under `tests/host-configuration/` used by the CLI tests. Their `expectations.json` records the required result for each input. [Configuration fixture contract](./marshal-cli/configuration-fixtures.md#fixtures-and-tests).
 
-**Custom Label** - an optional runner label an entry of the **Host Configuration**
-lists beside `self-hosted`, `linux`, and `x64`. A workflow
-can use a custom label to select that pool for its **Target Repository**.
+### Marshal and the agent
 
-**Slot** - one concurrent runner position on a runner host. A host with two slots
-can run two jobs at once; each slot starts a fresh ephemeral runner when its
-previous one exits.
+**CLI** — The `marshal-cli` library under `cli/`, named for the historic `marshal` command. Its `validate`, `build` and `start` implement validation, image builds and foreground supervision. Current main exposes the library to the app and test helpers. Recovery builds the historical CLI from a fixed tree. [Library entry points](./marshal-cli/entry-points.md).
 
-**Supervisor** - the host-side process that keeps each slot of every **Execution
-Pool** filled: it requests a **JIT Config** with the target repository's token,
-starts a runner container, waits for it to exit, and repeats. It is the
-**Resident Agent**, and in the command-line releases it was the **CLI**'s `start`.
+**Supervisor** — The host process that keeps slots filled by requesting JIT credentials and starting a fresh runner after each job. This is the resident agent in Marshal or the foreground `start` in command-line releases. [Registration and the slot loop](./marshal-cli/pool-runtime.md#names-and-the-slot-loop).
 
-**CLI** - the `marshal-cli` library under `cli/`, named for the `marshal` command
-line it was built as until W1's installer pull request; no command line is built
-now. Its `validate` reads a **Host Configuration**, its `build` builds the
-**Runner Image** from the definition the library embeds, its `start` runs a host's
-pools in the foreground as the **Supervisor**, and its **Resident Agent** does both
-for the **Marshal App**.
+**Resident Agent** — The long-running supervisor controlled over the local channel. It starts and stops runners, builds images and can remain up after a configuration, image or pool failure. It shares the foreground instance’s lock, channel and log directory, so they cannot run together. [Resident agent lifecycle](./marshal-cli/resident-agent.md#the-agent).
 
-**Marshal Release** - a `v<version>` tag on main and the GitHub release that
-carries its files. Since W1's installer pull request they are the Windows app's
-executable, the unsigned per-user MSI that holds it, and `SHA256SUMS`; the releases
-before it carry
-the **CLI**'s two binaries, its MSI and its macOS pkg, and the newest of them is the
-last command-line release. The maintainer starts one by dispatching `release.yaml`,
-and semantic-release picks the version from the commit subjects since the last `v*`
-tag. See
-[operations/development-workflow.md](./operations/development-workflow.md#cutting-a-release).
+**Marshal App** — The desktop client and its executable under `app/`. On Windows the notification-area menu opens the main window. The executable’s `agent` mode runs the resident agent as a separate process that outlives the window. The client uses protocol version 2; the agent owns configuration, credentials and runner operations. [Executable and process roles](./marshal/session.md#the-executable-and-its-modes).
 
-**Marshal Installer** - the per-user Windows MSI of a **Marshal Release**, which is
-not code-signed. It holds the app's `marshal-app.exe` unchanged, with its licence
-notices and a Start menu entry, and an operator opens it to install it. An optional **Check Block**
-checks the download first, and the installer's version is the release's `X.Y.Z`, or
-`0.0.0` for the dry run's. See
-[operations/cli.md](./operations/cli.md#installing-updating-and-rolling-back).
+**Instance State** — The foreground instance’s running, stopping, stopped-with-reason or resuming state, or `building` when a build holds the lock. It determines which requests the instance accepts. [Foreground state and requests](./marshal-cli/foreground-instance.md#instance-state).
 
-**Release Environment** - the GitHub Environment named `release`, which holds the
-macOS signing secrets and the `APPLE_TEAM_ID` variable. It admits `main` only and
-needs the maintainer's approval for each run. No job declares it from W1's installer
-pull request until M2's or W4's signing job returns; it and its secrets are kept for
-that job. The maintainer creates and changes it; agents never do. See
-[operations/cli.md](./operations/cli.md#the-signing-contracts).
+**Runtime Core** — The part of `start` that prepares pools and runs each slot loop until stopped. The instance can restart the core after failure. The **Runtime Seam** separates registration, backoff and stopping from the chosen engine’s readiness, images, execution, cleanup and diagnostic export. [Runtime responsibilities](./marshal-cli/pool-runtime.md#runtime-seam).
 
-**Signing Identifier** - `app.axross.marshal`, the identifier one code object is signed
-under: the **CLI**'s macOS binary in the command-line releases, and the Mac app once
-it ships. The command line's macOS pkg was built with it too. It and the team are
-fixed, so the designated requirement stays the same from release to release, which
-is what the Keychain trust of later work matches. See
-[operations/cli.md](./operations/cli.md#the-signing-contracts).
+**Token Store** — The resident agent’s credential store. Keys are lower-case `owner/name` for a repository and the lower-case login for an organisation. Windows uses locally persistent Credential Manager entries; macOS uses the login keychain. On Linux the agent skips pools because there is no store. [Host token store](./marshal-cli/token-store.md#the-token-store).
 
-**Check Block** - the optional block in the **CLI** document that checks a
-downloaded **Marshal Installer** against `SHA256SUMS`, the tag's commit on main, the
-attestation, and the app inside it against its `SHA256SUMS` line, and installs
-nothing. It ends with `refused:` and its cause when a check fails.
+**Protocol Version 2** — The agent’s line-based JSON protocol. The first line must be `hello` before any request is accepted. It defines request/response messages, subscribed `state` and `github` topics, heartbeats and `ending`. Version 1 requests cannot bypass the handshake. [Protocol messages](./marshal-cli/agent-protocol.md#protocol-version-2).
 
-**Placeholder Version** - `0.0.0-dev`, the version the **CLI**'s and the app's
-`Cargo.toml` and `Cargo.lock` hold on main. A release build writes the release version over it in
-the runner only, so the version is never committed. See
-[operations/cli.md](./operations/cli.md#releases).
+**Snapshot** — The local state returned by `status` and the `state` topic. It includes state and reason, pools, runners, images and stop residue, without credentials. Its serialized size fits the 64 KiB message budget including its envelope. [Snapshot fields and truncation](./marshal-cli/agent-protocol.md#the-snapshot).
 
-**Instance State** - where the one running `start` on a machine stands: running,
-stopping, stopped with a reason, or resuming; or `building`, while a `build` holds
-the instance lock instead. `status` reports it, and it decides which requests the
-instance accepts. See
-[operations/cli.md](./operations/cli.md#instance-state).
+**GitHub State** — The remote runner list’s offline, idle, busy or unlisted state, with the busy job when known. It is distinct from the Snapshot. The agent polls only for eligible registrations while a client subscribes to `github`. [Remote polling](./marshal-cli/github-status.md#github-status).
 
-**Runtime Core** - the part of `start` that prepares the **Execution Pools** and
-runs every **Slot**'s loop until a stop. The instance restarts it after a failure;
-see [operations/cli.md](./operations/cli.md#the-instance-layer).
+**Request Budget** — Remaining hourly GitHub requests, read from `x-ratelimit-*` headers on status reads. Polling slows at or below 25% remaining and pauses at or below 10% or when GitHub reports that the limit has been reached. Registration consumes the same budget without supplying these observations. [Polling limits](./marshal-cli/github-status.md#github-status).
 
-**Resident Agent** - the **CLI**'s long-running form, started stopped or running
-and told what to do over its channel: it stops and starts all runners, builds the
-**Runner Image**, quits, and stays up when its configuration, image or pools fail.
-It takes the instance's lock, channel and log directory, so it and `start` never
-run on one machine together. The **Marshal App**'s executable runs it in its agent
-mode. Not to be confused with an **Agent Host**. See
-[operations/cli.md](./operations/cli.md#the-agent).
+**Diagnostic Container** — A container whose collector is enabled, with the `runners.diagnostic-lifecycle=1` label and without `--rm`. It retains its original settings after a job until the supervisor exports evidence to the pool’s private sink and removes it. [Diagnostic finalization](./marshal-cli/diagnostics.md#diagnostics).
 
-**Marshal App** - the Windows notification-area app under `app/`: one executable that
-shows the icon, its menu and the main window and, started again with `agent` as its
-first argument, runs the **Resident Agent** in a separate hidden process that outlives
-it. The app is a client of **Protocol Version 2** only; it never holds the lock, reads
-the configuration, touches the **Token Store** or runs Docker. A release ships it with
-its per-user MSI. See [operations/app.md](./operations/app.md).
+### Virtual machines on axmc
 
-**Token Store** - where the **Resident Agent** keeps each **Target Repository**'s
-token, by the repository's lower-case `owner/name`, and an organization's by its
-lower-case login: the Windows Credential Manager
-on Windows, with local persistence, and none yet elsewhere, where every pool is
-skipped. See [operations/cli.md](./operations/cli.md#the-token-store).
+**Golden VM** — The Tart Ubuntu template built by `build --profile axmc` for Linux job VMs. It contains Docker Engine, the launcher and the runner image. Its name identifies the golden VM version, image contract, runner version and build time without booting it; only `build` deletes it. [Linux VM contract](./runner-hosts/linux-vm.md#the-golden-vm-contract).
 
-**Protocol Version 2** - the line-based JSON messages the **Resident Agent**
-serves on the instance's channel: `hello`, requests and responses, subscribed
-`state` and `github` topics with events, heartbeats and `ending`. A first line that is not a
-`hello` is refused, so version 1's requests never reach the agent. See
-[operations/cli.md](./operations/cli.md#protocol-version-2).
+**Golden macOS VM** — The template built for a configured macOS pool from the digest-pinned Cirrus Labs base. It contains the runner and launcher directly and names them with `marshal-golden-macos-g<golden VM version>-r<runner version>-<time>`. [Golden macOS build](./marshal-cli/macos-pools.md#the-golden-macos-vm-build).
 
-**Snapshot** - the value of the **Resident Agent**'s `state` topic and of its
-`status` method: its state and reason, its pools and runners, its images and what a
-stop left behind, from local state, cut to 64 KiB. It never holds a token. See
-[operations/cli.md](./operations/cli.md#the-snapshot).
+**Job VM** — A per-job clone named `marshal-job-<pool>-<slot>-<time>`. A slot boots it to wait for work. It uses Softnet, has no shared folder, clipboard, audio, USB accessories or Rosetta and is deleted after its job. Linux and macOS pools select different golden VMs. [Per-job isolation](./security/vm-isolation.md).
 
-**GitHub State** - what GitHub's runner list says of one runner of this host:
-offline, idle or busy, with the job a busy runner runs once it is known, or not
-listed. It is separate from the runner's local state in the **Snapshot**; the
-**Resident Agent** reads it only while a client holds the `github` topic, and only
-for a **Target Repository** with a registered runner. See
-[operations/cli.md](./operations/cli.md#github-status).
+**Build VM** — The temporary `marshal-build-linux-<time>` or `marshal-build-macos-<time>` used to make a new golden VM. The rename commits the new golden VM. After an interrupted build, cleanup can fall to the shim or the next build, and the outcome of an interrupted rename can be unknown. [Interrupted builds and cleanup](./marshal-cli/build-images.md#stop-and-failure).
 
-**Request Budget** - the hourly count of GitHub API requests left to the token's
-account, as the `x-ratelimit-*` headers of the **Resident Agent**'s GitHub status
-reads report it, with the level it sets: normal, slowed at 25% left, and paused at
-10% until the reset. Registrations use the same budget but their responses are
-not read for it. See
-[operations/cli.md](./operations/cli.md#github-status).
+**macOS VM Limit** — The two concurrent macOS VMs allowed on a Mac by Apple’s licence. Marshal counts a macOS build VM in any state, including when it is stopped. Linux build VMs are excluded. A macOS slot checks the count before cloning and waits when both places are occupied. [Capacity and waiting](./marshal-cli/macos-pools.md#the-two-vm-count).
 
-**Diagnostic Container** - a job container of an **Execution Pool** with
-`diagnostics` on. It runs the runner under the image's collector, carries the
-`runners.diagnostic-lifecycle=1` label, and has no `--rm`, so it stays after its job.
-The **Supervisor** finalises it: it exports the collector's evidence into a bundle
-in the pool's private sink, then removes it. Until then it is retained with the
-settings it ran with. See
-[operations/cli.md](./operations/cli.md#diagnostics).
+**VM-Local Docker Socket** — The `/var/run/docker.sock` of the Docker Engine inside a Linux Job VM. From Image Contract Version 2 the runner container may use that VM’s socket. The VM serves one job and is then deleted; axpc mounts no host socket. [Docker socket boundary](./security/vm-isolation.md#the-vm-local-docker-socket).
 
-**Runtime Seam** - the boundary in the **CLI** between the **Runtime Core** and
-whatever a job runs in. The core keeps the configuration, registration, backoff and
-the stop sequence; the runtime behind the seam waits for its engine, checks its
-image, prepares and releases a job's host, runs the job, and exports diagnostics. A
-pool's operating system, on the **Host Profile**'s host, selects the runtime: a
-Docker Desktop container on axpc, a **Job VM** for a pool on axmc. See
-[operations/cli.md](./operations/cli.md#runtime-seam).
+**Softnet** — Tart’s network filter. Job VMs can reach globally routable IPv4 destinations and their gateway for DNS only. Marshal also blocks multicast. Marshal checks Softnet’s SUID bit before every boot; the operator sets it. [Softnet setup](./runner-hosts/mac-setup.md#setting-up-softnet).
 
-**Golden VM** - the Tart Ubuntu VM that `build --profile axmc` makes on the macOS
-host and every Linux **Job VM** is cloned from. It holds Docker Engine, the launcher and
-the **Runner Image**, and its name records its golden VM version, the **Image
-Contract Version**, the runner version and the build time, so they are read without
-booting it. Only `build` deletes it. See
-[operations/macos-runner-host.md](./operations/macos-runner-host.md#the-golden-vm-contract).
+**Primary Network** — On macOS, the interface holding the IPv4 default route, its router and the router’s hardware address. The instance records this when it starts running. Two consecutive readings that differ from the recorded network stop every runner. User-facing state names interfaces without disclosing network names or addresses. [Network-change stop conditions](./runner-hosts/mac-resume.md#what-stops-every-runner).
 
-**Job VM** - the VM that runs one job of an axmc **Execution Pool**: a clone of the
-**Golden VM** for a Linux pool, or of the **Golden macOS VM** for a macOS one, named `marshal-job-<pool>-<slot>-<time>`, booted on
-**Softnet** with no shared directory, clipboard, audio, USB accessories or Rosetta,
-and deleted when its job ends. A **Slot**'s Job VM is booted and idle while its
-runner waits for a job. See [conventions/security.md](./conventions/security.md#a-linux-job-on-axmc-runs-in-a-per-job-vm).
+### Release names
 
-**Golden macOS VM** - the Tart macOS VM that `build --profile axmc` makes from the
-digest-pinned Cirrus Labs base when a macOS pool is configured, and every macOS
-**Job VM** is cloned from. It holds the runner and the launcher, with no container,
-and its name, `marshal-golden-macos-g<golden VM version>-r<runner version>-<time>`,
-records what it holds. See
-[operations/cli.md](./operations/cli.md#the-golden-macos-vm-build).
+**Marshal Release** — A `v<version>` tag on main and its GitHub release. The maintainer dispatches `release.yaml`; semantic-release chooses the version from commit subjects since the previous `v*` tag. The active recovery route publishes the historical CLI binaries, MSI, macOS pkg and checksums. The retained app release set has its own restoration conditions. [Active and suspended release sets](./security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
 
-**macOS VM Limit** - the two macOS VMs that Apple's licence allows at once on the
-Mac. A macOS **Slot** counts the macOS VMs before it clones one and waits while two
-count; Linux VMs do not count. See
-[operations/cli.md](./operations/cli.md#the-two-vm-count).
+**Marshal Installer** — In the app installation procedure, the unsigned, per-user Windows MSI containing `marshal-app.exe`, its licence notices and a Start menu entry. Its version is the release’s `X.Y.Z` or `0.0.0` for a dry run. The historical CLI MSI belongs to the recovery procedure. [App installer](./marshal-cli/install-on-windows.md#installing).
 
-**VM-Local Docker Socket** - the Docker socket, `/var/run/docker.sock`, of the Docker
-Engine inside a **Job VM**, which the VM runtime mounts into that VM's runner
-container from **Image Contract Version** 2, so a job step can run `docker`. It
-belongs to a VM that one job uses and that is deleted afterwards, never to a host,
-and the Docker runtime on axpc mounts no socket. See
-[conventions/security.md](./conventions/security.md#the-vm-local-docker-socket).
+**Check Block** — An optional download-verification block. The app MSI check verifies checksums, the tag commit on main, attestation and the app inside the MSI without installing anything. A failure reports `refused:` and its cause. Use the recovery instructions for a CLI artifact. [App download checks](./marshal-cli/install-on-windows.md#checking-the-download).
 
-**Build VM** - the temporary VM, named `marshal-build-linux-<time>` or
-`marshal-build-macos-<time>`, in which `build --profile axmc` makes a new
-**Golden VM** or **Golden macOS VM**. A macOS one counts toward the **macOS VM
-Limit** while it exists. It is renamed to the golden name
-only when complete, and a failed or interrupted build deletes it, so the previous
-Golden VM stays in place.
+**Release Environment** — The GitHub Environment `release`, which holds macOS signing secrets and `APPLE_TEAM_ID`. It admits main and requires the maintainer’s approval for each run. In active recovery only `sign-macos` declares it. The maintainer controls its settings. [Signing authority](./security/release-authority.md#temporary-cli-recovery).
 
-**Softnet** - the program Tart runs to filter a VM's network. It lets a **Job VM**
-send only to globally routable IPv4 addresses and to its gateway, and `marshal`
-passes it rules that leave the gateway only DNS and block all multicast. Its
-privilege is a SUID bit on its binary, which `marshal` checks before every boot and
-never sets. See
-[operations/macos-runner-host.md](./operations/macos-runner-host.md#setting-up-softnet).
+**Signing Identifier** — The identifier `app.axross.marshal` used for the macOS code object and historical pkg. The fixed identifier and team give the designated requirement continuity across releases, including the trust decision used for keychain items. [Signing contracts](./marshal-cli/signing.md#the-signing-contracts).
 
-**Primary Network** - on the macOS host, the interface that holds the IPv4 default
-route, that route's router, and the router's hardware address. The instance records
-it when it starts running and stops every runner when it differs on two checks in a
-row. It is IPv4 only, because **Softnet** carries only IPv4, and it names
-interfaces, never network names or addresses.
-
-**Host Profile** - the host a **Host Configuration** is checked for: `axpc`, the
-Windows machine with Docker Desktop, or `axmc`, the macOS machine. A profile fixes
-the fields, the platform labels, the **Routing Label**, and the path form. See
-[operations/cli.md](./operations/cli.md).
-
-**Shared Fixtures** - the configuration files under `tests/host-configuration/`
-that the **CLI**'s tests read, with one `expectations.json` recording what each
-must give.
-
-**Shared Volume** - storage, such as a named Docker volume for a package cache,
-mounted into more than one runner container over time. It is the surface the
-cache-poisoning threat model in [conventions/security.md](./conventions/security.md)
-covers.
+**Placeholder Version** — The `0.0.0-dev` in the CLI and app manifests and lockfiles on main. The release build writes the version into its runner checkout; the stamp is not committed. [Release versioning](./marshal-cli/release-artifacts.md#releases).
 
 ## Agent Hosts
 
-**Agent Host** - a long-running environment where an AI coding agent is reachable
-from outside, configured under the planned `agent-hosts/{claude-code,amp}/`. The
-first planned environment is WSL 2. Not to be confused with the authoring host
-below.
-
-**Remote Control** - Claude Code's `claude remote-control` mode, which lets a
-session running on an agent host be driven from another device.
-
-**Amp Runner** - an Amp process started with `amp --no-tui --runner-id`, which
-waits for work on an agent host rather than showing an interface.
+**Agent Host** — A planned long-running environment for reaching an AI coding agent from another device. Its proposed WSL 2 configurations are `agent-hosts/{claude-code,amp}/`. **Remote Control** is Claude Code’s `claude remote-control` mode. An **Amp Runner** waits for work using `amp --no-tui --runner-id`. The **Authoring Host** in a change record identifies the product used to write the change. [Repository layout and planned paths](./conventions/directory-structure.md#the-layout).
 
 ## Change Loop
 
-**Authoring Host** - the agent product a change is written with, Claude Code,
-Codex, or Amp, or "manual" when no agent is involved. It determines the
-independent-review provider and is recorded with that provider so a run can be
-resumed.
+**Authoring Host** — Claude Code, Codex, Amp or “manual” when no agent is involved. It selects the independent-review provider and is recorded with that provider so another session can resume the run. [Selecting review](./agent-work/independent-review.md#the-independent-review).
 
-**Standing Delivery Grant** - the maintainer's authorization, adopted in
-[operations/development-workflow.md](./operations/development-workflow.md), for a
-named set of delivery effects that every run holds without asking.
+**Standing Delivery Grant** — The maintainer’s adopted authorization for a named set of delivery effects. Every run holds it within its specified targets, conditions and exclusions. [Grant scope and adoption](./agent-work/delivery-grant.md#authorizing-delivery-operations).
 
-**Tracking Issue** - the GitHub issue whose body holds a change's plan. The plan
-gate is the maintainer's approval of that plan.
+**Tracking Issue** — The GitHub issue whose body holds the change plan. The plan gate is the maintainer’s approval of that plan. [Change loop](./agent-work/change-delivery.md#the-change-loop).
 
-**Plan-Gate Delivery Confirmation** - the answer a Claude Code run collects
-with every plan-approval question: delivery of the run's draft pull request, the
-Claude CI review request on it each round, and watching its activity. See
-[operations/agent-sessions.md](./operations/agent-sessions.md).
+**Plan-Gate Delivery Confirmation** — The answer a Claude Code session collects with each plan-approval question about delivering the draft pull request, requesting Claude CI review each round and watching the pull request for activity. [Claude Code delivery confirmation](./agent-work/host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code).
 
-**Amp Review Child Thread** - a fresh Amp thread an Amp run starts for one
-independent-review round; it posts its own review on the pull request and is
-archived afterwards when the plan-gate archive confirmation allows it. See
-[operations/development-workflow.md](./operations/development-workflow.md).
+**Amp Review Child Thread** — A fresh Amp thread for one independent review round. It posts directly on the pull request. Archiving depends on the plan-gate archive confirmation. [Amp review](./agent-work/amp-review.md#amp-review-child-thread-from-amp).
 
-**Claude CI Review** - the review a Claude Code run requests for each
-independent-review round with the Claude review trigger phrase in one top-level
-pull request comment. The `claude-review.yaml` workflow runs it on a GitHub-hosted
-runner and posts the result as `claude[bot]`. See
-[operations/development-workflow.md](./operations/development-workflow.md).
+**Claude CI Review** — The independent review a Claude Code run requests each round by posting the Claude review trigger phrase in one top-level pull request comment. The `claude-review.yaml` workflow runs on a GitHub-hosted runner and posts the result as `claude[bot]`. [Requesting Claude CI review](./agent-work/claude-ci-review.md#claude-ci-review-from-claude-code).
 
-**Plan-Gate Archive Confirmation** - the human's answer, collected at the plan
-gate, or before archiving in a run without one or in a resumed session, on
-whether an Amp run archives its review child threads. See
-[operations/agent-sessions.md](./operations/agent-sessions.md).
+**Plan-Gate Archive Confirmation** — The human’s answer on whether an Amp run archives its review child threads. Collect it at the plan gate or before archiving when the run lacks a confirmation, including on resume. [Amp archive confirmation](./agent-work/host-permissions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 
-**Run State** - the recoverable record of a change loop's progress, which a
-fresh session reads to resume the run. See
-[operations/development-workflow.md](./operations/development-workflow.md).
+**Run State** — The recoverable record that lets a fresh session resume a change loop at its pending phase. [Resume checkpoints](./agent-work/run-state.md#retrieve-state-on-resume).
 
-**Review Coverage Evidence** - the facts a run keeps separate when it assesses
-an independent review: which policy was available, what input the reviewer is
-known to have consumed, what it reported, and what it published. See
-[operations/development-workflow.md](./operations/development-workflow.md).
+**Review Coverage Evidence** — The distinct facts a run can establish about the policy available, input consumed by the independent reviewer, findings reported and result published. [Coverage and limits](./agent-work/independent-review.md#review-coverage-evidence).
 
-**Branch Naming Rule** - the rule that names a working branch after the issue
-that is the source of the change, or marks the change as having none, so a
-branch name identifies where the change came from rather than which agent host
-wrote it. See
-[operations/development-workflow.md](./operations/development-workflow.md).
+**Branch Naming Rule** — A working branch identifies the issue that sourced the change or marks that it has none. The name identifies the origin of the change independently of the authoring host. [Branch convention](./agent-work/branches.md#branches-and-merging).
 
-**Agent Marker** - the `<!-- ai-agent -->` comment that marks an issue or comment
-as written by an agent. `<!-- agent -->` is a retired marker, recognized in
-history and never written.
+**Agent Marker** — The `<!-- ai-agent -->` comment marking an issue or comment written by an agent. The retired marker `<!-- agent -->` identifies historical material only. [Agent working agreement](../AGENTS.md).
 
-**Installed Skill** - a directory under `.claude/skills/` copied from
-`axross/skills` and listed in `skills-lock.json`, which records the installed set
-and content hashes but no revision. A refresh takes the latest upstream, and
-nothing updates skills automatically. It is generated and never edited by hand;
-see [operations/agent-skills.md](./operations/agent-skills.md).
+**Installed Skill** — A directory copied from `axross/skills` into `.claude/skills/`. The `skills-lock.json` lockfile records each installed skill’s source commit and content hash. The refresh command takes the latest upstream when run. Updates are manual, and installed copies are never hand-edited. [Skill installation](./agent-work/skill-installation.md#install-and-refresh).

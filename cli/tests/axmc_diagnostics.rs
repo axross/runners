@@ -7,7 +7,7 @@
 //! finalising a retained VM as it does a container; and a diagnostic VM deleted without
 //! an export at a forced stop, at a crash through the shim and at the next `start`, with
 //! the lost evidence reported in today's gap wording and exit-code rules (the paragraph
-//! "Evidence a VM loses" in the Tart Backend section of docs/operations/cli.md).
+//! "Evidence a VM loses" in the Tart Backend section of docs/marshal-cli/tart-backend.md).
 #![cfg(unix)]
 #![allow(
     clippy::unwrap_used,

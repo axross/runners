@@ -1,6 +1,6 @@
 //! the strict archive subset a diagnostic copy is read through; only fixed file
 //! names are accepted, so nothing is extracted by a path the job chose; see
-//! `docs/operations/cli.md`.
+//! `docs/marshal-cli/diagnostics.md`.
 
 use std::future::Future;
 use std::io;

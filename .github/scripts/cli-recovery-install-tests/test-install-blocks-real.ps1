@@ -8,7 +8,7 @@
     Windows PowerShell 5.1, on the recovery dry run's artifact. only gh is
     stubbed: it serves the artifact's real SHA256SUMS, a tag on main, and a passing
     attestation. the check, migration, and uninstall blocks come from
-    docs/operations/cli-recovery.md and run with the real msiexec, the real Windows
+    docs/runner-recovery/install.md and run with the real msiexec, the real Windows
     Installer COM object, and the real registry. the one manual install is a
     stand-in marshal.exe that differs from the installer's binary. outcomes the
     CLI document states are printed on lines that start with MEASURED. a failed
@@ -18,7 +18,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
     [Parameter(Mandatory = $true)][string]$Version,
     [Parameter(Mandatory = $true)][string]$LogDirectory,
-    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli-recovery.md')
+    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/runner-recovery/install.md')
 )
 
 $ErrorActionPreference = 'Stop'

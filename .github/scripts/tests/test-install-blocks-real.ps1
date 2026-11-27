@@ -7,7 +7,7 @@
     runs in the Install Blocks job of merge-checks.yaml, under Windows PowerShell
     5.1, on the release-build dry run's artifact. only gh is stubbed: it serves
     the artifact's real SHA256SUMS, a tag on main, and a passing attestation. the
-    check and uninstall blocks come from docs/operations/cli.md and run with the
+    check and uninstall blocks come from docs/marshal-cli/install-on-windows.md and run with the
     real msiexec, the real Windows Installer COM object, and the real registry.
     the installed app is never started. a failed check throws.
 #>
@@ -15,7 +15,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
     [Parameter(Mandatory = $true)][string]$Version,
     [Parameter(Mandatory = $true)][string]$LogDirectory,
-    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli.md')
+    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/marshal-cli/install-on-windows.md')
 )
 
 $ErrorActionPreference = 'Stop'

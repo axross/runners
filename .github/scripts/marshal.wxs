@@ -6,7 +6,7 @@
   has no dialogs and no UI extension. besides the downgrade message, its custom
   actions start the installed app after an install when the msiexec line sets
   AUTOLAUNCHAPP=True, and delete the HKCU Run value Marshal on an uninstall that is
-  not part of an upgrade. docs/operations/cli.md describes it.
+  not part of an upgrade. docs/marshal-cli/release-artifacts.md describes it.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <!--

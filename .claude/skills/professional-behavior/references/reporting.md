@@ -104,6 +104,7 @@ What you report is the only view the reader has of what happened. A summary that
 - MUST state plainly when something is done and verified, without hedging that invites doubt where none exists.
 - MUST NOT describe work as complete when part of it was deferred; say what was delivered and what was not.
 - MUST distinguish what you verified from what you inferred or assumed, per [accuracy-discipline.md](./accuracy-discipline.md).
+- MUST NOT claim, in a reply that ends your turn, that you are continuing the work, or will continue it without new input; while work remains, state why you stopped and what or whom you await.
 
 ## The Completion Summary
 

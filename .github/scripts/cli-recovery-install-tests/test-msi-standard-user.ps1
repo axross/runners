@@ -6,7 +6,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDirectory,
     [Parameter(Mandatory = $true)][string]$Version,
-    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli-recovery.md')
+    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/runner-recovery/install.md')
 )
 
 $ErrorActionPreference = 'Stop'

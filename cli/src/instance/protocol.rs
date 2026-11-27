@@ -1,4 +1,4 @@
-//! the text protocol of the control channel, as `docs/operations/cli.md` describes;
+//! the text protocol of the control channel, as `docs/marshal-cli/foreground-instance.md` describes;
 //! a response carries states, reasons, and names, never a token or a JIT
 //! configuration, and no request carries a path for the instance to read: a resume
 //! names the path only so the instance can compare it with its own.
