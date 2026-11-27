@@ -2074,8 +2074,8 @@ Two properties keep the admission bounded, and a third does not hold:
   damage, and is a maintainer decision made outside this repository.
 
 The cost is a silent-skip failure mode. The gate trusts a login string; if that
-login changes, the gate silently reverts to skipping the Claude CI review's
-requests from every Claude Code pull request, with no failed run and no comment. The trigger-phrase rule carries the
+login changes, the gate silently reverts to skipping Claude CI review requests
+posted as `claude[bot]`, with no failed run and no comment. The trigger-phrase rule carries the
 opposite risk: if the reviewer quotes the phrase, a review starts that nobody
 asked for. Neither is mechanically detected; both are found only by noticing that
 reviews stopped arriving, or arrived when they should not have. Admitting the
