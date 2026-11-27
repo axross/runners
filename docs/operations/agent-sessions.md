@@ -567,11 +567,10 @@ notification. The subscription is the Remote `subscribe_pr_activity` tool, and
 `unsubscribe_pr_activity` ends it. Under the tools' live contracts, a subscribed
 pull request's comments, reviews, and check results reach the conversation as
 events, to one session at a time; a subscribe result that says another session
-already watches the pull request means this session receives none. On
-2026-11-26 (PST), the first Claude CI round on
-[#178](https://github.com/axross/runners/pull/178) delivered the review's inline
-findings and its tally comment this way; delivery of successful-check
-transitions has not been observed here.
+already watches the pull request means this session receives none. In this
+repository, Claude CI rounds have delivered their inline findings and tally
+comment this way, and a notice that the head's check suites completed without a
+failure has arrived as an event.
 
 Use the current pull request head when reading check results. A connector read
 can return only a first page of workflow runs, so it cannot establish complete
