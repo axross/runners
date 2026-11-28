@@ -93,7 +93,7 @@ web view.
   agent starts the runners as `start_runners_on_launch` says; an agent that does not
   list `launch` is sent `start_all`. A fresh launch that reaches an agent already
   running sends nothing. The window starts hidden and is shown unless the app was
-  started with `--sign-in`. The restart after a dropped connection starts the agent
+  started with `--sign-in` or, on the Mac, from its login item. The restart after a dropped connection starts the agent
   stopped when the last state the app heard was stopped by you, by a sleep, by a
   network change or by too many resumes, and running otherwise. It never starts
   an agent from a file that is missing, that it could not read when it started, or
@@ -123,6 +123,19 @@ web view.
   setting; a failed unregistration shows as "Could not be removed (code N)" with its
   note and button, as does an item macOS still holds when the setting is off. This is unverified on axmc until M4's Mac run. Before removing Marshal,
   turn the setting off, or remove Marshal in Login Items.
+- **A login launch on the Mac shows only the icon.** The login item passes no argument,
+  so the app tells the launch by the open-application Apple Event (`'aevt'`/`'oapp'`)
+  macOS sends at launch: when its `keyAEPropData` (`'prdt'`) parameter holds the enum
+  code `keyAELaunchedAsLogInItem` (`'lgit'`), the app starts as `--sign-in` does, with
+  its icon in the menu bar and no window or Dock icon. The pure decision is
+  `LaunchEvent::is_login_launch` in the `marshal-modes` crate, and `start` reads the
+  event first, before anything that can run the event loop. When macOS gives no mark,
+  or another one, the launch opens the window like any launch. The log records one
+  line at each Mac launch with the event's class and ID, whether it is an
+  open-application event, and its mark, and a login launch logs "Marshal started at
+  login, with its icon only." That macOS marks a login item's launch this way is
+  unverified until the maintainer's run on a real Mac at the overhaul's final
+  verification, which reads the line in the app's log.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.

@@ -104,6 +104,13 @@ where it keeps a login item. Windows is unchanged.
   copy outside Applications shows no line.
   [Login item on the Mac](./session.md#the-agent-and-the-apps-session) says when the
   app registers and unregisters the item.
+- **A login launch shows only the menu bar icon.** The setting's description says
+  "Marshal opens with only its icon in the menu bar." and the app keeps it: the launch
+  is recognised by the open-application Apple Event's login-item mark, and the window
+  does not open. When macOS gives no mark, the launch opens the window like any launch.
+  The mark is confirmed on a real Mac at the overhaul's final verification; until
+  then the behaviour is unverified, and
+  [the session](./session.md#the-agent-and-the-apps-session) says how the app reads it.
 - **Increase Contrast** (`prefers-contrast: more`, under `data-platform="macos"`)
   gives tabs and buttons a text-colour border, dividers and lists the text colour, and
   the selected tab a 2 px accent-text border.

@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch};
 use marshal_cli::instance::roots::Roots;
+#[cfg(target_os = "macos")]
+use marshal_modes::{LaunchEvent, describe_launch_event};
 use marshal_modes::{Overrides, is_sign_in};
 use marshal_session::{
     AppLog, Ended, Library, Log, LoginItem, MAX_FILE_BYTES, MOVED_FILE, MovedFile, OwnExecutable,
@@ -167,6 +169,11 @@ fn login_item(
 /// connects the session to the agent and shows it on the icon and in the window; the
 /// app ends when the session does.
 fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    // macOS has the open-application event current only while it delivers it, which is
+    // while Tauri runs this setup, so nothing may come before this read that could run the
+    // event loop
+    #[cfg(target_os = "macos")]
+    let launch_event = crate::login_item::launch_event();
     let roots = Roots::resolve(Overrides::from_environment().root.as_deref())?;
     let log: Arc<dyn Log> = match AppLog::open(roots.log_directory(), MAX_FILE_BYTES) {
         Ok(opened) => Arc::new(opened),
@@ -243,9 +250,20 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         session
     };
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
-    // the window starts hidden, and a start from the sign-in item leaves it so
-    if is_sign_in(std::env::args_os()) {
-        log.info("Marshal started at sign-in, with its icon only.");
+    // the window starts hidden, and a start from the sign-in item or the login item leaves
+    // it so
+    let at_login = is_sign_in(std::env::args_os());
+    #[cfg(target_os = "macos")]
+    let at_login = {
+        log.info(&describe_launch_event(launch_event));
+        at_login || launch_event.is_some_and(LaunchEvent::is_login_launch)
+    };
+    if at_login {
+        log.info(if cfg!(target_os = "macos") {
+            "Marshal started at login, with its icon only."
+        } else {
+            "Marshal started at sign-in, with its icon only."
+        });
         tell_session_shown(app);
         in_dock(app, false);
     } else {
