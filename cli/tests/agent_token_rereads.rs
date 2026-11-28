@@ -289,9 +289,9 @@ runners = 1
             pool(&snapshot, "org-b").reason.as_deref(),
             Some("pool[2]: no token.")
         );
-        // two presence reads and two admission reads, and only the first presence read
-        // is followed by re-reads
-        assert_eq!(rig.store.reads_of(&organization), 6);
+        // one presence read with its two re-reads, since the check reads a shared key once,
+        // then one admission read for each of the two pools
+        assert_eq!(rig.store.reads_of(&organization), 5);
         rig.mark_running();
         conn.ok("quit").await;
     })
@@ -320,6 +320,41 @@ async fn a_store_error_is_reported_as_before_and_is_not_read_again() {
         // one presence read and one admission read each
         assert_eq!(rig.store.reads_of(&key("r")), 2);
         assert_eq!(rig.store.reads_of(&key("d")), 2);
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+/// a registration reads the token once: a miss fails that attempt, which backs off and
+/// reads again on its next one, as before the re-reads were added.
+#[tokio::test(flavor = "current_thread")]
+async fn a_registration_whose_read_misses_is_not_read_again_and_backs_off() {
+    let rig = Rig::new(TWO_POOLS);
+    rig.store_token("o", "r", TOKEN);
+    rig.store_token("o", "d", OTHER_TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until("both pools running", |snapshot| snapshot.runners_up == 2)
+            .await;
+        let before = rig.store.reads_of(&key("r"));
+        rig.store.script_reads(&key("r"), &[MISS]);
+        rig.end_jobs().await;
+        // a registration that re-read would find the token and never back off
+        conn.eventually("the registration backing off", || {
+            rig.log
+                .lines()
+                .iter()
+                .any(|line| line.contains("failed to request a JIT registration (no token)"))
+        })
+        .await;
+        // the next attempt reads again and finds it, so the pool runs again
+        conn.eventually("the next attempt reading the token", || {
+            rig.store.reads_of(&key("r")) >= before + 2
+        })
+        .await;
+        assert_eq!(rig.store.reads_of(&key("r")), before + 2);
+        rig.mark_running();
         conn.ok("quit").await;
     })
     .await;

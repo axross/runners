@@ -31,10 +31,10 @@ pub const STORE_FAILED: &str = "the token store failed";
 pub const STORED_UNREADABLE: &str = "the token is stored but could not be read";
 
 /// how often a read that may only have missed is repeated before it is believed.
-pub const REREADS: u32 = 2;
+pub(crate) const REREADS: u32 = 2;
 
 /// how long the agent waits before each such re-read.
-pub const REREAD_PAUSE: Duration = Duration::from_millis(100);
+pub(crate) const REREAD_PAUSE: Duration = Duration::from_millis(100);
 
 /// what this process has learned about a token. A key with no entry is unread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +63,8 @@ pub struct StoreTokens {
     learned: RefCell<BTreeMap<TokenKey, Learned>>,
     /// how long to wait before each re-read; zero in the tests.
     reread_pause: Duration,
+    /// waits for the pause; the unit tests record it instead.
+    wait: Box<dyn Fn(Duration)>,
     changed: watch::Sender<u64>,
 }
 
@@ -74,6 +76,7 @@ impl StoreTokens {
             known: RefCell::new(BTreeMap::new()),
             learned: RefCell::new(BTreeMap::new()),
             reread_pause,
+            wait: Box::new(std::thread::sleep),
             changed: watch::Sender::new(0),
         }
     }
@@ -97,16 +100,17 @@ impl StoreTokens {
         let mut known = self.known.borrow_mut();
         known.clear();
         for key in keys {
-            let present = self.store.as_ref().is_some_and(|store| {
-                match self.read_settled(store.as_ref(), key, log) {
+            let present = match self.store.as_ref() {
+                None => false,
+                Some(store) => match self.read_settled(store.as_ref(), key, log) {
                     Settled::Found(_) => true,
                     Settled::StoredButMissing => {
                         log.warn(&format!("{key}: {STORED_UNREADABLE}."));
                         true
                     }
                     Settled::Missing | Settled::Failed(_) => false,
-                }
-            });
+                },
+            };
             known.insert(key.clone(), present);
         }
     }
@@ -176,7 +180,7 @@ impl StoreTokens {
         }
         for attempt in 1..=REREADS {
             if !self.reread_pause.is_zero() {
-                std::thread::sleep(self.reread_pause);
+                (self.wait)(self.reread_pause);
             }
             match store.get(key) {
                 Ok(Some(token)) => {
@@ -231,6 +235,8 @@ impl TokenSource for StoreTokens {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::*;
     use crate::runtime::fake::MemoryLog;
     use crate::token_store::MemoryTokenStore;
@@ -336,13 +342,15 @@ mod tests {
     #[test]
     fn each_re_read_waits_for_the_pause_first() {
         let store = Arc::new(MemoryTokenStore::default());
-        let tokens = StoreTokens::new(Some(store.clone()), Duration::from_millis(30));
+        let mut tokens = StoreTokens::new(Some(store.clone()), REREAD_PAUSE);
+        let waits = Rc::new(RefCell::new(Vec::new()));
+        let recorded = Rc::clone(&waits);
+        tokens.wait = Box::new(move |pause| recorded.borrow_mut().push(pause));
         tokens.set(&key(), &secret()).unwrap();
         store.script_reads(&key(), &[MISS, MISS, HIT]);
-        let started = std::time::Instant::now();
         let (result, log) = admission(&tokens, &key());
         assert!(result.is_ok());
-        assert!(started.elapsed() >= Duration::from_millis(60));
+        assert_eq!(*waits.borrow(), [REREAD_PAUSE, REREAD_PAUSE]);
         assert_eq!(store.reads_of(&key()), 3);
         assert_eq!(
             log.lines(),

@@ -81,6 +81,21 @@ fn every_override_moves_a_setting_in_a_debug_build_only() {
     }
 }
 
+/// no override changes how long the agent waits before a re-read of a token.
+#[test]
+fn no_override_changes_the_pause_before_a_re_read_of_a_token() {
+    let watched = Path::new("/tmp/not-the-agent");
+    for options in [
+        asked_for_everything(watched),
+        AgentOptions::new(Launch::Stopped),
+    ] {
+        assert_eq!(
+            applied_overrides(&options).reread_pause,
+            std::time::Duration::from_millis(100)
+        );
+    }
+}
+
 #[test]
 fn a_store_override_leaves_a_release_agent_with_no_store_of_the_test() {
     let watched = Path::new("/tmp/not-the-agent");

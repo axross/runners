@@ -5,6 +5,7 @@
 //! that would start another transition is `busy`.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::future::{Future, pending};
 use std::pin::{Pin, pin};
 use std::sync::Arc;
@@ -646,7 +647,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
 
     /// refreshes presence only; a registration still reads its secret from the store.
     fn refresh_tokens(&self, plan: &Plan) {
-        let keys: Vec<TokenKey> = plan
+        // a key shared by several pools is read once, with its re-reads, per check
+        let keys: BTreeSet<TokenKey> = plan
             .entries
             .iter()
             .map(|entry| TokenKey::for_pool(&entry.target))

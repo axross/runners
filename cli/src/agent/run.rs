@@ -223,6 +223,9 @@ pub struct Applied {
     pub limits: Limits,
     pub executable: Option<PathBuf>,
     pub profile: Profile,
+    /// how long the agent waits before each re-read of a token that missed; no
+    /// override replaces it.
+    pub reread_pause: Duration,
 }
 
 /// the settings `run` uses: the options' replacements in a debug build, and in a
@@ -239,6 +242,7 @@ pub fn applied_overrides(options: &AgentOptions<'_>) -> Applied {
         executable: std::env::current_exe().ok(),
         // a host that is neither runs the agent only in the tests
         profile: Profile::of_this_machine().unwrap_or(Profile::Axpc),
+        reread_pause: REREAD_PAUSE,
     };
     #[cfg(debug_assertions)]
     {
@@ -371,7 +375,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         in_effect: &in_effect,
         sign_in,
         store,
-        reread_pause: REREAD_PAUSE,
+        reread_pause: applied.reread_pause,
         log: &*log,
         roots: &roots,
         lock: &lock,

@@ -52,8 +52,8 @@ impl MemoryTokenStore {
 
     /// scripts the next reads of `key`, one entry each: `true` answers as the store
     /// holds it, `false` answers "no entry" although the key has a token, as a store
-    /// that misses a read. Reads after the script answer as the store holds it, and a
-    /// failing store fails first, using no entry.
+    /// that misses a read. Reads after the script answer as the store holds it. A
+    /// failing store returns its error before it takes an entry from the script.
     pub fn script_reads(&self, key: &TokenKey, answers: &[bool]) {
         self.held()
             .scripts
