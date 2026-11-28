@@ -309,7 +309,7 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
                 BannerKind::NoConfiguration,
                 Tone::Error,
                 heading,
-                vec![lead.clone(), next.to_string()],
+                vec![lead.clone(), next],
                 spoken(heading, &lead),
             )
         }
