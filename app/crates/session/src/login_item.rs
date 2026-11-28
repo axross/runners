@@ -127,7 +127,7 @@ impl LoginItem {
                         log.info("Marshal registered its login item, as Start at login is on.");
                         if let Err(error) = self.record.write() {
                             log.warn(&format!(
-                            "Marshal could not record that it registered its login item: {error}"
+                            "Marshal could not record that it registered its login item, so a later removal in Login Items is not remembered, and the next launch, Start all or change of a setting registers it again: {error}"
                         ));
                         }
                         // macOS may hold a new item for approval
