@@ -1,5 +1,5 @@
 //! the exact `docker` argument lists of the run contract, except the stop call (see
-//! `docs/operations/cli.md`); the tests hold the launcher guard, the probe's reader
+//! `docs/marshal-cli/docker-backend.md`); the tests hold the launcher guard, the probe's reader
 //! script, the identity and copy commands equal to the image smoke tests' helpers in
 //! `images/actions-runner/tests/`.
 

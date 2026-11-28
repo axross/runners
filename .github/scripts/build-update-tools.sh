@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# builds the two programs the release run's update signing runs, into
+# builds the two programs the update signing runs, into
 # <directory>: `cargo-tauri`, from the `tauri-cli` crate archive whose SHA-256
 # app/tauri-cli.crate.sha256 commits, and `marshal-feed-check`, from the app's
-# workspace. release.yaml's update-tool job and merge-checks.yaml's update-feed
-# job run it, on ubuntu-latest, with the repository's pinned toolchain and no
+# workspace. the staged update-tool job and merge-checks.yaml's update-feed job
+# run it, on ubuntu-latest, with the repository's pinned toolchain and no
 # cache. it refuses an archive whose SHA-256 differs from the committed one,
 # builds with --locked, so Cargo checks every dependency against the archive's
 # own lockfile, and stops on any advisory cargo-deny reports for that lockfile
 # that app/tauri-cli.deny.toml does not list as accepted.
 # --archive takes the crate archive from a file instead of crates.io, for the
-# script's test. see docs/operations/app.md and docs/conventions/security.md.
+# script's test. see docs/marshal/building.md and docs/security/dependency-pins.md.
 set -euo pipefail
 
 usage() {

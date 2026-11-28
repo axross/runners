@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn simple_folding_equates_the_declared_pairs() {
         // simple case folding equates each of these with its partner;
-        // docs/operations/cli.md states the rule.
+        // docs/marshal-cli/json-validation.md states the rule.
         assert!(eq_folded("\u{17f}", "s"));
         assert!(eq_folded("\u{17f}", "S"));
         assert!(eq_folded("\u{345}", "\u{3b9}"));

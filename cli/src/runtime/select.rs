@@ -1,5 +1,5 @@
 //! which runtime runs a pool: the pool's operating system, on the host that runs it,
-//! decides; `docs/operations/cli.md` has the table.
+//! decides; `docs/marshal-cli/pool-runtime.md` has the table.
 
 use crate::profile::{Os, Profile};
 

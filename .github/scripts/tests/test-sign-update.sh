@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runs release.yaml's sign-update scripts through run-sign-update.sh against a
+# runs the staged sign-update scripts through run-sign-update.sh against a
 # stand-in cargo-tauri and a stand-in unshare, which record how they were called.
 # covered, each as a case below: a signature for the build's MSI, made by the
 # hash-checked signer under unshare with the two secrets in its environment and
@@ -121,7 +121,7 @@ fi
 extra=stand-in-update.archive
 printf 'another update file\n' >"${work}/${extra}"
 (cd "$work" && sha256sum "$msi" "$extra" >"${work}/two-file-sums")
-node - "${here}/../../workflows/release.yaml" "${work}/two-files.yaml" "$extra" <<'WORKFLOW'
+node - "${here}/../../staged/release-feed.yaml" "${work}/two-files.yaml" "$extra" <<'WORKFLOW'
 const fs = require("node:fs");
 const [source, target, extra] = process.argv.slice(2);
 const workflow = fs.readFileSync(source, "utf8");

@@ -1,6 +1,6 @@
 //! the container steps of a stop, shared by the foreground instance and the agent:
 //! every ordinary container is stopped in one call and the rest removed in another,
-//! beside the finalisation of the diagnostic containers; `docs/operations/cli.md`
+//! beside the finalisation of the diagnostic containers; `docs/marshal-cli/foreground-instance.md`
 //! has the times.
 
 use std::cell::{Cell, RefCell};

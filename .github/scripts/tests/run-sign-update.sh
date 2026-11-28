@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# runs the `run:` scripts of release.yaml's sign-update job in order, outside
-# GitHub Actions, the way the job runs them: extracted from the workflow, not
-# copied, each with only the environment its own step declares, in a working
-# directory laid out as the job's download steps lay it out. merge-checks.yaml's
-# update-feed job runs it with the real cargo-tauri and a throwaway key, and
-# test-sign-update.sh with a stand-in signer.
+# runs the `run:` scripts of the staged sign-update job in order, outside
+# GitHub Actions, the way the job runs them: extracted from the staged file
+# .github/staged/release-feed.yaml, not copied, each with only the environment
+# its own step declares, in a working directory laid out as the job's download
+# steps lay it out. merge-checks.yaml's update-feed job runs it with the real
+# cargo-tauri and a throwaway key, and test-sign-update.sh with a stand-in
+# signer.
 #
 #   run-sign-update.sh <work directory> <SHA256SUMS> <cargo-tauri> <file>...
 #
 # the step values come from the environment: SIGN_VERSION, SIGN_TAURI_CLI_SHA256,
 # SIGN_KEY and SIGN_PASSWORD stand for the job's version, the tool job's hash and
 # the two secrets, and a `${{ }}` this script does not know fails it. SIGN_WORKFLOW
-# names another workflow file, and SIGN_SYSTEM_BIN, when set, is handed to the
+# names another file, and SIGN_SYSTEM_BIN, when set, is handed to the
 # scripts as SYSTEM_BIN, so a test can put stand-ins in place of system tools.
 # the signatures end up in <work directory>/job/signature, and the script prints
 # their paths, one per input file, in the same order.
@@ -28,7 +29,7 @@ shift 3
 files=("$@")
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-workflow="${SIGN_WORKFLOW:-${here}/../../workflows/release.yaml}"
+workflow="${SIGN_WORKFLOW:-${here}/../../staged/release-feed.yaml}"
 
 refuse() {
   echo "error: $*" >&2

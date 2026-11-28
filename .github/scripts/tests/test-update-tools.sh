@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runs the scripts of the release run's update signing that need no Rust build:
+# runs the scripts of the update signing that need no Rust build:
 # tauri-cli-crate.sh, which must print the committed version and SHA-256 and
 # refuse a checksum file whose version is not the pin or whose line is not one
 # `<sha256>  tauri-cli-<X.Y.Z>.crate`; build-update-tools.sh, which must refuse
@@ -129,7 +129,7 @@ set -euo pipefail
 bash "$1"
 cat "$GITHUB_OUTPUT"
 SH
-for changed in app/crates/feed/release-public-key.txt README.md; do
+for changed in app/crates/feed/release-public-key.txt .github/staged/release-feed.yaml README.md; do
   selected=false
   [[ "$changed" != README.md ]] && selected=true
   : >"${work}/scope-output"

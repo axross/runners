@@ -1,6 +1,6 @@
 # actions-runner image
 
-The runner image that the CLI, [`marshal`](../../docs/operations/cli.md), starts,
+The runner image that the CLI, [`marshal`](../../docs/marshal-cli/index.md), starts,
 one throwaway container per job. The host configuration it runs under is described
 in [`hosts/windows-docker-desktop/`](../../hosts/windows-docker-desktop/README.md). It is GitHub's own
 `ghcr.io/actions/actions-runner` image plus the build dependencies jobs commonly
@@ -76,7 +76,7 @@ matching checkout inside an unrelated workspace directory is not an access
 failure.
 
 Private host retention, quotas, incomplete export and operator interpretation
-are owned by [Windows Runner Host](../../docs/operations/windows-runner-host.md).
+are owned by [Windows Runner Host](../../docs/runner-hosts/index.md#windows-with-docker-desktop).
 Diagnostics supply evidence, not a resource remedy or tool-reuse correction.
 
 ## Docker client
@@ -103,10 +103,10 @@ there. The axmc host's job VMs mount their own VM's socket,
 `/var/run/docker.sock`, into the runner container. The socket's group is the VM's
 `docker` group, which has the id of the base's `docker` group that `runner` belongs to,
 so `runner` can use it;
-[Security](../../docs/conventions/security.md#the-vm-local-docker-socket) says why that
+[Security](../../docs/security/vm-isolation.md#the-vm-local-docker-socket) says why that
 needs no `--group-add`. The Dockerfile fails the build if the base's group has another
 id. The image contract version is 2 with this
-client and group; [CLI](../../docs/operations/cli.md#the-image-contract) says what
+client and group; [CLI](../../docs/marshal-cli/runner-images.md#the-image-contract) says what
 that means for a built image.
 
 ## Android NDK contract
@@ -117,7 +117,7 @@ extraction and checks its `source.properties` revision before adding matching
 side-by-side `package.xml` registration. Archives and staging files stay out of
 the final image. The SDK is writable inside each disposable container so setup
 actions can add command-line tools, licenses, and packages. The Cache Volumes
-section of [Windows Runner Host](../../docs/operations/windows-runner-host.md)
+section of [Windows Runner Host](../../docs/runner-hosts/windows-pools.md#cache-volumes)
 owns the Android storage exclusions.
 
 An Android setup action MUST retain the incoming `ANDROID_SDK_ROOT` and export
@@ -195,7 +195,7 @@ Gradle user home. The wrapper extracts the ZIP itself; the image manufactures no
 different location. The image pins the ZIP's checksum, but does not add a
 wrapper checksum to consumers that omit one. Application dependencies and
 generated build caches stay out of the image. The Cache Volumes section of
-[Windows Runner Host](../../docs/operations/windows-runner-host.md#cache-volumes)
+[Windows Runner Host](../../docs/runner-hosts/windows-pools.md#cache-volumes)
 owns shared-volume policy and Android storage exclusions.
 
 To refresh an input:
@@ -231,7 +231,7 @@ build rather than the definition:
 
 So an image built by CI or by hand carries the
 three declared labels, passes the CLI's contract check, and shows an unknown
-build age. The [CLI document](../../docs/operations/cli.md#the-image-contract)
+build age. The [CLI document](../../docs/marshal-cli/runner-images.md#the-image-contract)
 says what the CLI does with each label, and when the contract version changes.
 
 ## The base pin
@@ -249,12 +249,12 @@ curl -sSI -H "Authorization: Bearer $token" \
 ```
 
 Dependabot's `docker` entry proposes the same change as a pull request. Merge it
-promptly; [Windows Runner Host](../../docs/operations/windows-runner-host.md#updating-the-runner)
+promptly; [Windows Runner Host](../../docs/runner-hosts/windows-image.md#updating-the-runner)
 explains why. A runner bump is red until the
 `runner-version` and `runner-released` labels name the new release, its date from
 the `actions/runner` release page is added to the CLI's release table, and the
 CLI's build test definition names the same `FROM`;
-[Development Workflow](../../docs/operations/development-workflow.md#bumping-the-runner)
+[Development Workflow](../../docs/releases/runner-update.md#bumping-the-runner)
 lists the steps.
 
 ## Build
@@ -332,7 +332,7 @@ size delta against the unchanged base image when verifying an update. These
 download figures are not measured job-time or CPU savings.
 The operator rebuild and image rollback
 procedure is in the Building the Runner Image section of
-[Windows Runner Host](../../docs/operations/windows-runner-host.md).
+[Windows Runner Host](../../docs/runner-hosts/windows-image.md#building-the-runner-image).
 
 The [initial image size/build-cost evidence](https://github.com/axross/runners/issues/13#issuecomment-5963050240)
 records the exact source/image identities, raw layer bytes, uncached timings,

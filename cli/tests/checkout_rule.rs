@@ -1,5 +1,5 @@
 //! the rule that `diagnosticDirectory` lies outside the project checkout, which
-//! `docs/operations/cli.md` describes.
+//! `docs/marshal-cli/json-validation.md` describes.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

@@ -11,6 +11,7 @@ mod clock;
 mod confirm;
 mod control;
 mod diagnostics;
+mod editor;
 mod footer;
 mod github;
 mod host;
@@ -18,6 +19,7 @@ mod icon;
 mod input;
 mod menu;
 mod pools;
+mod settings;
 mod settled;
 mod state;
 mod summary;
@@ -31,15 +33,21 @@ pub use banner::{Banner, BannerKind, Tone};
 pub use clock::{Clock, elapsed};
 pub use control::{Action, Confirmation, Control, Look};
 pub use diagnostics::{DiagnosticItem, Diagnostics};
+pub use editor::{EditorAccess, EditorField, editor_access};
 pub use footer::Footer;
 pub use github::{GithubNote, HIDDEN_NAMES, OpenRun, job_page};
 pub use host::{HOST, HostWords, MACOS, WINDOWS};
 pub use icon::{GlyphColour, IconState, Rgb, TaskbarMode};
 pub use input::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, TokenResult, TokenUi,
+    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, SettingResult,
+    SettingsUi, TokenResult, TokenUi,
 };
 pub use menu::{Menu, MenuItem};
 pub use pools::{Mark, PoolCard, RunnerRow};
+pub use settings::{
+    NEEDS_ATTENTION, NoteTone, SettingGroup, SettingNote, SettingRow, SettingsTab,
+    label as setting_label,
+};
 pub use settled::{FALL_DELAY_MS, Settled};
 pub use summary::Summary;
 pub use text::{DEFAULT_CONFIGURATION, LOG_FOLDER, plain};

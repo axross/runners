@@ -1,9 +1,9 @@
 //! GitHub status: what GitHub says about this host's runners, for the window only.
 //! While a client holds a renewed `github` subscription the agent reads each
-//! repository's runner list, looks up the job a busy runner runs, and keeps the
+//! scope's runner list, looks up jobs for repository runners only, and keeps the
 //! request budget, with conditional requests sent one at a time; the value it
 //! publishes never carries a token, a URL from GitHub or a raw response body.
-//! `docs/operations/cli.md` describes the contract.
+//! `docs/marshal-cli/github-status.md` describes the contract.
 
 pub mod answer;
 pub mod budget;
@@ -24,10 +24,42 @@ pub struct GithubStatus {
     /// name, each with what the agent last learned of it.
     #[serde(default)]
     pub repositories: Vec<RepositoryStatus>,
+    #[serde(default)]
+    pub organizations: Vec<OrganizationStatus>,
+    /// group entries left out after runners to keep the message bounded.
+    #[serde(default)]
+    pub omitted_organizations: u32,
     /// runner entries left out from the end to keep the value within the agent's
     /// message limit.
     #[serde(default)]
     pub omitted_runners: u32,
+}
+
+/// an organization group's last check, without repository job information.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OrganizationStatus {
+    #[serde(default)]
+    pub organization: String,
+    #[serde(default)]
+    pub runner_group: String,
+    /// milliseconds since the Unix epoch.
+    #[serde(default)]
+    pub checked_at: Option<u64>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub runners: Vec<OrganizationRunnerStatus>,
+}
+
+/// an organization runner; its token cannot read repository jobs.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OrganizationRunnerStatus {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub github: String,
 }
 
 /// the hourly request budget as display responses report it.
@@ -108,9 +140,21 @@ pub struct Job {
 
 impl GithubStatus {
     /// leaves out runner entries from the end until the value's JSON is at most
-    /// `max_bytes`, and counts them in `omitted_runners`.
+    /// `max_bytes`, counting them in `omitted_runners`; if still too large, leaves
+    /// out organization group entries, counting them in `omitted_organizations`.
     pub fn fit(&mut self, max_bytes: usize) {
         while serde_json::to_vec(self).map_or(usize::MAX, |json| json.len()) > max_bytes {
+            if let Some(runners) = self
+                .organizations
+                .iter_mut()
+                .rev()
+                .map(|organization| &mut organization.runners)
+                .find(|runners| !runners.is_empty())
+            {
+                runners.pop();
+                self.omitted_runners += 1;
+                continue;
+            }
             let Some(runners) = self
                 .repositories
                 .iter_mut()
@@ -118,6 +162,10 @@ impl GithubStatus {
                 .map(|repository| &mut repository.runners)
                 .find(|runners| !runners.is_empty())
             else {
+                if self.organizations.pop().is_some() {
+                    self.omitted_organizations += 1;
+                    continue;
+                }
                 return;
             };
             runners.pop();

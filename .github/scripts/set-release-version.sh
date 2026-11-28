@@ -3,7 +3,7 @@
 # Cargo.toml and Cargo.lock, in the runner only, so the app executable's product
 # version is the release's; refuses unless it is X.Y.Z or X.Y.Z-<prerelease> and
 # each file has the version lines it expects, all holding the placeholder. uses a
-# temporary file, not `sed -i`, for CRLF checkouts. see docs/operations/cli.md.
+# temporary file, not `sed -i`, for CRLF checkouts. see docs/marshal-cli/release-artifacts.md.
 set -euo pipefail
 
 placeholder="0.0.0-dev"

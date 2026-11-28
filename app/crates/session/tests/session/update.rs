@@ -189,6 +189,7 @@ async fn an_agent_at_the_librarys_version_is_not_replaced_whatever_the_apps_vers
     let (agent, connected) = Agent::reporting(AgentInfo {
         version: "1.3.0".into(),
         drains: true,
+        edits: true,
     });
     let world = World::default();
     world.then(Answer::Agent(connected));
@@ -430,6 +431,7 @@ async fn an_older_agent_that_drains_is_replaced_keeping_stopped_by_you() {
     let (agent, connected) = Agent::reporting(AgentInfo {
         version: "1.2.0".into(),
         drains: true,
+        edits: true,
     });
     agent.answer_pid(PID);
     let world = World::default();
@@ -457,6 +459,7 @@ async fn an_older_agent_without_the_drain_is_used_as_it_is_and_nothing_installs(
     let (agent, connected) = Agent::reporting(AgentInfo {
         version: "1.2.0".into(),
         drains: false,
+        edits: true,
     });
     let world = World::default();
     world.then(Answer::Agent(connected));

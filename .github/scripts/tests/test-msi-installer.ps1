@@ -15,7 +15,7 @@
     program that keeps running from the install path is a copy of PING.EXE packed
     as marshal-app.exe, for the upgrade-while-running case. each outcome the CLI
     document states is printed on a line that starts with MEASURED. a failed check
-    throws, so nothing is skipped silently. see docs/operations/cli.md.
+    throws, so nothing is skipped silently. see docs/marshal-cli/release-artifacts.md.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$App,

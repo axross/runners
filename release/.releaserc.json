@@ -49,7 +49,7 @@
     [
       "@semantic-release/exec",
       {
-        "verifyReleaseCmd": "bash ../.github/scripts/verify-release.sh '${nextRelease.version}' ../release-files"
+        "verifyReleaseCmd": "bash ../.github/scripts/cli-recovery/verify-release.sh '${nextRelease.version}' ../release-files"
       }
     ],
     [
@@ -58,7 +58,8 @@
         "assets": [
           "../release-files/marshal-*-windows-x64.exe",
           "../release-files/marshal-*-windows-x64.msi",
-          "../release-files/latest.json",
+          "../release-files/marshal-*-macos-arm64",
+          "../release-files/marshal-*-macos-arm64.pkg",
           "../release-files/SHA256SUMS"
         ],
         "successCommentCondition": false,

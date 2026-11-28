@@ -1,12 +1,12 @@
 ---
 name: agent-skill-management
-description: Deciding whether guidance belongs in agent instructions, project documentation, host configuration or a skill, choosing its tier, and managing installation, active loading and actor-local acquisition. Triggers on adding, editing, renaming, moving or removing skills; installed-copy or lockfile drift; missing discovery; same-name masking; stale, truncated or missing material; retained-context recovery; a defective loaded rule. Metadata belongs to skill-authoring practices; selection/output assessment follow task-specific development/review practices; project policy and host operations own safeguard activation and commands. Covers source ownership, targeted refresh, acquisition coverage and retention/recovery.
+description: Deciding whether guidance belongs in agent instructions, project documentation, host configuration or a skill, choosing its tier, and managing installation, active loading and actor-local acquisition. Triggers on adding, editing, renaming, moving or removing skills; writing or auditing an agent entry file; installed-copy or lockfile drift; missing discovery; same-name masking; stale, truncated or missing material; retained-context recovery; a defective loaded rule. Metadata belongs to skill-authoring practices; selection/output assessment follow task-specific development/review practices; the skill qualifies safeguards; project policy and host operations own activation and commands. Covers source ownership, targeted refresh, acquisition coverage and retention/recovery.
 user-invocable: false
 ---
 
 # Agent Skill Management
 
-Use this capability to manage agent skills in a two-tier project, verify their discovery and active loading, or establish actor-local acquisition, retention and recovery. Management includes adding, editing, renaming, moving, and removing skills. **Distributable** skills — portable capabilities other projects can install — are authored in a source directory (conventionally `skills/`, the source of truth) and **installed** into the skill root (the directory the agent actually loads — `.claude/skills/` for Claude Code, `.agents/skills/` for Codex and several others) with the [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI (`npx skills`); a `skills-lock.json` file records what was installed. **Repository-local** skills — capabilities that encode a single project's own process and have to fire while a surface is being edited, never a document the project's own instructions could route to on demand — are committed directly under the skill root and are never touched by the CLI.
+Use this capability to manage agent skills in a two-tier project, verify their discovery and active loading, write or audit an agent entry file, or establish actor-local acquisition, retention and recovery. Management includes adding, editing, renaming, moving, and removing skills. **Distributable** skills — portable capabilities other projects can install — are authored in a source directory (conventionally `skills/`, the source of truth) and **installed** into the skill root (the directory the agent actually loads — `.claude/skills/` for Claude Code, `.agents/skills/` for Codex and several others) with the [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI (`npx skills`); a `skills-lock.json` file records what was installed. **Repository-local** skills — capabilities that encode a single project's own process and have to fire while a surface is being edited, never a document the project's own instructions could route to on demand — are committed directly under the skill root and are never touched by the CLI.
 
 Discovery is what routes to a skill in either tier: each skill advertises when it applies through its own `description`, so no written index is required. Some hosts maintain one anyway (e.g. an `AGENTS.md` table), which then becomes a second record to keep current.
 
@@ -15,6 +15,7 @@ This skill is **self-contained**: it names no repository-specific file or layout
 **Guidelines:**
 
 - MUST, where the host project maintains a written skill index, keep it in sync whenever a skill in either tier is added, renamed, moved, or removed, per your project's skill-authoring conventions; where it maintains none, each skill's `description` frontmatter is the whole of discovery and no index is owed.
+- MUST, at completion of a task that touched skills or their loading, report whether skill maintenance was **performed** (a skill source, installed copy or lockfile changed), **skipped** (no change was needed, with the reason) or **blocked** (a needed change could not be made, with what blocked it).
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html).
 
@@ -70,7 +71,7 @@ A repository-local skill's committed copy under the skill root **is** its source
 
 ## Distributable Skills: Install and Refresh
 
-A distributable skill is authored under `skills/<name>/SKILL.md` (with its `references/` beside it) and installed with the CLI. The CLI is run through `npx`; when the environment does not support symlinks, installs use `--copy` (the copy lands as a real directory under the skill root).
+A distributable skill is authored under `skills/<name>/SKILL.md` (with its `references/` beside it) and installed with the CLI. The CLI is run through `npx`; when the environment does not support symlinks, installs use `--copy` (the copy lands as a real directory under the skill root). The CLI version a project runs, and what to do when the bare command cannot be resolved, are covered under [The Lockfile](#the-lockfile).
 
 **Commands:**
 
@@ -106,14 +107,13 @@ A distributable skill is authored under `skills/<name>/SKILL.md` (with its `refe
 - MUST read a `No matching skills found` response — the CLI answering with the source's available-skill list where an install summary belongs — as a run that installed nothing: no skill reaches the skill root and no lockfile is written. A comma-separated `--skill a,b,c` is the usual cause, since the CLI does not split the value and so matches no skill at all, and that available-skill list reads like ordinary help rather than a failure.
 - SHOULD run `npx skills add` from the repository root so `./skills` resolves and `skills-lock.json` is written there.
 - SHOULD confirm the install summary lists every expected skill as `copied` before committing — the check that catches a run which matched nothing and installed nothing.
-- SHOULD retry with an explicit version specifier (`npx --yes skills@latest …`) when `npx skills` aborts with `could not determine executable to run`; the plain form above stays canonical, and the specifier is a fallback for environments where `npx` cannot resolve the bare package name.
 
 ## Discovery and Active Loading
 
 See [active-loading.md](./references/active-loading.md) for:
 
 - verifying an installation or refresh through separate observations of installation, source agreement, discovery, and active content
-- diagnosing missing discovery or unexpected loaded content, including same-name precedence, stale sessions, and unavailable source evidence
+- diagnosing missing discovery or unexpected loaded content, including same-name precedence, stale sessions and the verified source for a revision comparison
 - diagnosis before an authorized installation change
 
 ## Actor-local Acquisition and Recovery
@@ -121,11 +121,12 @@ See [active-loading.md](./references/active-loading.md) for:
 See [actor-local-acquisition.md](./references/actor-local-acquisition.md) for:
 
 - establishing complete applicable bodies and references in each controlled internal actor's current context
+- qualifying a skill-acquisition safeguard, the mechanism that observes or refuses a controlled actor's mutation, and the separate human authorization it needs first
 - applying task-sensitive development or internal-review selection and output-assessment ownership
 - distinguishing native loading, direct acquisition and retained text, with full, partial, unknown, mismatch or unavailable coverage
 - correlating expected and observed material without inferring acquisition from a parent or reused assignment identifier
 - recovering truncation or lost retention from one verified revision, without redundant reads of complete retained text
-- separating acquisition from output verification and verification-evidence assessment, without adding external-review attestations
+- separating acquisition from output verification and verification-evidence assessment, without adding attestations to post-push review (review of the opened pull request by someone other than the author)
 
 ## Proposing a Change to an Installed Skill
 
@@ -134,7 +135,16 @@ See [installed-rule-changes.md](./references/installed-rule-changes.md) for:
 - routing a wrong, outdated, or missing loaded rule to its actual source according to skill tier
 - distinguishing additive local conventions, approved bounded deviations, and unadopted upstream proposals
 - checking human adoption, host priority, scope, and reassessment without requiring a dedicated register
+- keeping an optional deviation register whose entries are Active or Resolved, and when a project's declaring it exhaustive makes an unlisted departure a finding
 - correcting an owned source under applicable change gates or publishing an authorized third-party request
+
+## Agent Entry Files
+
+See [entry-file-contract.md](./references/entry-file-contract.md) for:
+
+- writing or auditing an agent entry file's routing, bootstrap order, comment marker, default branch, merging human and delegation standing request
+- the canonical parameterised line for each item that has one (items 2-6), and what an entry file does when the change-loop capability is absent
+- keeping an entry file from restating a rule a loaded skill owns
 
 ## The Lockfile
 
@@ -144,10 +154,16 @@ Since `skills@1.5.22`, the CLI writes a `local` `source` as a path relative to t
 
 Verified against the [`v1.5.22` release notes](https://github.com/vercel-labs/skills/releases/tag/v1.5.22), published 2026-08-05.
 
+Re-installing from an owned local source after editing it is not a pin update. Pinning a skill source is separate from which CLI version a project runs: a refresh under a different CLI version can rewrite entries the project did not mean to change. Where the project has recorded no version, the plain `npx skills` form stays canonical.
+
 **Guidelines:**
 
 - MUST commit `skills-lock.json` and regenerate it by running the install command, never by hand-editing.
 - MUST treat a `computedHash` change with no corresponding source edit as install drift to investigate, not to blindly commit.
+- MAY pin a non-local installed skill source to a revision.
+- MUST NOT update a pin on a non-local skill source automatically; a pin refresh is a deliberate, scoped change that re-checks recorded deviations.
+- SHOULD treat a CLI "update available" result as information, not as a reason to refresh.
+- SHOULD run the CLI at the version the project recorded for its lockfile, in place of the bare `npx skills` of the commands above, and record that version where contributors will find it; where none is recorded and the bare form aborts with `could not determine executable to run`, retry once with an explicit version specifier (`npx --yes skills@latest …`).
 - SHOULD treat a diff touching only `local` `source` fields, with no `computedHash` change, as the normalization sweep above rather than drift; confirm which CLI version last ran the install when a lockfile keeps alternating between the two forms.
 
 ## Installed-Copy Drift Check

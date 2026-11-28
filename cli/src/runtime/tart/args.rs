@@ -1,5 +1,5 @@
 //! the exact argument lists of the `tart` calls; the flag names are those of Tart
-//! 2.41.1, and `docs/operations/cli.md` is the place a version change is recorded.
+//! 2.41.1, and `docs/marshal-cli/tart-backend.md` is the place a version change is recorded.
 
 use std::time::Duration;
 

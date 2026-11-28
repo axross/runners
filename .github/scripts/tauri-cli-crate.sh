@@ -2,9 +2,9 @@
 # prints the version and the SHA-256 of the `tauri-cli` crate archive that
 # app/tauri-cli.crate.sha256 commits, as `<version> <sha256>`, and refuses the
 # file unless it is one `<sha256>  tauri-cli-<version>.crate` line whose version
-# is the pin in app/tauri-cli.version. the release run's update-tool job builds
+# is the pin in app/tauri-cli.version. the staged update-tool job builds
 # the update signer from that archive only; `mise run check` runs this, so a
-# change of the pin without the checksum fails. see docs/operations/app.md.
+# change of the pin without the checksum fails. see docs/marshal/building.md.
 set -euo pipefail
 
 if [[ $# -gt 2 ]]; then

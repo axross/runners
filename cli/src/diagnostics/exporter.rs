@@ -2,7 +2,7 @@
 //! deadline or when its standard input, the instance's liveness pipe, closes, killing
 //! its `docker` clients first, which run with the JIT variable cleared; every file
 //! system call runs on a blocking thread, so a hung sink cannot keep it from ending;
-//! see `docs/operations/cli.md`.
+//! see `docs/marshal-cli/diagnostics.md`.
 
 use std::ffi::OsStr;
 use std::io::{Read, Write};

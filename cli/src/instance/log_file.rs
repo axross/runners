@@ -2,7 +2,7 @@
 //! in a private per-user directory, with every masked secret replaced in both; a
 //! write to a terminal that is gone is ignored and the file goes on; on macOS the
 //! directory is `0700` and each file `0600`, and on Windows the CLI does
-//! not check the directory's access, as `docs/operations/cli.md` describes.
+//! not check the directory's access, as `docs/marshal-cli/foreground-instance.md` describes.
 
 use std::cell::RefCell;
 use std::fmt;

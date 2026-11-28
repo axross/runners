@@ -1,5 +1,5 @@
 //! finalising diagnostic containers, export then removal, on one clock, as
-//! `docs/operations/cli.md` describes; each warning names only the pool, the
+//! `docs/marshal-cli/diagnostics.md` describes; each warning names only the pool, the
 //! container and the gap, never evidence.
 
 use std::future::Future;

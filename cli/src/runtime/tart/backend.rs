@@ -1,6 +1,6 @@
 //! the Tart backend: a job VM per job, cloned from the golden VM and booted for one
 //! job, with every Docker command of the run contract run inside it through the
-//! guest agent; `docs/operations/cli.md` describes the steps, the budgets and the
+//! guest agent; `docs/marshal-cli/tart-backend.md` describes the steps, the budgets and the
 //! texts.
 
 use std::cell::{Cell, RefCell};

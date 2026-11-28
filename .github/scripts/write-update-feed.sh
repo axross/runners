@@ -4,10 +4,10 @@
 # argument, each with the address of <file>'s name under the release's tag and
 # the text of <signature>, the detached signature `cargo tauri signer sign`
 # wrote. the entries are a list, so a release that signs another platform's
-# file adds an argument. release.yaml's assemble-signed job runs it, and
+# file adds an argument. the staged assemble-signed feed step runs it, and
 # merge-checks.yaml's update-feed job runs it on the dry run; the feed check,
 # marshal-feed-check, then checks what it wrote. needs jq, which ubuntu-latest
-# has. see docs/operations/app.md.
+# has. see docs/marshal/updates.md.
 set -euo pipefail
 
 if [[ $# -lt 3 ]]; then

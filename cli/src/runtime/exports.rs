@@ -1,7 +1,7 @@
 //! the exporter child as a backend runs it: this CLI run again as `marshal export`,
 //! with a liveness pipe as its standard input, closing which ends it, so it can kill
 //! its own clients first; both backends share it, and only the client and the
-//! environment the command gets differ; `docs/operations/cli.md` describes it.
+//! environment the command gets differ; `docs/marshal-cli/diagnostics.md` describes it.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;

@@ -4,7 +4,7 @@
 # NuGet.Config that clears every source and lists a folder holding that checked
 # package alone, so nothing else is fetched. refresh the version and the hash
 # together, the hash computed from the real download; see
-# docs/conventions/security.md. runs on Linux in its test and on Windows in the
+# docs/security/dependency-pins.md. runs on Linux in its test and on Windows in the
 # release build, where sha256sum, curl, and cygpath come with Git for Windows.
 set -euo pipefail
 

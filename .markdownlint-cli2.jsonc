@@ -7,6 +7,7 @@
     "MD013": false, // line-length: prose lines are intentionally long
     "MD033": false, // inline HTML: `<!-- ai-agent -->` markers are used
     "MD041": false,
+    "MD025": { "front_matter_title": "" }, // OKF title metadata accompanies the rendered H1
     "MD024": { "siblings_only": true },
     "MD029": false,
     "MD040": false,

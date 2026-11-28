@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # the feed round trip that merge-checks.yaml's update-feed job runs on the
-# release dry run: the release run's own sign-update scripts sign the dry run's
-# MSI with a throwaway key made for this run, write-update-feed.sh writes the
-# feed, and the feed check passes it against the throwaway public key. the feed
+# release dry run: the staged sign-update scripts sign the dry run's MSI with a
+# throwaway key made for this run, write-update-feed.sh writes the feed, and the feed check passes it against the throwaway public key. the feed
 # check must refuse, and say why, a changed MSI, another key's signature, a
 # signature for another version, and the throwaway signature against the
 # committed key. no line of this run's output may hold the throwaway key or its
@@ -63,7 +62,7 @@ bash "${scripts}/write-update-feed.sh" "$version" "${output}/latest.json" \
   "windows-x86_64=${output}/${msi}=${signature}" 2>&1 | tee -a "$log"
 "$check" --public-key "${output}/update.pub" "${output}/latest.json" "$version" \
   "${release}/SHA256SUMS" "windows-x86_64=${output}/${msi}" 2>&1 | tee -a "$log"
-echo "ok   the feed check passes the feed the release run's scripts signed" | tee -a "$log"
+echo "ok   the feed check passes the feed the staged sign-update scripts signed" | tee -a "$log"
 
 failures=0
 # refused <case> <text the diagnostic must hold> <feed check arguments...>: the feed
