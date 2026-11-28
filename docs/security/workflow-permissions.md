@@ -231,8 +231,8 @@ executed.
   continue-on-error, so that it runs every time and a failure fails the job, and
   the prompt keeps its two prohibitions. Like the other guards here, it catches a
   mistake and is no control against a hostile edit.
-  The tests that run the copy step need a root-owned directory; they run as root or
-  with passwordless `sudo`, skip with a note elsewhere, and fail on GitHub Actions.
+  [Check Commands](../conventions/testing.md#check-commands) says where the tests
+  that run the copy step run, skip, and fail.
 
 The residual risks are these:
 
