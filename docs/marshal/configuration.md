@@ -37,9 +37,9 @@ app enters each repository's token in the window, once.
 
 K1 ([#77](https://github.com/axross/runners/issues/77)) owns this section. The agent
 runs `config.toml`, migrates a `config.json` it finds alone at its start, and keeps the
-last valid configuration in use when a Start All or a Reload finds the file broken or
-gone. The
-window takes all of it from the snapshot's `configuration`: `path`, `problems`,
+last valid configuration in use when a Start All finds the file broken or gone, or a
+Reload finds it broken (a Reload of a missing file is refused as `config_unusable`).
+The window takes all of it from the snapshot's `configuration`: `path`, `problems`,
 `status`, `in_use` and `migration`, as [The Snapshot](../marshal-cli/agent-protocol.md#the-snapshot) lists
 them. It adds no state, control or banner kind; the wording lives in the
 `marshal-view` crate.
