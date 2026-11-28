@@ -136,12 +136,11 @@ the codes as the constants of `agent::StopReason`, so a reader compares a reason
 them rather than repeating the words. A pool skipped for
 want of a token does not stop the others: it is listed `skipped` with its reason,
 and when a token for its repository is set, it starts without a restart. A pool whose
-token the agent knows is stored, but whose reads miss after the re-reads of
-[the token store](./token-store.md#re-reading-a-miss), is skipped the same way with
-its own reason, "the token is stored but could not be read", and starts at the next
-save. When no
-pool is left running, the agent is stopped for `no_pool_started`, and each pool
-keeps its reason in the snapshot, listed `stopped`.
+token the agent knows is stored, but whose reads miss after the re-reads of [the token
+store](./token-store.md#re-reading-a-miss), is skipped the same way with its own reason,
+"the token is stored but could not be read", and starts at the next save. When no pool
+is left running, the agent is stopped for `no_pool_started`, and each pool keeps its
+reason in the snapshot, listed `stopped`.
 
 The agent ends by itself when the file it started from is moved, renamed, replaced
 or deleted, so it never goes on running a program that is no longer the installed
@@ -242,12 +241,14 @@ status on a paused clock against a fake GitHub: the intervals and levels, the pa
 `retry-after` and the secondary limit, the back-off, pages by `link` with their
 `ETag`s and refused next pages, the job lookup and its 20 checks, the hidden-names
 retry, and that no token reaches a value or the log; the module's unit tests cover
-each answer, the budget window, the next-page rule and the cleaning of names. `tests/agent_token_rereads.rs` covers the re-reads of admission and the presence
-check: a miss cleared after a save, at launch and in the presence check, a token
-known stored that stays missing with its reason and warning, a token never stored
-read again once per process, a store error, and the log lines. `tests/agent_tokens.rs` covers what `token_set` and
-`token_remove` do to the next registration, a skipped pool starting, refused tokens,
-and the store's kind and code in an error, a skipped pool's reason and the log.
+each answer, the budget window, the next-page rule and the cleaning of names.
+`tests/agent_token_rereads.rs` covers the re-reads of admission and the presence check:
+a miss cleared after a save, at launch and in the presence check, a token known stored
+that stays missing with its reason and warning, a token never stored read again once per
+process, a store error, and the log lines. `tests/agent_tokens.rs` covers what
+`token_set` and `token_remove` do to the next registration, a skipped pool starting,
+refused tokens, and the store's kind and code in an error, a skipped pool's reason and
+the log.
 `tests/agent_snapshot.rs` covers the snapshot, the diagnostics, the leftovers, the
 64 KiB cut, that the agent ends and frees the lock within a second of `quit` with 640
 runners and four subscribed connections that never read, the stalled readers' thread

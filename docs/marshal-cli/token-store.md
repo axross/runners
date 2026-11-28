@@ -32,12 +32,12 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   take turns at the Credential Manager, as a precaution, because the crate's upstream
   reports it losing updates under concurrent use; the cause of the CI misses is not
   established, and [#148](https://github.com/axross/runners/issues/148) holds the
-  investigation and the probe's result. The tests themselves neither retry a read
-  nor warm the Credential Manager up first, since either would hide a miss rather
-  than remove its cause. The agent they drive re-reads a miss, on admission and in
-  the presence check (see below), back to back because the agent tests set its pause
-  to no wait, so a test that goes through the agent can pass a miss that a read of
-  its own would show.
+  investigation and the probe's result. The tests themselves neither retry a read nor
+  warm the Credential Manager up first, since either would hide a miss rather than
+  remove its cause. The agent they drive re-reads a miss, on admission and in the
+  presence check (see below), back to back because the agent tests set its pause to no
+  wait, so a test that goes through the agent can pass a miss that a read of its own
+  would show.
 - **macOS.** The user's login keychain, through `security-framework`, as one generic
   password per key with the service `app.axross.marshal`. A repository's item has the
   account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
@@ -78,16 +78,16 @@ the reason of a pool skipped because the store failed (`the token store failed: 
 (kind needs_user, code 1312)`), and in the log line of a registration that failed
 for the same reason. None of them ever holds a token.
 
-The agent reads a token from the store when a pool is admitted, in the presence
-check, again at each registration, and at each GitHub status check, so a `token_set`
-takes effect at the next registration and check, and a
-`token_remove` makes the next registration fail and its slot back off with "no
-token". A running job container keeps the JIT configuration it was started with.
+The agent reads a token from the store when a pool is admitted, in the presence check,
+again at each registration, and at each GitHub status check, so a `token_set` takes
+effect at the next registration and check, and a `token_remove` makes the next
+registration fail and its slot back off with "no token". A running job container keeps
+the JIT configuration it was started with.
 
-`has_token` in the snapshot is the store's answer as of the last configuration
-read, not a live reading: it refreshes only on a configuration read, a `token_set`
-or a `token_remove`. The presence check makes that read at each configuration load
-and committed edit, and Start all loads the configuration again.
+`has_token` in the snapshot is the store's answer as of the last configuration read,
+not a live reading: it refreshes only on a configuration read, a `token_set` or a
+`token_remove`. The presence check makes that read at each configuration load and
+committed edit, and Start all loads the configuration again.
 
 ### Re-reading a Miss
 
@@ -95,16 +95,16 @@ The store can answer "no entry" for a token it holds, as the Credential Manager 
 hosted Windows runner did right after a write
 ([#148](https://github.com/axross/runners/issues/148)). Admission, in every place a
 pool is admitted, and the presence check therefore read a miss again, up to 2 times,
-100 ms apart, and stop at the first read that finds the token. The rule is the
-agent's and the same on every platform with a store. Registration's read and the
-GitHub status check's read are single reads, which fail that attempt and read again
-at their next one.
+100 ms apart, and stop at the first read that finds the token. The rule is the agent's
+and the same on every platform with a store. Registration's read and the GitHub status
+check's read are single reads, which fail that attempt and read again at their next
+one.
 
 For each key the agent keeps, for the life of the process and apart from the
 snapshot's `has_token`, what it has learned: unread, known stored, or read absent. A
 miss is read again for a key known stored and for one not read yet, and not for one
-read absent. The state changes only by what admission and the presence check read
-and by what the agent does to the token itself:
+read absent. The state changes only by what admission and the presence check read and
+by what the agent does to the token itself:
 
 - A read that finds the token makes it known stored. A read that misses, with its
   re-reads, makes an unread key read absent and leaves the others as they were.
@@ -118,23 +118,23 @@ and by what the agent does to the token itself:
 The presence check reads each key once per check, however many pools use it, and
 admission reads it once for each pool. So a token that was never stored pauses the
 agent once per process, at its first read, which at launch is the presence check's,
-and every later read of it is a single one. A token deleted outside the agent stays known stored until the agent
-restarts or the token is saved again.
+and every later read of it is a single one. A token deleted outside the agent stays
+known stored until the agent restarts or the token is saved again.
 
 When a re-read finds the token, the pool is admitted or the presence answer is
-"stored" as if the first read had found it, and the log records at info level that
-the first read missed and which re-read found it. When the re-reads end without a
-token the log records that too. When a token known stored stays missing, the pool is
-skipped with its own reason, "the token is stored but could not be read", which the
-library exports as `STORED_UNREADABLE` beside `NO_TOKEN`, and which is not a store
-failure and does not begin with its words. The presence answer stays "stored", so
-the app still shows the token as stored and GitHub status collection keeps its
-scope; the presence check warns, naming the repository, and admission's warning is
-the skip warning with the new reason. The pool waits as one without a token does,
-and the next `token_set` admits it again with the same re-reads. Neither the reason
-nor the log lines hold a token.
+"stored" as if the first read had found it, and the log records at info level that the
+first read missed and which re-read found it. When the re-reads end without a token
+the log records that too. When a token known stored stays missing, the pool is skipped
+with its own reason, "the token is stored but could not be read", which the library
+exports as `STORED_UNREADABLE` beside `NO_TOKEN`, and which is not a store failure and
+does not begin with its words. The presence answer stays "stored", so the app still
+shows the token as stored and GitHub status collection keeps its scope; the presence
+check warns, naming the repository, and admission's warning is the skip warning with
+the new reason. The pool waits as one without a token does, and the next `token_set`
+admits it again with the same re-reads. Neither the reason nor the log lines hold a
+token.
 
-The pause blocks the agent's one thread, as the store call itself does: admission
-is synchronous throughout the agent. It is a field of the agent's construction, so
-that the tests, which set it to no wait, never sleep. A stale value, the token from
-before a write, is not detected: a re-read after a miss cannot see one.
+The pause blocks the agent's one thread, as the store call itself does: admission is
+synchronous throughout the agent. It is a field of the agent's construction, so that
+the tests, which set it to no wait, never sleep. A stale value, the token from before
+a write, is not detected: a re-read after a miss cannot see one.
