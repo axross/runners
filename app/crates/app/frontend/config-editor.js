@@ -419,16 +419,24 @@ export class ConfigEditor {
     );
   }
 
+  /** reads config.toml again, and says whether a form may open: the read was answered and the file is editable. */
+  async readForForm() {
+    await this.read();
+    return !this.stale && !this.fileReason;
+  }
+
   /** opens a pool's form, reading config.toml again first when a setting change left the read stale. */
   async openPool(pool) {
     this.applyResult = null;
     let target = pool;
     if (this.stale) {
-      await this.read();
-      if (this.stale || this.fileReason) return;
-      target = this.pools.find(
+      if (!(await this.readForForm())) return;
+      const named = this.pools.filter(
         (p) => p.source !== null && p.original.name === pool.original.name,
       );
+      target =
+        named.find((p) => p.source === pool.source) ??
+        (named.length === 1 ? named[0] : undefined);
       if (!target) return;
     }
     this.editing = target.id;
@@ -438,17 +446,15 @@ export class ConfigEditor {
   /** opens the Host Settings form, or closes it; it reads config.toml first when none was read or the read is stale. */
   async toggleHost() {
     this.applyResult = null;
-    if (!this.hostOpen && (!this.document || this.stale)) await this.read();
+    if (!this.hostOpen && (!this.document || this.stale))
+      await this.readForForm();
     this.hostOpen = this.hostOpen ? false : !this.stale && !this.fileReason;
     this.changed();
   }
 
   /** the new-pool form, after a read of config.toml when a setting change left the last one stale. */
   async openNewPool() {
-    if (this.stale) {
-      await this.read();
-      if (this.stale || this.fileReason) return;
-    }
+    if (this.stale && !(await this.readForForm())) return;
     this.addPool();
   }
 

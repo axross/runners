@@ -539,6 +539,63 @@ test("a pool's form opens only after a read that began once the setting call ret
   assert.equal(page.spoken().at(-1), "config.toml read. Nothing was applied.");
 });
 
+/** the page with two pools of one name, as a hand edit can leave them, read and then stale. */
+async function afterSettingWithTwins() {
+  const page = await afterSetting();
+  page.agent.file = {
+    ...FILE,
+    pools: [
+      { name: "a", repository: "owner/first", runners: 2 },
+      { name: "a", repository: "owner/second", runners: 3 },
+    ],
+  };
+  await page.press(page.keysLike("edit-pool:")[0].dataset.key);
+  await page.press(page.keysLike("done-pool:")[0].dataset.key);
+  assert.equal(page.keysLike("edit-pool:").length, 2);
+  assert.equal(page.clickSetting(), true);
+  await page.settled();
+  page.agent.calls.length = 0;
+  return page;
+}
+
+/** the repository field of the form that is open. */
+const openRepository = (page) =>
+  page
+    .keysLike("config-field:")
+    .find((element) => element.dataset.key.endsWith(":repository"))?.value;
+
+test("a stale read opens the form of the pool pressed among pools of one name", async () => {
+  const page = await afterSettingWithTwins();
+  await page.press(page.keysLike("edit-pool:")[1].dataset.key);
+  assert.deepEqual(page.agent.calls, ["read"]);
+  assert.equal(openRepository(page), "owner/second");
+});
+
+test("a stale read opens the one pool of the name when the pool pressed has moved", async () => {
+  const page = await afterSettingWithTwins();
+  page.agent.file = {
+    ...FILE,
+    pools: [{ name: "a", repository: "owner/second", runners: 3 }],
+  };
+  await page.press(page.keysLike("edit-pool:")[1].dataset.key);
+  assert.equal(openRepository(page), "owner/second");
+});
+
+test("a stale read opens no form when several pools of the name remain and none is at the pool's place", async () => {
+  const page = await afterSettingWithTwins();
+  const second = page.keysLike("edit-pool:")[1].dataset.key;
+  page.agent.file = {
+    ...FILE,
+    pools: [
+      { name: "a", repository: "owner/x", runners: 1 },
+      { name: "b", repository: "owner/y", runners: 1 },
+      { name: "a", repository: "owner/z", runners: 1 },
+    ],
+  };
+  await page.press(second);
+  assert.equal(page.keysLike("config-field:").length, 0);
+});
+
 test("the new-pool form opens only after such a read", async () => {
   const page = await afterSetting();
   const read = hold();
