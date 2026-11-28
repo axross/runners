@@ -160,18 +160,34 @@ scrub in [Post the Evidence](#post-the-evidence) covers both. The log's time sta
 UTC, in the same form as the VM and container names, so convert only times that come
 from elsewhere, such as GitHub's pages.
 
+`marshal status` is a client of the last command-line release, which
+[The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
+identifies and [macOS Runner Host](./mac-setup.md) describes; the Mac app has no
+command line. Run it by its installed path if `marshal` is not on your `PATH`; a manual
+copy is `~/.local/bin/marshal`. When the Mac app's agent runs the pools, there is no
+`marshal`: skip that command, record why in the notes file, and identify the VM from the
+log lines and the VM list. The first block below runs the status; the second records a
+skip.
+
 ```bash
 obs marshal status
+```
+
+```bash
+printf 'skipped: marshal status, the Mac app runs the pools\n' >>"$EVIDENCE"
+```
+
+```bash
 obs tart list --source local
 obs sh -c 'grep -hF -e "<pool> slot <slot>: booting job VM" -e "<pool> slot <slot>: starting container" ~/Library/Logs/marshal/*.log | tail -n 2'
 ```
 
-The affected slot's status line, such as `running container <name>`, and the two log
-lines name the VM the slot booted and the container it started. If the log lookup
-prints no lines, identify the VM from that status line and the VM list. If the VM is
-not in the list, it is gone: stop, and report on #124 what you collected and when the
-VM went. Otherwise set `VM`, and list the container names in it. The filter prints
-names only.
+The two log lines name the VM the slot booted and the container it started, and so
+does the affected slot's status line, such as `running container <name>`, when you
+have a status. If the log lookup prints no lines, identify the VM from the status line
+and the VM list. If the VM is not in the list, it is gone: stop, and report on #124
+what you collected and when the VM went. Otherwise set `VM`, and list the container
+names in it. The filter prints names only.
 
 ```bash
 VM='<vm>'
@@ -373,9 +389,9 @@ vm sudo -n timeout 15 tcpdump -p -nn -c 20 -i '<interface>' 'arp or port 53'
 ```
 
 Each capture ends after 15 s or 20 packets. While it runs, repeat the container's
-lookup from step 6 in a second `bash` session, so that packets appear. Define step 1's
-`obs`, `vm` and `ctr` there, set the same values, and run the lookup through `ctr`, so
-that it lands in the same notes file:
+lookup from step 6 in a second `bash` session while the capture runs, so that packets
+appear. Define step 1's `obs`, `vm` and `ctr` there, set the same values, and run the
+lookup through `ctr`, so that it lands in the same notes file:
 
 ```bash
 VM='<vm>'
@@ -384,7 +400,9 @@ EVIDENCE='<absolute-path-of-evidence-file>'
 ctr timeout 10 getent hosts github.com
 ```
 
-That is a lookup, not a fault. The capture prints every name queried on that
+That is a lookup, not a fault. The capture's packet lines reach the notes file when
+`tcpdump` ends, so the lookup's record may appear inside the capture's output; go by
+the time stamps. The capture prints every name queried on that
 interface, including the runner-specific GitHub host and any name a job looks up, such
 as a private registry. All of it falls under the scrub in
 [Post the Evidence](#post-the-evidence).
@@ -435,6 +453,9 @@ does for committed files:
 - resolver search domains, and the VM's host name;
 - MAC addresses, home-directory paths and the Mac's account name;
 - any host name or address other than the VM's, Docker's and public GitHub hosts.
+
+The notes file holds MAC addresses, neighbour tables and the status's configuration
+path. Keep it private, and delete it once the evidence or the abort is posted.
 
 The procedure is done when the evidence is posted, or when you record an abort on #124
 with its reason.

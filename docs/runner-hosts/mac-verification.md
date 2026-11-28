@@ -136,8 +136,9 @@ of an Apple tool as the source prints it, and not on a run:
   `ip`, `tcpdump`, `dig`, `curl`, `timeout`, `getent`, `grep`, `bash`, `nft` and
   `iptables` the VM has, which of `ip`, `dig`, `curl`, `timeout`, `getent` and `bash`
   the runner container has, whether the guest agent's `PATH` finds them, whether
-  systemd-resolved's upstream file exists, that `marshal status` prints the slot's
-  line as the page expects, and that the `/proc/net`, `/proc/sys/net/ipv4` and
-  `/sys/class/net` reads and the narrow `docker inspect` and `docker network inspect`
-  formats print what the page names and no environment or configuration field. No run
-  has exercised the page on a recurrence either.
+  systemd-resolved's upstream file exists, that the last command-line release's
+  `marshal status` prints the slot's line as the page expects, and that the
+  `/proc/net`, `/proc/sys/net/ipv4` and `/sys/class/net` reads and the narrow
+  `docker inspect` and `docker network inspect` formats print what the page names and
+  no environment or configuration field. No run has exercised the page on a recurrence
+  either.
