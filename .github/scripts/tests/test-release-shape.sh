@@ -672,7 +672,7 @@ expect_fail "the Mac app job without its hash output" "must output app_sha256 fr
 expect_fail "a workflow that does not hand over the app hash" "must hand over the app-macos job's app_sha256" \
   "$app_build" 'value: ${{ jobs.app-macos.outputs.app_sha256 }}' 'value: ${{ jobs.assemble.outputs.artifact }}'
 expect_fail "a cache action in the Mac app job" "app-macos job uses actions/cache" \
-  "$app_build" $'      - name: Install Pinned Rust Toolchain\n        run: rustup show active-toolchain || rustup toolchain install\n      # holds no secret.' $'      - name: Cache\n        uses: actions/cache@v4\n        with:\n          path: target\n          key: mac\n      - name: Install Pinned Rust Toolchain\n        run: rustup show active-toolchain || rustup toolchain install\n      # holds no secret.'
+  "$app_build" $'      # holds no secret. the staged' $'      - name: Cache\n        uses: actions/cache@v4\n        with:\n          path: target\n          key: mac\n      # holds no secret. the staged'
 expect_fail "the Mac app in the unsigned set's artifact" "must upload marshal-macos-app once and no other artifact" \
   "$app_build" $'          name: marshal-macos-app\n' $'          name: marshal-release\n'
 expect_fail "a Mac app build that signs" "must build with \`cargo tauri build ... --no-sign\`" \
@@ -681,6 +681,22 @@ expect_fail "a Mac app build installed without --locked" "must build with \`carg
   "$app_build" '--version "=${tauri_cli_version}" --locked' '--version "=${tauri_cli_version}"'
 expect_fail "an unsigned set that waits for the Mac app" "assemble needs app-macos" \
   "$app_build" $'  assemble:\n    name: Assemble The Release Files\n    needs: build\n' $'  assemble:\n    name: Assemble The Release Files\n    needs: [build, app-macos]\n'
+stamp_step=$'          bash ../.github/scripts/set-release-version.sh "$VERSION"\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a Mac app job that never writes the release version" "app-macos job must write the release version with set-release-version.sh" \
+  "$app_build" "$stamp_step" $'          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a Mac app job that writes the release version only after the build" "app-macos job must write the release version before any step that runs cargo" \
+  "$app_build" "$stamp_step" $'          git diff > "${RUNNER_TEMP}/stamp.diff"\n' \
+  "$app_build" $'      - name: Fail If The Build Changed A Tracked File\n        run: |\n' $'      - name: Fail If The Build Changed A Tracked File\n        run: |\n          bash ../.github/scripts/set-release-version.sh x\n'
+expect_fail "a Mac app job that writes the release version after the location test" "app-macos job must write the release version before any step that runs cargo" \
+  "$app_build" "$stamp_step" $'          git diff > "${RUNNER_TEMP}/stamp.diff"\n' \
+  "$app_build" 'run: cargo test --locked --release --package marshal-session --lib location' $'run: |\n          cargo test --locked --release --package marshal-session --lib location\n          bash ../.github/scripts/set-release-version.sh x'
+expect_fail "a release version step with a condition" "must write the release version with set-release-version.sh in a step with no condition" \
+  "$app_build" $'      # stamped tree is kept for the check after the build.\n      - name: Write The Release Version\n' $'      # stamped tree is kept for the check after the build.\n      - name: Write The Release Version\n        if: github.event_name == \'workflow_dispatch\'\n'
+signing_anchor='          test -f "${app}/Contents/Resources/icon.icns"'
+for signing in '/usr/bin/codesign --force --sign - "$app"' '/usr/bin/codesign -s - "$app"' '/usr/bin/security import cert.p12 -k login.keychain' '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
+  expect_fail "the Mac app job running ${signing%% *}" "signs, imports a certificate, notarizes or staples" \
+    "$app_build" "$signing_anchor" "${signing_anchor}"$'\n          '"${signing}"
+done
 expect_fail "a measuring step that does not list hdiutil" "does not measure /usr/bin/hdiutil" \
   "$app_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun ditto"'
 expect_fail "a measuring step that does not list ditto" "does not measure /usr/bin/ditto" \

@@ -251,6 +251,15 @@ jobs:
           persist-credentials: false
       - name: Install Pinned Rust Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # before anything compiles, so `--locked` fails if a manifest and its lockfile
+      # disagree, and the app's product version is the input's. the diff of the
+      # stamped tree is kept for the check after the build.
+      - name: Write The Release Version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          bash ../.github/scripts/set-release-version.sh "$VERSION"
+          git diff > "${RUNNER_TEMP}/stamp.diff"
       # holds no secret. the staged sign-macos and verify-macos call these tools by
       # absolute path, and a tool that moves on a new runner image should fail a
       # pull request here instead of a release. the lists must name every tool those
@@ -329,9 +338,15 @@ jobs:
           export PATH="${RUNNER_TEMP}/tauri-cli/bin:${PATH}"
           cd crates/app
           cargo tauri build --bundles app --no-sign --config "{\"version\":\"${BUNDLE_VERSION}\"}"
+      # the stamp is the only change the build may leave in a tracked file.
       - name: Fail If The Build Changed A Tracked File
         run: |
-          git diff --exit-code
+          git diff > "${RUNNER_TEMP}/build.diff"
+          if ! cmp -s "${RUNNER_TEMP}/stamp.diff" "${RUNNER_TEMP}/build.diff"; then
+            echo "error: the build changed a tracked file beyond the release version:" >&2
+            diff "${RUNNER_TEMP}/stamp.diff" "${RUNNER_TEMP}/build.diff" >&2 || true
+            exit 1
+          fi
           untracked="$(git ls-files --others --exclude-standard --full-name -- :/)"
           if [[ -n "$untracked" ]]; then
             echo "error: the build left files that are neither tracked nor ignored:" >&2

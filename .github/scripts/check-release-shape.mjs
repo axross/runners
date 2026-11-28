@@ -1445,8 +1445,9 @@ const MAC_APP_MEASURED = ["ditto", "hdiutil"];
 
 /**
  * records a Mac app job that holds a secret, uses an action other than checkout
- * and artifact upload, signs, does not hand over its archive's hash, mixes its
- * files into the unsigned set, or leaves a measured tool out of its signing tools
+ * and artifact upload, signs, does not hand over its archive's hash, does not
+ * write the release version before it compiles, mixes its files into the unsigned
+ * set, or leaves a measured tool out of its signing tools
  * step in problems, without running its scripts.
  */
 function checkMacAppJob() {
@@ -1490,6 +1491,33 @@ function checkMacAppJob() {
     problem(
       `${file}'s ${MAC_APP_JOB} job must build with \`cargo tauri build ... --no-sign\` after a --locked install`,
     );
+  const scripts = scriptsOf(job);
+  const stamp = scripts.findIndex((step) =>
+    step.run.includes("set-release-version.sh"),
+  );
+  const firstCargo = scripts.findIndex((step) => /\bcargo\b/.test(step.run));
+  if (stamp === -1 || "if" in scripts[stamp])
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must write the release version with set-release-version.sh in a step with no condition`,
+    );
+  else if (firstCargo !== -1 && stamp >= firstCargo)
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must write the release version before any step that runs cargo`,
+    );
+  // the measuring step names notarytool and stapler to look them up, so it is
+  // left out of the scan for them.
+  for (const step of scripts) {
+    const measuring = step.run.includes("MEASURED: signing tools");
+    const found = [
+      /\bcodesign\b[^\n]*\s(?:--sign|-s)\b/,
+      /\bsecurity\s+import\b/,
+      measuring ? null : /\b(?:notarytool|stapler)\b/,
+    ].find((pattern) => pattern?.test(codeLines(step.run).join("\n")));
+    if (found)
+      problem(
+        `${file}'s ${MAC_APP_JOB} job step "${text(step.name)}" signs, imports a certificate, notarizes or staples; the job builds unsigned`,
+      );
+  }
   const assemble = jobsOf(releaseBuild).find(([id]) => id === "assemble")?.[1];
   if (asList(assemble?.needs).includes(MAC_APP_JOB))
     problem(
