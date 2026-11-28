@@ -115,7 +115,12 @@ web view.
   "requires approval", and it keeps the empty file `login-item-registered-by-marshal`
   in the configuration folder after registering, so a later "not registered" counts as
   the maintainer turning Marshal off in Login Items; turning the setting off clears
-  it. Showing the window reads macOS's status again, so a removal or an approval made
+  it. The file is written only after Marshal registers itself. An item that is enabled
+  without it, because the maintainer added Marshal by hand with "+" in Login Items or
+  because writing the file failed, is not remembered as the maintainer's choice: a later
+  removal there is not recognised, and the next launch, Start all or change of a
+  setting registers Marshal again while the setting is on. Showing the window reads
+  macOS's status again, so a removal or an approval made
   in Login Items while Marshal runs shows then; it registers and unregisters nothing,
   and it keeps a failed registration's code until macOS reports another state, and a
   failed unregistration's code while macOS still holds the item. A failed call is

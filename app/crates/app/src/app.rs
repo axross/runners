@@ -169,9 +169,9 @@ fn login_item(
 /// connects the session to the agent and shows it on the icon and in the window; the
 /// app ends when the session does.
 fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    // macOS has the open-application event current only while it delivers it, which is
-    // while Tauri runs this setup, so nothing may come before this read that could run the
-    // event loop
+    // macOS has the open-application event current only while it delivers it, from
+    // applicationDidFinishLaunching, which is where Tauri runs this setup hook, so the read
+    // has to happen here and not after the setup returns to the event loop
     #[cfg(target_os = "macos")]
     let launch_event = crate::login_item::launch_event();
     let roots = Roots::resolve(Overrides::from_environment().root.as_deref())?;

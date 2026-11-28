@@ -317,15 +317,19 @@ app is built for, `x86_64-pc-windows-msvc` and `aarch64-apple-darwin`.
   so the app's own code stays without `unsafe`, and it adds that crate and
   `objc2-security` 0.3, which are MIT, Zlib or Apache-2.0. It adds no helper, launch
   agent or property list to the bundle. Also on macOS, `objc2-foundation` `=0.3.2`,
-  the version the tree already links through Tauri's window crates, without its default
-  features and with `NSAppleEventManager`, `NSAppleEventDescriptor` and
-  `objc2-core-services` on, which read the open-application Apple Event's login-item
-  mark so a launch from the login item shows only the icon (M4,
-  [#90](https://github.com/axross/runners/issues/90)). Those calls are safe, so the
-  app's own code stays without `unsafe`. It adds `objc2-core-services` 0.3.2 (Zlib,
-  Apache-2.0 or MIT), from the repository and commit the other `objc2` crates come
-  from, which takes `dispatch2`, `objc2` and `objc2-security`, which the tree
-  already has, and no procedural macro. For updates (see [Updates Come Only From the Signed
+  the version the tree already links through Tauri's window crates. The manifest line turns
+  its defaults off and requests `std`, `NSAppleEventManager`, `NSAppleEventDescriptor` and
+  `objc2-core-services`, which are what reading the open-application Apple Event's
+  login-item mark needs, so a launch from the login item shows only the icon (M4,
+  [#90](https://github.com/axross/runners/issues/90)). The compiled feature set is larger,
+  because `smappservice-rs` requests the crate with its defaults and Tauri's window crates
+  request more; the defaults already include `std`, `NSAppleEventManager` and
+  `NSAppleEventDescriptor`. The one real addition is the `objc2-core-services` feature,
+  which brings `objc2-core-services` 0.3.2 (Zlib, Apache-2.0 or MIT), from the repository
+  and commit the other `objc2` crates come from. It takes `dispatch2`, `objc2` and
+  `objc2-core-foundation`, which the tree already has, and `objc2-security`, which
+  `smappservice-rs` adds as above, and no procedural macro. Those calls are safe, so the
+  app's own code stays without `unsafe`. For updates (see [Updates Come Only From the Signed
   Feed](./app-trust.md#updates-come-only-from-the-signed-feed)): `tauri-plugin-updater`, pinned to
   `=2.14.1`, on Windows only, with its defaults off and only `rustls-tls` on, so it
   links no zip reader and reads no system proxy; `winsafe` 0.0.29's `kernel` feature on
