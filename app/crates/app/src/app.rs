@@ -133,31 +133,35 @@ fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processe
 }
 
 /// on macOS, the login item the app keeps in step with `start_at_login`, with its record
-/// beside the update's; elsewhere the agent keeps the sign-in item. It reads the
-/// executable's path and the home folder as `may_control_agent` does, so the two places
-/// that ask whether the bundle is in Applications cannot disagree.
+/// beside the update's; elsewhere the agent keeps the sign-in item. It reads the same raw
+/// executable path and `HOME` as `may_control_agent`, without that guard's debug-only
+/// `MARSHAL_TEST_ANY_LOCATION` override.
 #[cfg(target_os = "macos")]
-fn login_item(roots: &Roots) -> Result<Option<LoginItem>, String> {
-    let executable = std::env::current_exe()
-        .map_err(|error| format!("the app's own executable cannot be found: {error}"))?;
+fn login_item(
+    roots: &Roots,
+    executable: &std::path::Path,
+    home: Option<&std::path::Path>,
+) -> Option<LoginItem> {
     let record = marshal_session::LoginItemRecordFile::new(
         roots
             .config_directory()
             .join(marshal_session::LOGIN_ITEM_RECORD_FILE),
     );
-    Ok(Some(LoginItem::new(
+    Some(LoginItem::new(
         Arc::new(crate::login_item::MainApp),
         Arc::new(record),
-        &executable,
-        std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .as_deref(),
-    )))
+        executable,
+        home,
+    ))
 }
 
 #[cfg(not(target_os = "macos"))]
-fn login_item(_roots: &Roots) -> Result<Option<LoginItem>, String> {
-    Ok(None)
+fn login_item(
+    _roots: &Roots,
+    _executable: &std::path::Path,
+    _home: Option<&std::path::Path>,
+) -> Option<LoginItem> {
+    None
 }
 
 /// connects the session to the agent and shows it on the icon and in the window; the
@@ -180,6 +184,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             executable.display()
         ));
     }
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let login_item = login_item(&roots, &executable, home.as_deref());
     let launcher = OwnExecutable::at(executable, Arc::clone(&log));
     let version = env!("CARGO_PKG_VERSION");
     let time = Arc::new(WallClock::new(utc_offset_minutes));
@@ -205,7 +211,6 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let moved = MovedFile::new(roots.config_directory().join(MOVED_FILE));
     let after_moved = cfg!(target_os = "macos") && in_place && moved.take();
     let (updater, processes) = update_seams(app);
-    let login_item = login_item(&roots)?;
     let watch = Arc::new(Mutex::new(Watch::new()));
     let latest = Arc::new(Latest::default());
     let screen = Screen::new(
