@@ -105,6 +105,12 @@ it failed to delete. A slot that is held boots
 nothing and tries again on its backoff, while jobs on other slots finish; fix the
 cause, such as Softnet's SUID bit after a `brew upgrade`, and the slot boots again.
 
+A `restart` deletes every job VM, which ends the chance to observe a stuck one. When a
+Linux runner keeps retrying its connection to GitHub, or its jobs fail to resolve
+names, do not `restart` yet: read
+[Observe a Linux job VM whose network overlaps Docker's bridge](./mac-overlap-observation.md)
+first. A `restart` after it needs the maintainer's go.
+
 A client's `stop`, a signal, or closing the terminal of `start` runs the same stop
 sequence, which stops the job containers and
 deletes every VM within 30 s. A second Ctrl+C skips the grace period: a diagnostic VM
@@ -128,6 +134,11 @@ instance.
   with a job. A VM left after a stop is a leftover.
 - **The log:** `~/Library/Logs/marshal/marshal-<time>-<pid>.log` keeps the newest ten
   runs. `Using Tart <v> and Softnet <v>.` records the versions in use.
+- **A stuck Linux runner:** a runner that keeps retrying its connection, or jobs on it
+  that fail to resolve names, is not yet a case for a `restart`, which deletes the VM
+  that holds the evidence. Follow
+  [Observe a Linux job VM whose network overlaps Docker's bridge](./mac-overlap-observation.md)
+  first.
 
 ### Adding Actions: read for Job Names
 
