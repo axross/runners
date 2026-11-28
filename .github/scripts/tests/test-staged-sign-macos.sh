@@ -54,7 +54,7 @@ archive_sha256="$(printf '%s\n' "$archive_content" | sha256sum | cut -d' ' -f1)"
 
 node "${here}/check-staged-macos-app.mjs" "$repository"
 # shellcheck disable=SC2016 # the text the sed edits find is literal, not an expansion.
-for check in hdiutil-arguments unmeasured-tool workflow-names-file; do
+for check in hdiutil-arguments unmeasured-tool unmeasured-literal-tool workflow-names-file; do
   altered="${work}/altered-${check}"
   mkdir -p "${altered}/.github/staged" "${altered}/.github/workflows" "${altered}/.github/scripts/tests"
   cp "${repository}/.github/staged/release-macos-app.yaml" "${altered}/.github/staged/"
@@ -63,6 +63,7 @@ for check in hdiutil-arguments unmeasured-tool workflow-names-file; do
   case "$check" in
     hdiutil-arguments) sed -i 's/-format UDZO -ov "\$image"; do/-format UDBZ -ov "$image"; do/' "${altered}/.github/staged/release-macos-app.yaml" ;;
     unmeasured-tool) sed -i 's/bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"/bin_tools="security codesign openssl plutil shasum xcrun ditto"/' "${altered}/.github/workflows/release-build.yaml" ;;
+    unmeasured-literal-tool) sed -i '/check_hash "unsigned\//a\          /usr/bin/stat -f %z x' "${altered}/.github/staged/release-macos-app.yaml" ;;
     workflow-names-file) printf '# see .github/staged/release-macos-app.yaml\n' >"${altered}/.github/workflows/other.yaml" ;;
   esac
   if node "${here}/check-staged-macos-app.mjs" "$altered" >/dev/null 2>&1; then
@@ -224,6 +225,12 @@ case "$tool" in
     ;;
   openssl)
     case "$1" in
+      enc)
+        [[ "$*" == "enc -base64 -d -A" ]] || exit 91
+        encoded="$(cat)"
+        [[ "$encoded" != *$'\n'* && "$encoded" != *$'\r'* ]] || exit 91
+        printf '%s' "$encoded" | base64 --decode
+        ;;
       rand) echo "$KEYCHAIN_PASSWORD" ;;
       x509)
         team_of="$(scn application_team ABCDE12345)"
@@ -558,6 +565,21 @@ line_of() {
   grep -n -F -e "$1" "$record" | head -n 1 | cut -d: -f1
 }
 
+# deep_in_record: whether any recorded codesign call carries --deep, wherever
+# in its arguments, since the expected calls are matched as substrings.
+deep_in_record() {
+  grep -q -E ' codesign .*--deep' "$record"
+}
+
+check_no_deep() {
+  ! deep_in_record || echo "a codesign call carries --deep: $(grep -E ' codesign .*--deep' "$record" | head -n 1)"
+}
+
+# check_deep_seen: the check above finds a --deep among the flags.
+check_deep_seen() {
+  deep_in_record || echo "an appended --deep passed unseen"
+}
+
 check_flags() {
   local keychain="${case_dir}/tmp/marshal-signing.keychain-db" dir="${case_dir}/tmp/marshal-signing" stage="${case_dir}/tmp/marshal-dmg" expected sign_app build sign_image submit staple validate
   for expected in \
@@ -588,6 +610,11 @@ check_flags() {
       return
     fi
   done
+  expected="$(check_no_deep)"
+  if [[ -n "$expected" ]]; then
+    echo "$expected"
+    return
+  fi
   if grep -q -E ' (pkgbuild|pkgutil|productsign) |Installer' "$record"; then
     echo "the job calls a package tool or names an Installer identity: $(grep -E ' (pkgbuild|pkgutil|productsign) |Installer' "$record" | head -n 1)"
     return
@@ -664,7 +691,17 @@ check_not_signed() {
 reset_case
 run_case "a passing run" pass "Deleted the keychain, the certificate files and the key file." some check_flags
 reset_case
+s_application_p12="${secret_application:0:8}"$'\n'"${secret_application:8}"
+run_case "a passing run with an LF-wrapped P12 secret" pass "Imported the Developer ID G2 certificate and the Developer ID Application identity." some
+reset_case
+s_application_p12="${secret_application:0:8}"$'\r\n'"${secret_application:8}"
+run_case "a passing run with a CRLF-wrapped P12 secret" pass "Imported the Developer ID G2 certificate and the Developer ID Application identity." some
+reset_case
 run_case "a passing run's outputs, the signed disk image and the notary log" pass "Submission ${submission} was accepted." some check_outputs
+reset_case
+mutate_script="05-sign.sh"
+mutate_expression='s|--options runtime --timestamp|--options runtime --deep --timestamp|'
+run_case "a --deep among the app's codesign flags" pass "" some check_deep_seen
 reset_case
 run_case "the notary log upload step reads the log's directory" pass "" some check_upload_path
 

@@ -157,7 +157,7 @@ jobs:
           g2_base64+="jGgNe30dfsy1k/DWbz0VeoCldNPhj33SiOgxp5jFH9/iglmugIFgRhbsnrmKQKobKuFhhgqMcA/ZSizsTKIFEdZ5jKVjJSEj"
           g2_base64+="Am+TW1pXoddFbd/M93+fX9vH7WSnb0Qvb009eHgKVrQ71zrIK2Wik+rbWOqO1LnEwDD8MhpNupIMJDmYgjqgmd7n5OS8DryF"
           g2_base64+="r1qrXND828wQww=="
-          printf '%s' "$g2_base64" | base64 --decode >"${dir}/DeveloperIDG2CA.cer"
+          printf '%s' "$g2_base64" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/DeveloperIDG2CA.cer"
           line="$("$SYSTEM_BIN/shasum" -a 256 "${dir}/DeveloperIDG2CA.cer")"
           if [[ "${line%% *}" != "$g2_sha256" ]]; then
             refuse "the embedded Developer ID G2 certificate has SHA-256 ${line%% *}, not the pinned ${g2_sha256}"
@@ -170,7 +170,7 @@ jobs:
           "$SYSTEM_BIN/security" unlock-keychain -p "$keychain_password" "$keychain"
           "$SYSTEM_BIN/security" list-keychains -d user -s "$keychain"
 
-          printf '%s' "$APPLE_APPLICATION_P12_BASE64" | base64 --decode >"${dir}/application.p12"
+          printf '%s' "${APPLE_APPLICATION_P12_BASE64//[$'\r\n']/}" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/application.p12"
           chmod 0600 "${dir}/application.p12"
           [[ -s "${dir}/application.p12" ]] || refuse "application.p12 is empty after decoding its secret"
 

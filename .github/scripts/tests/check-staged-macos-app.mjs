@@ -9,7 +9,8 @@
 //   - the staged verify-macos runs test-signed-dmg.sh, which
 //     test-signed-dmg-refusals.sh tests;
 //   - the staged `hdiutil create` arguments equal release-build.yaml's app job's;
-//   - every tool the staged jobs and test-signed-dmg.sh call is in the lists of
+//   - every tool the staged jobs and test-signed-dmg.sh call, through SYSTEM_BIN or
+//     SYSTEM_SBIN or by a literal /usr/bin or /usr/sbin path, is in the lists of
 //     the app job's measured-tools step.
 // it prints one `ok` line per check, or every problem and exit status 1.
 import { readdirSync, readFileSync } from "node:fs";
@@ -122,7 +123,8 @@ if (!measuring) {
   }
 }
 
-// every tool a script calls through its prefix variables, and the xcrun tools.
+// every tool a script calls through its prefix variables or by a literal path, and
+// the xcrun tools.
 const scripts = [
   ...Object.values(stagedJobs)
     .flatMap(runScripts)
@@ -135,6 +137,12 @@ for (const script of scripts) {
     /"\$SYSTEM_(S?BIN)\/([a-z]+)"/g,
   )) {
     called.add(`${prefix === "BIN" ? "/usr/bin" : "/usr/sbin"}/${tool}`);
+  }
+  // a tool called by its literal path, as verify-macos's hash step calls shasum.
+  for (const [, directory, tool] of code(script).matchAll(
+    /(?<![\w/$])\/usr\/(s?bin)\/([a-z]+)\b/g,
+  )) {
+    called.add(`/usr/${directory}/${tool}`);
   }
   for (const [, tool] of code(script).matchAll(
     /"\$SYSTEM_BIN\/xcrun" (notarytool|stapler)\b/g,
