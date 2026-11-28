@@ -126,11 +126,10 @@ record a change to either workflow, to the build call in
     request can edit it, so it guards against mistakes, not against a hostile pull
     request, and [CLI](../marshal-cli/release-extensions.md#extending-the-release-workflows) names
     what it does not read. What keeps pull requests away is the branch rule on the
-    Environment and that `release.yaml` runs only on a dispatch. The text of W4's
-    `update-tool` and `sign-update` jobs and of `assemble-signed`'s feed steps is
-    staged in [`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml),
-    outside `.github/workflows/`: GitHub never runs it and the shape check does not
-    read it, so its `environment: release` reaches nothing. The `update-feed` jobs of
+    Environment and that `release.yaml` runs only on a dispatch. W4's feed jobs are
+    [staged](../marshal-cli/release-artifacts.md#the-update-feeds-tools-and-checks)
+    in a file that is not a workflow, so its `environment: release` reaches nothing
+    and the shape check does not read it. The `update-feed` jobs of
     `merge-checks.yaml` hold `contents: read`, reach no Environment and read no
     secret; they run the staged signing scripts with a throwaway key made for the run.
   - **No secret is printed.** In a signing job, secret values reach the scripts through `env:` and

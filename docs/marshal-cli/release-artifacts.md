@@ -270,9 +270,12 @@ own what the feed adds to the release graph.
 The release run does not publish `latest.json` yet, because no release job signs or
 writes it. The jobs that will are staged in
 [`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml), outside
-`.github/workflows/`, so GitHub never runs it and its `environment: release` reaches
-no Environment. The app release route is restored (#188), so W4's last pull request moves the
-staged text into `release.yaml` and deletes the file. The file holds:
+`.github/workflows/`, so GitHub never runs it, its `environment: release` reaches no
+Environment and `check-release-shape.mjs` does not read it. The first of W4's two feed
+pull requests staged it and changed no release workflow, `release/.releaserc.json`,
+`verify-release.sh` or release rule of the shape check. The app release route is restored
+(#188), so the last one moves the staged text into `release.yaml` as #188 left it, deletes
+the file and points the merge checks' extraction at `release.yaml`. The file holds:
 
 - **`update-tool`** builds `cargo-tauri` and `marshal-feed-check` with
   [`build-update-tools.sh`](../../.github/scripts/build-update-tools.sh), the script

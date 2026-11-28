@@ -216,18 +216,10 @@ documents named above, without restoring the command-line package.
 
 ### W4's Feed Pull Request and M4's Archive
 
-W4's feed work lands in two pull requests. The first adds the tool script, the signing
-scripts, the script that writes `latest.json` and the merge checks' round trip, and
-stages the text of `update-tool`, `sign-update` and `assemble-signed`'s feed steps in
-[`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml). It
-changes no release workflow, `release/.releaserc.json`, `verify-release.sh` or release
-rule of the shape check, and nothing in it reaches an Environment. The last pull
-request moves the staged text into `release.yaml` as #188 left it, deletes
-the staged file and points the merge checks' extraction at `release.yaml`. The
-requirements below are that last pull request's, and it reviews whatever the release
-graph then needs.
+W4's feed work lands in two pull requests, and the requirements below are the last
+one's, which reviews whatever the release graph then needs.
 [The update feed's tools and checks](./release-artifacts.md#the-update-feeds-tools-and-checks)
-describes what exists now.
+describes what the first one added and staged, and what exists now.
 
 W4 MUST add `update-tool` on `ubuntu-latest`, with `contents: read`, no Environment,
 no secret or cache, and a checkout with `persist-credentials: false`. It runs W4's

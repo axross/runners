@@ -105,13 +105,10 @@ owns that rule. `--public-key` selects a throwaway key for the merge checks' rou
 trip. Its tests use throwaway keys in `app/crates/feed/tests/fixtures/`.
 
 **Where the feed stands.** The scripts that sign and write the feed and the merge checks
-that run them are in place; the release run does not publish `latest.json` yet. The
-jobs' text is staged in `.github/staged/release-feed.yaml`, outside `.github/workflows/`,
-where GitHub never runs it, and the signing scripts, the committed `tauri-cli` archive
-checksum and the merge checks' round trip are described in
-[CLI](../marshal-cli/release-artifacts.md#the-update-feeds-tools-and-checks). The last pull
-request of W4 moves the staged text into the release run, now that the app release route
-is restored (#188), and the first release after it is the first to carry a feed.
+that run them are in place; the release run does not publish `latest.json` yet, and the
+first release after W4's last pull request is the first to carry a feed. [The update
+feed's tools and checks](../marshal-cli/release-artifacts.md#the-update-feeds-tools-and-checks)
+owns the staging and the scripts.
 
 ### The Update-Feed Key
 
