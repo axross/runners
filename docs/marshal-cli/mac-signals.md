@@ -150,7 +150,10 @@ one.
   a sleep or a network change stay fixed whatever the settings say. `start` gives no
   settings, so its hold always follows the state. The monitor also keeps the primary
   network it last recorded while running and reads the next one while stopped, which
-  the agent's resume after a signal stop compares; a new run clears that record.
+  the agent's resume after a signal stop compares; a new run clears that record. The
+  hold's state, the settings and that record live in
+  `instance::monitor_state::MonitorState`, which Windows' `WindowsMonitor` shares, so
+  how the hold follows `keep_awake` is one piece of code.
 - **Each run begins afresh.** When the instance enters running, at the first run and
   at every resume or restart, it calls `begin`: the sleep baseline is set again,
   because nothing sampled the clocks while it was stopped and the time spent

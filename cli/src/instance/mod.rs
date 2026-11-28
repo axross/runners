@@ -9,6 +9,7 @@ pub mod fake;
 pub mod lifecycle;
 pub mod lock;
 pub mod log_file;
+pub mod monitor_state;
 pub mod protocol;
 pub mod restart;
 pub mod resume;

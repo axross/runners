@@ -61,7 +61,9 @@ has the time to delete its job VMs.
 
 `WindowsMonitor` reads the settings in effect, which the agent sets from each
 configuration it reads into `lifecycle_settings::Current`, at every tick, so a
-change takes effect within a second:
+change takes effect within a second. It keeps the hold's state and the recorded
+network in `instance::monitor_state::MonitorState`, as `SignalMonitor` does. Its
+signals:
 
 | Signal          | What it reads                                                                                                                                                           | Gated by                                                                                       |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
