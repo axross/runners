@@ -271,8 +271,8 @@ The release run does not publish `latest.json` yet, because no release job signs
 writes it. The jobs that will are staged in
 [`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml), outside
 `.github/workflows/`, so GitHub never runs it and its `environment: release` reaches
-no Environment. W4's last pull request moves the staged text into `release.yaml` after
-the app's publication is restored, and deletes the file. The file holds:
+no Environment. The app's publication is restored, so W4's last pull request moves the
+staged text into `release.yaml` and deletes the file. The file holds:
 
 - **`update-tool`** builds `cargo-tauri` and `marshal-feed-check` with
   [`build-update-tools.sh`](../../.github/scripts/build-update-tools.sh), the script
