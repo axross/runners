@@ -379,5 +379,6 @@ of configured pools; the log names each once when a count first finds it.
 In the agent's snapshot these are the runner states `waiting_for_vm_limit` and
 `waiting_for_vm_deletion`, the runner field `workload_kind: "vm"`, an `images` entry
 named `golden macOS VM` with the lines `name`, `golden-vm-version`, `runner-version`
-and `base-published` and the warnings `runner_old` with `days`, `runner_age_unknown`
-and `base_old` with `days`, and `leftovers` of kind `vm_unconfigured_pool`.
+and `base-published` and the warnings `runner_may_be_newer` from 7 to 20 days and
+`runner_old` from 21 days, each with `days` and `version`, `runner_age_unknown`, and
+`base_old` with `days`, and `leftovers` of kind `vm_unconfigured_pool`.
