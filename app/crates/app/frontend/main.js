@@ -3,10 +3,11 @@
 
 import { askConfirmation, cancelDialog, dialogOpen } from "./dialog.js";
 import { keyOf } from "./controls.js";
+import { ConfigEditor } from "./config-editor.js";
 import { say } from "./live.js";
 import { renderWindow } from "./render.js";
 import { newestFirst } from "./revision.js";
-import { clearTypedTokens } from "./tokens.js";
+import { clearTypedTokens, tokenKey, tokenRows } from "./tokens.js";
 import { closeTip, resetTips } from "./tooltip.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -25,6 +26,15 @@ const state = {
 };
 
 const RETRY_MS = 500;
+let composing = false;
+let readEditor = false;
+const editor = new ConfigEditor(
+  invoke,
+  (focus = null) => {
+    if (state.view) draw(state.view, focus);
+  },
+  say,
+);
 
 /** whether a view is the newest the window has had, whichever route it came by. */
 const isCurrent = newestFirst();
@@ -36,15 +46,21 @@ function listOf(view) {
 }
 
 function rowOf(view, repository) {
-  return listOf(view)?.tokens.rows.find((row) => row.repository === repository);
+  const tokens = listOf(view)?.tokens;
+  return (
+    tokens && tokenRows(tokens).find((row) => tokenKey(row) === repository)
+  );
 }
 
 /** which token forms the view shows open: the page's state is the view's. */
 function openForms(view) {
-  const rows = listOf(view)?.tokens.rows ?? [];
+  const tokens = listOf(view)?.tokens;
+  const rows = tokens ? tokenRows(tokens) : [];
+  const editing = rows.find((row) => row.form);
+  const removing = rows.find((row) => row.confirming_removal);
   return {
-    editing: rows.find((row) => row.form)?.repository ?? null,
-    removing: rows.find((row) => row.confirming_removal)?.repository ?? null,
+    editing: editing ? tokenKey(editing) : null,
+    removing: removing ? tokenKey(removing) : null,
   };
 }
 
@@ -84,13 +100,32 @@ function focusInstead(key) {
     if (focusKey(`pool:${pool}`)) {
       return;
     }
+    const draft = editor.pools.find(
+      (row) =>
+        !row.removed &&
+        row.source !== null &&
+        editor.document?.pools[row.source].name === pool,
+    );
+    if (draft && focusKey(`edit-heading:${draft.id}`)) return;
   }
   focusHeading();
 }
 
 // ---- drawing
 
+/** keeps a draft field's caret across snapshots, deferring redraws during IME input. */
 function draw(view, focusRequest = null) {
+  editor.update(view.window.editor);
+  if (composing) {
+    state.view = view;
+    return;
+  }
+  const active = document.activeElement;
+  const selection =
+    active?.dataset?.key?.startsWith("config-field:") &&
+    typeof active.selectionStart === "number"
+      ? [active.selectionStart, active.selectionEnd, active.selectionDirection]
+      : null;
   const before = focusRequest ?? focusedKey();
   const scroller = elementOfKey("scroller");
   const scrolled = scroller ? scroller.scrollTop : 0;
@@ -100,6 +135,9 @@ function draw(view, focusRequest = null) {
     const forms = openForms(view);
     state.tab =
       forms.editing || forms.removing ? "tokens" : list.header.opens_on;
+  }
+  if (list && focusRequest === "cancel-config") {
+    state.tab = "pools";
   }
   state.view = view;
   state.drawn = JSON.stringify(view);
@@ -113,6 +151,13 @@ function draw(view, focusRequest = null) {
   if (before !== null && !focusKey(before)) {
     focusInstead(before);
   }
+  if (selection && focusRequest === null)
+    document.activeElement?.setSelectionRange?.(...selection);
+  if (
+    focusRequest?.startsWith("edit-heading:") ||
+    focusRequest === "cancel-config"
+  )
+    elementOfKey(focusRequest)?.scrollIntoView?.({ block: "nearest" });
 }
 
 /**
@@ -129,6 +174,10 @@ function apply(shown, { focus = null } = {}) {
     draw(view, focus);
   }
   say(announce);
+  if (!readEditor && editor.access && !editor.access.read_reason) {
+    readEditor = true;
+    editor.read();
+  }
 }
 
 function redraw() {
@@ -195,8 +244,12 @@ function cancelRemoval(repository) {
   showForms({ editing, removing: null }, `row:${repository}:remove`);
 }
 
-async function removeToken(repository) {
-  await run("remove_token", { repository });
+async function removeToken(repository, organization) {
+  if (organization) {
+    await run("remove_organization_token", { organization: repository });
+  } else {
+    await run("remove_token", { repository });
+  }
   try {
     apply(await readView(), { focus: `row:${repository}:primary` });
   } catch (error) {
@@ -208,11 +261,16 @@ async function removeToken(repository) {
  * passes the field's token to the app and clears the field at once, whatever comes of
  * it. The page holds the token nowhere else, and shows no token back.
  */
-async function saveToken(repository, field) {
+async function saveToken(repository, field, organization) {
   if (state.notice !== null) {
     state.notice = null;
   }
-  const sent = invoke("set_token", { repository, token: field.value });
+  const sent = organization
+    ? invoke("set_organization_token", {
+        organization: repository,
+        token: field.value,
+      })
+    : invoke("set_token", { repository, token: field.value });
   field.value = "";
   field.dispatchEvent(new Event("input"));
   try {
@@ -299,7 +357,16 @@ function gotoToken(repository) {
   focusKey(`row:${repository}:primary`);
 }
 
+/**
+ * turns a setting on or off. Focus stays on its checkbox, the agent writes the change,
+ * and the next view shows and announces what it came to.
+ */
+function setSetting(key, on) {
+  run("set_setting", { key, on });
+}
+
 const context = {
+  editor,
   get tab() {
     return state.tab;
   },
@@ -314,6 +381,7 @@ const context = {
   cancelForm,
   cancelRemoval,
   removeToken,
+  setSetting,
 };
 
 // ---- keys
@@ -321,7 +389,9 @@ const context = {
 /** the token form or question around the focused element, with its repository. */
 function openAround(element) {
   const form = element?.closest?.(".token-form, .token-confirm");
-  const repository = form?.closest("[data-repository]")?.dataset.repository;
+  const repository = form
+    ?.closest("[data-token-key]")
+    ?.getAttribute("data-token-key");
   return form && repository
     ? { repository, removal: form.classList.contains("token-confirm") }
     : null;
@@ -341,6 +411,7 @@ function escape(event) {
     (around.removal ? cancelRemoval : cancelForm)(around.repository);
     return;
   }
+  if (editor.cancel({ panelShown: state.tab === "pools" })) return;
   invoke("hide_window");
 }
 
@@ -367,6 +438,13 @@ document.addEventListener("keydown", (event) => {
   } else {
     moveBetweenTabs(event);
   }
+});
+document.addEventListener("compositionstart", () => {
+  composing = true;
+});
+document.addEventListener("compositionend", () => {
+  composing = false;
+  redraw();
 });
 
 // the app says so before it hides the window, from every place it does, so a token half

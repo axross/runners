@@ -36,7 +36,15 @@ For example, a source comparison passes for the project installation, but the
 host loads a user-level skill of the same name. Installation and source agreement
 can pass while active loading is a mismatch. A matching path with an old body
 instead indicates stale content; a current file read alone cannot establish
-that the session loaded the new body.
+that the session loaded the new body. Two different roots can also supply
+identical text. Report the source mismatch independently of the content match.
+
+When an installation correction precedes a comparison of skill revisions,
+capture the unchanged reference treatment after resolving the selected source.
+Compare the candidate at the same effective installation level, checking each
+treatment against its own expected body and applicable references. A change of
+selected root during the comparison prevents attributing a difference to a
+content revision alone.
 
 When completeness, current retention or another actor's acquisition is in
 question, use [actor-local-acquisition.md](./actor-local-acquisition.md).

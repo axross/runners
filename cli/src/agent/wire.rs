@@ -1,6 +1,6 @@
 //! the messages of protocol version 2, one JSON object per line; every field name
 //! here is a promise within version 2, and a reader ignores a field it does not know;
-//! `docs/operations/cli.md` describes them.
+//! `docs/marshal-cli/agent-protocol.md` describes them.
 
 use std::fmt;
 
@@ -23,7 +23,7 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 16 * 1024;
 pub const MAX_AGENT_MESSAGE_BYTES: usize = 64 * 1024;
 
 /// the methods `welcome` lists; `renew` keeps a `github` subscription alive.
-pub const METHODS: [&str; 15] = [
+pub const METHODS: [&str; 17] = [
     "status",
     "subscribe",
     "start_all",
@@ -39,6 +39,8 @@ pub const METHODS: [&str; 15] = [
     "config_reload",
     "launch",
     "lifecycle_set",
+    "organization_token_set",
+    "organization_token_remove",
 ];
 
 /// the `ending` reason of an agent that ends for an update.
@@ -242,8 +244,8 @@ pub struct ClientInfo {
     pub version: String,
 }
 
-/// what a client sends. `Debug` leaves out a request's params, since those of a
-/// `token_set` hold a token.
+/// what a client sends. `Debug` leaves out a request's params, since they may hold
+/// a token.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[non_exhaustive]

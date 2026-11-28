@@ -1,7 +1,7 @@
 //! the banner that leads the list: what the agent is doing or why it is stopped, in
 //! the words of the boards, with the one action that resolves it.
 
-use marshal_cli::agent::machine::NOT_STARTED_AT_LAUNCH;
+use marshal_cli::agent::machine::{NOT_STARTED_AT_LAUNCH, RESUME_NO_GATEWAY, RESUME_WAITING};
 use marshal_cli::agent::snapshot::WarningKind;
 use serde::Serialize;
 
@@ -386,13 +386,18 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
         Stop::NoPoolStarted => {
             let heading = "Stopped: no pool could start";
             let (lead, lines) = if context.every_pool_lacks_a_token() {
-                let lead = "Every pool was skipped because its repository has no token.";
-                (
-                    lead,
-                    vec![format!(
-                        "{lead} Set a token for each repository, then choose Start All."
-                    )],
-                )
+                let (lead, next) = if context.pools.iter().any(|pool| pool.organization.is_some()) {
+                    (
+                        "Every pool was skipped because it has no token.",
+                        "Set the tokens in the Tokens tab, then choose Start All.",
+                    )
+                } else {
+                    (
+                        "Every pool was skipped because its repository has no token.",
+                        "Set a token for each repository, then choose Start All.",
+                    )
+                };
+                (lead, vec![format!("{lead} {next}")])
             } else {
                 let lead = "Each pool below says why.";
                 (
@@ -435,11 +440,11 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
                 .and_then(|snapshot| snapshot.lifecycle.as_ref())
                 .and_then(|lifecycle| lifecycle.resume.as_deref());
             let next = match resume {
-                Some("waiting") => {
+                Some(RESUME_WAITING) => {
                     "They start again on their own once the network they stopped on has \
                      settled; on another network they stay stopped until you choose Start All."
                 }
-                Some("no_gateway") => {
+                Some(RESUME_NO_GATEWAY) => {
                     "They will not start again on their own on this network. Choose Start All \
                      to run them again."
                 }
@@ -733,7 +738,7 @@ fn unknown_state(state: &str) -> Banner {
 }
 
 fn no_tokens(context: &Context<'_>) -> Option<Banner> {
-    let repositories = tokens::repositories(context);
+    let repositories = tokens::token_owners(context);
     if repositories.is_empty() || repositories.iter().any(|repository| repository.has_token) {
         return None;
     }
@@ -749,8 +754,17 @@ fn no_tokens(context: &Context<'_>) -> Option<Banner> {
     {
         return None;
     }
-    let heading = "No repository has a token yet";
-    let line = "Set a token for each repository, then choose Start All.";
+    let (heading, line) = if repositories.iter().any(|owner| owner.organization) {
+        (
+            "No token is set yet",
+            "Set the tokens in the Tokens tab, then choose Start All.",
+        )
+    } else {
+        (
+            "No repository has a token yet",
+            "Set a token for each repository, then choose Start All.",
+        )
+    };
     Some(banner(
         BannerKind::NoTokens,
         Tone::Warning,
@@ -775,6 +789,7 @@ fn truncated(context: &Context<'_>) -> Option<Banner> {
             "configuration problems",
         ),
         (omitted.repositories, "repository", "repositories"),
+        (omitted.organizations, "organisation", "organisations"),
         (omitted.leftovers, leftover.as_str(), leftovers.as_str()),
         (omitted.images, words.image_short, images.as_str()),
     ]

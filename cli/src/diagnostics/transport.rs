@@ -1,6 +1,6 @@
 //! how the exporter reaches a diagnostic container's evidence: `docker cp` on the
 //! host's engine, or the same two commands in a job VM through the guest agent;
-//! `docs/operations/cli.md` describes the seam.
+//! `docs/marshal-cli/diagnostics.md` describes the seam.
 
 use std::ffi::OsStr;
 use std::process::Stdio;

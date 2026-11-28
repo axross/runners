@@ -2,7 +2,7 @@
 //! that names no operating system, an in-memory store for tests, an adapter over a
 //! `keyring-core` store, which the Windows Credential Manager provides, and the Mac's
 //! Keychain store; the agent is the only caller, one call at a time;
-//! `docs/operations/cli.md` describes the keys, the Windows entries and the Keychain
+//! `docs/marshal-cli/token-store.md` describes the keys, the Windows entries and the Keychain
 //! items.
 
 mod keyring;
@@ -15,6 +15,7 @@ pub mod windows;
 use std::fmt;
 
 use crate::runtime::secret::Secret;
+use crate::validate::PoolTarget;
 use crate::validate::patterns::{is_owner, is_repository};
 
 pub use keyring::{Classified, EntryName, KeyringTokenStore, Naming};
@@ -72,6 +73,17 @@ impl TokenKey {
         Self(format!("{owner}/{name}").to_ascii_lowercase())
     }
 
+    /// the credential key of a target whose names passed configuration validation.
+    #[must_use]
+    pub fn for_pool(target: &PoolTarget) -> Self {
+        match target {
+            PoolTarget::Repository { owner, repository } => Self::of(owner, repository),
+            PoolTarget::Organization { organization, .. } => {
+                Self(organization.to_ascii_lowercase())
+            }
+        }
+    }
+
     /// reads `owner/name`, in any case, with the patterns a configuration applies to
     /// each part.
     pub fn parse(text: &str) -> Result<Self, NotARepository> {
@@ -86,6 +98,11 @@ impl TokenKey {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    #[must_use]
+    pub fn is_organization(&self) -> bool {
+        !self.0.contains('/')
     }
 }
 

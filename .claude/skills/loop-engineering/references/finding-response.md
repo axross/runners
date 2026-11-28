@@ -1,6 +1,6 @@
 # Choosing a Response to Findings
 
-Apply this reference before choosing a response to advisory pre-flight or independent-review findings. It routes author-side judgment and correction selection; the stage's own reference still owns finding identity, disposition authority, evidence durability, fresh review, and round limits.
+Apply this reference before choosing a response to pre-push or post-push review findings. It routes author-side judgment and correction selection; the stage's own reference still owns finding identity, disposition authority, evidence durability, fresh review, and round limits.
 
 ## Judgment and Implementation Owners
 
@@ -26,4 +26,4 @@ The summary supplies no new finding states or dismissal authority. An assessment
 
 - MUST apply the standalone summary only for a missing owner and keep the current stage's authority and evidence contract in force; optional-owner absence never waives a required gate.
 
-The driver's response reasoning belongs in the current permitted work record, not in a replacement review input. Advisory durable parks and fresh-review inputs remain governed by [pre-flight-review.md](./pre-flight-review.md); external dispositions and fresh-review requirements remain governed by [independent-review.md](./independent-review.md).
+The driver's response reasoning belongs in the current permitted work record, not in a replacement review input. Pre-push durable parks and fresh-review inputs remain governed by [pre-push-review.md](./pre-push-review.md); post-push dispositions and fresh-review requirements remain governed by [post-push-review.md](./post-push-review.md).

@@ -29,6 +29,7 @@ const ROW = {
 };
 
 let revision = 0;
+let organisationForm = false;
 
 /** the reply to `read_view`, with the token form open. */
 function shown() {
@@ -45,13 +46,27 @@ function shown() {
             line: "No runners.",
             controls: [],
             tokens_chip: null,
+            settings_chip: null,
             opens_on: "tokens",
           },
           banners: [],
           pools: [],
           pools_note: null,
           stale: false,
-          tokens: { intro: "Tokens.", rows: [ROW] },
+          tokens: {
+            intro: "Tokens.",
+            rows: [organisationForm ? { ...ROW, form: null } : ROW],
+            organizations: organisationForm
+              ? [{ ...ROW, repository: "", organization: "axross" }]
+              : [],
+          },
+          settings: {
+            intro: "Settings.",
+            unavailable: null,
+            reason_in_intro: false,
+            groups: [],
+            chip: null,
+          },
         },
         footer: {
           github: [],
@@ -82,7 +97,7 @@ globalThis.window = {
     core: {
       invoke: (command, args) => {
         calls.push({ command, args });
-        return command === "set_token"
+        return command === "set_token" || command === "set_organization_token"
           ? setToken(args)
           : Promise.resolve(shown());
       },
@@ -109,22 +124,24 @@ function elements() {
   return [...app.descendants()];
 }
 
-function field() {
-  return elements().find((element) => element.tag === "input");
+function field(key = REPOSITORY) {
+  return elements().find(
+    (element) => element.getAttribute("data-key") === `field:${key}`,
+  );
 }
 
-function saveButton() {
+function saveButton(key = REPOSITORY) {
   return elements().find(
-    (element) => element.getAttribute("data-key") === `save:${REPOSITORY}`,
+    (element) => element.getAttribute("data-key") === `save:${key}`,
   );
 }
 
 /** types the token into the open field as a person does, and presses Save. */
-function typeAndSave() {
-  const input = field();
+function typeAndSave(key = REPOSITORY) {
+  const input = field(key);
   input.value = TOKEN;
   input.dispatchEvent({ type: "input" });
-  saveButton().dispatchEvent({ type: "click" });
+  saveButton(key).dispatchEvent({ type: "click" });
   return input;
 }
 
@@ -144,7 +161,13 @@ function held(text) {
 
 /** the calls other than the one that carries the token, as text. */
 function otherCalls() {
-  return JSON.stringify(calls.filter((call) => call.command !== "set_token"));
+  return JSON.stringify(
+    calls.filter(
+      (call) =>
+        call.command !== "set_token" &&
+        call.command !== "set_organization_token",
+    ),
+  );
 }
 
 await settle();
@@ -209,3 +232,40 @@ test("a token half typed is also cleared when the web view reports the page hidd
   document.hidden = false;
   assert.equal(input.value, "");
 });
+
+for (const [outcome, answer] of [
+  ["stored", () => Promise.resolve()],
+  ["refused", () => Promise.reject(REFUSAL)],
+]) {
+  test(`an organisation token is ${outcome} through its own command without entering the view`, async () => {
+    organisationForm = true;
+    handlers.get("marshal:view")({ payload: shown() });
+    calls.length = 0;
+    let finish;
+    setToken = () =>
+      new Promise((resolve, reject) => {
+        finish = () => answer().then(resolve, reject);
+      });
+    try {
+      const input = typeAndSave("axross");
+      assert.equal(input.value, "", "cleared before the session answers");
+      assert.deepEqual(
+        calls.find((call) => call.command === "set_organization_token")?.args,
+        { organization: "axross", token: TOKEN },
+      );
+      assert.equal(
+        calls.some((call) => call.command === "set_token"),
+        false,
+      );
+      finish();
+      await settle();
+      assert.equal(field("axross"), input);
+      assert.equal(held(TOKEN), false);
+      assert.equal(otherCalls().includes(TOKEN), false);
+      assert.equal(saveButton("axross").getAttribute("aria-disabled"), "true");
+    } finally {
+      organisationForm = false;
+      handlers.get("marshal:view")({ payload: shown() });
+    }
+  });
+}

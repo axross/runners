@@ -4,25 +4,22 @@
 # run the job with real credentials. the scripts are extracted from the workflow,
 # not copied, and each runs with only the environment its own step declares, with
 # the secrets resolved to fake values, and with a PATH that holds no signing tool,
-# so a call that skips the SYSTEM_BIN prefix fails. the stand-ins record every
-# call, and check what only the tools can see: that the keychain password and
-# every line of the .p8 were masked before they were used, and that the .p12 and
-# the key file have mode 0600.
+# so a call that skips the SYSTEM_BIN and SYSTEM_SBIN prefixes fails. the stand-ins
+# record every call, and check what only the tools can see: that the keychain
+# password and every line of the .p8 were masked before they were used, and that
+# the .p12 and the key file have mode 0600.
 #
 # covered, each as a case below:
 #   - the refusals before any `security` call, and after, among them a certificate
-#     that is another team's, expired, a second of its name, or not the identity's,
-#     an app archive that is not one Marshal.app with one executable and no nested
-#     code, and a designated requirement that is not form A or B;
-#   - the flags of ditto, codesign, hdiutil, notarytool and stapler, and their order;
-#   - hdiutil create's three attempts;
+#     that is another team's, expired, a second of its name, or not the identity's;
+#   - the flags of codesign, pkgbuild, notarytool, stapler and pkgutil;
 #   - the deletion of the keychain and the files after a pass, after a failure
 #     injected at each stand-in call, and after a failure at the end of each step;
 #   - that no secret value and no line of the .p8 appears in the job's output;
 #   - that the notary log is where the upload step looks whenever a submission
 #     ID exists.
-# takes an optional workflow file; the default is release.yaml. runs on Linux and
-# on macOS.
+# takes an optional workflow file, for the mutation checks; the default is
+# release.yaml.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,13 +37,14 @@ version=1.2.3
 team=ABCDE12345
 identifier=app.axross.marshal
 application_identity=A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1A1
-application_name="Developer ID Application: Test Maintainer (${team})"
-keychain_password=6b1f0e9c2d4a8b7e3f5c1a0d9e8b7c6a5f4e3d2c1b0a9f8e
+installer_name="Developer ID Installer: Test Maintainer (${team})"
+installer_hash=B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1B1
+keychain_password=c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffee
 submission=8c4f2a1e-0b3d-4a6e-9f7c-1d2e3f4a5b6c
-archive="marshal-${version}-macos-arm64-app.zip"
-image="marshal-${version}-macos-arm64.dmg"
-archive_content="app archive bytes"
-archive_sha256="$(printf '%s\n' "$archive_content" | sha256sum | cut -d' ' -f1)"
+windows="marshal-${version}-windows-x64.exe"
+windows_msi="marshal-${version}-windows-x64.msi"
+macos="marshal-${version}-macos-arm64"
+macos_pkg="${macos}.pkg"
 
 node "${here}/extract-run-scripts.mjs" "$workflow" sign-macos "${work}/scripts"
 steps="${work}/scripts/steps.json"
@@ -65,19 +63,17 @@ done < <(jq -r '.[] | select(.kind == "run") | [.marker, .script, (.if // "-"), 
 # the fake secrets. none may appear in the job's output.
 p8_one="P8LINEONE-0f3a9c51d2"
 p8_two="P8LINETWO-77be41aa90"
-secret_application="$(printf 'application p12 bytes' | base64 | tr -d '\n')"
+secret_application="$(printf 'application p12 bytes' | base64 -w0)"
+secret_installer="$(printf 'installer p12 bytes' | base64 -w0)"
 password="p12-password-4f81c2"
 key_id="KEYID-9d3b71e0"
 issuer="ISSUER-5e7a2c44-b1d0"
 
-# a PATH with the base utilities and nothing else. sleep returns at once, so the
-# hdiutil retries do not wait.
+# a PATH with the base utilities and nothing else.
 mkdir -p "${work}/base"
-for tool in bash env awk sed tr cat rm mkdir cp mv chmod ln mktemp find sort grep wc head tail cut date base64 stat dirname basename readlink tee sha256sum; do
+for tool in bash env awk sed tr cat rm mkdir cp mv chmod mktemp find sort grep wc head tail cut date base64 stat dirname basename tee sleep sha256sum; do
   ln -s "$(command -v "$tool")" "${work}/base/${tool}"
 done
-printf '#!/bin/sh\nexit 0\n' >"${work}/base/sleep"
-chmod +x "${work}/base/sleep"
 
 # one stand-in answers to every tool's name. what it reports comes from the
 # `scenario` file of the case.
@@ -112,13 +108,9 @@ masked() {
     exit 97
   }
 }
-# file_mode <path>: the permission bits, with GNU or BSD stat.
-file_mode() {
-  stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
-}
 mode_is_600() {
-  [[ "$(file_mode "$1")" == 600 ]] || {
-    echo "MODE $1 $(file_mode "$1")" >>"${RECORD}.problems"
+  [[ "$(stat -c %a "$1")" == 600 ]] || {
+    echo "MODE $1 $(stat -c %a "$1")" >>"${RECORD}.problems"
     echo "stand-in: $1 does not have mode 0600" >&2
     exit 96
   }
@@ -153,7 +145,7 @@ case "$tool" in
         case "$1" in
           *.p12)
             mode_is_600 "$1"
-            [[ "$(cat "$1")" == "$(scn p12_content 'unset')" ]] || exit 93
+            [[ "$(cat "$1")" == "$(scn p12_content_$(basename "$1" .p12) 'unset')" ]] || exit 93
             [[ "$7" == "$(scn p12_password 'unset')" ]] || exit 92
             ;;
         esac
@@ -161,32 +153,52 @@ case "$tool" in
       find-identity)
         # a listing; with `valid`, an identity marked invalid is left out.
         listing() {
-          local n=0 i
+          local n=0 i invalid
+          invalid="$(scn invalid none)"
           for ((i = 1; i <= $(scn application_count 1); i++)); do
+            if [[ "$1" == valid && ( "$invalid" == application || ( "$invalid" == application-extra && $i -gt 1 ) ) ]]; then continue; fi
             n=$((n + 1))
-            if [[ "$1" == valid && "$(scn invalid none)" == application ]]; then continue; fi
             printf '  %d) %s "Developer ID Application: Test Maintainer (%s)"\n' "$n" "$(identity_hash A "$i")" "$(scn application_team ABCDE12345)"
           done
+          for ((i = 1; i <= $(scn installer_count 1); i++)); do
+            if [[ "$1" == valid && ( "$invalid" == installer || ( "$invalid" == installer-extra && $i -gt 1 ) ) ]]; then continue; fi
+            n=$((n + 1))
+            printf '  %d) %s "Developer ID Installer: Test Maintainer (%s)"\n' "$n" "$(identity_hash B "$i")" "$(scn installer_team ABCDE12345)"
+          done
           printf '  %d) %s "Apple Development: someone (ZZZZZZZZZZ)"\n' "$((n + 1))" "$(identity_hash C 1)"
-          echo "     $((n + 1)) identities found"
+          if [[ "$1" == valid ]]; then
+            echo "     $((n + 1)) valid identities found"
+          else
+            echo "     $((n + 1)) identities found"
+          fi
         }
-        if [[ "$1" == -v ]]; then listing valid; else listing all; fi
+        if [[ "$1" == -v ]]; then
+          listing valid
+        else
+          printf '\nPolicy: X.509 Basic\n  Matching identities\n'
+          listing all
+          printf '\n  Valid identities only\n'
+          listing valid
+        fi
         ;;
       find-certificate)
         # find-certificate -a -Z -c <name> -p <keychain>: the SHA-1 hash and the
         # PEM of each certificate whose name holds <name>. the scenario's
-        # `certificates` is `one` (the identity's own certificate, the default),
-        # `other` (a certificate of another hash) or `two` (the identity's and a
-        # second one).
+        # `<kind>_certificates` is `one` (the identity's own certificate, the
+        # default), `other` (a certificate of another hash) or `two` (the identity's
+        # and a second one).
         [[ "$1 $2 $3 $5" == "-a -Z -c -p" ]] || exit 89
+        kind=Application
+        letter=A
+        if [[ "$4" == *Installer* ]]; then kind=Installer letter=B; fi
         certificate() {
-          printf 'SHA-1 hash: %s\n-----BEGIN CERTIFICATE-----\nFAKE Application\n-----END CERTIFICATE-----\n' "$1"
+          printf 'SHA-1 hash: %s\n-----BEGIN CERTIFICATE-----\nFAKE %s\n-----END CERTIFICATE-----\n' "$1" "$kind"
         }
-        case "$(scn certificates one)" in
-          one) certificate "$(identity_hash A 1)" ;;
+        case "$(scn "$(echo "$kind" | tr 'A-Z' 'a-z')_certificates" one)" in
+          one) certificate "$(identity_hash "$letter" 1)" ;;
           other) certificate "$(identity_hash D 1)" ;;
           two)
-            certificate "$(identity_hash A 1)"
+            certificate "$(identity_hash "$letter" 1)"
             certificate "$(identity_hash D 1)"
             ;;
         esac
@@ -200,10 +212,19 @@ case "$tool" in
     ;;
   openssl)
     case "$1" in
+      enc)
+        [[ "$*" == "enc -base64 -d -A" ]] || exit 91
+        encoded="$(cat)"
+        [[ "$encoded" != *$'\n'* && "$encoded" != *$'\r'* ]] || exit 91
+        printf '%s' "$encoded" | base64 --decode
+        ;;
       rand) echo "$KEYCHAIN_PASSWORD" ;;
       x509)
-        team_of="$(scn application_team ABCDE12345)"
-        days="$(scn application_days 400)"
+        kind=Application
+        grep -q 'FAKE Installer' "$3" && kind=Installer
+        kind_lower="$(echo "$kind" | tr 'A-Z' 'a-z')"
+        team_of="$(scn "${kind_lower}_team" ABCDE12345)"
+        days="$(scn "${kind_lower}_days" 400)"
         if [[ "$*" == *-checkend* ]]; then
           seconds="${*: -1}"
           if ((seconds >= days * 86400)); then
@@ -211,82 +232,55 @@ case "$tool" in
             exit 1
           fi
         else
-          echo "subject=UID=${team_of},CN=Developer ID Application: Test Maintainer (${team_of}),OU=${team_of},O=Test Maintainer,C=US"
+          echo "subject=UID=${team_of},CN=Developer ID ${kind}: Test Maintainer (${team_of}),OU=${team_of},O=Test Maintainer,C=US"
           echo "notAfter=Nov  3 12:00:00 2027 GMT"
         fi
         ;;
     esac
     ;;
-  ditto)
-    if [[ "$1" == -x ]]; then
-      # ditto -x -k <archive> <directory>: lays out the app the scenario's
-      # `layout` names.
-      [[ "$2" == -k && -f "$3" ]] || exit 88
-      contents="$4/Marshal.app/Contents"
-      mkdir -p "${contents}/MacOS"
-      printf 'marshal-app binary\n' >"${contents}/MacOS/marshal-app"
-      printf '{"CFBundleIdentifier": "%s", "CFBundleShortVersionString": "%s"}\n' \
-        "$(scn app_identifier app.axross.marshal)" "$(scn app_version "$VERSION_OF_APP")" >"${contents}/Info.plist"
-      case "$(scn layout good)" in
-        good) ;;
-        extra-entry) printf 'readme\n' >"$4/README" ;;
-        extra-executable) printf 'helper\n' >"${contents}/MacOS/fake-docker" ;;
-        *) mkdir -p "${contents}/$(scn layout good)" ;;
-      esac
-    else
-      # ditto <source> <destination>: a copy.
-      [[ -d "$1" ]] || exit 88
-      cp -R "$1" "$2"
-    fi
-    ;;
   plutil)
     # plutil -extract <key> raw -o - <file>
     key="$2"
-    file="${*: -1}"
+    file="${@: -1}"
     value="$(sed -n "s/.*\"${key}\" *: *\"\([^\"]*\)\".*/\1/p" "$file" 2>/dev/null | head -n 1)"
     [[ -n "$value" ]] || exit 1
     echo "$value"
     ;;
   codesign)
-    target="${*: -1}"
+    file="${@: -1}"
     if [[ "$1" == --force ]]; then
-      if [[ -d "$target" ]]; then
-        echo "# signed" >>"${target}/Contents/MacOS/marshal-app"
-      else
-        [[ -f "$target" ]] || exit 91
-        echo "# signed" >>"$target"
-      fi
+      [[ -f "$file" ]] || exit 91
+      echo "# signed" >>"$file"
     fi
     if [[ "$1" == --display ]]; then
-      echo "Executable=${target}/Contents/MacOS/marshal-app" >&2
-      case "$(scn requirement A)" in
-        A) echo "designated => identifier \"app.axross.marshal\" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345 and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */" ;;
-        B) echo "designated => anchor apple generic and identifier \"app.axross.marshal\" and (certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = \"ABCDE12345\")" ;;
-        other-team) echo "designated => anchor apple generic and identifier \"app.axross.marshal\" and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ZZZZZ99999" ;;
-        ad-hoc) echo "designated => cdhash H\"0123456789abcdef0123456789abcdef01234567\"" ;;
-        none) ;;
-      esac
+      echo "designated => identifier \"app.axross.marshal\" and anchor apple generic"
     fi
     ;;
-  hdiutil)
-    # hdiutil create ... -srcfolder <stage> ... <image>: fails the scenario's
-    # `hdiutil_failures` times first.
-    failed=0
-    if [[ -e "${RECORD}.hdiutil" ]]; then read -r failed <"${RECORD}.hdiutil"; fi
-    if ((failed < $(scn hdiutil_failures 0))); then
-      echo "$((failed + 1))" >"${RECORD}.hdiutil"
-      echo "hdiutil: create failed - Resource busy" >&2
-      exit 1
-    fi
-    stage=""
+  pkgbuild)
+    root=""
     previous=""
     for argument in "$@"; do
-      [[ "$previous" == -srcfolder ]] && stage="$argument"
+      [[ "$previous" == --root ]] && root="$argument"
       previous="$argument"
     done
-    grep -q '^# signed$' "${stage}/Marshal.app/Contents/MacOS/marshal-app" || exit 90
-    [[ "$(readlink "${stage}/Applications")" == /Applications ]] || exit 87
-    echo "a disk image" >"${*: -1}"
+    for path in "$root" "$root/usr" "$root/usr/local" "$root/usr/local/bin" "$root/usr/local/bin/marshal"; do
+      [[ "$(stat -c %a "$path")" == 755 ]] || {
+        echo "MODE $path $(stat -c %a "$path")" >>"${RECORD}.problems"
+        exit 96
+      }
+    done
+    grep -q '^# signed$' "$root/usr/local/bin/marshal" || exit 90
+    echo "a package" >"${@: -1}"
+    ;;
+  pkgutil)
+    echo 'Package "x.pkg":'
+    if [[ "$(scn package_signature good)" == good ]]; then
+      echo "   Status: signed by a developer certificate issued by Apple for distribution"
+      echo "   Certificate Chain:"
+      echo "    1. Developer ID Installer: Test Maintainer ($(scn installer_team ABCDE12345))"
+    else
+      echo "   Status: no signature"
+    fi
     ;;
   xcrun)
     case "$1" in
@@ -312,7 +306,7 @@ case "$tool" in
             garbage) echo "not json at all" ;;
             noid) echo '{"message": "no id here", "status": "Accepted"}' ;;
             nostatus) echo "{\"id\": \"${SUBMISSION}\", \"message\": \"processing\"}" ;;
-            *) echo "{\"id\": \"${SUBMISSION}\", \"message\": \"Processing complete\", \"name\": \"x.dmg\", \"path\": \"/x.dmg\", \"status\": \"${status}\"}" ;;
+            *) echo "{\"id\": \"${SUBMISSION}\", \"message\": \"Processing complete\", \"name\": \"x.pkg\", \"path\": \"/x.pkg\", \"status\": \"${status}\"}" ;;
           esac
           exit "$(scn notary_exit 0)"
         fi
@@ -321,7 +315,7 @@ case "$tool" in
             echo "Error: could not fetch the log" >&2
             exit 1
           fi
-          echo "{\"jobId\": \"$3\", \"status\": \"$(scn notary_status Accepted)\"}" >"${*: -1}"
+          echo "{\"jobId\": \"$3\", \"status\": \"$(scn notary_status Accepted)\"}" >"${@: -1}"
         fi
         ;;
       stapler)
@@ -335,11 +329,10 @@ chmod +x "${work}/standin"
 
 failures=0
 
-# --- one run of the job ------------------------------------------------------
-
 # the variables a case sets before run_job.
 reset_case() {
   s_application_p12="$secret_application"
+  s_installer_p12="$secret_installer"
   s_password="$password"
   s_p8="-----BEGIN PRIVATE KEY-----
 ${p8_one}
@@ -349,7 +342,6 @@ ${p8_two}
   s_issuer="$issuer"
   s_team="$team"
   job_version="$version"
-  job_app_sha256="$archive_sha256"
   scenario_lines=""
   missing_tools=""
   fail_after_step=""
@@ -364,14 +356,14 @@ resolve() {
   inner="${expression#\$\{\{ }"
   inner="${inner% \}\}}"
   case "$inner" in
-    secrets.MACOS_APPLICATION_P12_BASE64) printf '%s' "$s_application_p12" ;;
-    secrets.MACOS_P12_PASSWORD) printf '%s' "$s_password" ;;
-    secrets.MACOS_NOTARY_KEY_P8) printf '%s' "$s_p8" ;;
-    secrets.MACOS_NOTARY_KEY_ID) printf '%s' "$s_key_id" ;;
-    secrets.MACOS_NOTARY_ISSUER_ID) printf '%s' "$s_issuer" ;;
-    vars.MACOS_TEAM_ID) printf '%s' "$s_team" ;;
+    secrets.APPLE_APPLICATION_P12_BASE64) printf '%s' "$s_application_p12" ;;
+    secrets.APPLE_INSTALLER_P12_BASE64) printf '%s' "$s_installer_p12" ;;
+    secrets.APPLE_P12_PASSWORD) printf '%s' "$s_password" ;;
+    secrets.APPLE_NOTARY_KEY_P8) printf '%s' "$s_p8" ;;
+    secrets.APPLE_NOTARY_TEAM_KEY_ID) printf '%s' "$s_key_id" ;;
+    secrets.APPLE_NOTARY_ISSUER_ID) printf '%s' "$s_issuer" ;;
+    vars.APPLE_TEAM_ID) printf '%s' "$s_team" ;;
     needs.plan.outputs.version) printf '%s' "$job_version" ;;
-    needs.build.outputs.app_sha256) printf '%s' "$job_app_sha256" ;;
     *)
       echo "error: the test does not know the expression ${expression}" >&2
       exit 1
@@ -386,44 +378,48 @@ resolve() {
 run_job() {
   case_dir="${work}/case-${1//[^a-zA-Z0-9]/-}"
   rm -rf "$case_dir"
-  mkdir -p "${case_dir}/ws/unsigned" "${case_dir}/tmp" "${case_dir}/bin"
+  mkdir -p "${case_dir}/ws/unsigned" "${case_dir}/tmp" "${case_dir}/bin" "${case_dir}/sbin"
   out="${case_dir}/out"
   record="${case_dir}/record"
   : >"$out"
   : >"$record"
   # the tools. a case may remove some.
-  for tool in security codesign openssl plutil shasum xcrun ditto hdiutil; do
+  for tool in security codesign pkgbuild openssl plutil shasum xcrun; do
     ln -s "${work}/standin" "${case_dir}/bin/${tool}"
   done
-  for tool in $missing_tools; do rm -f "${case_dir}/bin/${tool}"; done
+  ln -s "${work}/standin" "${case_dir}/sbin/pkgutil"
+  for tool in $missing_tools; do rm -f "${case_dir}/bin/${tool}" "${case_dir}/sbin/${tool}"; done
   {
-    printf 'p12_content=application p12 bytes\n'
+    printf 'application_count=1\ninstaller_count=1\n'
+    printf 'p12_content_application=application p12 bytes\np12_content_installer=installer p12 bytes\n'
     printf 'p12_password=%s\n' "$password"
     printf '%s\n' "$scenario_lines"
   } >"${case_dir}/scenario"
 
-  # the files of marshal-macos-app.
+  # the files of marshal-release.
   local unsigned="${case_dir}/ws/unsigned"
-  printf '%s\n' "$archive_content" >"${unsigned}/${archive}"
-  printf 'unsigned disk image\n' >"${unsigned}/${image}"
+  printf 'windows binary\n' >"${unsigned}/${windows}"
+  printf 'windows installer\n' >"${unsigned}/${windows_msi}"
+  printf 'macos binary\n' >"${unsigned}/${macos}"
+  printf 'macos installer\n' >"${unsigned}/${macos_pkg}"
+  (cd "$unsigned" && sha256sum "$macos" "$macos_pkg" "$windows" "$windows_msi" >SHA256SUMS)
   case "$fixture_change" in
     "") ;;
     extra-file) printf 'helper\n' >"${unsigned}/fake-docker" ;;
-    missing-dmg) rm "${unsigned}/${image}" ;;
-    other-version) mv "${unsigned}/${archive}" "${unsigned}/marshal-9.9.9-macos-arm64-app.zip" ;;
-    changed-archive) printf 'changed\n' >>"${unsigned}/${archive}" ;;
-    symlink) rm "${unsigned}/${archive}" && ln -s "${unsigned}/${image}" "${unsigned}/${archive}" ;;
-    *)
-      echo "error: unknown fixture change ${fixture_change}" >&2
-      exit 1
-      ;;
+    missing-msi) rm "${unsigned}/${windows_msi}" ;;
+    other-version) mv "${unsigned}/${windows}" "${unsigned}/marshal-9.9.9-windows-x64.exe" ;;
+    changed-binary) printf 'changed\n' >>"${unsigned}/${macos}" ;;
+    changed-pkg) printf 'changed\n' >>"${unsigned}/${macos_pkg}" ;;
+    no-binary-line) grep -v " ${macos}\$" "${unsigned}/SHA256SUMS" >"${case_dir}/sums" && cp "${case_dir}/sums" "${unsigned}/SHA256SUMS" ;;
+    twice-listed) grep " ${macos_pkg}\$" "${unsigned}/SHA256SUMS" >"${case_dir}/line" && cat "${case_dir}/line" >>"${unsigned}/SHA256SUMS" ;;
+    symlink) rm "${unsigned}/${macos}" && ln -s "${unsigned}/${windows}" "${unsigned}/${macos}" ;;
+    *) echo "error: unknown fixture change ${fixture_change}" >&2; exit 1 ;;
   esac
 
   # the scripts, with a mutation if the case asks for one.
   cp -r "${work}/scripts" "${case_dir}/scripts"
   if [[ -n "$mutate_script" ]]; then
-    sed -e "$mutate_expression" "${case_dir}/scripts/${mutate_script}" >"${case_dir}/mutated"
-    mv "${case_dir}/mutated" "${case_dir}/scripts/${mutate_script}"
+    sed -i "$mutate_expression" "${case_dir}/scripts/${mutate_script}"
   fi
 
   : >"${case_dir}/github_env"
@@ -443,7 +439,6 @@ run_job() {
       "SYSTEM_BIN=${case_dir}/bin" "SYSTEM_SBIN=${case_dir}/sbin"
       "SCENARIO=${case_dir}/scenario" "RECORD=${record}" "OUT=${out}"
       "STANDIN_STEP=${marker}" "KEYCHAIN_PASSWORD=${keychain_password}" "SUBMISSION=${submission}"
-      "VERSION_OF_APP=${version}"
     )
     while IFS= read -r line; do
       [[ -n "$line" ]] && env_args+=("$line")
@@ -478,8 +473,8 @@ job_output() {
   grep -v '^::add-mask::' "$out" >"${case_dir}/visible" || true
 }
 
-# --- the checks every run gets -----------------------------------------------
-
+# returns an empty string only when the current case leaves no credential files,
+# exposes no secret after runner masking, and has no stand-in protocol violation.
 check_clean_and_quiet() {
   local problem="" leftovers value
   job_output
@@ -487,7 +482,7 @@ check_clean_and_quiet() {
   if [[ -n "$leftovers" ]]; then
     problem="the clean-up left ${leftovers}"
   fi
-  for value in "$secret_application" "$password" "$p8_one" "$p8_two" "$key_id" "$issuer" "$keychain_password" "BEGIN PRIVATE KEY"; do
+  for value in "$secret_application" "$secret_installer" "$password" "$p8_one" "$p8_two" "$key_id" "$issuer" "$keychain_password" "BEGIN PRIVATE KEY"; do
     if grep -q -F -e "$value" "${case_dir}/visible"; then
       problem="${problem:+${problem}; }the output holds a secret: ${value:0:12}..."
     fi
@@ -527,36 +522,34 @@ run_case() {
   fi
 }
 
-# --- extra checks ------------------------------------------------------------
-
 # line_of <pattern>: the number of the first record line that holds the fixed text.
 line_of() {
   grep -n -F -e "$1" "$record" | head -n 1 | cut -d: -f1
 }
 
+# returns a diagnostic, rather than failing the shell, when the current case's
+# recorded signing calls violate the isolated-keychain or notarization contract.
 check_flags() {
-  local keychain="${case_dir}/tmp/marshal-signing.keychain-db" dir="${case_dir}/tmp/marshal-signing" stage="${case_dir}/tmp/marshal-dmg" expected sign_app build sign_image submit staple validate
+  local keychain="${case_dir}/tmp/marshal-signing.keychain-db" dir="${case_dir}/tmp/marshal-signing" expected sign package submit staple validate
   for expected in \
     "security create-keychain -p ${keychain_password} ${keychain}" \
     "security unlock-keychain -p ${keychain_password} ${keychain}" \
     "security import ${dir}/DeveloperIDG2CA.cer -k ${keychain} -t cert" \
-    "security import ${dir}/application.p12 -k ${keychain} -f pkcs12 -P ${password} -T ${case_dir}/bin/codesign" \
+    "security import ${dir}/application.p12 -k ${keychain} -f pkcs12 -P ${password} -T ${case_dir}/bin/codesign -T ${case_dir}/bin/pkgbuild" \
+    "security import ${dir}/installer.p12 -k ${keychain} -f pkcs12 -P ${password} -T ${case_dir}/bin/codesign -T ${case_dir}/bin/pkgbuild" \
     "security set-key-partition-list -S apple-tool:,apple: -k ${keychain_password} ${keychain}" \
     "security find-identity ${keychain}" \
     "security find-identity -v ${keychain}" \
-    "security find-certificate -a -Z -c ${application_name} -p ${keychain}" \
-    "ditto -x -k unsigned/${archive} app" \
-    "codesign --force --sign ${application_identity} --keychain ${keychain} --options runtime --timestamp --identifier ${identifier} app/Marshal.app" \
-    "codesign --verify --strict --verbose=2 app/Marshal.app" \
-    "codesign --display --requirements - app/Marshal.app" \
-    "ditto app/Marshal.app ${stage}/Marshal.app" \
-    "hdiutil create -volname Marshal -srcfolder ${stage} -format UDZO -ov signed/${image}" \
-    "codesign --force --sign ${application_identity} --keychain ${keychain} --timestamp --identifier ${identifier}.dmg signed/${image}" \
-    "codesign --verify --strict --verbose=2 signed/${image}" \
-    "xcrun notarytool submit signed/${image} --key ${dir}/AuthKey.p8 --key-id ${key_id} --issuer ${issuer} --wait --timeout 30m --output-format json" \
+    "security find-certificate -a -Z -c Developer ID Application: Test Maintainer (${team}) -p ${keychain}" \
+    "security find-certificate -a -Z -c ${installer_name} -p ${keychain}" \
+    "codesign --force --sign ${application_identity} --keychain ${keychain} --options runtime --timestamp --identifier ${identifier} signed/${macos}" \
+    "codesign --verify --strict --verbose=2 signed/${macos}" \
+    " --install-location / --ownership recommended --sign ${installer_name} --keychain ${keychain} signed/${macos_pkg}" \
+    "xcrun notarytool submit signed/${macos_pkg} --key ${dir}/AuthKey.p8 --key-id ${key_id} --issuer ${issuer} --wait --timeout 30m --output-format json" \
     "xcrun notarytool log ${submission} --key ${dir}/AuthKey.p8 --key-id ${key_id} --issuer ${issuer} ${case_dir}/tmp/marshal-notary/notary-log.json" \
-    "xcrun stapler staple signed/${image}" \
-    "xcrun stapler validate signed/${image}" \
+    "xcrun stapler staple signed/${macos_pkg}" \
+    "xcrun stapler validate signed/${macos_pkg}" \
+    "pkgutil --check-signature signed/${macos_pkg}" \
     "xcrun --find notarytool" \
     "xcrun --find stapler"; do
     if ! grep -q -F -e "$expected" "$record"; then
@@ -564,33 +557,35 @@ check_flags() {
       return
     fi
   done
-  if grep -q -E ' (pkgbuild|pkgutil|productsign) |Installer' "$record"; then
-    echo "the job calls a package tool or names an Installer identity: $(grep -E ' (pkgbuild|pkgutil|productsign) |Installer' "$record" | head -n 1)"
+  if ! grep -q -E " pkgbuild --root ${dir}/stage\.[A-Za-z0-9]+ --identifier ${identifier} --version ${version} --install-location / --ownership recommended --sign " "$record"; then
+    echo "pkgbuild did not get build-pkg.sh's arguments"
     return
   fi
-  sign_app="$(line_of "codesign --force --sign ${application_identity} --keychain ${keychain} --options runtime")"
-  build="$(line_of " hdiutil create ")"
-  sign_image="$(line_of "--identifier ${identifier}.dmg")"
+  sign="$(line_of "codesign --force")"
+  package="$(line_of " pkgbuild ")"
   submit="$(line_of "notarytool submit")"
   staple="$(line_of "stapler staple")"
   validate="$(line_of "stapler validate")"
-  if ! ((sign_app < build && build < sign_image && sign_image < submit && submit < staple && staple < validate)); then
-    echo "the tools ran in the wrong order: sign the app ${sign_app}, build the image ${build}, sign the image ${sign_image}, submit ${submit}, staple ${staple}, validate ${validate}"
+  if ! ((sign < package && package < submit && submit < staple && staple < validate)); then
+    echo "the tools ran in the wrong order: sign ${sign}, package ${package}, submit ${submit}, staple ${staple}, validate ${validate}"
   fi
 }
 
+# compares the job outputs with the final signed/stapled bytes; prints a failure
+# diagnostic for run_case without changing those bytes or the recorded outputs.
 check_outputs() {
-  local image_hash
-  image_hash="$(sha256sum "${case_dir}/ws/signed/${image}" | cut -d' ' -f1)"
-  for expected in "dmg_sha256=${image_hash}" "team_id=${team}" "submission_id=${submission}"; do
+  local binary_hash package_hash
+  binary_hash="$(sha256sum "${case_dir}/ws/signed/${macos}" | cut -d' ' -f1)"
+  package_hash="$(sha256sum "${case_dir}/ws/signed/${macos_pkg}" | cut -d' ' -f1)"
+  for expected in "binary_sha256=${binary_hash}" "package_sha256=${package_hash}" "team_id=${team}" "submission_id=${submission}"; do
     grep -qxF "$expected" "${case_dir}/github_output" || {
       echo "the job outputs lack ${expected}"
       return
     }
   done
-  grep -q '^# stapled$' "${case_dir}/ws/signed/${image}" || echo "the disk image hash was taken before stapling"
-  grep -q '^# signed$' "${case_dir}/ws/signed/${image}" || echo "the disk image was not signed"
-  [[ "$(find "${case_dir}/ws/signed" -mindepth 1 | wc -l | tr -d ' ')" -eq 1 ]] || echo "the signed directory holds other files than the disk image"
+  grep -q '^# stapled$' "${case_dir}/ws/signed/${macos_pkg}" || echo "the package hash was taken before stapling"
+  [[ "$(find "${case_dir}/ws/signed" -mindepth 1 | wc -l)" -eq 2 ]] || echo "the signed directory holds other files than the binary and the package"
+  grep -q '^# signed$' "${case_dir}/ws/signed/${macos}" || echo "the binary was not signed"
   [[ -s "${case_dir}/tmp/marshal-notary/notary-log.json" ]] || echo "the notary log is not where the upload step reads it"
 }
 
@@ -624,64 +619,64 @@ check_no_warning() {
   ! grep -q '^::warning::the Developer ID' "$out" || echo "a warning for a certificate that expires in more than 90 days"
 }
 
-# check_two_retries: hdiutil create ran three times, two failures and a pass.
-check_two_retries() {
-  local calls
-  calls="$(grep -c ' hdiutil create ' "$record" || true)"
-  [[ "$calls" -eq 3 ]] || echo "hdiutil create ran ${calls} times, not 3"
-}
-
-check_not_signed() {
-  ! grep -q -F -e "--identifier ${identifier}.dmg" "$record" || echo "the disk image was signed after hdiutil create failed"
-}
-
-# --- the cases ---------------------------------------------------------------
-
 reset_case
-run_case "a passing run" pass "Deleted the keychain, the certificate files and the key file." some check_flags
+run_case "a passing run with matching and valid identity lists" pass "Deleted the keychain, the certificate files and the key file." some check_flags
 reset_case
-run_case "a passing run's outputs, the signed disk image and the notary log" pass "Submission ${submission} was accepted." some check_outputs
+run_case "a passing run's outputs, the signed files and the notary log" pass "Submission ${submission} was accepted." some check_outputs
 reset_case
 run_case "the notary log upload step reads the log's directory" pass "" some check_upload_path
+reset_case
+s_application_p12="${secret_application:0:8}"$'\n'"${secret_application:8}"
+s_installer_p12="${secret_installer:0:8}"$'\r\n'"${secret_installer:8}"
+run_case "a passing run with LF and CRLF-wrapped P12 secrets" pass "Imported the Developer ID G2 certificate and both identities." some
 
 echo "-- refusals before any security call --"
-for name in MACOS_APPLICATION_P12_BASE64 MACOS_P12_PASSWORD MACOS_NOTARY_KEY_P8 MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID MACOS_TEAM_ID; do
+signing_names=(APPLE_APPLICATION_P12_BASE64 APPLE_INSTALLER_P12_BASE64 APPLE_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_TEAM_KEY_ID APPLE_NOTARY_ISSUER_ID APPLE_TEAM_ID)
+for name in "${signing_names[@]}"; do
   reset_case
   case "$name" in
-    MACOS_APPLICATION_P12_BASE64) s_application_p12="" ;;
-    MACOS_P12_PASSWORD) s_password="" ;;
-    MACOS_NOTARY_KEY_P8) s_p8="" ;;
-    MACOS_NOTARY_KEY_ID) s_key_id="" ;;
-    MACOS_NOTARY_ISSUER_ID) s_issuer="" ;;
-    MACOS_TEAM_ID) s_team="" ;;
+    APPLE_APPLICATION_P12_BASE64) s_application_p12="" ;;
+    APPLE_INSTALLER_P12_BASE64) s_installer_p12="" ;;
+    APPLE_P12_PASSWORD) s_password="" ;;
+    APPLE_NOTARY_KEY_P8) s_p8="" ;;
+    APPLE_NOTARY_TEAM_KEY_ID) s_key_id="" ;;
+    APPLE_NOTARY_ISSUER_ID) s_issuer="" ;;
+    APPLE_TEAM_ID) s_team="" ;;
   esac
   run_case "an empty ${name}" fail "these secrets or variables are empty: ${name}" none
 done
 reset_case
+s_application_p12="" s_installer_p12="" s_password="" s_p8="" s_key_id="" s_issuer="" s_team=""
+run_case "all seven values empty at once" fail "these secrets or variables are empty: ${signing_names[*]}; the release Environment is missing or incomplete" none
+reset_case
 s_team="abc"
-run_case "a team ID that is not a team ID" fail "MACOS_TEAM_ID is not a 10-character team ID" none
+run_case "a team ID that is not a team ID" fail "APPLE_TEAM_ID is not a 10-character team ID" none
 for bad in "1.2" "1.2.3-rc.1" "01.2.3" "v1.2.3" "" "1.2.3 "; do
   reset_case
   job_version="$bad"
   run_case "the version '${bad}'" fail "is not X.Y.Z" none
 done
-for bad in "" "not-a-hash" "${archive_sha256}0" "$(tr 'a-f' 'A-F' <<<"$archive_sha256")"; do
-  reset_case
-  job_app_sha256="$bad"
-  run_case "the build's app_sha256 '${bad:0:12}'" fail "is not a SHA-256" none
-done
-for change in extra-file missing-dmg other-version; do
+for change in extra-file missing-msi other-version; do
   reset_case
   fixture_change="$change"
   run_case "an artifact with ${change}" fail "the downloaded files are not exactly" none
 done
 reset_case
 fixture_change=symlink
-run_case "an app archive that is a symlink" fail "is not a regular file" none
+run_case "a macOS binary that is a symlink" fail "is not a regular file" none
 reset_case
-fixture_change=changed-archive
-run_case "an app archive that differs from the app job's hash" fail "not the ${archive_sha256} that the app job output" none
-for tool in security codesign openssl plutil shasum xcrun ditto hdiutil; do
+fixture_change=changed-binary
+run_case "a macOS binary that differs from its SHA256SUMS line" fail "${macos} has SHA-256" none
+reset_case
+fixture_change=changed-pkg
+run_case "a macOS package that differs from its SHA256SUMS line" fail "${macos_pkg} has SHA-256" none
+reset_case
+fixture_change=no-binary-line
+run_case "a SHA256SUMS without the binary's line" fail "does not list ${macos} exactly once" none
+reset_case
+fixture_change=twice-listed
+run_case "a SHA256SUMS that lists the package twice" fail "does not list ${macos_pkg} exactly once" none
+for tool in security codesign pkgbuild openssl plutil shasum xcrun pkgutil; do
   reset_case
   missing_tools="$tool"
   run_case "a missing ${tool}" fail "${tool} is missing" none
@@ -700,80 +695,63 @@ reset_case
 mutate_script="02-keychain.sh"
 mutate_expression='s/^g2_base64="MIIEPj/g2_base64="MIIEPk/'
 run_case "an embedded intermediate whose SHA-256 differs from the pin (the certificate changed)" fail "not the pinned" none
-
 echo "-- refusals after the keychain exists --"
 reset_case
 s_application_p12=$'\n'
 run_case "an Application secret that decodes to nothing" fail "application.p12 is empty after decoding its secret" some
-for scenario in "application_count=0:holds 0 Developer ID Application identities" "application_count=2:holds 2 Developer ID Application identities"; do
+reset_case
+s_installer_p12=$'\n'
+run_case "an Installer secret that decodes to nothing" fail "installer.p12 is empty after decoding its secret" some
+for scenario in "application_count=0:holds 0 Developer ID Application identities" "application_count=2:holds 2 Developer ID Application identities" "installer_count=0:holds 0 Developer ID Installer identities" "installer_count=2:holds 2 Developer ID Installer identities"; do
   reset_case
   scenario_lines="${scenario%%:*}"
   run_case "${scenario%%:*}" fail "${scenario#*:}" some
+done
+for kind in application installer; do
+  reset_case
+  scenario_lines="${kind}_count=2
+invalid=${kind}-extra"
+  run_case "a valid ${kind} identity plus an invalid extra identity" fail "holds 2 Developer ID" some
 done
 reset_case
 scenario_lines="invalid=application"
 run_case "an Application identity that is not valid in the keychain" fail "is not valid in this keychain" some
 reset_case
+scenario_lines="invalid=installer"
+run_case "an Installer identity that is not valid in the keychain" fail "is not valid in this keychain" some
+reset_case
 scenario_lines="application_team=ZZZZZ99999"
-run_case "an Application certificate of another team" fail "Developer ID Application certificate names team 'ZZZZZ99999'" some
+run_case "an Application certificate of another team" fail "Developer ID Application certificate names team 'ZZZZZ99999', not APPLE_TEAM_ID" some
 reset_case
-scenario_lines="certificates=two"
-run_case "a second Application certificate of the same name" fail "holds 2 certificates named '${application_name}', not exactly one" some
+scenario_lines="installer_team=ZZZZZ99999"
+run_case "an Installer certificate of another team" fail "Developer ID Installer certificate names team 'ZZZZZ99999', not APPLE_TEAM_ID" some
 reset_case
-scenario_lines="certificates=other"
+scenario_lines="installer_certificates=two"
+run_case "a second Installer certificate of the same name" fail "holds 2 certificates named 'Developer ID Installer: Test Maintainer (${team})', not exactly one" some
+reset_case
+scenario_lines="application_certificates=two"
+run_case "a second Application certificate of the same name" fail "holds 2 certificates named 'Developer ID Application: Test Maintainer (${team})', not exactly one" some
+reset_case
+scenario_lines="installer_certificates=other"
+run_case "an Installer certificate that does not have the identity's hash" fail "does not have the SHA-1 hash ${installer_hash} of the Developer ID Installer identity" some
+reset_case
+scenario_lines="application_certificates=other"
 run_case "an Application certificate that does not have the identity's hash" fail "does not have the SHA-1 hash ${application_identity} of the Developer ID Application identity" some
 reset_case
 scenario_lines="application_days=-5"
 run_case "an expired Application certificate" fail "Application certificate expired on" some
 reset_case
+scenario_lines="installer_days=-5"
+run_case "an expired Installer certificate" fail "Installer certificate expired on" some
+reset_case
 scenario_lines="application_days=30"
 run_case "an Application certificate that expires within 90 days" pass "expires on Nov  3 12:00:00 2027 GMT, within 90 days" some check_warning
 reset_case
-scenario_lines="application_days=89"
-run_case "an Application certificate that expires in 89 days" pass "within 90 days" some check_warning
+scenario_lines="installer_days=89"
+run_case "an Installer certificate that expires in 89 days" pass "within 90 days" some check_warning
 reset_case
-scenario_lines="application_days=91"
-run_case "an Application certificate that expires in 91 days" pass "" some check_no_warning
-
-echo "-- the app and its signature --"
-reset_case
-scenario_lines="layout=extra-entry"
-run_case "an archive with more than Marshal.app" fail "not only Marshal.app" some
-reset_case
-scenario_lines="layout=extra-executable"
-run_case "an app with a second executable" fail "Contents/MacOS holds" some
-for nested in Frameworks PlugIns Helpers XPCServices Library; do
-  reset_case
-  scenario_lines="layout=${nested}"
-  run_case "an app with Contents/${nested}" fail "the app holds Contents/${nested}, nested code" some
-done
-reset_case
-scenario_lines="app_identifier=app.axross.other"
-run_case "an app of another identifier" fail "the app's identifier is 'app.axross.other'" some
-reset_case
-scenario_lines="app_version=1.2.4"
-run_case "an app of another version" fail "the app's version is '1.2.4', not ${version}" some
-reset_case
-scenario_lines="requirement=B"
-run_case "a designated requirement in form B" pass "its designated requirement is form B" some
-reset_case
-run_case "a designated requirement in form A, its clauses in another order" pass "its designated requirement is form A" some
-for requirement in other-team ad-hoc; do
-  reset_case
-  scenario_lines="requirement=${requirement}"
-  run_case "a designated requirement that is ${requirement}" fail "is not the default one for ${identifier} and team ${team}" some
-done
-reset_case
-scenario_lines="requirement=none"
-run_case "no designated requirement" fail "codesign printed no designated requirement" some
-
-echo "-- the disk image --"
-reset_case
-scenario_lines="hdiutil_failures=2"
-run_case "hdiutil create that fails twice, then works" pass "trying again in 10 seconds" some check_two_retries
-reset_case
-scenario_lines="hdiutil_failures=3"
-run_case "hdiutil create that fails three times" fail "hdiutil create failed 3 times" some check_not_signed
+scenario_lines="installer_days=91"
+run_case "an Installer certificate that expires in 91 days" pass "" some check_no_warning
 
 echo "-- notarization --"
 reset_case
@@ -800,9 +778,11 @@ run_case "an Accepted result with a non-zero exit" pass "although the status is 
 reset_case
 scenario_lines="log_fails=1"
 run_case "a notary log that cannot be fetched" fail "could not be fetched" some
+reset_case
+scenario_lines="package_signature=bad"
+run_case "a package that is not signed by the Installer certificate" fail "is not signed by a Developer ID Installer certificate of team" some
 
 echo "-- clean-up --"
-# the number of calls a passing run makes.
 reset_case
 run_job "counting"
 calls="$(cat "${record}.count")"
@@ -813,18 +793,16 @@ for ((call = 1; call <= calls; call++)); do
   run_job "failure at call ${call}"
   problem="$(check_clean_and_quiet)"
   injected="$(sed -n "${call}p" "$record" | cut -d' ' -f2)"
-  call_line="$(sed -n "${call}p" "$record")"
-  # a failed 90-day check is a warning, not a refusal, and hdiutil create is
-  # tried again.
-  if [[ "$injected" != cleanup && "$job_status" != fail && "$call_line" != *"-checkend 7776000" && "$call_line" != *" hdiutil create "* ]]; then
+  # a failed 90-day check is a warning, not a refusal.
+  if [[ "$injected" != cleanup && "$job_status" != fail && "$(sed -n "${call}p" "$record")" != *"-checkend 7776000" ]]; then
     problem="the job passed although call ${call} (${injected}) failed"
   fi
   if [[ -n "$problem" ]]; then
-    failed_case "a failure injected at call ${call} ($(cut -d' ' -f2-4 <<<"$call_line"))" "$problem"
+    failed_case "a failure injected at call ${call} ($(sed -n "${call}p" "$record" | cut -d' ' -f2-3))" "$problem"
   fi
 done
 echo "ok   a failure injected at each of the ${calls} calls leaves nothing behind"
-for step in check keychain identities unpack sign dmg notarize staple hash; do
+for step in check keychain identities sign package notarize staple hash; do
   reset_case
   fail_after_step="$step"
   run_case "a failure at the end of the ${step} step" fail "the step ${step} is made to fail" some

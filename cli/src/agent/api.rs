@@ -60,7 +60,7 @@ impl ApiError {
 
 pub type ApiResult = Result<serde_json::Value, ApiError>;
 
-/// a method for the agent; a token travels only in `TokenSet`, as a [`Secret`].
+/// a method for the agent; tokens travel as [`Secret`]s, never as displayable text.
 #[derive(Debug)]
 pub enum Method {
     Status,
@@ -73,6 +73,13 @@ pub enum Method {
         token: Secret,
     },
     TokenRemove {
+        key: TokenKey,
+    },
+    OrganizationTokenSet {
+        key: TokenKey,
+        token: Secret,
+    },
+    OrganizationTokenRemove {
         key: TokenKey,
     },
     /// drain for an update to `version`; `requester` reports, by closing, that the
@@ -167,6 +174,17 @@ struct TokenSetParams {
 #[derive(Deserialize)]
 struct TokenRemoveParams {
     repository: String,
+}
+
+#[derive(Deserialize)]
+struct OrganizationTokenSetParams {
+    organization: String,
+    token: String,
+}
+
+#[derive(Deserialize)]
+struct OrganizationTokenRemoveParams {
+    organization: String,
 }
 
 #[derive(Deserialize)]
@@ -267,6 +285,22 @@ pub fn parse(method: &str, value: serde_json::Value) -> Result<Parsed, ApiError>
             Method::TokenRemove {
                 key: key(&repository)?,
             }
+        }
+        "organization_token_set" => {
+            let OrganizationTokenSetParams {
+                organization,
+                token,
+            } = params(value)?;
+            let key = TokenKey::parse_organization(&organization)
+                .map_err(|error| invalid(&error.to_string()))?;
+            let token = accepted_token(&token).map_err(refused_token)?;
+            Method::OrganizationTokenSet { key, token }
+        }
+        "organization_token_remove" => {
+            let OrganizationTokenRemoveParams { organization } = params(value)?;
+            let key = TokenKey::parse_organization(&organization)
+                .map_err(|error| invalid(&error.to_string()))?;
+            Method::OrganizationTokenRemove { key }
         }
         "drain_for_update" => {
             let DrainParams { version } = params(value)?;

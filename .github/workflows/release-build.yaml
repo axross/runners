@@ -3,10 +3,10 @@ name: Release Build
 # builds the Windows app at the version its caller passes, packs it into an
 # unsigned per-user MSI, tests the MSI, and puts the app executable, the MSI and
 # SHA256SUMS in one artifact. it also builds the unsigned Mac app and a disk image
-# of it, kept apart in marshal-macos-app for release.yaml's signing job.
-# merge-checks.yaml calls it as a dry run and release.yaml for a release; it has no
-# publish or attest step. see
-# docs/conventions/security.md, which also says why only the callers declare
+# of it, kept apart in marshal-macos-app for the staged signing job.
+# merge-checks.yaml retains it as an app dry run; it has no publish or attest step.
+# see
+# docs/security/release-authority.md, which also says why only the callers declare
 # `concurrency`.
 
 on:
@@ -34,7 +34,7 @@ jobs:
     name: Build windows-x64
     runs-on: windows-latest
     # twice the leg's 22 min 56 s in its first successful dry run, rounded
-    # up to whole 5 minutes; see docs/operations/cli.md.
+    # up to whole 5 minutes; see docs/marshal-cli/release-artifacts.md.
     timeout-minutes: 50
     outputs:
       windows_x64_sha256: ${{ steps.hash.outputs.windows_x64_sha256 }}
@@ -159,7 +159,7 @@ jobs:
           Write-Host 'The app imports no vcruntime DLL.'
       # WiX is the one tool fetched as a package at build time. the script refuses
       # it unless its SHA-256 matches the pin and installs it from that package
-      # alone; see docs/conventions/security.md.
+      # alone; see docs/security/dependency-pins.md#pinning-convention.
       - name: Fetch WiX
         env:
           WIX_DIRECTORY: ${{ runner.temp }}\wix
@@ -229,10 +229,11 @@ jobs:
   # takes only X.Y.Z. `tauri-cli` is installed from source at the pin with --locked,
   # as in merge-checks.yaml's app jobs, and nothing else is downloaded. the app goes
   # in a ditto archive, which keeps file modes an artifact would drop, and its hash
-  # is the workflow's app_sha256, which release.yaml's signing job checks. the disk
-  # image is the dry run's; the signing job builds its own from the archive with the
-  # same hdiutil arguments. marshal-macos-app stays outside marshal-release, so the
-  # unsigned set holds no Mac file. see docs/operations/app.md.
+  # is the workflow's app_sha256, which the staged signing job checks. the disk
+  # image is the dry run's; the staged signing job builds its own from the archive
+  # with the same hdiutil arguments. marshal-macos-app stays outside
+  # marshal-release, so the unsigned set holds no Mac file. see
+  # docs/marshal/mac-app.md.
   app-macos:
     name: Build The Mac App
     runs-on: macos-latest
@@ -250,10 +251,10 @@ jobs:
           persist-credentials: false
       - name: Install Pinned Rust Toolchain
         run: rustup show active-toolchain || rustup toolchain install
-      # holds no secret. release.yaml's sign-macos and verify-macos call these tools
-      # by absolute path, and a tool that moves on a new runner image should fail a
+      # holds no secret. the staged sign-macos and verify-macos call these tools by
+      # absolute path, and a tool that moves on a new runner image should fail a
       # pull request here instead of a release. the lists must name every tool those
-      # jobs and test-signed-dmg.sh call; check-release-shape.mjs compares them.
+      # jobs and test-signed-dmg.sh call; test-staged-sign-macos.sh compares them.
       # base64 and shasum are run, since their flags are what the jobs rely on.
       - name: Check The Signing Tools
         run: |
@@ -454,7 +455,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           WINDOWS_SHA256: ${{ needs.build.outputs.windows_x64_sha256 }}
           WINDOWS_MSI_SHA256: ${{ needs.build.outputs.windows_x64_msi_sha256 }}
-        run: bash .github/scripts/assemble-release.sh unsigned "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"
+        run: bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"
       # dist holds exactly the two files and SHA256SUMS, which the script checked.
       - name: Upload The Release Files
         uses: actions/upload-artifact@v7

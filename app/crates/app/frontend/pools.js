@@ -3,6 +3,7 @@
 
 import { controlButton, keyOf, nextId } from "./controls.js";
 import { h } from "./dom.js";
+import { editorPools } from "./editor.js";
 import { icon } from "./icons.js";
 
 /** the mark a runner's or a pool's state carries; the state is always written out too. */
@@ -89,7 +90,7 @@ function bannerBody(banner, ctx) {
   );
 }
 
-/** the banners that lead the scrolling list, over both tabs. */
+/** the banners that lead the scrolling list, over every tab. */
 export function banners(list, ctx) {
   return list.map((banner) =>
     h(
@@ -220,6 +221,7 @@ function diagnostics(section) {
 
 function card(poolCard, ctx) {
   const headingId = nextId("pool");
+  const tokenKey = poolCard.organization ?? poolCard.repository;
   const note = poolCard.note
     ? h(
         "div",
@@ -229,9 +231,8 @@ function card(poolCard, ctx) {
           ? controlButton(poolCard.pill, {
               shape: "pill",
               key: `pill:${keyOf(poolCard.pill.action)}`,
-              name: `${poolCard.pill.label} for ${poolCard.repository}`,
-              onPress: () =>
-                ctx.gotoToken(poolCard.repository, poolCard.pill.action),
+              name: `${poolCard.pill.label} for ${poolCard.organization ? "organisation " : ""}${tokenKey}`,
+              onPress: () => ctx.gotoToken(tokenKey, poolCard.pill.action),
             })
           : null,
       )
@@ -250,7 +251,10 @@ function card(poolCard, ctx) {
         "data-key": `pool:${poolCard.name}`,
         text: poolCard.name,
       }),
-      h("span", { class: "caption low wrap", text: poolCard.repository }),
+      h("span", {
+        class: "caption low wrap",
+        text: poolCard.organization ? `organisation ${tokenKey}` : tokenKey,
+      }),
       h("span", { class: "grow" }),
       h(
         "span",
@@ -259,6 +263,12 @@ function card(poolCard, ctx) {
         poolCard.line,
       ),
     ),
+    poolCard.organization && poolCard.runner_group
+      ? h("p", {
+          class: "caption low wrap card-line",
+          text: `Runs jobs for the repositories that the runner group ${poolCard.runner_group} admits`,
+        })
+      : null,
     note,
     poolCard.github_notes.map((githubNote) =>
       h(
@@ -283,6 +293,7 @@ function card(poolCard, ctx) {
 
 /** the Pools panel: a card per pool, or what stands where they would be. */
 export function poolsPanel(list, ctx) {
+  if (ctx.editor?.access) return editorPools(ctx.editor, list, ctx, card);
   const content =
     list.pools.length > 0
       ? h(
@@ -309,10 +320,10 @@ export function poolsPanel(list, ctx) {
  * the footer: GitHub's request budget, the image lines and warnings, the configuration
  * path, and the note.
  */
-export function footer(model) {
+export function footer(model, configuration = null, expanded = false) {
   return h(
     "footer",
-    { class: "footer" },
+    { class: expanded ? "footer config-expanded" : "footer" },
     model.github.map((line) =>
       h("p", { class: "caption low wrap github-line", text: line }),
     ),
@@ -327,9 +338,14 @@ export function footer(model) {
         h("span", { text: line }),
       ),
     ),
+    configuration ??
+      h("p", {
+        class: "caption low wrap",
+        text: model.configuration,
+      }),
     h("p", {
       class: "caption low wrap",
-      text: `${model.configuration} · ${model.note}`,
+      text: model.note,
     }),
   );
 }

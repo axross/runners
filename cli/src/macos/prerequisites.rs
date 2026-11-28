@@ -2,7 +2,7 @@
 //! returns a pass, a warning or a refusal with its message. The caller decides what a
 //! refusal does: at `start` and `build` every refusal ends the command, and after
 //! `start` a missing or unanswering `tart` means Tart is unavailable, while a refused
-//! `softnet` holds its slot. `docs/operations/cli.md` describes the checks.
+//! `softnet` holds its slot. `docs/marshal-cli/tart-backend.md` describes the checks.
 
 use std::ffi::OsStr;
 use std::time::Duration;

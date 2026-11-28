@@ -2,7 +2,7 @@
 //! access rules, serving protocol version 2 on the agent's own runtime; the pipe's
 //! descriptor grants only the current user and rejects remote clients, and the
 //! socket is `0600` in a `0700` directory with each peer's user ID checked;
-//! `docs/operations/cli.md` describes both.
+//! `docs/marshal-cli/agent-protocol.md` describes both.
 
 mod client;
 #[cfg(unix)]

@@ -4,7 +4,7 @@
 //! platform so the parsers and judgments run in the Linux tests; only the file's
 //! owner and mode need Unix. it also holds what the macOS VM runtime builds on that
 //! needs no process call: the names of its VMs, and the count of macOS VMs against
-//! the host's limit of two. `docs/operations/cli.md` describes all of them.
+//! the host's limit of two. `docs/marshal-cli/macos-pools.md` describes all of them.
 
 pub mod count;
 pub mod gate;

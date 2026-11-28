@@ -2,7 +2,7 @@
 //! process until it ends or its standard input, a liveness pipe whose write end only
 //! the CLI holds, closes, and then stops and deletes the VM; it holds no lock the CLI
 //! holds and it is made for any VM the CLI boots, a job VM or a build VM; see
-//! `docs/operations/cli.md`.
+//! `docs/marshal-cli/tart-backend.md`.
 
 use std::ffi::OsStr;
 use std::io::Write;

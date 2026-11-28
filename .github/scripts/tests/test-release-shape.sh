@@ -7,8 +7,8 @@
 # quoted, expanded, a bare command substitution, run by a trap or by find, held
 # in the test of a `[[ ]]` or hidden in an arithmetic expansion, or found through
 # PATH, BASH_ENV, ENV, GITHUB_PATH or GITHUB_ENV (set or read into), a shell of
-# its own, an artifact action's other inputs, the stand-in prefixes, the disk
-# image's hdiutil arguments and identifier, assemble-release.sh's modes; an Environment in another job, in a `.yml` workflow, or reachable
+# its own, an artifact action's other inputs, the stand-in prefixes, pkgbuild's
+# arguments; an Environment in another job, in a `.yml` workflow, or reachable
 # from a pull request; a signing secret read outside sign-macos, in any workflow;
 # a job without its guard, its runner or its place in the chain; a step condition
 # that could skip a signing or verification step; a write to SHA256SUMS in the
@@ -25,14 +25,12 @@ work="$(mktemp -d)"
 trap 'rm -rf -- "$work"' EXIT
 
 pristine="${work}/pristine"
-mkdir -p "${pristine}/.github/scripts/tests"
+mkdir -p "${pristine}/.github/scripts/tests" "${pristine}/.github/scripts/cli-recovery"
 cp -r "${repository}/.github/workflows" "${pristine}/.github/workflows"
-cp "${repository}/.github/scripts/tests/test-signed-dmg.sh" "${pristine}/.github/scripts/tests/test-signed-dmg.sh"
+cp "${repository}/.github/scripts/cli-recovery/prepare-source.sh" "${pristine}/.github/scripts/cli-recovery/prepare-source.sh"
+cp "${repository}/.github/scripts/tests/test-signed-pkg.sh" "${pristine}/.github/scripts/tests/test-signed-pkg.sh"
 
 failures=0
-# numbers each case's directory, so two names that differ only in case, such as
-# always() and Always(), do not share one on a file system that ignores case.
-cases=0
 
 # alter <file> <exact text> <replacement>: replaces the first occurrence, and
 # fails the test if there is none.
@@ -67,8 +65,7 @@ expect_pass() {
 # might trip over is not stricter than the change needs.
 expect_pass_with() {
   local name="$1" root output status=0
-  cases=$((cases + 1))
-  root="${work}/case-${cases}-${name//[^a-zA-Z0-9]/-}"
+  root="${work}/case-${name//[^a-zA-Z0-9]/-}"
   cp -r "$pristine" "$root"
   alter "${root}/$2" "$3" "$4" || {
     echo "FAIL ${name}: the change could not be made" >&2
@@ -88,8 +85,7 @@ expect_pass_with() {
 expect_fail() {
   local name="$1" want="$2" root output status=0
   shift 2
-  cases=$((cases + 1))
-  root="${work}/case-${cases}-${name//[^a-zA-Z0-9]/-}"
+  root="${work}/case-${name//[^a-zA-Z0-9]/-}"
   cp -r "$pristine" "$root"
   while [[ $# -gt 0 ]]; do
     alter "${root}/$1" "$2" "$3" || {
@@ -115,8 +111,7 @@ expect_fail() {
 # unchanged workflows do not have.
 expect_fail_new_file() {
   local name="$1" want="$2" root output status=0
-  cases=$((cases + 1))
-  root="${work}/case-${cases}-${name//[^a-zA-Z0-9]/-}"
+  root="${work}/case-${name//[^a-zA-Z0-9]/-}"
   cp -r "$pristine" "$root"
   printf '%s' "$4" >"${root}/$3"
   output="$(node "$check" "$root" 2>&1)" || status=$?
@@ -132,17 +127,19 @@ expect_fail_new_file() {
 }
 
 release=.github/workflows/release.yaml
-release_build=.github/workflows/release-build.yaml
+release_build=.github/workflows/cli-recovery-build.yaml
+app_build=.github/workflows/release-build.yaml
 merge_checks=.github/workflows/merge-checks.yaml
+prepare_source=.github/scripts/cli-recovery/prepare-source.sh
 
 expect_pass "the unchanged workflows"
 
 # the lines the changes below are made at.
 sign_header=$'    environment: release\n    permissions:\n      contents: read\n'
-first_step=$'    steps:\n      - name: Download The Unsigned Mac App\n'
-import_echo='          echo "Imported the Developer ID G2 certificate and the Developer ID Application identity."'
+first_step=$'    steps:\n      - name: Download The Build\'s Release Files\n'
+import_echo='          echo "Imported the Developer ID G2 certificate and both identities."'
 create_keychain='"$SYSTEM_BIN/security" create-keychain'
-dmg_create='until "$SYSTEM_BIN/hdiutil" create -volname Marshal -srcfolder "$stage" -format UDZO -ov "$image"; do'
+package_flags=$'            --install-location / \\\n            --ownership recommended \\\n'
 
 echo "-- sign-macos: what it holds --"
 expect_fail "sign-macos with contents: write" "release.yaml sign-macos must hold exactly \`contents: read\`" \
@@ -164,9 +161,9 @@ expect_fail "sign-macos with another actions/ action" "only actions/download-art
 expect_fail "sign-macos with an action on a moving ref" "not a major tag" \
   "$release" $'        uses: actions/upload-artifact@v7\n        with:\n          name: marshal-macos-arm64-signed' $'        uses: actions/upload-artifact@main\n        with:\n          name: marshal-macos-arm64-signed'
 expect_fail "sign-macos with a checkout" "checks out the repository" \
-  "$release" "$first_step" $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Unsigned Mac App\n'
+  "$release" "$first_step" $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Build\'s Release Files\n'
 expect_fail "a \${{ }} inside sign-macos's run" "expands \${{ }} inside run" \
-  "$release" $'          identifier="app.axross.marshal"\n          app="app/' $'          identifier="${{ vars.MACOS_TEAM_ID }}"\n          app="app/'
+  "$release" $'          identifier="app.axross.marshal"\n          binary="signed/' $'          identifier="${{ vars.APPLE_TEAM_ID }}"\n          binary="signed/'
 
 for manager in "npm ci" "npx prettier ." "brew install jq" "pip install requests" "cargo build" "mise install" "gem install bundler"; do
   expect_fail "sign-macos running ${manager%% *}" "runs the package manager ${manager%% *}" \
@@ -177,7 +174,7 @@ for fetcher in "curl -O https://example.com/tool" "wget https://example.com/tool
     "$release" "$import_echo" "          ${fetcher}"$'\n'"$import_echo"
 done
 expect_fail "sign-macos running a repository script" "refers to the repository's files" \
-  "$release" "$import_echo" $'          bash .github/scripts/installer-version.sh 1.0.0\n'"$import_echo"
+  "$release" "$import_echo" $'          bash .github/scripts/build-pkg.sh a b c\n'"$import_echo"
 expect_fail "sign-macos running bash" "which could run a file from the repository" \
   "$release" "$import_echo" $'          bash helper.sh\n'"$import_echo"
 expect_fail "sign-macos running a file by its path" "which could run a file from the repository" \
@@ -190,6 +187,8 @@ expect_fail "sign-macos calling security by name" "calls security by name, not b
   "$release" "$create_keychain" 'security create-keychain'
 expect_fail "sign-macos calling codesign through a literal path" "runs /usr/bin/codesign" \
   "$release" '"$SYSTEM_BIN/codesign" --force' '/usr/bin/codesign --force'
+expect_fail "sign-macos decoding a secret through PATH" "runs base64" \
+  "$release" "$import_echo" $'          printf \'%s\' "$APPLE_APPLICATION_P12_BASE64" | base64 --decode >/dev/null\n'"$import_echo"
 expect_fail "sign-macos calling a tool after a pipe by name" "calls openssl by name" \
   "$release" '"$SYSTEM_BIN/openssl" rand -hex 24)"' $'"$SYSTEM_BIN/openssl" rand -hex 24 | openssl base64)"'
 expect_fail "sign-macos calling a tool in a command substitution by name" "calls shasum by name" \
@@ -197,9 +196,9 @@ expect_fail "sign-macos calling a tool in a command substitution by name" "calls
 expect_fail "sign-macos using a tool the job does not list" "which is not one of" \
   "$release" "$import_echo" $'          "$SYSTEM_BIN/ruby" -e 1\n'"$import_echo"
 expect_fail "sign-macos using a tool the check script does not check" "the check script does not check that" \
-  "$release" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun ditto"'
-expect_fail "sign-macos calling a tool in /usr/sbin" 'calls $SYSTEM_SBIN/spctl, which is not one of' \
-  "$release" "$import_echo" $'          : "${SYSTEM_SBIN:=/usr/sbin}"\n          "$SYSTEM_SBIN/spctl" --status\n'"$import_echo"
+  "$release" 'bin_tools="security codesign pkgbuild openssl plutil shasum xcrun"' 'bin_tools="security codesign pkgbuild openssl plutil shasum"'
+expect_fail "sign-macos using a tool the check script does not check in the system directory" "the check script does not check that pkgutil exists" \
+  "$release" 'sbin_tools="pkgutil"' 'sbin_tools=""'
 expect_fail "a sign-macos script the check cannot analyse" "cannot be analysed" \
   "$release" "$import_echo" $'          echo "an unterminated string\n'"$import_echo"
 expect_fail "sign-macos without the xcrun lookups" "the check script does not look for notarytool with xcrun --find" \
@@ -280,32 +279,32 @@ done
 expect_fail "sign-macos with printf -v naming PATH" "names PATH to printf -v" \
   "$release" "$import_echo" $'          printf -v PATH %s /tmp/fake\n'"$import_echo"
 # a shell of the job's own could run a program or read a file first.
-expect_fail "a sign-macos step with a shell" "step \"Sign The App\" sets shell" \
-  "$release" $'      - name: Sign The App\n' $'      - name: Sign The App\n        shell: bash -e {0}\n'
+expect_fail "a sign-macos step with a shell" "step \"Sign The Binary\" sets shell" \
+  "$release" $'      - name: Sign The Binary\n' $'      - name: Sign The Binary\n        shell: bash -e {0}\n'
 expect_fail "sign-macos with a default shell" "sign-macos sets defaults.run.shell" \
   "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    defaults:\n      run:\n        shell: bash -e {0}\n    environment: release'
 expect_fail "a workflow with a default shell" "the workflow sets defaults.run.shell" \
   "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\ndefaults:\n  run:\n    shell: bash -e {0}\n'
 # the artifact actions may take only the inputs the job uses.
 expect_fail "sign-macos downloading from another repository" "gives actions/download-artifact the input repository" \
-  "$release" $'          name: marshal-macos-app\n          path: unsigned\n' $'          name: marshal-macos-app\n          path: unsigned\n          repository: someone/else\n'
+  "$release" $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n' $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n          repository: someone/else\n'
 expect_fail "sign-macos downloading with a token" "gives actions/download-artifact the input github-token" \
-  "$release" $'          name: marshal-macos-app\n          path: unsigned\n' $'          name: marshal-macos-app\n          path: unsigned\n          github-token: ${{ github.token }}\n'
+  "$release" $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n' $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n          github-token: ${{ github.token }}\n'
 expect_fail "sign-macos downloading another run's artifact" "gives actions/download-artifact the input run-id" \
-  "$release" $'          name: marshal-macos-app\n          path: unsigned\n' $'          name: marshal-macos-app\n          path: unsigned\n          run-id: 1\n'
+  "$release" $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n' $'          name: ${{ needs.build.outputs.artifact }}\n          path: unsigned\n          run-id: 1\n'
 expect_fail "sign-macos uploading with an extra input" "gives actions/upload-artifact the input overwrite" \
   "$release" $'          path: signed\n          retention-days: 14\n' $'          path: signed\n          overwrite: true\n          retention-days: 14\n'
 # nothing may change where commands are found, or what the shell runs first.
 expect_fail "a step of sign-macos that sets PATH in its env" "sets PATH, BASH_ENV or ENV" \
-  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: dmg' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          PATH: /tmp/fake\n        run: |\n          # sign-macos: dmg'
+  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          PATH: /tmp/fake\n        run: |\n          # sign-macos: sign'
 expect_fail "a step of sign-macos that sets BASH_ENV in its env" "sets PATH, BASH_ENV or ENV" \
-  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: dmg' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          BASH_ENV: /tmp/fake.sh\n        run: |\n          # sign-macos: dmg'
+  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          BASH_ENV: /tmp/fake.sh\n        run: |\n          # sign-macos: sign'
 expect_fail "sign-macos that sets PATH in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    env:\n      PATH: /tmp/fake\n    environment: release'
 expect_fail "sign-macos that sets BASH_ENV in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    env:\n      BASH_ENV: /tmp/fake.sh\n    environment: release'
 expect_fail "a step of sign-macos that sets ENV in its env" "sets PATH, BASH_ENV or ENV" \
-  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: dmg' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          ENV: /tmp/fake.sh\n        run: |\n          # sign-macos: dmg'
+  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          ENV: /tmp/fake.sh\n        run: |\n          # sign-macos: sign'
 expect_fail "a workflow that sets ENV in its env" "sets PATH, BASH_ENV or ENV" \
   "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  ENV: /tmp/fake.sh\n'
 expect_fail "a workflow that sets PATH in its env" "sets PATH, BASH_ENV or ENV" \
@@ -319,17 +318,19 @@ expect_fail "a script that writes to GITHUB_PATH" "refers to GITHUB_PATH" \
 expect_fail "a script that writes PATH to GITHUB_ENV" "refers to GITHUB_ENV other than" \
   "$release" "$import_echo" $'          echo "PATH=/tmp/fake" >>"$GITHUB_ENV"\n'"$import_echo"
 expect_fail "the identities step that writes a third name to GITHUB_ENV" "refers to GITHUB_ENV other than" \
-  "$release" $'            echo "APPLICATION_IDENTITY=${application_identity}"\n' $'            echo "APPLICATION_IDENTITY=${application_identity}"\n            echo "PATH=${application_identity}"\n'
+  "$release" $'            echo "INSTALLER_IDENTITY_NAME=${installer_name}"\n' $'            echo "INSTALLER_IDENTITY_NAME=${installer_name}"\n            echo "PATH=${installer_name}"\n'
 expect_fail "the identities step that writes to GITHUB_ENV again" "writes GITHUB_ENV outside its block" \
-  "$release" $'          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"' $'          echo "PATH=/tmp/fake" >>"$GITHUB_ENV"\n          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"'
+  "$release" $'          echo "team_id=${APPLE_TEAM_ID}" >>"$GITHUB_OUTPUT"' $'          echo "PATH=/tmp/fake" >>"$GITHUB_ENV"\n          echo "team_id=${APPLE_TEAM_ID}" >>"$GITHUB_OUTPUT"'
 
 echo "-- sign-macos: the stand-in prefixes --"
 expect_fail "a prefix default other than /usr/bin" "uses SYSTEM_BIN without the line" \
   "$release" $'          # sign-macos: sign\n          set -euo pipefail\n          : "${SYSTEM_BIN:=/usr/bin}"' $'          # sign-macos: sign\n          set -euo pipefail\n          : "${SYSTEM_BIN:=/opt/homebrew/bin}"'
 expect_fail "a prefix without its default line" "uses SYSTEM_BIN without the line" \
   "$release" $'          # sign-macos: hash\n          set -euo pipefail\n          : "${SYSTEM_BIN:=/usr/bin}"\n' $'          # sign-macos: hash\n          set -euo pipefail\n'
+expect_fail "a prefix default of /usr/sbin changed" "uses SYSTEM_SBIN without the line" \
+  "$release" ': "${SYSTEM_SBIN:=/usr/sbin}"' ': "${SYSTEM_SBIN:=/sbin}"'
 expect_fail "a step that sets SYSTEM_BIN in its env" "sets SYSTEM_BIN or SYSTEM_SBIN; only the stand-in test may" \
-  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: dmg' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          SYSTEM_BIN: /tmp/fake\n        run: |\n          # sign-macos: dmg'
+  "$release" $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |\n          # sign-macos: sign' $'        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          SYSTEM_BIN: /tmp/fake\n        run: |\n          # sign-macos: sign'
 expect_fail "a job that sets SYSTEM_SBIN in its env" "sets SYSTEM_BIN or SYSTEM_SBIN; only the stand-in test may" \
   "$release" $'    timeout-minutes: 60\n    environment: release' $'    timeout-minutes: 60\n    env:\n      SYSTEM_SBIN: /tmp/fake\n    environment: release'
 expect_fail "a workflow that sets SYSTEM_BIN in its env" "sets SYSTEM_BIN or SYSTEM_SBIN; only the stand-in test may" \
@@ -341,45 +342,127 @@ expect_fail "a script that writes SYSTEM_SBIN to GITHUB_ENV" "assigns SYSTEM_SBI
 expect_fail "a script without its marker line" "does not start with a \"# sign-macos: <name>\" marker line" \
   "$release" $'          # sign-macos: hash\n' $'          # hash\n'
 
-echo "-- sign-macos: the disk image --"
-expect_fail "hdiutil create with another format in sign-macos" "hdiutil create's arguments differ from the app job's" \
-  "$release" "$dmg_create" "${dmg_create/UDZO/UDRW}"
-expect_fail "hdiutil create with another volume name in the app job" "hdiutil create's arguments differ from the app job's" \
-  "$release_build" 'until /usr/bin/hdiutil create -volname Marshal ' 'until /usr/bin/hdiutil create -volname Other '
-expect_fail "sign-macos creating the disk image without retries" "the dmg script does not call hdiutil create exactly once" \
-  "$release" "$dmg_create" "${dmg_create/until /if }"
-expect_fail "the app job creating the disk image twice" "app-macos job does not call hdiutil create exactly once" \
-  "$release_build" 'until /usr/bin/hdiutil create -volname Marshal ' $'until /usr/bin/hdiutil create -volname Spare -srcfolder "$stage" -format UDZO -ov spare.dmg; do\n            sleep 1\n          done\n          until /usr/bin/hdiutil create -volname Marshal '
-expect_fail "a disk image signed under the app's identifier" "does not sign the disk image under app.axross.marshal.dmg" \
-  "$release" '--identifier app.axross.marshal.dmg "$image"' '--identifier app.axross.marshal "$image"'
-expect_fail "an app identifier that is not Marshal's" "sets identifier" \
-  "$release" $'          identifier="app.axross.marshal"\n          app="app/' $'          identifier="app.axross.other"\n          app="app/'
-expect_fail "sign-macos without its dmg script" "has no \"# sign-macos: dmg\" script" \
-  "$release" '          # sign-macos: dmg' '          # sign-macos: image'
-expect_fail "the signed set assembled in unsigned mode" "release.yaml assemble-signed does not call assemble-release.sh in signed mode" \
-  "$release" 'bash .github/scripts/assemble-release.sh signed ' 'bash .github/scripts/assemble-release.sh unsigned '
-expect_fail "the unsigned set assembled in signed mode" "release-build.yaml assemble does not call assemble-release.sh in unsigned mode" \
-  "$release_build" 'bash .github/scripts/assemble-release.sh unsigned ' 'bash .github/scripts/assemble-release.sh signed '
+echo "-- sign-macos: pkgbuild's arguments --"
+expect_fail "pkgbuild without --ownership" "pkgbuild's arguments differ from build-pkg.sh's" \
+  "$release" "$package_flags" $'            --install-location / \\\n'
+expect_fail "pkgbuild with another install location" "pkgbuild's arguments differ from build-pkg.sh's" \
+  "$release" $'            --install-location / \\\n' $'            --install-location /usr/local \\\n'
+expect_fail "pkgbuild with another identifier variable" "pkgbuild's arguments differ from build-pkg.sh's" \
+  "$release" $'            --identifier "$identifier" \\\n            --version "$version"' $'            --identifier "other" \\\n            --version "$version"'
+expect_fail "pkgbuild with an added scripts directory" "pkgbuild's arguments differ from build-pkg.sh's" \
+  "$release" "$package_flags" $'            --install-location / \\\n            --ownership recommended \\\n            --scripts scripts \\\n'
+expect_fail "pkgbuild without --sign" "must pass --sign and --keychain to pkgbuild once each" \
+  "$release" $'            --sign "$INSTALLER_IDENTITY_NAME" \\\n' ''
+expect_fail "pkgbuild without --keychain" "must pass --sign and --keychain to pkgbuild once each" \
+  "$release" $'            --keychain "$keychain" \\\n            "$output"' $'            "$output"'
+expect_fail "staging with another mode" "the package script's staging lines differ from build-pkg.sh's" \
+  "$release" 'chmod 0755 "$stage" "${stage}/usr"' 'chmod 0777 "$stage" "${stage}/usr"'
+expect_fail "staging a different path" "the package script's staging lines differ from build-pkg.sh's" \
+  "$release" $'cp "$binary" "${stage}/usr/local/bin/marshal"' $'cp "$binary" "${stage}/usr/local/bin/marshal-cli"'
+expect_fail "an identifier that is not build-pkg.sh's" "sets identifier" \
+  "$release" $'          identifier="app.axross.marshal"\n          binary="signed/' $'          identifier="app.axross.other"\n          binary="signed/'
+expect_fail "a historical checkout at another revision" "complete pinned historical source" \
+  "$release_build" 'ref: dc8e1ebcc0722997206487f3dcca2ae7e519cf02' 'ref: main'
+expect_fail "a historical checkout that keeps credentials" "complete pinned historical source" \
+  "$release_build" $'          path: historical\n          persist-credentials: false' $'          path: historical\n          persist-credentials: true'
+expect_fail "an unbounded historical dependency toolset" "must select only cargo-deny for historical dependency checks" \
+  "$release_build" 'mise exec cargo-deny -- cargo deny' 'mise exec -- cargo deny'
+expect_fail "an extra historical dependency tool" "must select only cargo-deny for historical dependency checks" \
+  "$release_build" 'mise exec cargo-deny -- cargo deny' 'mise exec cargo-deny node -- cargo deny'
+expect_fail "a source binding that pins another commit" "prepare-source.sh must pin the historical source identity" \
+  "$prepare_source" 'source_commit=dc8e1ebcc0722997206487f3dcca2ae7e519cf02' 'source_commit=1640cc471bd744adb522d26d01a966db8da77327'
+expect_fail "packaging from current app tooling" "must run historical/.github/scripts/build-pkg.sh" \
+  "$release_build" 'bash ../.github/scripts/build-pkg.sh' 'bash ../../.github/scripts/build-pkg.sh'
+expect_fail "no historical source binding before build" "must prepare the historical source binding" \
+  "$release_build" 'bash .github/scripts/cli-recovery/prepare-source.sh prepare historical "$VERSION"' 'echo prepare'
+expect_fail "no historical source binding after build" "must verify the historical source binding" \
+  "$release_build" 'bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"' 'echo verify'
+expect_fail "a skipped historical input check" "historical source binding must not be skippable" \
+  "$release_build" $'      - name: Check And Stamp The Historical Input\n' $'      - name: Check And Stamp The Historical Input\n        if: false\n'
+expect_fail "a tolerated historical input failure" "historical source binding must not be skippable" \
+  "$release_build" $'      - name: Recheck Historical Input After Build\n' $'      - name: Recheck Historical Input After Build\n        continue-on-error: true\n'
+
+verify_body=$'        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+dependency_verify=$'      - name: Recheck Historical Input After Dependency Checks\n'"$verify_body"
+build_verify=$'      - name: Recheck Historical Input After Build\n'"$verify_body"
+final_verify=$'      - name: Recheck Historical Input After Packaging And Installer Tests\n'"$verify_body"
+prepare_step=$'      - name: Check And Stamp The Historical Input\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n          WORKFLOW_COMMIT: ${{ github.sha }}\n        run: |\n          echo "Current workflow/tag commit: ${WORKFLOW_COMMIT}"\n          bash .github/scripts/cli-recovery/prepare-source.sh prepare historical "$VERSION"\n'
+dependency_check=$'      - name: Check The Historical Licence Source And Duplicate Policy\n'
+production_build=$'      - name: Build The Production CLI\n        run: cargo build --locked --release --bin marshal\n'
+msi_build=$'      - name: Build The Legacy CLI MSI\n'
+msi_test=$'      - name: Test The MSI On The Hosted Runner\n'
+unsigned_upload=$'      - name: Upload The Unsigned CLI And Installer\n'
+
+expect_fail "only the final historical verification removed" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+  "$release_build" "$final_verify" ''
+expect_fail "only the post-build historical verification removed" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+  "$release_build" "$build_verify" ''
+expect_fail "only the post-dependency historical verification removed" "dependencies must verify the historical source binding" \
+  "$release_build" "$dependency_verify" ''
+expect_fail "historical preparation after dependency installation" "dependencies historical source checks must surround" \
+  "$release_build" "$prepare_step" '' \
+  "$release_build" "$dependency_check" "${prepare_step}${dependency_check}"
+expect_fail "historical verification before dependency checks" "dependencies historical source checks must surround" \
+  "$release_build" "$dependency_verify" '' \
+  "$release_build" "$dependency_check" "${dependency_verify}${dependency_check}"
+expect_fail "historical post-build verification before compilation" "build historical source checks must surround cargo build" \
+  "$release_build" "$build_verify" '' \
+  "$release_build" "$production_build" "${build_verify}${production_build}"
+expect_fail "release override tests after the post-build verification" "build historical source checks must surround cargo test" \
+  "$release_build" '        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides' '        run: echo release tests moved' \
+  "$release_build" "$msi_build" $'      - name: Release Override Tests\n        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides\n'"$msi_build"
+expect_fail "final historical verification before packaging" "build historical source checks must surround build-msi.ps1" \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$msi_build" "${final_verify}${msi_build}"
+expect_fail "final historical verification before installer tests" "build historical source checks must surround test-msi-installer.ps1" \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$msi_test" "${final_verify}${msi_test}"
+expect_fail "final historical verification after hashing" 'build historical source checks must surround hash_file "$ASSET"' \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$unsigned_upload" "${final_verify}${unsigned_upload}"
+expect_fail "both historical verifications in the post-build step" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+  "$release_build" "$final_verify" '' \
+  "$release_build" "$build_verify" $'      - name: Recheck Historical Input After Build\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: |\n          bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n          bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+for setting in 'if: false' 'continue-on-error: true'; do
+  expect_fail "final historical verification with ${setting}" "historical source binding must not be skippable" \
+    "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n'"        ${setting}"$'\n'"$verify_body"
+done
+expect_fail "a conditional historical dependency job" "dependencies historical source binding must not be skippable" \
+  "$release_build" $'    name: Check Historical CLI Dependencies\n' $'    name: Check Historical CLI Dependencies\n    if: false\n'
+for command in 'if false; then bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"; fi' 'bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION" || true' 'echo bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"'; do
+  expect_fail "final historical verification replaced with ${command}" "must verify the historical source binding in 2 distinct unconditional step(s)" \
+    "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: '"${command}"$'\n'
+done
+expect_fail "final historical verification with a shell that ignores its script" "historical source binding must use bash at the workflow root" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        shell: bash -c true {0}\n'"$verify_body"
+expect_fail "final historical verification in the historical working directory" "historical source binding must use bash at the workflow root" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: historical\n        env:\n          VERSION: ${{ inputs.version }}\n        run: bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+expect_fail "final historical verification with the wrong version" "historical source binding must use bash at the workflow root with the input version" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: .\n        env:\n          VERSION: 1.2.3\n        run: bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
+expect_pass_with "renaming the final historical verification" \
+  "$release_build" "$final_verify" $'      - name: Verify Historical Input Before Hashing\n'"$verify_body"
+expect_pass_with "a comment before the final historical verification" \
+  "$release_build" "$final_verify" $'      - name: Recheck Historical Input After Packaging And Installer Tests\n        working-directory: .\n        env:\n          VERSION: ${{ inputs.version }}\n        run: |\n          # packaging must leave the checked historical input unchanged.\n          bash .github/scripts/cli-recovery/prepare-source.sh verify historical "$VERSION"\n'
 
 echo "-- the signing secrets --"
 expect_fail "a signing secret in attest" "only sign-macos may read a signing secret" \
-  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
+  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
 expect_fail "a signing secret in verify-macos's step" "release.yaml: jobs.verify-macos.steps[5].env.P8 reads" \
-  "$release" $'      - name: Test The Signed Disk Image\n        id: test\n        timeout-minutes: 5\n        env:\n' $'      - name: Test The Signed Disk Image\n        id: test\n        timeout-minutes: 5\n        env:\n          P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}\n'
+  "$release" $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n' $'      - name: Test The Signed Package\n        timeout-minutes: 10\n        env:\n          P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}\n'
 expect_fail "a signing secret in the workflow's env" "release.yaml: env.P12 reads" \
-  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  P12: ${{ secrets.MACOS_APPLICATION_P12_BASE64 }}\n'
+  "$release" $'permissions:\n  contents: read\n' $'permissions:\n  contents: read\n\nenv:\n  P12: ${{ secrets.APPLE_INSTALLER_P12_BASE64 }}\n'
 expect_fail "a signing secret read by bracket" "only sign-macos may read a signing secret" \
-  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets[\'MACOS_P12_PASSWORD\'] }}\n'
+  "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      PASSWORD: ${{ secrets[\'APPLE_P12_PASSWORD\'] }}\n'
 expect_fail "every secret read through toJSON" "only sign-macos may read a signing secret" \
   "$release" $'  attest:\n    name: Attest The Build Provenance\n' $'  attest:\n    name: Attest The Build Provenance\n    env:\n      ALL: ${{ toJSON(secrets) }}\n'
 expect_fail "secrets: inherit on the build job" "release.yaml: jobs.build.secrets passes every secret on" \
-  "$release" $'    uses: ./.github/workflows/release-build.yaml\n' $'    uses: ./.github/workflows/release-build.yaml\n    secrets: inherit\n'
+  "$release" $'    uses: ./.github/workflows/cli-recovery-build.yaml\n' $'    uses: ./.github/workflows/cli-recovery-build.yaml\n    secrets: inherit\n'
 expect_fail "a signing secret in a pull request workflow" "merge-checks.yaml: jobs.sneaky.env.PASSWORD reads" \
-  "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n    steps:\n      - run: echo hi\n'
+  "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    env:\n      PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n    steps:\n      - run: echo hi\n'
 expect_fail_new_file "every secret passed on in a .yml workflow" "extra.yml: jobs.sneaky.secrets passes every secret on" \
   .github/workflows/extra.yml $'name: Extra\non:\n  workflow_dispatch:\njobs:\n  sneaky:\n    uses: ./.github/workflows/release-build.yaml\n    secrets: inherit\n'
-expect_fail "a signing secret in release-build.yaml" "release-build.yaml: jobs.assemble" \
-  "$release_build" $'  assemble:\n    name: Assemble The Release Files\n' $'  assemble:\n    name: Assemble The Release Files\n    env:\n      PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n'
+expect_fail "a signing secret in cli-recovery-build.yaml" "cli-recovery-build.yaml: jobs.assemble" \
+  "$release_build" $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n' $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n    env:\n      PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
 
 echo "-- the Environment elsewhere --"
 expect_fail "an Environment on attest" "job attest declares an environment" \
@@ -387,13 +470,13 @@ expect_fail "an Environment on attest" "job attest declares an environment" \
 expect_fail "an Environment on release" "job release declares an environment" \
   "$release" $'  release:\n    name: Release\n' $'  release:\n    name: Release\n    environment: release\n'
 expect_fail "an Environment on verify-macos" "job verify-macos declares an environment" \
-  "$release" $'  verify-macos:\n    name: Verify The Signed Mac Disk Image\n' $'  verify-macos:\n    name: Verify The Signed Mac Disk Image\n    environment: release\n'
+  "$release" $'  verify-macos:\n    name: Verify The Signed macOS Files\n' $'  verify-macos:\n    name: Verify The Signed macOS Files\n    environment: release\n'
 expect_fail "an Environment on assemble-signed" "job assemble-signed declares an environment" \
   "$release" $'  assemble-signed:\n    name: Assemble The Signed Release Files\n' $'  assemble-signed:\n    name: Assemble The Signed Release Files\n    environment: release\n'
 expect_fail "an Environment on the plan job" "job plan declares an environment" \
   "$release" $'  plan:\n    name: Plan The Release\n' $'  plan:\n    name: Plan The Release\n    environment: release\n'
-expect_fail "an Environment in release-build.yaml" "release-build.yaml: job assemble declares an environment" \
-  "$release_build" $'  assemble:\n    name: Assemble The Release Files\n' $'  assemble:\n    name: Assemble The Release Files\n    environment: release\n'
+expect_fail "an Environment in cli-recovery-build.yaml" "cli-recovery-build.yaml: job assemble declares an environment" \
+  "$release_build" $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n' $'  assemble:\n    name: Assemble The Unsigned CLI Recovery Files\n    environment: release\n'
 expect_fail "an Environment in merge-checks.yaml" "merge-checks.yaml: job" \
   "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    runs-on: ubuntu-latest\n    environment: release\n    steps:\n      - run: echo hi\n'
 expect_fail "an Environment in a step" "a step of job" \
@@ -408,10 +491,8 @@ expect_fail "a pull request workflow that calls release.yaml" "a workflow that d
   "$merge_checks" $'jobs:\n' $'jobs:\n  sneaky:\n    uses: ./.github/workflows/release.yaml\n'
 expect_fail "release.yaml triggered by pull requests" "release.yaml is triggered by" \
   "$release" $'on:\n  workflow_dispatch:\n' $'on:\n  workflow_dispatch:\n  pull_request:\n'
-expect_fail "a called workflow that declares an Environment" "release-build.yaml: job build declares an environment" \
-  "$release_build" $'  build:\n    name: Build windows-x64\n' $'  build:\n    name: Build windows-x64\n    environment: release\n'
-expect_fail "an Environment on the Mac app job" "release-build.yaml: job app-macos declares an environment" \
-  "$release_build" $'  app-macos:\n    name: Build The Mac App\n' $'  app-macos:\n    name: Build The Mac App\n    environment: release\n'
+expect_fail "a called workflow that declares an Environment" "cli-recovery-build.yaml: job build declares an environment" \
+  "$release_build" $'  build:\n    name: Build Historical CLI ${{ matrix.target }}\n' $'  build:\n    name: Build Historical CLI ${{ matrix.target }}\n    environment: release\n'
 
 echo "-- the other new jobs --"
 expect_fail "verify-macos with contents: write" "release.yaml verify-macos must hold exactly" \
@@ -419,12 +500,12 @@ expect_fail "verify-macos with contents: write" "release.yaml verify-macos must 
 expect_fail "assemble-signed with an extra permission" "release.yaml assemble-signed must hold exactly" \
   "$release" $'    timeout-minutes: 10\n    permissions:\n      contents: read\n    outputs:\n      artifact: marshal-release-signed' $'    timeout-minutes: 10\n    permissions:\n      contents: read\n      id-token: write\n    outputs:\n      artifact: marshal-release-signed'
 expect_fail "verify-macos with a checkout that keeps credentials" "a checkout does not set persist-credentials: false" \
-  "$release" $'        with:\n          persist-credentials: false\n      - name: Download The Unsigned Mac App\n' $'      - name: Download The Unsigned Mac App\n'
-expect_fail "release-build's assemble with a checkout that keeps credentials" "release-build.yaml assemble: a checkout does not set persist-credentials: false" \
-  "$release_build" $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Windows Files' $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n      - name: Download The Windows Files'
+  "$release" $'  verify-macos:\n    name: Verify The Signed macOS Files\n    needs: [plan, build, sign-macos]\n    if: github.ref == \'refs/heads/main\' && needs.plan.outputs.version != \'\'\n    runs-on: macos-latest\n    timeout-minutes: 20\n    permissions:\n      contents: read\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n' $'  verify-macos:\n    name: Verify The Signed macOS Files\n    needs: [plan, build, sign-macos]\n    if: github.ref == \'refs/heads/main\' && needs.plan.outputs.version != \'\'\n    runs-on: macos-latest\n    timeout-minutes: 20\n    permissions:\n      contents: read\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n'
+expect_fail "recovery assemble with a checkout that keeps credentials" "cli-recovery-build.yaml assemble: a checkout does not set persist-credentials: false" \
+  "$release_build" $'    steps:\n      - name: Checkout The Workflow Source\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Windows CLI Files' $'    steps:\n      - name: Checkout The Workflow Source\n        uses: actions/checkout@v7\n      - name: Download The Windows CLI Files'
 expect_fail "release-build's assemble writing SHA256SUMS itself" "assemble-release.sh is the only writer" \
-  "$release_build" $'        run: bash .github/scripts/assemble-release.sh unsigned "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"' $'        run: |\n          bash .github/scripts/assemble-release.sh unsigned "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"\n          sha256sum dist/* > dist/SHA256SUMS'
-assemble_call='bash .github/scripts/assemble-release.sh unsigned "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"'
+  "$release_build" $'        run: bash .github/scripts/cli-recovery/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"' $'        run: |\n          bash .github/scripts/cli-recovery/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"\n          sha256sum dist/* > dist/SHA256SUMS'
+assemble_call='bash .github/scripts/cli-recovery/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"'
 for writing in 'sha256sum dist/* >> dist/SHA256SUMS' 'sha256sum dist/* | tee dist/SHA256SUMS' 'cp sums.txt dist/SHA256SUMS' 'mv sums.txt "dist/SHA256SUMS"'; do
   expect_fail "release-build's assemble writing SHA256SUMS with ${writing}" "assemble-release.sh is the only writer" \
     "$release_build" "        run: ${assemble_call}" "        run: |"$'\n'"          ${assemble_call}"$'\n'"          ${writing}"
@@ -462,7 +543,7 @@ expect_fail "release without the version in its guard" "release.yaml release mus
 expect_fail "assemble-signed without plan in needs" "release.yaml assemble-signed (every new job) must need plan directly" \
   "$release" $'    needs: [plan, build, sign-macos, verify-macos]' $'    needs: [build, sign-macos, verify-macos]'
 expect_fail "sign-macos without plan in needs" "release.yaml sign-macos (every new job) must need plan directly" \
-  "$release" $'  sign-macos:\n    name: Sign And Notarize The Mac App\n    needs: [plan, build]' $'  sign-macos:\n    name: Sign And Notarize The Mac App\n    needs: [build]'
+  "$release" $'  sign-macos:\n    name: Sign And Notarize The macOS Files\n    needs: [plan, build]' $'  sign-macos:\n    name: Sign And Notarize The macOS Files\n    needs: [build]'
 expect_fail "verify-macos not after sign-macos" "release.yaml verify-macos must need sign-macos directly" \
   "$release" $'    needs: [plan, build, sign-macos]' $'    needs: [plan, build]'
 expect_fail "assemble-signed not after verify-macos" "release.yaml assemble-signed must need verify-macos directly" \
@@ -494,20 +575,20 @@ expect_fail "failure() in release's condition" "has a job-level condition that c
 expect_fail "always() on a signing step" "is allowed only on the clean-up and notary-log upload steps" \
   "$release" $'      - name: Upload The Signed Files\n        uses: actions/upload-artifact@v7' $'      - name: Upload The Signed Files\n        if: always()\n        uses: actions/upload-artifact@v7'
 expect_fail "failure() on the sign step" "is allowed only on the clean-up and notary-log upload steps" \
-  "$release" $'      - name: Sign The App\n' $'      - name: Sign The App\n        if: failure()\n'
+  "$release" $'      - name: Sign The Binary\n' $'      - name: Sign The Binary\n        if: failure()\n'
 expect_fail "always() on a step of another job" "can run after a failure" \
   "$release" $'      - name: Download The Notary Log\n' $'      - name: Download The Notary Log\n        if: always()\n'
 # a condition that skips a step also skips a check.
-expect_fail "if: false on verify-macos's test of the signed disk image" "release.yaml verify-macos: step \"Test The Signed Disk Image\" has a condition" \
-  "$release" $'      - name: Test The Signed Disk Image\n        id: test\n' $'      - name: Test The Signed Disk Image\n        if: false\n        id: test\n'
+expect_fail "if: false on verify-macos's test of the signed package" "release.yaml verify-macos: step \"Test The Signed Package\" has a condition" \
+  "$release" $'      - name: Test The Signed Package\n        timeout-minutes: 10\n' $'      - name: Test The Signed Package\n        if: false\n        timeout-minutes: 10\n'
 expect_fail "a condition on a step of assemble-signed" "release.yaml assemble-signed: step \"Check The Hashes And Write SHA256SUMS\" has a condition" \
-  "$release" $'      - name: Check The Hashes And Write SHA256SUMS\n        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          MACOS_DMG_SHA256' $'      - name: Check The Hashes And Write SHA256SUMS\n        if: github.ref == \'refs/heads/main\'\n        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          MACOS_DMG_SHA256'
+  "$release" $'      - name: Check The Hashes And Write SHA256SUMS\n        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          MACOS_SHA256' $'      - name: Check The Hashes And Write SHA256SUMS\n        if: github.ref == \'refs/heads/main\'\n        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n          MACOS_SHA256'
 expect_fail "a condition on sign-macos's Notarize step" "is allowed only on the clean-up and notary-log upload steps" \
-  "$release" $'      - name: Notarize The Disk Image\n' $'      - name: Notarize The Disk Image\n        if: false\n'
+  "$release" $'      - name: Notarize The Package\n' $'      - name: Notarize The Package\n        if: false\n'
 expect_fail "a condition on sign-macos's Staple step" "is allowed only on the clean-up and notary-log upload steps" \
-  "$release" $'      - name: Staple And Check The Disk Image\n' $'      - name: Staple And Check The Disk Image\n        if: success()\n'
+  "$release" $'      - name: Staple And Check The Package\n' $'      - name: Staple And Check The Package\n        if: success()\n'
 expect_fail "a condition on sign-macos's Sign step that is not a status function" "is allowed only on the clean-up and notary-log upload steps" \
-  "$release" $'      - name: Sign The App\n' $'      - name: Sign The App\n        if: needs.plan.outputs.version != \'\'\n'
+  "$release" $'      - name: Sign The Binary\n' $'      - name: Sign The Binary\n        if: needs.plan.outputs.version != \'\'\n'
 # GitHub reads a status function's name in any case.
 expect_fail "Always() in assemble-signed's condition" "has a job-level condition that can run it after a failure" \
   "$release" $'    needs: [plan, build, sign-macos, verify-macos]\n'"$guard" $'    needs: [plan, build, sign-macos, verify-macos]\n    if: Always() && needs.plan.outputs.version != \'\''
@@ -522,23 +603,58 @@ expect_fail "a notary log upload that only runs after a success" "must upload no
 
 echo "-- the measured tools --"
 expect_fail "a tool the dry run does not measure" "does not measure /usr/bin/openssl" \
-  "$release_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign plutil shasum xcrun ditto hdiutil"'
+  "$release_build" 'bin_tools="security codesign pkgbuild openssl plutil shasum xcrun lsbom sudo"' 'bin_tools="security codesign pkgbuild plutil shasum xcrun lsbom sudo"'
 expect_fail "a verify tool the dry run does not measure" "does not measure /usr/sbin/spctl" \
-  "$release_build" 'sbin_tools="diskutil spctl"' 'sbin_tools="diskutil"'
+  "$release_build" 'sbin_tools="pkgutil spctl installer"' 'sbin_tools="pkgutil installer"'
 expect_fail "a measuring step that does not fail" "does not fail when a tool is missing" \
-  "$release_build" $'            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2\n            exit 1' $'            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2'
+  "$release_build" $'            echo "error: signing tools are missing or do not support the required flags:${missing}" >&2\n            exit 1' $'            echo "error: signing tools are missing or do not support the required flags:${missing}" >&2'
 expect_fail "a measuring step that receives a signing value" "receives a signing value" \
-  "$release_build" $'      - name: Check The Signing Tools\n        run: |\n' $'      - name: Check The Signing Tools\n        env:\n          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}\n        run: |\n'
-expect_fail "a build whose assemble job does not call the script" "release-build.yaml assemble does not call assemble-release.sh" \
-  "$release_build" 'bash .github/scripts/assemble-release.sh' 'bash .github/scripts/other.sh'
-expect_fail "a measuring step with a condition" "has a condition, which could skip it" \
-  "$release_build" $'      - name: Check The Signing Tools\n' $'      - name: Check The Signing Tools\n        if: github.event_name == \'workflow_dispatch\'\n'
-expect_fail "the Mac app job on a self-hosted runner" "app-macos job must run on macos-latest" \
-  "$release_build" $'    name: Build The Mac App\n    runs-on: macos-latest' $'    name: Build The Mac App\n    runs-on: self-hosted'
+  "$release_build" $'      - name: Check The Signing Tools\n        if: runner.os == \'macOS\'\n' $'      - name: Check The Signing Tools\n        if: runner.os == \'macOS\'\n        env:\n          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
+expect_fail "a build whose assemble job does not call the script" "cli-recovery-build.yaml assemble does not call assemble-release.sh" \
+  "$release_build" 'bash .github/scripts/cli-recovery/assemble-release.sh' 'bash .github/scripts/other.sh'
+expect_fail "a measuring step on every leg" "must run on the macOS leg only" \
+  "$release_build" $'      - name: Check The Signing Tools\n        if: runner.os == \'macOS\'' $'      - name: Check The Signing Tools\n        if: runner.os != \'Linux\''
 expect_fail "a measuring step that does not print MEASURED" "has no step that prints the MEASURED: signing tools line" \
   "$release_build" 'echo "MEASURED: signing tools:${found}"' 'echo "signing tools:${found}"'
-expect_fail "a tool test-signed-dmg.sh adds without being measured" "does not measure /usr/bin/stat" \
-  ".github/scripts/tests/test-signed-dmg.sh" '"$SYSTEM_BIN/ditto" -x -k "$archive"' '"$SYSTEM_BIN/stat" -x -k "$archive"'
+expect_fail "a tool test-signed-pkg.sh adds without being measured" "does not measure /usr/bin/stat" \
+  ".github/scripts/tests/test-signed-pkg.sh" '"$SYSTEM_BIN/lsbom" -p fmUG "$1"' '"$SYSTEM_BIN/stat" -p fmUG "$1"'
+
+echo "-- the recovery boundary and the preserved app build --"
+expect_fail "release selecting the app build" "build must call cli-recovery-build.yaml" \
+  "$release" 'uses: ./.github/workflows/cli-recovery-build.yaml' 'uses: ./.github/workflows/release-build.yaml'
+expect_fail "build without its main and version guard" "release.yaml build must carry" \
+  "$release" $'    needs: plan\n'"$guard" $'    needs: plan\n    if: true'
+expect_fail "an extra release job" "exactly the seven CLI release jobs" \
+  "$release" $'jobs:\n' $'jobs:\n  extra:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo extra\n'
+for name in APPLE_APPLICATION_P12_BASE64 APPLE_INSTALLER_P12_BASE64 APPLE_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_TEAM_KEY_ID APPLE_NOTARY_ISSUER_ID; do
+  expect_fail "${name} from a variable instead of a secret" "must read ${name} from secrets.${name}" \
+    "$release" "${name}: \${{ secrets.${name} }}" "${name}: \${{ vars.${name} }}"
+done
+expect_fail "the team from a secret instead of the variable" "must read APPLE_TEAM_ID from vars.APPLE_TEAM_ID" \
+  "$release" 'APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}' 'APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}'
+expect_fail "a condition skipping attestation" 'release.yaml attest: step "Attest The Build Provenance" has a condition' \
+  "$release" $'      - name: Attest The Build Provenance\n' $'      - name: Attest The Build Provenance\n        if: false\n'
+expect_fail "a condition skipping publication checks" 'release.yaml release: step "Release" has a condition' \
+  "$release" $'      - name: Release\n' $'      - name: Release\n        if: false\n'
+expect_fail "a missing attested CLI subject" "exactly the four CLI release subjects" \
+  "$release" $'            release-files/${{ steps.files.outputs.macos_pkg }}\n' ''
+expect_fail "an extra attested app subject" "exactly the four CLI release subjects" \
+  "$release" $'            release-files/${{ steps.files.outputs.macos_pkg }}\n' $'            release-files/${{ steps.files.outputs.macos_pkg }}\n            release-files/marshal-app.exe\n'
+expect_fail "signed assembly calling app tooling" "assemble-signed does not call cli-recovery/assemble-release.sh" \
+  "$release" 'bash .github/scripts/cli-recovery/assemble-release.sh' 'bash .github/scripts/assemble-release.sh'
+expect_fail "signed package verification removed" "verify-macos does not call test-signed-pkg.sh" \
+  "$release" 'bash .github/scripts/tests/test-signed-pkg.sh' 'bash .github/scripts/tests/other.sh'
+expect_fail "the normal app assembler replaced" "release-build.yaml assemble does not call assemble-release.sh" \
+  "$app_build" 'bash .github/scripts/assemble-release.sh' 'bash .github/scripts/cli-recovery/assemble-release.sh'
+expect_fail "an Environment in the normal app build" "release-build.yaml: job build declares an environment" \
+  "$app_build" $'  build:\n    name: Build windows-x64\n' $'  build:\n    name: Build windows-x64\n    environment: release\n'
+app_assemble_call='bash .github/scripts/assemble-release.sh "$VERSION" dist "$WINDOWS_SHA256" "$WINDOWS_MSI_SHA256"'
+for writing in 'sha256sum dist/* > dist/SHA256SUMS' 'sha256sum dist/* >> dist/SHA256SUMS' 'sha256sum dist/* | tee dist/SHA256SUMS' 'cp sums.txt dist/SHA256SUMS' 'mv sums.txt "dist/SHA256SUMS"'; do
+  expect_fail "normal app assembly writing checksums with ${writing}" "assemble-release.sh is the only writer" \
+    "$app_build" "        run: ${app_assemble_call}" "        run: |"$'\n'"          ${app_assemble_call}"$'\n'"          ${writing}"
+done
+expect_fail "normal app assembly keeping checkout credentials" "release-build.yaml assemble: a checkout does not set persist-credentials: false" \
+  "$app_build" $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Windows Files' $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n      - name: Download The Windows Files'
 
 echo "-- a file the check cannot read --"
 expect_fail "a workflow in a syntax the check does not support" "cannot be read" \

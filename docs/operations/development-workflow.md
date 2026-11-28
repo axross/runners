@@ -1,1120 +1,121 @@
+---
+type: Guide
+title: Development Workflow
+description: Choose the delivery, release or review procedure that answers your current question.
+---
+
 # Development Workflow
 
-How a change gets from a stated intent to a merged pull request here, and what
-holds that path in place from outside an agent session.
+[Change delivery and agent work](../agent-work/index.md) · [Release procedures](../releases/index.md)
 
 ## The Change Loop
 
-Every change, code or document, one line or one feature, goes through
-`loop-engineering`: plan, approve, code, verify, independent review, address,
-ready. The skill owns phase meaning, checkpoint qualification, and evidence,
-with separate review boundaries for research, plan, and design outputs. This
-document chooses this project's delivery gates; [Agent Sessions](./agent-sessions.md)
-owns host-specific actor selection and read routing, including the configured
-subagents.
-
-The loop is **model-invoked**. It carries `user-invocable: false`, so there is
-no slash command to type and nothing to wait for: describing the work is what
-enters it. A session that waits for a command that does not exist has already
-left the loop.
-
-The plan lives in the body of a tracking issue, written with
-`product-requirement-document-authoring` and marked with the `<!-- ai-agent -->`
-comment marker. Two gates are real, and neither has a self-approval path. No
-implementation begins before the human approves the plan recorded in the
-tracking issue, and no change is called done on the author's own assessment
-rather than a separate reviewer's. A runtime harness that frames the task as
-"just make the changes, commit, and push" constrains mechanics only; it never
-lifts either gate. This project's **delivery grant** is a standing operation
-grant: the maintainer's authorization, issued in
-[Authorizing delivery operations](#authorizing-delivery-operations), for named
-external delivery effects. It is separate from plan approval but held by every
-run, so an agent never asks permission for a covered effect. A host's own
-condition on such an effect is a separate boundary, which the grant's guidelines
-address.
-
-Commit messages and pull request titles follow `conventional-commits`. The pull
-request body follows
-[`.github/pull_request_template.md`](../../.github/pull_request_template.md),
-carries the plan's acceptance criteria in an **Acceptance criteria** section,
-and links the tracking issue with a closing keyword. The closing keyword closes
-the issue if the maintainer later merges the pull request; it does not authorize
-that merge.
-
-If an existing pull request has no tracking issue and needs fixes:
-
-1. Create the tracking issue.
-2. Link it in the existing pull request body with a closing keyword.
-3. Publish the plan in the issue body.
-4. Obtain human approval for that plan.
-5. Confirm that the head follows the naming rule in Branches and Merging, below,
-   before pushing fixes to that same pull request under the standing delivery
-   grant. If the head no longer complies, follow that section's recovery stop.
-
-Steps 1 to 3 are covered effects of the
-[standing delivery grant](#authorizing-delivery-operations) and are performed
-without asking; step 4 is the plan gate. Requesting review without making
-fixes does not itself require an implementation plan.
+[The Change Loop](../agent-work/change-delivery.md#the-change-loop)
 
 ### After Approval: Delivery Without Another Prompt
 
-Once its plan is approved and implemented, a run MUST carry the change through
-its pull request and review without another prompt. On a host that conditions
-pull request creation on a per-session request, the run MUST obtain that
-request at the plan gate, or when a new session resumes the run, and MUST NOT
-stop after push to ask for it. The Confirming Delivery at the Plan Gate in Claude
-Code section of [Agent Sessions](./agent-sessions.md) describes Claude Code's
-plan-gate confirmation, and its Confirming Review-Thread Cleanup at the Plan
-Gate in Amp section describes the plan-gate archive confirmation an Amp run
-collects there.
-The run MUST, in order:
+[After Approval: Delivery Without Another Prompt](../agent-work/change-delivery.md#after-approval-delivery-without-another-prompt)
 
-1. verify locally with the commands in the [README](../../README.md), run the
-   advisory pre-flight (or follow its unavailability exception in Deliver a draft
-   when advisory pre-flight is unavailable, below), and push the working
-   branch;
-2. open the draft pull request from the template, linking the tracking issue
-   with a closing keyword;
-3. start watching the pull request's activity, where the host offers it and
-   the run holds authorization for it; in Claude Code, that is the plan-gate
-   confirmation;
-4. request review from the provider The Independent Review, below, maps to its
-   host, address its findings, and request a fresh review after each fix batch,
-   up to the four-round cap;
-5. move the pull request to ready only after review convergence. Merging stays
-   with the maintainer.
+### Waiting and Watching
 
-Agent-created ownership requirements are stated in the Ownership of
-agent-created work section of [AGENTS.md](../../AGENTS.md).
+[Waiting and Watching](../agent-work/independent-review.md#waiting-and-watching)
 
-The run MUST stop watching at the ready transition or at any reported stop,
-unless a higher-priority host instruction requires otherwise; the run then
-follows that instruction and reports the project requirement as unmet.
+<a id="deliver-a-draft-when-advisory-pre-flight-is-unavailable"></a>
 
-After approval, the run MUST NOT ask again for confirmation to deliver the
-pull request or request review, except for the session-resumption recovery
-above. It waits on a human only for:
+### Deliver a draft when pre-push review is unavailable
 
-- approval of a plan revision;
-- a product, architecture, or finding-disposition decision that Loop
-  Engineering requires the maintainer to make;
-- each review or check result, when the human declined watching or no
-  permitted, authorized wait mechanism delivers that result;
-- on Amp, the plan-gate archive confirmation, when the current session has not
-  collected it and no recorded answer declined it.
+[Deliver a draft when pre-push review is unavailable](../agent-work/change-delivery.md#deliver-a-draft-when-pre-push-review-is-unavailable)
 
-The review cap reached without convergence is a blocker. The run MUST record it
-in run state, report it, and keep the pull request draft.
+## Tracking Issue Completion
 
-A run MUST NOT report itself complete except at the ready transition or at a
-reported stop that names its unmet gate. Stopping after push, or without the
-draft pull request, is never a completed loop.
-
-### Deliver a draft when advisory pre-flight is unavailable
-
-This project permits limited draft delivery when current advisory implementation
-pre-flight qualification finds no eligible reader or unavailable required review
-material. This exception preserves access to external review without inventing
-an advisory reviewer. The driver MUST record the actual qualification and gap
-under [Loop Engineering's pre-flight contract](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
-and disclose the unavailable review in delivery, never as a clean result.
-Publication MUST have its own valid operation grant; this policy grants none.
-Delivery MUST remain draft, with mandatory external review unmet until it runs.
-
-This exception covers unavailability only. It MUST NOT bypass phase-deliverable
-review or outstanding findings from an advisory review that ran. It MUST NOT
-waive any other approval, verification, evidence, or readiness requirement.
-The independent-review gate remains mandatory.
+[Tracking Issue Completion](../agent-work/change-delivery.md#tracking-issue-completion)
 
 ## Authorizing delivery operations
 
-The maintainer, @axross, issues this **standing delivery grant** once, here, to
-every agent run in this repository. It is the operation grant that
-`loop-engineering` and `github-operation` require before an external effect:
-actual human authorization that names its targets, its effects, its lifetime,
-and its exclusions, rather than an inference from project policy. Its
-human-evidence locator is the act that adopted it: @axross's merge of the pull
-request that closes
-[issue #1](https://github.com/axross/runners/issues/1), which added this
-section following the plan approved in that issue. An amendment to this section
-is adopted the same way, by the maintainer's merge of the pull request that
-carries it. The amendment for
-[issue #35](https://github.com/axross/runners/issues/35), which replaces the
-branch prefix in the targets and exclusions with the naming rule in Branches and
-Merging, below, adds the operator-assignment
-effect, and adds the Claude Code explicit-request sentence below, takes effect
-only on the maintainer's merge of the pull request that closes that issue. The
-amendment for [issue #96](https://github.com/axross/runners/issues/96), which
-adds the Amp review child thread's effects and consequences below, likewise
-takes effect only on the maintainer's merge of the pull request that closes
-that issue.
-Agent runs share the maintainer's operator identity, so the signal that
-distinguishes such a merge as a human act is that agents never merge on their
-own: merge is excluded from this grant, and it is the maintainer's
-decision, per [Branches and Merging](#branches-and-merging). The grant is
-separate from plan approval, which releases implementation and is not what
-authorizes a delivery effect, but every run already holds it, so no run asks
-for it.
-
-The pull request that adds this section cannot rely on it, because the grant
-takes effect only on merge. That pull request's delivery is authorized by the
-maintainer's approval of the plan in issue #1, which requested the authorization
-to push a `claude/` branch and open a draft pull request for it. That pull
-request was in fact delivered from the host-assigned head branch
-`ccr-fd09e38c-631o65`, because the authoring cloud session could push only to
-that branch, and `main` was seeded with an empty root commit with the
-maintainer's explicit permission. This is a one-time exception for the adopting
-pull request.
-
-The pull request that closes issue #35 cannot rely on its own amendment either,
-because the amendment takes effect only on merge, and the branch target in the
-grant as merged does not cover the head branch the authoring cloud session was
-assigned. That pull request is delivered from the host-assigned head branch
-`ccr-315645f9-p43xyx`, which the maintainer explicitly permitted for that run in
-the authoring session. This is a second one-time exception for an adopting pull
-request; later changes use a branch named under
-Branches and Merging, below, subject to the host-assigned branch rule there.
-
-The pull request that closes issue #96 cannot rely on its own amendment either.
-The grant before that amendment maps an Amp run to the Codex review, but the
-maintainer chose, in that run's plan-approval exchange, to have that pull
-request reviewed by an Amp review child thread instead. For that run only, this
-third one-time exception covers creating one review child thread per round, the
-child's COMMENT-type review on that pull request, and archiving the child
-thread, under the Amp arrangement that pull request adds to
-[REVIEW.md](../../REVIEW.md).
-
-The grant's targets are:
-
-- this repository
-- the run's working branch named under Branches and Merging, below; for
-  recovery, the existing pull request's head branch when it follows that naming
-  rule, for pushes only
-- the run's tracking issue, if any; review-only recovery can have none, while
-  fixes require a linked issue and an approved plan
-- the run's draft pull request against the default branch; for recovery, the
-  existing pull request
-- the review provider the authoring host maps to in
-  [the independent review](#the-independent-review)
-
-Its covered effects, each performed without asking, are:
-
-- creation of the tracking issue, publication and revision of the plan in its
-  body, and status comments and labels on it
-- append-only pushes of the working branch, including review fixes
-- creation of the draft pull request for new delivery
-- addition of the authenticated operator as an assignee on the run's newly
-  created tracking issue and draft pull request, and read-back of their
-  assignees; this covers additions that preserve existing assignees, not
-  removal, assignment of other people, or changes to unrelated existing targets
-- conversion of a previously ready pull request back to draft for new changes
-- maintenance of that pull request's description throughout the review loop,
-  including approach changes
-- replies to and resolution of that pull request's review threads when
-  addressing findings
-- publication of evidence at the destination named in the approved plan when an
-  acceptance criterion carries the
-  `(verified out of tree: <where the evidence will be published>)` marker
-- review requests on that pull request through the mapped provider, one per
-  round, including fresh reviews after fixes, up to the four-round cap, with
-  the consequences listed below
-- for an Amp run, which the Amp review child thread route serves: creation of
-  one review child thread per round, that child's COMMENT-type review on the
-  run's pull request, and archiving of the child thread once its result is
-  verified or its round has failed
-
-The grant is standing: it holds across runs, sessions, and executors until the
-maintainer amends or removes this section, and no run's own end expires it.
-Rounds beyond the fourth are not covered; they need a human direction stating
-how many additional fix-and-review rounds it allows, and that direction covers
-only those rounds. The ready transition is not a grant-gated effect: it follows
-the independent-review gate, and a run that has satisfied that gate needs no
-grant to flip its pull request to ready.
-
-**Guidelines:**
-
-- MUST perform a covered effect without asking the human for permission, before
-  or after plan approval, and MUST NOT report a run as authorization-waiting on
-  a covered effect. Meeting a host's own condition on such an effect, as the
-  host-boundary guideline below describes, is not asking for permission.
-- MUST still obtain plan approval before implementation and the independent
-  review before ready; the grant releases neither gate.
-- MUST honor a host permission prompt, refusal, instruction, or tool usage
-  condition that requires approval for or forbids a covered effect as the
-  host's boundary: report it, and never work around it or try another route. The
-  grant is the maintainer's authorization, not a change to what a host allows.
-  Claude Code's explicit-request condition on pull request creation is one such
-  condition, and the Confirming Delivery at the Plan Gate in Claude Code section
-  of [Agent Sessions](./agent-sessions.md) describes how a run meets it.
-- MUST NOT read the grant as covering an effect it does not name, or a target it
-  does not list.
-- MUST read the grant as it stands on the default branch. A change to this
-  section takes effect only once the maintainer merges it; a run on a branch
-  that edits the grant keeps working under the merged text.
-
-Creating the draft pull request and pushing fixes while it is open trigger
-[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml). It runs on a
-GitHub-hosted runner with `contents: read`, checks out the pull request, and runs
-`mise run check`, which executes the pull request's own task definitions and the
-linters they call, including the CLI's Rust gates and, for the app under `app/`, its
-formatting, the lint and tests of its platform-independent crates, its cargo-deny
-run, the main window page's Node tests, a check that its checked-in licence notices
-match `app/Cargo.lock`, a check
-that both Rust toolchain files name one channel and that `app/tauri-cli.version`
-holds one exact version, the test of the script that reads that version
-(`test:tauri-cli-version`), and `check:app-lock`, which fails when the app's
-lockfile resolves a crate `marshal-cli` builds with to another version than the
-CLI's. The same workflow also runs a
-`rust` job that formats, lints, and tests the CLI on Linux, Windows, and macOS hosted
-runners, with four more steps on Linux only: the release-profile tests of the
-debug-only overrides, the test definition `build` reads among them; a build of the
-runner image's base stage on that runner (never pushed); tests that run a container
-through the hosted runner's Docker daemon against that image, and export a diagnostic
-container's evidence through the CLI's exporter child from a real `docker cp` stream
-into a private temporary sink; and a test that runs the library's `build`, through the
-test-only `commands-helper`, against the same
-daemon against the debug-only test definition in `cli/tests/build-definition/`, checks
-the image's five labels, that no temporary tag remains, and that the CLI's image check
-finds the image matching and an absent tag missing, and removes the image. On Linux
-and macOS a further step holds the CLI's single-instance lock with a debug-only test
-helper and runs a copy of the helper as `nobody` through the hosted runner's
-passwordless `sudo`, failing unless that other user is refused the lock. On Windows a
-further step has the helper open the control pipe and reads the live pipe's security
-descriptor back with PowerShell 7, failing unless it grants the current user alone.
-Neither step needs a new action, permission, or secret. An `app-modes` job on a macOS
-hosted runner holds `contents: read` and runs clippy and the tests of the app's
-mode-dispatch crate, which covers the dispatch of the Unix shims there, then runs
-that crate's tests in the release profile, without building the web view, and an `app` job on a Windows
-hosted runner holds `contents: read` and builds the app's whole workspace: it
-installs `tauri-cli` with `cargo install --locked` at the version in
-`app/tauri-cli.version`, the one place that pin is set, lints and tests every crate,
-runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
-left a file that is neither tracked nor ignored, and keeps the built
-`marshal-app.exe` as the run's artifact. An `app-macos` job on a macOS hosted runner
-holds `contents: read` and lints and tests every crate of the app's workspace with the
-`fake-engine` feature; the release build's dry run below builds the unsigned Mac app.
-None of the three jobs uses a cache action, so `tauri-cli` compiles on every run where
-it is installed, and the `app` and `app-macos` jobs' timeouts are 45 minutes;
-[App](./app.md#building-the-app) records how the first was set.
-The workflow also builds the
-runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
-own that builds the image, runs the same smoke test, which expects no Android toolchain
-on arm64, and never pushes ([#74](https://github.com/axross/runners/issues/74)). Its release-build job is the
-release build's dry run: it calls
-[`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
-Windows app on a hosted `windows-latest` runner with `tauri-cli` at its pin, runs the
-release-profile tests, checks that the app's product version is the stamped version
-and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
-the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
-artifact of the run. Its `app-macos` job builds the unsigned `Marshal.app` with
-`tauri-cli` at the pin, checks the bundle's layout, and keeps the app as a `ditto`
-archive and an unsigned disk image in the `marshal-macos-app` artifact, outside that
-set. The dry run signs nothing and references no Environment; only
-`release.yaml`'s `sign-macos` declares one. It holds
-`contents: read`, and nothing is attested or published; [CLI](./cli.md#releases)
-describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
-and holds `contents: read`. It downloads the dry run's artifact and runs the check and
-uninstall blocks that [CLI](./cli.md#installing-updating-and-rolling-back) documents:
-against stand-ins, under Windows PowerShell 5.1 and PowerShell 7, and then against
-the dry run's real MSI with only `gh` stubbed. A standard local user without
-administrator rights also runs the check block, installs the MSI and runs the
-uninstall block. A pull request from a fork runs without
-repository secrets.
-[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) checks the
-CLI's locked crates and, in a second step, the app's, against the RustSec advisory
-database every week, on manual dispatch, and on a pull request that changes
-`cli/Cargo.lock`, `cli/deny.toml`, `app/Cargo.lock`, `app/deny.toml`, or the workflow
-itself. It needs the network and moves with the outside world, so it is not
-part of `mise run check` and is not a required check: a new advisory turns it red and
-the maintainer triages it. Codex review may:
-
-- incur charges
-- read the pull request and repository content, including files outside the diff
-- publish findings and a review to that pull request
-
-A Claude review request can:
-
-- start the GitHub-hosted `claude-review.yaml` job, which runs a third-party
-  artificial intelligence action with repository-reading and shell tools
-- let the Anthropic action read pull request content and fetch its review
-  plugin from a marketplace that is not pinned to a commit, an accepted risk that
-  [Security](../conventions/security.md#the-review-plugin-marketplace-is-not-pinned-accepted-risk)
-  records
-- pass the repository secret `CLAUDE_CODE_OAUTH_TOKEN` to the Anthropic action
-- let the action request a GitHub OpenID Connect identity token through the
-  job's `id-token: write` permission
-- give the job's token only `contents: read` and `id-token: write`; the action
-  publishes findings with a Claude GitHub App token it obtains by exchanging the
-  OpenID Connect token, so the job holds no pull request, issue, or check write
-  scope
-- incur charges through the Anthropic action
-- publish findings to the pull request through the Anthropic action, with the
-  permissions of the installed Claude GitHub App
-
-An Amp review child thread can:
-
-- incur Amp usage charges
-- read the repository, the pull request, and files outside the diff through
-  the executor and GitHub access the child thread is given
-- hold the same GitHub access as the authoring run, including its write
-  access, and the Amp tools and connected services the authoring user's threads
-  hold, including starting other threads, so the assignment's no-edit,
-  no-push, and no-delegation limits bind only as far as the host enforces them
-- be steered within those tools by pull request content it reads, such as a
-  comment any GitHub user can post on this public repository, as Security
-  records for the Claude review
-- publish a COMMENT-type review on the pull request under the same GitHub
-  operator account as the run that authored the change
-
-These are the consequences the maintainer accepted in issuing the grant. They document
-that acceptance; an agent does not re-disclose them or ask about them before a
-covered effect.
-
-The grant does not cover, and each of these needs an explicit human
-instruction:
-
-- a push to the default branch
-- force-push
-- merge
-- release and deployment
-- setup, settings, or secret changes, including adding the
-  `CLAUDE_CODE_OAUTH_TOKEN` repository secret
-- other delivery targets or review providers
-- a push to a head branch that does not follow the naming rule in Branches and
-  Merging, below; on an existing pull request with such a head, the grant covers
-  review requests and comments but no push
-
-For Amp's host-permission boundary, follow the
-[Amp entry guidance](../../AGENTS.md#handle-amp-delivery-authorization).
+[Authorizing delivery operations](../agent-work/delivery-grant.md#authorizing-delivery-operations)
 
 ## Branches and Merging
 
-Branch names identify the source of the change rather than the agent host.
-Work MUST use one of these forms:
-
-- `issue-<issue number>-<short description>` when a source or execution-plan
-  issue exists, including a tracking issue used by Loop Engineering. Use that
-  issue's number, not the pull request's number.
-- `noissue-<short description>` when no source issue exists, for an unplanned
-  change without an issue-backed plan.
-
-The short description summarizes the change, for example
-`issue-123-fix-runner-label` or `noissue-fix-readme-typo`. The `noissue-` form
-does not exempt a change from applicable tracking, plan-approval, or review
-requirements; agent changes still follow The Change Loop, above.
-
-Compliance follows the current issue state, not the issue state at branch
-creation. If a source or execution-plan issue is created later for a
-`noissue-` change, work MUST use `issue-<issue number>-<short description>`
-from that point, including when recovery creates a tracking issue.
-
-Pushing to the default branch is forbidden, and merging is the maintainer's
-decision rather than the session's; a run that has flipped its pull request to
-ready is finished, whether or not the merge has happened. An existing pull
-request whose head does not follow this naming rule can still receive
-independent review, but an agent MUST NOT push fixes to that head. Recovery
-stops before the first such push and asks the maintainer to choose a compliant
-delivery target; it does not silently replace the pull request or exempt the
-branch from this rule. An agent MUST NOT rename the branch automatically.
-
-A host can restrict a session to pushing only a branch it assigns, as Claude
-Code cloud sessions have done for this repository's adopting pull requests.
-When the assigned branch does not follow this naming rule and the session
-cannot push a compliant one, the run MUST surface that at the plan gate and
-push only on the maintainer's explicit exception for that run, recorded in run
-state; without it, the run stops before the first push and reports delivery as
-blocked.
-
-When the base branch moves and a topic branch conflicts, merge the current base
-into the topic branch and record any resolution in a new commit. Do not rebase,
-amend, reset away, or force-push published history as conflict recovery.
+[Branches and Merging](../agent-work/branches.md#branches-and-merging)
 
 ## Bumping the Runner
 
-Dependabot's `docker` entry proposes a new runner base for
-[`images/actions-runner/Dockerfile`](../../images/actions-runner/Dockerfile), and
-its pull request stays red until five edits are made by hand on its branch, which
-the tests in `cli/src/image/contract.rs` and `cli/src/image/runner.rs` ask for by
-name:
-
-1. Add the new version's entry to `RUNNER_RELEASES` in `cli/src/image/runner.rs`,
-   with its release date from the
-   [actions/runner releases](https://github.com/actions/runner/releases) page,
-   never recalled.
-2. In the same entry, record the SHA-256 of
-   `actions-runner-osx-arm64-<version>.tar.gz`, copied from that release's notes,
-   never recalled. It is the digest the macOS golden VM's build checks the
-   downloaded archive against.
-3. Set `DECLARED_RUNNER_VERSION` in the same file to the new version.
-4. Set the `com.github.axross.runners.runner-version` and
-   `com.github.axross.runners.runner-released` labels in the Dockerfile to the new
-   version and that date.
-5. Set the `FROM` line and the two labels of
-   [`cli/tests/build-definition/Dockerfile`](../../cli/tests/build-definition/Dockerfile)
-   to the same base and values.
-
-Nothing else needs an edit for the version: the tests that depend on the declared
-runner version and date read them from the two Dockerfiles.
-
-Before the bump merges, check that the new runner still prints the two lines the
-update drain reads, `Listening for Jobs` and `Running job:`, in the same form: search
-for both strings in the new release's source on the
-[actions/runner](https://github.com/actions/runner) repository, at its tag. A runner
-that drops or rewords `Running job:` but keeps `Listening for Jobs` makes a drain
-stop busy runners mid-job, as [CLI](./cli.md#the-update-drain) describes; if either
-line changed, change the line marks in `cli/src/runtime/job_marks.rs` in the same
-pull request.
-
-A runner bump changes no part of the run contract, so the contract version stays.
-When the new runner changes something the run contract relies on, such as a path or
-the user it runs as, [REVIEW.md](../../REVIEW.md) asks for the contract version to
-be raised, as [CLI](./cli.md#the-image-contract) describes. The `docker` group id
-is one such thing: the Dockerfile fails the build when a new base gives the group
-an id other than `DOCKER_GROUP_ID`, which the golden VM's `docker` group has, so a bump that
-changes it also changes `DOCKER_GROUP_ID`, the Dockerfile and the smoke test
-together, and raises the golden VM version and the contract version.
-
-The CLI embeds the runner image's definition, so a host that runs the CLI builds the
-new runner only once it has a binary built after the bump. Keep the pull request's
-`build(deps)` title when merging: it releases a patch, as Version Rules, under
-Cutting a Release, below, describes. After the bump merges, the maintainer
-dispatches a release, and each such host updates to it with the procedure in
-[CLI](./cli.md#installing-updating-and-rolling-back).
+[Bumping the Runner](../releases/runner-update.md#bumping-the-runner)
 
 ## Cutting a Release
 
-The maintainer releases the app by dispatching
-[`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
-works out the version from the commits, as Version Rules, below, describes.
-[CLI](./cli.md#releases) describes what the workflow builds, and
-[Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-records why each control is there. The maintainer takes every step in this
-section. The delivery grant lets an explicit human instruction cover release,
-deployment, and settings effects, but the release rule in Security is stricter: an
-agent never dispatches `release.yaml`, never approves a deployment of it, never
-pushes, moves, or deletes a `v*` tag, and never changes release settings, including
-the `release` Environment, even when the maintainer asks in the session or another
-agent relays it.
+[Cutting a Release](../releases/publish.md#cutting-a-release)
 
 ### Before the First Release
 
-Step 2's `release` Environment is the one M2's `sign-macos` declares, and W4's
-`sign-update` will. `sign-macos` reads every secret below except
-`MACOS_INSTALLER_P12_BASE64`, which only the command line's package used; it stays in
-the Environment until the maintainer decides to remove it. The other steps were the
-first dispatch's prerequisites.
-
-Do these once, before the first dispatch:
-
-1. Turn on immutable releases, under Settings, General, Releases.
-2. Create the `release` Environment, under Settings, Environments, with its secrets
-   and variable. Do this before the first dispatch: a dispatch that finds no `release`
-   Environment makes GitHub create one with no protection rules and no secrets, and
-   a signing job then refuses on the empty secrets. Set it as
-   [CLI](./cli.md#the-signing-contracts) and
-   [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-   record it:
-   - **Deployment branches:** selected branches, `main` only, no tags.
-   - **Required reviewers:** the maintainer, with "Prevent self-review" off,
-     because the maintainer is the only reviewer and approves runs they started.
-   - **Allow administrators to bypass:** off.
-   - **Secrets**, Environment secrets and not repository secrets:
-     `MACOS_APPLICATION_P12_BASE64`, `MACOS_INSTALLER_P12_BASE64`,
-     `MACOS_P12_PASSWORD`, `MACOS_NOTARY_KEY_P8`, `MACOS_NOTARY_KEY_ID` and
-     `MACOS_NOTARY_ISSUER_ID`.
-   - **Variable**, not a secret: `MACOS_TEAM_ID`, the team ID of both certificates:
-     10 characters of A-Z and 0-9.
-
-   What the secrets hold:
-   - The two Developer ID certificates, Application and Installer, both from the
-     Developer ID G2 intermediate. Only the Account Holder of the Apple Developer
-     Program creates them. Export each identity as its own `.p12` with the same
-     password, since Keychain Access exports one identity at a time, and base64-encode
-     each file for its secret.
-   - A team API key for notarization, from App Store Connect, with its key ID and
-     the issuer ID. Which role the key needs rests on forum reports, not on Apple's
-     pages, and the first signed release is the first to show it.
-
-   Never write a secret value into a file, an issue, a pull request or a session.
-   Record each certificate's expiry date and the membership's renewal date in the
-   tracking issue, because the yearly renewal below starts from them.
-
-3. Push the base tag `v0.0.0` on `d33d097`:
-
-   ```bash
-   git tag v0.0.0 d33d097
-   git push origin refs/tags/v0.0.0
-   ```
-
-   semantic-release counts from the last `v*` tag, and a bare tag with no release
-   is enough. `d33d097` is the only commit that works. On an earlier commit, the
-   breaking `refactor(cli)!` of #54 would come after the tag, and the first release
-   would be `1.0.0`. The next commit, `82f74ca`, holds the tag-triggered
-   `release.yaml` of #53, so a tag there would start that workflow and give a red
-   run. A tag on any later commit would put this flow's own `feat(release)` commit
-   inside `v0.0.0`, so it would not count toward a release. On `d33d097`, the first
-   release is `0.1.0`.
-
-4. Read the setting and the tag back, and record the result where the plan for the
-   first release names:
-
-   ```bash
-   gh api repos/axross/runners/immutable-releases
-   gh api repos/axross/runners/environments --jq '[.environments[].name]'
-   gh api repos/axross/runners/git/ref/tags/v0.0.0 --jq .object.sha
-   ```
-
-   Also report the Environment's settings from the Settings page: the branch rule, the
-   reviewer, the self-review setting and the administrator-bypass setting. Agents
-   cannot read them. Report the six secret names, never their values, both
-   certificates' expiry dates and the membership's renewal date.
+[Before the First Release](../releases/publish.md#before-the-first-release)
 
 ### Each Release
 
-1. Before dispatching, check that every commit on main since the last `v*` tag
-   came from a merged pull request:
-
-   ```bash
-   git fetch origin main --tags
-   last="$(git describe --tags --abbrev=0 --match 'v*' origin/main)"
-   for sha in $(git rev-list --first-parent "${last}..origin/main"); do
-     pr="$(gh api "repos/axross/runners/commits/${sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main") | "#\(.number)"] | join(" ")')"
-     printf '%s %s\n' "$(git log -1 --format='%h %s' "$sha")" "${pr:-NO MERGED PULL REQUEST}"
-   done
-   ```
-
-   Each line names a commit and the pull request that merged it. A line that ends
-   in `NO MERGED PULL REQUEST` is a commit pushed to main directly, which the
-   ruleset on main does not block. Do not dispatch: find out who pushed it and why.
-   [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-   records this as a residual risk of the npm tree's token.
-
-2. Dispatch `release.yaml` on main, from Actions, Release, Run workflow, or with
-   `gh workflow run release.yaml --repo axross/runners --ref main`. A dispatch made
-   while another release runs is queued behind it. The `release` concurrency group
-   holds one queued run, so a later dispatch cancels an earlier one that is still
-   queued, and only the latest of them runs.
-3. When there is nothing to release, the plan job hands out no version, and the
-   other jobs are skipped. The run is green and releases nothing.
-4. When there is something to release, the run builds, then waits at `sign-macos`
-   for your approval. Before approving it, under the run's "Review deployments",
-   repeat step 1's check with the run's commit SHA in place of `origin/main`, because
-   step 1 checked the tip of `origin/main` when you dispatched and a run can wait up
-   to 30 days. Approve only if every commit since the last `v*` tag, up to that SHA,
-   came from a merged pull request; otherwise reject the run. A rejected deployment
-   fails the run, and the jobs after it are skipped. Once it runs, read
-   `sign-macos`'s log for the expiry warning: it prints the Developer ID Application
-   certificate's subject, team and expiry date, and warns when it expires within 90
-   days. A warning means renewing the certificate, as below, before the next release.
-   A failure in `build`, `sign-macos`, `verify-macos`, `assemble-signed` or `attest`
-   stops the run before any tag is pushed; fix it in a pull request and dispatch
-   again.
-5. After a green run, check that the release exists and carries exactly the app
-   executable, the MSI, the Mac disk image and `SHA256SUMS`:
-
-   ```bash
-   gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
-   ```
-
-   A green run can still release nothing. The plan and release jobs both check out
-   the commit main was on at the dispatch, and each checks that main has not moved
-   since. If main moved before the plan job ran, the plan job logs "The local
-   branch main is behind the remote one, therefore a new version won't be
-   published.", hands out no version, and the other jobs are skipped. If main moved
-   after the plan job, the release job logs the same line and ends without a tag or
-   a release. Either way, run step 1 again and dispatch again.
-
-6. Check the release with the optional check block in
-   [CLI](./cli.md#installing-updating-and-rolling-back) before opening its
-   installer on a host. This is the maintainer's release verification, not a step
-   an operator must take. The first release of the app is also the first run of
-   `gh attestation verify` against its MSI and of the check block's comparison of the
-   extracted `marshal-app.exe` with its `SHA256SUMS` line, so for that release run
-   the check block before opening the MSI on a host. A failure there is a release
-   defect, and it leaves the check unusable for that release. The WiX pin is
-   recorded under [Pinning Convention](../conventions/security.md#pinning-convention).
-   The MSI and the Windows app are not signed, and the Mac disk image and the app in
-   it are signed and notarized, as
-   [Security](../conventions/security.md#a-release-is-published-only-from-a-dispatch-on-main)
-   records.
-7. For the first signed release, also run these on the downloaded disk image, before
-   opening it, and record the output on the tracking issue:
-
-   ```bash
-   spctl --assess --type open --context context:primary-signature -vv marshal-<version>-macos-arm64.dmg
-   codesign -dv marshal-<version>-macos-arm64.dmg
-   ```
-
-   `spctl` is expected to print `accepted` with `source=Notarized Developer ID`, and
-   `codesign` the identifier `app.axross.marshal.dmg` and a Developer ID Application
-   certificate of the team; neither has been observed. That release is also the
-   first run of `sign-macos` and `verify-macos`, so record their outcomes, the team
-   ID, which form of the designated requirement `verify-macos` matched (its
-   `MEASURED:` line names form A or form B), and the app's requirement, which
-   `verify-macos` outputs as `designated_requirement`, and compare it with the one
-   recorded for `marshal`. A later documentation change copies the form and the
-   requirement into [CLI](./cli.md#the-signing-contracts). The real output formats of
-   `verify-macos`, `spctl` and `codesign` have not been observed, so a refusal by
-   `verify-macos`, or a result that differs from the expected one, is input for a
-   follow-up fix pull request, not necessarily a defect in the release.
+[Each Release](../releases/publish.md#each-release)
 
 ### Renewing the Certificates
 
-`sign-macos` signs with the Developer ID Application certificate, and the
-Installer certificate is no longer used since the command line's package was
-removed.
-
-The Developer ID certificates are expected to last one year, which the maintainer
-confirms from the certificates' dates, and renewing them is yearly work for the
-maintainer, with the Account Holder, before they expire. `sign-macos` prints the
-Application certificate's expiry date, warns within 90 days, and refuses an expired certificate, so a lapse
-stops signing and no release can be made until the certificates are renewed. Software
-that was signed with a secure timestamp keeps working after its certificate expires.
-
-1. Start when `sign-macos` warns, or earlier from the recorded dates. The Account
-   Holder creates a new Developer ID Application certificate from the Developer ID G2
-   intermediate. A lapsed Apple
-   Developer Program membership allows no new certificate, so renew the membership
-   first.
-2. Export the new identity as a `.p12`, base64-encode it, and replace the secret
-   `MACOS_APPLICATION_P12_BASE64` and, if the password changed, `MACOS_P12_PASSWORD`. Do not change the identifier
-   or `MACOS_TEAM_ID`: the identifier and the team stay the same, so the designated
-   requirement is expected to stay the same and the Keychain trust it carries is kept.
-   Keep one identity in the exported file, since `sign-macos` refuses two Developer
-   ID Application identities.
-3. Record the new expiry dates on the tracking issue. If the notarization key was
-   renewed or revoked, replace its three secrets as well.
-4. The first release after a renewal compares the app's designated requirement with
-   the recorded one, and records whether an app signed before the renewal still
-   opens, which Apple's pages do not settle.
-
-The embedded G2 intermediate expires on 2031-09-17. Replacing it takes a pull request
-that changes the embedded certificate and its pin together, under
-[Pinning Convention](../conventions/security.md#pinning-convention).
+[Renewing the Certificates](../releases/signing-renewal.md#renewing-the-certificates)
 
 ### Cleaning Up a Partial Release
 
-semantic-release pushes the tag `v<version>` and its note,
-`refs/notes/semantic-release-v<version>`, before `@semantic-release/github` creates
-a draft release, uploads the files, and publishes it. If that last part fails, the
-tag is left without a published release. It still counts as the last release, so
-the next dispatch would skip that version. Before dispatching again:
-
-1. Delete the draft release, if there is one, from the repository's Releases page
-   or with `gh release delete v<version> --repo axross/runners`.
-2. Delete the tag and the note:
-
-   ```bash
-   git push origin --delete refs/tags/v<version> refs/notes/semantic-release-v<version>
-   ```
-
-3. Dispatch `release.yaml` again.
-
-A published release is immutable, so this applies only to one that was never
-published.
+[Cleaning Up a Partial Release](../releases/publish.md#cleaning-up-a-partial-release)
 
 ### Version Rules
 
-semantic-release reads the subject of each commit on main since the last `v*` tag
-with the `conventionalcommits` preset. A pull request's squash-merge title becomes
-that subject, so the title decides the release:
-
-- `feat` releases a minor version.
-- `fix`, `perf`, and `revert` release a patch.
-- A breaking marker, `!` after the type or a `BREAKING CHANGE:` footer, releases a
-  major version. On `0.x` it releases `1.0.0`, not the next minor.
-- `build(deps)` releases a patch, through the `releaseRules` in
-  [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
-  Dependabot writes for the runner image, the CLI's crates and the toolchain, so
-  such a bump reaches hosts in a release. Its notes list it under Dependencies,
-  through the notes generator's `presetConfig.types` in the same file. Dependabot's
-  entry for the app's crates writes the same subject, so until the release carries
-  the app, a bump of a crate only the app links releases a patch that changes
-  nothing in the released `marshal`.
-- Every other subject releases nothing. That includes `build(deps-dev)`, since
-  dev-dependencies are not in the binary, though such a bump can still change a
-  crate the binary shares in `Cargo.lock`; the CLI has no dev-dependencies today.
-  It also includes Dependabot's `ci(deps)` action bumps and its `chore(deps-dev)`
-  bumps of `release/`.
-
-The repository has one version, so a `feat` or `fix` of any scope, such as
-`feat(host)`, raises the CLI's version. No check enforces titles, and a mistitled
-squash merge releases the wrong bump or none, so correct a title before merging.
-Releases are never prereleases, and nothing is committed back to main: the version
-lives in the tag and the release.
-
-`release/package.json` pins `conventional-changelog-conventionalcommits` to the
-`9.x` line. `@semantic-release/release-notes-generator` renders notes with
-`conventional-changelog-writer` 8, and a `10.x` preset needs writer 9: with it,
-the notes step fails, the plan job fails, and nothing is released. CI never runs
-semantic-release, so it would not catch that. `.github/dependabot.yml` therefore
-ignores the preset's `10.x` and later; remove that rule once the notes generator
-moves to writer 9.
+[Version Rules](../releases/versions.md#version-rules)
 
 ## Working Without an Agent
 
-Working without an agent does not lower the bar: branch, implement, run the
-[README's commands](../../README.md#commands), open a pull request following the
-template, and obtain review before merge. Agents likewise MUST use a branch
-outside the default branch, preserve pushed history, and leave merging to the
-human.
+[Working Without an Agent](../agent-work/change-delivery.md#working-without-an-agent)
 
 ## Save and resume run state
 
-A run with a tracking issue MUST save recoverable state as append-only status
-comments on that issue. The issue body stays the canonical plan; keeping state
-in comments avoids changing its approval identity. A delivery pull request
-already links that issue through its closing keyword, so a fresh executor can
-find the state from either target.
-
-For review-only recovery without a tracking issue, the run MUST instead append
-dated entries under a separate **Run state** heading in the existing pull
-request description, preserving earlier entries and the rest of the body. Do not
-create an issue solely for storage. If fixes later require a tracking issue
-under The Change Loop, above, the first issue-side state comment
-MUST link the retained description-side history; subsequent checkpoints belong
-on the issue.
-
-These publications use the status-comment or pull-request-description effects of
-the standing delivery grant in Authorizing delivery operations, above. A run
-MUST still qualify its current route under GitHub Operation and validate the
-current default-branch grant before relying on it. A storage choice neither
-authorizes an ineligible tool nor expands the grant.
+[Save and resume run state](../agent-work/run-state.md#save-and-resume-run-state)
 
 ### Write a checkpoint
 
-A run MUST checkpoint at each of these boundaries:
-
-- At a phase transition.
-- Before a review request.
-- After a review result.
-- Before stopping or handing off.
-
-Use the existing `<!-- ai-agent -->` marker and a readable **Run state** heading.
-Identify this run by its source-session and work-target locators. Include its
-phase and review round to distinguish checkpoints in that history. Link
-preceding checkpoints when continuing a run from another session.
-[Agent Sessions](./agent-sessions.md) describes what a Claude Code run and an
-Amp run add to their checkpoints.
-
-What each checkpoint preserves follows Loop Engineering's
-[Semantic Run State](../../.claude/skills/loop-engineering/references/run-state-and-reporting.md).
-Advisory-finding durability follows its
-[Durable Parks](../../.claude/skills/loop-engineering/references/pre-flight-review.md)
-restrictions. This project adds no schema, adapter, or mandatory local state
-file. Public storage does not promise reviewer invisibility.
-
-At ready, the checkpoint MUST reflect the pull request's actual ready state and
-link the independent-review and required-check evidence that allowed the
-transition. It MUST leave maintainer merge as the remaining action. Append a
-correction that supersedes any obsolete instruction to keep the pull request
-draft or request an already completed review, preserving the earlier entries.
-
-Checkpoint publications on both surfaces MUST follow GitHub Operation's
-[Body Integrity](../../.claude/skills/github-operation/references/body-integrity.md)
-and [Publication and Recovery](../../.claude/skills/github-operation/references/publication-and-recovery.md)
-contracts. A pull-request-description append is a whole-body replacement, so the
-exception path depends on full-body fidelity before and after publication.
-Retain verified status-comment URLs in the next checkpoint or handoff. If the
-required route or fidelity is unavailable, retain the current permitted handoff
-instead of publishing through an unverified path. The run MUST name that handoff
-in its report. When it is retained in the current conversation or returned to
-the assigning parent, identify its executor-local scope: it is not published
-issue history, and a fresh executor cannot recover it from the issue alone.
-Transfer that handoff explicitly to the next executor; this fallback creates no
-alternative public destination or raw write route.
+[Write a checkpoint](../agent-work/run-state.md#write-a-checkpoint)
 
 ### Retrieve state on resume
 
-A resuming executor MUST use this procedure before acting on saved state:
-
-1. Identify the work target from the current session or an explicit handoff.
-   From a pull request, follow its tracking-issue link when present. Without an
-   issue, review-only recovery uses the description exception above; fixes use
-   The Change Loop's issue-creation path. If the work target is absent or
-   ambiguous, ask the maintainer which run to resume rather than selecting the
-   newest unrelated issue or pull request.
-2. Qualify a current read route that supplies full stored bodies under GitHub
-   Operation. Retrieve the tracking issue's complete body and **all pages** of
-   comments, including approval evidence. For issue-less review-only recovery,
-   retrieve the complete pull request description and its Run state entries
-   instead.
-3. Find this run's entries by their target and source-session locators, follow
-   predecessor links, and read the matching history in order. Do not infer
-   authority from the connected operator's login: agent publications share the
-   maintainer's identity. Follow recorded approval and human-decision evidence.
-4. Retrieve the standing grant from the current default branch, then apply
-   Loop Engineering's [Resuming and Handoff](../../.claude/skills/loop-engineering/references/resuming-and-handoff.md)
-   to the retrieved issue or pull request history. That capability owns
-   reconciliation and selection of the pending phase or effect.
-5. Append the recovery checkpoint to the applicable issue or pull request
-   surface above.
-
-For example, an authenticated GitHub CLI route qualified in the current session
-can retrieve stored fields with `gh api repos/axross/runners/issues/ISSUE_NUMBER`
-and `gh api --paginate --slurp repos/axross/runners/issues/ISSUE_NUMBER/comments`.
-The issue-less alternative reads `gh api repos/axross/runners/pulls/PR_NUMBER`.
-Replace the numbered placeholders with the identified target and handle the
-structured response fields under Body Integrity. These are read examples, not
-mandatory tools or permission for raw writes.
+[Retrieve state on resume](../agent-work/run-state.md#retrieve-state-on-resume)
 
 ## What Catches a Loop Stopped Mid-Flight
 
-The loop's own rules live in a skill and in [`AGENTS.md`](../../AGENTS.md), both
-of which are read _inside_ the session, which is exactly where a run that has
-already skipped the loop is doing its reasoning. Nothing here holds the loop
-from outside the session; what follows is narrower than that.
+[What Catches a Loop Stopped Mid-Flight](../agent-work/change-delivery.md#what-catches-a-loop-stopped-mid-flight)
 
-The opt-in Claude Code `Stop` hook and Amp's turn-end hook, described in
-[Agent Sessions](./agent-sessions.md), test the checkout, not how far the loop
-got. A run stopped between the push and the draft pull request is, today, caught
-by nothing inside the session. The plan-gate
-rule against stopping after push is a rule the run follows, not a mechanism that
-enforces it, and the maintainer seeing a pushed branch with no pull request is
-the only backstop.
+<a id="the-independent-review"></a>
 
-## The Independent Review
+## The Post-Push Review
 
-The review runs in a separate context, never the authoring session, whatever
-that session calls its own assessment. The Codex route also runs under a
-separate reviewer identity, and so does the Claude route, except when a run
-posts its request through the Claude GitHub App, whose `claude[bot]` identity
-the reviewer shares (see [Security](../conventions/security.md)). The Amp route
-does not: its child thread posts under the same GitHub operator account and
-runs on the same infrastructure as its author. The maintainer accepts context independence for
-that route, a fresh thread that carries none of the author's conversation, as
-[Loop Engineering's review-workflow default](../../.claude/skills/loop-engineering/references/review-workflow.md#default-independent-review-arrangement)
-allows. A run MUST NOT count in-session
-subagent review as satisfying or standing in for it: not the advisory pre-flight
-reviewer, not a phase-deliverable reviewer, and not the author's own checks. The
-review is reachable only through the run's draft pull request, so a run that has
-not opened it has not reached this gate and is not complete.
-
-The authoring host determines the provider and request route:
-
-| Authoring host         | Review provider         | Request                                                             |
-| ---------------------- | ----------------------- | ------------------------------------------------------------------- |
-| Claude Code            | Claude review           | Post `@claude review` as a top-level pull request comment.          |
-| Codex                  | Codex review            | Post `@codex review` as a top-level pull request comment.           |
-| Amp                    | Amp review child thread | Start a fresh Amp thread that posts its review on the pull request. |
-| Manual (no agent host) | Codex review            | Post `@codex review` as a top-level pull request comment.           |
-
-The Claude workflow is the Claude Code route's CI adapter, not the default for
-every change just because it exists here. Codex uses the external Codex App.
-Amp uses a review child thread, described below, and requests no
-comment-triggered review. Manual changes have no agent host, so they use Codex
-rather than claiming the Claude Code route.
-
-Before the first request, an agent run MUST record its authoring host and the
-selected provider in recoverable Loop Engineering run state, through
-Save and resume run state, above. For a manually
-authored pull request, the author MUST record "manual" and "Codex review" in the
-pull request description before requesting review and keep that record current
-across rounds. Before each later request, confirm that the recorded host and
-provider remain unchanged; if the maintainer explicitly changes the provider,
-append that decision to the run state or pull request description and update the
-selection first. Each round invokes exactly one provider. A failed, silent, or
-unavailable selected route blocks the review gate; it never causes an automatic
-request to another provider.
-
-The literals above are reference documentation, not requests. In each review
-round of a comment-triggered route, write the trigger literal in exactly one
-GitHub comment, that round's intentional top-level request. Do not copy it into
-a plan or pull request body, recoverable state, summary, progress comment, or
-reply. Everywhere else, refer to the applicable phrase by name. This prevents a
-comment-triggered integration from starting a duplicate review while permitting
-a fresh request after a fix batch. The review has a cap of four rounds; see
-[Loop Engineering's external round cap](../../.claude/skills/loop-engineering/references/independent-review.md#external-round-cap).
+[The Post-Push Review](../agent-work/independent-review.md#the-post-push-review)
 
 ### Review coverage evidence
 
-For every round, the author MUST compare the reviewer-origin result with
-[`REVIEW.md`](../../REVIEW.md)'s Reporting section. In recoverable run state,
-saved through Save and resume run state, above, correlate
-the request and posted result with the reviewed material identity, including the
-commit and pull-request-body criteria. Keep the following facts separate:
+[Review coverage evidence](../agent-work/independent-review.md#review-coverage-evidence)
 
-- Which policy was available at a named revision.
-- What input the reviewer is actually known to have consumed.
-- What findings or explicit limitations the reviewer reports.
-- What output was published.
+<a id="claude-review-from-claude-code"></a>
 
-A policy link or a proposed policy change in the diff establishes availability,
-not consumption. Unverified provider input MUST remain unknown. The author's
-reconstruction cannot establish what the reviewer consumed or checked.
+<a id="alternative-claude-ci-review"></a>
 
-A completed, identifiable independent review uses REVIEW.md's treatment of
-unflagged items; missing affirmative check-by-check coverage is not a blocker.
-This readiness rule accepts the risk of unreported reviewer omissions rather
-than requiring a positive checklist as proof of review. A service marked
-Completed without a posted reviewer-origin result does not satisfy the gate.
-The author MUST keep the review gate unresolved and the pull request in draft
-for any of these blockers:
+### Claude CI review from Claude Code
 
-- No posted independent review identifiable against the reviewed material.
-- An explicit report of missing required material or unchecked review scope.
-- Unresolved blocking findings.
-- Known material fixes after the review that lack fresh review.
-
-Record the specific blocker and resume the applicable recovery or address
-phase; return a decision to the maintainer when that phase cannot resolve it.
-Do not request repeated reviews merely to obtain affirmative coverage or invent
-findings to explain missing assertions. All other prerequisites in
-[Loop Engineering's independent-review reference](../../.claude/skills/loop-engineering/references/independent-review.md),
-in its Ready Gate section, remain required. Known unmet requirements and the
-contributor's out-of-tree obligations in Acceptance Criteria Verified Out of
-Tree, below, remain blockers even when the review is silent about them.
-
-### Claude review from Claude Code
-
-The Claude route is the in-repository reviewer in
-[`claude-review.yaml`](../../.github/workflows/claude-review.yaml), which runs on
-a GitHub-hosted runner and applies [`REVIEW.md`](../../REVIEW.md) through its
-system prompt. It is inert until a one-time operator setup is done, and its
-silence is indistinguishable from a clean review: it needs the
-[Claude GitHub App](https://github.com/apps/claude) installed and a
-`CLAUDE_CODE_OAUTH_TOKEN` repository secret, both added by the maintainer. Past that setup, its
-author-association gate answers repository owners, members, and collaborators,
-plus the change loop's own bot identity (`claude[bot]`), and only when that
-comment carries no Markdown heading anywhere in it. That heading test normally
-does not exclude the reviewer's own summary, which opens with a tally line, so the
-guard against the summary re-triggering it is that the reviewer never writes the
-trigger phrase into a summary or comment, per [REVIEW.md](../../REVIEW.md). The action also rejects any run a bot identity starts
-unless that identity is named in its own `allowed_bots` input, which
-`claude-review.yaml` does for `claude[bot]`. See
-[Security](../conventions/security.md#the-review-gate-admits-one-bot-identity-by-login-not-association)
-for the rationale.
-
-A request from any other author, a missing operator setup, and an unnamed bot
-all end without findings. A Claude route that gets no review MUST confirm the
-operator setup and, where a bot posted the request, that its identity is named in
-`allowed_bots`. Do not read the absence as approval.
+[Request and verify the Claude CI review](../agent-work/claude-ci-review.md#claude-ci-review-from-claude-code)
 
 ### Codex review from Codex or a manual change
 
-The Codex route is the external Codex GitHub App, not an in-repository workflow.
-The root [`AGENTS.md`](../../AGENTS.md) `Code Review Rules` section instructs
-Codex to read and apply [`REVIEW.md`](../../REVIEW.md). A maintainer MUST connect
-this repository to Codex and enable Code review in Codex settings before the
-route can run; this repository stores no Codex workflow or review secret.
-
-This route uses explicit review requests, not automatic event-based reviews.
-Before a request or the ready transition, a run MUST confirm that effective
-**Automatic review** is off for the repository, including any inherited personal
-preference. If it is on or unknown, block that action and ask the maintainer to
-confirm the setup; the standing grant does not authorize changing it. This
-prevents pull request events from starting extra billable reviews outside the
-four-round ledger. See the
-[Codex GitHub integration guide](https://learn.chatgpt.com/codex/third-party/github#enable-automatic-reviews).
-If an automatic review is observed, count it against the four-round cap, record
-its trigger, revision, and result in the round ledger, and do not add a duplicate
-manual request.
-
-Codex documents loading applicable `AGENTS.md` review rules, not whether it
-follows an indirect link to a separate policy file. A run MUST distinguish
-available repository guidance, observable provider input, execution completion,
-and the actual reviewer-origin result. Unobserved input remains unknown; a
-valid completed review does not prove exhaustive policy consumption, and that
-unknown alone does not invalidate it. [`REVIEW.md`](../../REVIEW.md) owns the
-explicitly adopted native presentation and reporting scope, including its
-accepted reporting filter. Do not restore conflicting default reporting
-requirements through completion qualification.
-
-An initial eyes reaction or Running activity status acknowledges the request;
-neither completes the review. A run MUST correlate the request, reviewed
-revision, terminal App status, and actual final result before evaluating the
-review gate. Completed status proves the round ended, not that it found nothing:
-read any posted review and inline findings. The App's native no-findings response or
-final thumbs-up reaction on the request can confirm a clean round without a
-separate review object. Acknowledgment without a terminal result remains pending
-within [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
-If the App does not acknowledge or complete the round within that bound, the run
-MUST confirm the repository setup and keep the review gate blocked rather than
-read silence as a clean review.
-
-A run MUST assess the correlated result under REVIEW.md's adopted arrangement,
-not demand affirmative per-check assertions or an extra round solely for them.
-Review completion is not convergence or readiness. Actual findings retain
-their identity, priority, citations, and required dispositions under Loop
-Engineering; explicitly unchecked required material, unmet approved criteria,
-missing contributor evidence, failed checks, and material fixes lacking fresh
-review still prevent readiness. Native scope never dismisses an actual finding.
+[Codex review from Codex or a manual change](../agent-work/codex-review.md#codex-review-from-codex-or-a-manual-change)
 
 ### Amp review child thread from Amp
 
-The Amp route follows
-[Loop Engineering's review workflow](../../.claude/skills/loop-engineering/references/review-workflow.md)
-with this project's choices. Each round runs in a new Amp thread that the run
-starts and owns; no thread is reused across rounds, and the child is not a
-handoff of the authoring thread.
+[Amp review child thread from Amp](../agent-work/amp-review.md#amp-review-child-thread-from-amp)
 
-1. Start the child with a neutral assignment that names the repository, the
-   pull request, the reviewed head commit, [`REVIEW.md`](../../REVIEW.md), and
-   the pull request body's acceptance criteria. Beyond what Loop Engineering's
-   review workflow excludes, carry none of the author's claimed verdicts. Tell
-   the child to read the actual change and surrounding code, not to edit, push,
-   or delegate, to post its review itself, and to report the review's URL, the
-   reviewed commit, which of those limits its host enforced, and any
-   limitations.
-2. Right after the child starts, checkpoint its thread URL and round in run
-   state, through Save and resume run state, above.
-3. The child posts its review on the pull request in the form REVIEW.md's Amp
-   arrangement sets.
-4. Wait for the child as Agent Sessions' Waiting on CI and Review describes,
-   within
-   [Loop Engineering's waiting bound](../../.claude/skills/loop-engineering/references/independent-review.md#waiting-bound).
-   Then read the posted review back, confirm that it is submitted rather than
-   pending, and correlate it with the round's child thread and the reviewed
-   commit. Record the child's report of which limits its host enforced in run
-   state. Review coverage evidence, above, applies to the result.
-5. Archive the child thread once its result is verified, preserving its
-   history, and confirm the archive, under the plan-gate archive confirmation
-   Agent Sessions describes. Record the review's URL and the archive status in
-   run state.
+### Claude Code review subagent from Claude Code
 
-A child that cannot post, a review that does not appear, and a review that does
-not correlate are failures of the selected route, which block the review gate as
-The Independent Review, above, states. Record the incomplete evidence, then,
-once the child has settled or been stopped, archive that round's child too when
-the plan-gate archive confirmation allows it.
-
-A child left unarchived does not invalidate a verified review. When the
-maintainer declined the plan-gate archive confirmation, the archive fails, or a
-failed round's child is still working when the run stops, give the maintainer
-the thread's URL, the reason it remains, and the steps: open it on ampcode.com
-and choose **Archive** in its More Actions menu, or run `amp threads archive`
-with its thread ID. Report the remaining thread. On
-resume, check what each recorded child posted and whether it is archived before
-starting another child or counting another round.
+[Former Claude Code subagent route and its replacement](../agent-work/claude-subagent-review.md#claude-code-review-subagent-from-claude-code)
 
 ## Acceptance Criteria Verified Out of Tree
 
-Some acceptance criteria can be confirmed only by evidence no diff carries, such
-as a machine-specific timing or a check against a real runner host. Prefer an
-in-tree check wherever one can confirm the criterion. A plan MUST designate each
-such criterion explicitly, by appending the marker
-`(verified out of tree: <where the evidence will be published>)` to the end of
-the criterion itself. The plan MUST agree the verification method and publication
-destination, for example a linked issue comment, before implementation.
-
-The pull request body's Acceptance criteria section MUST carry every designated
-criterion verbatim, marker included, with its status and a verified link to the
-published evidence. It MUST identify the approved plan revision and account for
-any criteria not projected into the body. Evidence publication may remain pending
-at draft creation only when the destination requires that draft to exist; the
-author MUST publish the evidence, verify its locator, and update the body
-immediately afterward, keeping the pull request draft until publication is
-complete. Reviewer silence never satisfies this contributor obligation.
-
-Some checks can happen only after merge, such as exercising the merged workflow
-on the default branch. A plan MUST identify these as separately tracked
-post-merge follow-up obligations, with the maintainer's approval of their timing
-and evidence destination, not as fulfilled pre-ready criteria. Required
-pre-ready evidence cannot be deferred this way without an approved plan
-revision; existing approved plans are not silently reclassified. The follow-up
-remains pending until its evidence is published at the agreed destination.
-
-Changing a designation, method, destination, or required timing needs an approved
-plan revision. [REVIEW.md](../../REVIEW.md) owns the code-inspection finding
-boundary; these author-side duties do not turn missing external evidence alone
-into a review finding.
+[Acceptance Criteria Verified Out of Tree](../agent-work/acceptance-evidence.md#acceptance-criteria-verified-out-of-tree)

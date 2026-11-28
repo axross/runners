@@ -245,7 +245,7 @@ impl Inner {
 mod tests {
     use super::*;
 
-    /// the table of the resident states in `docs/operations/cli.md`, row by row, in the
+    /// the table of the resident states in `docs/marshal-cli/resident-agent.md`, row by row, in the
     /// order stop all, start all, build, quit.
     #[test]
     fn each_phase_answers_the_lifecycle_methods_as_the_documented_table_says() {
@@ -288,7 +288,7 @@ mod tests {
         }
     }
 
-    /// the table of The Update Drain in `docs/operations/cli.md`: a drain begins from running or
+    /// the table of The Update Drain in `docs/marshal-cli/agent-lifecycle.md#the-update-drain`: a drain begins from running or
     /// stopped and is refused elsewhere, and while one is under way start all, build
     /// and another drain are refused while stop all and quit are taken.
     #[test]

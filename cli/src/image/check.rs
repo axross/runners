@@ -1,7 +1,7 @@
 //! the check of a built image: its labels, the four outcomes they sort into, and
 //! the freshness warnings and `status` lines they give; the backend reads the
 //! labels and this module only interprets them, so the same rules apply whichever
-//! backend reads them and however the clock is injected; see `docs/operations/cli.md`.
+//! backend reads them and however the clock is injected; see `docs/marshal-cli/runner-images.md`.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -334,8 +334,9 @@ impl Freshness {
                 format!("{subject} is {days} days old and should be rebuilt")
             }
             Self::RunnerOld { version, days } => format!(
-                "runner {version} was released {days} days ago, so each job's runner likely updates \
-                 itself at start; update Marshal to get a newer runner, then build {subject} again"
+                "runner {version} was released {days} days ago and never updates itself; update \
+                 Marshal to get a newer runner, then build {subject} again before GitHub stops \
+                 sending jobs to this version"
             ),
             Self::RunnerMayBeNewer { version, days } => format!(
                 "runner {version} was released {days} days ago, and a newer runner may exist"
@@ -712,8 +713,9 @@ mod tests {
         let warnings = freshness_warnings(&matching, now);
         assert_eq!(
             warnings.last().unwrap(),
-            "runner 2.337.0 was released 61 days ago, so each job's runner likely updates itself \
-             at start; update Marshal to get a newer runner, then build the golden VM again"
+            "runner 2.337.0 was released 61 days ago and never updates itself; update Marshal to \
+             get a newer runner, then build the golden VM again before GitHub stops sending jobs \
+             to this version"
         );
         let newer_golden_version = GOLDEN_VM_VERSION + 1;
         let mismatched = ImageCheck::Golden(GoldenCheck::Mismatched {

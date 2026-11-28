@@ -1,6 +1,9 @@
 //! the real Windows Credential Manager: a token set through the store is a generic
 //! credential with the documented name, persisted on this machine only, and is read
 //! back and removed. Windows only; it needs a logon session with a credential vault.
+//!
+//! Every test calls `credential_manager_turn` first and keeps its turn until its cleanup
+//! has run, so no two of them use the Credential Manager at once; a new test does the same.
 #![cfg(windows)]
 #![allow(
     clippy::unwrap_used,
@@ -12,7 +15,7 @@
 mod support;
 
 use std::process::Command;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use marshal_cli::agent::CallError;
 use marshal_cli::agent::machine::Launch;
@@ -22,6 +25,14 @@ use marshal_cli::token_store::{MAX_TOKEN_UTF16_UNITS, TokenKey, TokenStore, acce
 use support::agent::Rig;
 
 const FAKE: &str = "fake-token-windows-4444";
+
+/// one test at a time uses the Credential Manager, since upstream reports it losing
+/// updates under concurrent use. A test that panicked left the lock poisoned, which
+/// the next test takes over.
+fn credential_manager_turn() -> MutexGuard<'static, ()> {
+    static TURN: Mutex<()> = Mutex::new(());
+    TURN.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// `cmdkey` lists the credential the way Windows stores it.
 fn listed(target: &str) -> String {
@@ -43,6 +54,7 @@ fn has_entry(listing: &str, target: &str) -> bool {
 
 #[test]
 fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
+    let _turn = credential_manager_turn();
     let store = credential_manager().unwrap();
     let key = TokenKey::of(&format!("Marshal-Test-{}", std::process::id()), "Repo");
     let _cleanup = Cleanup(key.clone());
@@ -85,6 +97,7 @@ fn a_token_is_a_local_machine_credential_that_round_trips_and_goes() {
 
 #[test]
 fn an_organization_token_is_a_credential_named_for_the_login_that_round_trips_and_goes() {
+    let _turn = credential_manager_turn();
     let store = credential_manager().unwrap();
     let login = format!("Marshal-Test-Org-{}", std::process::id());
     let key = TokenKey::parse_organization(&login).unwrap();
@@ -140,6 +153,7 @@ fn test_key(label: &str) -> TokenKey {
 
 #[test]
 fn a_token_of_the_most_utf16_units_round_trips_and_one_more_is_refused() {
+    let _turn = credential_manager_turn();
     let store = credential_manager().unwrap();
     let key = test_key("limit");
     let _cleanup = Cleanup(key.clone());
@@ -161,6 +175,7 @@ fn a_token_of_the_most_utf16_units_round_trips_and_one_more_is_refused() {
 
 #[test]
 fn a_token_with_non_ascii_and_non_bmp_text_round_trips() {
+    let _turn = credential_manager_turn();
     let store = credential_manager().unwrap();
     let key = test_key("unicode");
     let _cleanup = Cleanup(key.clone());
@@ -169,48 +184,55 @@ fn a_token_with_non_ascii_and_non_bmp_text_round_trips() {
     assert_eq!(store.get(&key).unwrap().unwrap().expose(), text);
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn a_token_set_through_the_agent_reaches_the_credential_manager_and_a_registration() {
-    let key = test_key("agent");
-    let _cleanup = Cleanup(key.clone());
-    let (owner, name) = key.as_str().split_once('/').unwrap();
-    let config = format!(
-        r#"{{"imageName":"actions-runner:local","repositories":[
+#[test]
+fn a_token_set_through_the_agent_reaches_the_credential_manager_and_a_registration() {
+    let _turn = credential_manager_turn();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let key = test_key("agent");
+            let _cleanup = Cleanup(key.clone());
+            let (owner, name) = key.as_str().split_once('/').unwrap();
+            let config = format!(
+                r#"{{"imageName":"actions-runner:local","repositories":[
             {{"owner":"{owner}","repository":"{name}","name":"r","slots":1,"tokenPath":"C:\\no-such.token","volumes":[]}}]}}"#
-    );
-    let rig = Rig::new(&config);
-    let store: Arc<dyn TokenStore> = Arc::new(credential_manager().unwrap());
-    *rig.other_store.borrow_mut() = Some(Arc::clone(&store));
-    rig.hold_jobs();
-    let rig = &rig;
-    let key = &key;
-    let (_, ()) = rig
-        .drive(Launch::Running, |conn| async move {
-            // the only pool has no token, so the agent stops at launch; a token set
-            // later does not start a stopped agent, a `start_all` does
-            let stopped = conn.until_state("stopped").await;
-            assert_eq!(stopped.agent.reason.unwrap().code, "no_pool_started");
+            );
+            let rig = Rig::new(&config);
+            let store: Arc<dyn TokenStore> = Arc::new(credential_manager().unwrap());
+            *rig.other_store.borrow_mut() = Some(Arc::clone(&store));
+            rig.hold_jobs();
+            let rig = &rig;
+            let key = &key;
+            let (_, ()) = rig
+                .drive(Launch::Running, |conn| async move {
+                    // the only pool has no token, so the agent stops at launch; a token set
+                    // later does not start a stopped agent, a `start_all` does
+                    let stopped = conn.until_state("stopped").await;
+                    assert_eq!(stopped.agent.reason.unwrap().code, "no_pool_started");
 
-            // too long a token is refused and stores nothing
-            let long = "a".repeat(MAX_TOKEN_UTF16_UNITS + 1);
-            match conn.set_token(key.as_str(), &long).await {
-                Err(CallError::Agent(body)) => assert_eq!(body.code, "token_invalid"),
-                other => panic!("an oversize token was not refused: {other:?}"),
-            }
-            assert!(store.get(key).unwrap().is_none());
+                    // too long a token is refused and stores nothing
+                    let long = "a".repeat(MAX_TOKEN_UTF16_UNITS + 1);
+                    match conn.set_token(key.as_str(), &long).await {
+                        Err(CallError::Agent(body)) => assert_eq!(body.code, "token_invalid"),
+                        other => panic!("an oversize token was not refused: {other:?}"),
+                    }
+                    assert!(store.get(key).unwrap().is_none());
 
-            conn.set_token(key.as_str(), FAKE).await.unwrap();
-            assert_eq!(store.get(key).unwrap().unwrap().expose(), FAKE);
-            assert_eq!(conn.status().await.agent.state, "stopped");
-            // the pool starts on the stored token, read from the store
-            conn.ok("start_all").await;
-            conn.until_runner_runs().await;
-            assert_eq!(rig.registered_with(), vec![FAKE.to_string()]);
+                    conn.set_token(key.as_str(), FAKE).await.unwrap();
+                    assert_eq!(store.get(key).unwrap().unwrap().expose(), FAKE);
+                    assert_eq!(conn.status().await.agent.state, "stopped");
+                    // the pool starts on the stored token, read from the store
+                    conn.ok("start_all").await;
+                    conn.until_runner_runs().await;
+                    assert_eq!(rig.registered_with(), vec![FAKE.to_string()]);
 
-            conn.client.token_remove(key.as_str()).await.unwrap();
-            assert!(store.get(key).unwrap().is_none());
-            rig.mark_running();
-            conn.ok("quit").await;
-        })
-        .await;
+                    conn.client.token_remove(key.as_str()).await.unwrap();
+                    assert!(store.get(key).unwrap().is_none());
+                    rig.mark_running();
+                    conn.ok("quit").await;
+                })
+                .await;
+        });
 }

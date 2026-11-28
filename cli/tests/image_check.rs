@@ -189,7 +189,7 @@ async fn the_freshness_warnings_are_logged_at_each_run_of_the_core_and_not_at_jo
         warnings[..2],
         [
             "WARN: Image freshness: the image is 10 days old and should be rebuilt.",
-            "WARN: Image freshness: runner 2.337.0 was released 33 days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again.",
+            "WARN: Image freshness: runner 2.337.0 was released 33 days ago and never updates itself; update Marshal to get a newer runner, then build the image again before GitHub stops sending jobs to this version.",
         ]
     );
 }

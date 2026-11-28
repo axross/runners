@@ -2,7 +2,7 @@
 
 Apply this reference when preparing or approving the plan. A project with richer product-requirement practices owns section craft; this compact fallback keeps the loop independently installable.
 
-Before presenting a plan for approval or each visual-option round for selection, follow [reviewing-phase-deliverables.md](./reviewing-phase-deliverables.md). That review precedes, rather than supplies, human approval.
+Before presenting a plan for approval or each visual-option round for selection, follow [plan-review.md](./plan-review.md). That review precedes, rather than supplies, human approval.
 
 ## Canonical Structure
 

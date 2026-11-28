@@ -1,24 +1,22 @@
 name: Release
 
-# releases Marshal with semantic-release from a manual dispatch on main, and on
-# nothing else. docs/operations/cli.md describes the seven jobs and
-# docs/conventions/security.md the controls and residual risks. it runs on
+# TODO(#132): remove this temporary CLI route after the published native evidence.
+# releases the fixed historical CLI from a manual dispatch on main, and on
+# nothing else. docs/runner-recovery/release.md describes the two source identities and
+# docs/security/release-authority.md the controls and residual risks. it runs on
 # GitHub-hosted runners only.
 #
-# plan works out the version and build makes the unsigned set and the unsigned
-# Mac app. sign-macos then signs the Mac app and notarizes and staples its disk
-# image in the `release` Environment, which the maintainer restricts to main and
-# approves for each run. it is the only job that declares an Environment or reads a
-# signing secret, it checks nothing out and runs no repository file, no package
-# manager and no action but GitHub's artifact transfer, and it calls each tool by
-# its absolute system path. verify-macos checks the signed disk image without the
-# Environment. assemble-signed is where every file of the release meets: it checks
-# the build's set and the signed disk image and writes SHA256SUMS over them, and
-# attest and release read only what it uploads. every signing step comes before
-# release, so a failure stops the run before any tag.
+# build obtains an isolated historical tree. sign-macos signs and notarizes the macOS
+# binary and package in the `release` Environment, which the maintainer creates,
+# restricts to main and approves for each run. it is the only job that declares
+# an Environment or reads a signing secret, it checks nothing out and runs no
+# repository file, no package manager and no action but GitHub's artifact
+# transfer, and it calls each tool by its absolute system path. verify-macos
+# checks the signed package without the Environment, assemble-signed writes
+# SHA256SUMS over the signed set, and attest and release read that set. every
+# signing step comes before release, so a failure stops the run before any tag.
 # .github/scripts/check-release-shape.mjs, which `mise run check` runs, fails if
-# these jobs drift from that shape; docs/operations/cli.md says how W4 extends
-# them.
+# these jobs drift from that shape. the app's normal dry run remains separate.
 
 on:
   workflow_dispatch:
@@ -71,7 +69,7 @@ jobs:
     name: Build
     needs: plan
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
-    uses: ./.github/workflows/release-build.yaml
+    uses: ./.github/workflows/cli-recovery-build.yaml
     permissions:
       contents: read
     with:
@@ -81,16 +79,14 @@ jobs:
   # contents: read, checks nothing out, runs no repository file and no package
   # manager, and uses no action but GitHub's artifact transfer. every context
   # value reaches a script through `env:`, never inside `run:`, and each tool is
-  # called by its absolute system path through a prefix variable whose default is
-  # the literal /usr/bin, which only the stand-in test overrides. the first line of
-  # each script names it for that test, which runs the scripts against recording
-  # stand-ins of the macOS tools. the keychain password and secrets reach
-  # `security` as arguments, the one exception to "no secret on a command line"
-  # that docs/conventions/security.md records. it takes the unsigned Mac app from
-  # the build's app job, signs it, and builds, signs, notarizes and staples the
-  # disk image the release publishes.
+  # called by its absolute system path through two prefix variables whose defaults
+  # are the literal /usr/bin and /usr/sbin, which only the stand-in test
+  # overrides. the first line of each script names it for that test, which runs
+  # the scripts against recording stand-ins of the macOS tools. the keychain
+  # password and secrets reach `security` as arguments, the one exception to
+  # "no secret on a command line" in docs/security/disclosure.md#nothing-identifying-or-secret-is-committed.
   sign-macos:
-    name: Sign And Notarize The Mac App
+    name: Sign And Notarize The macOS Files
     needs: [plan, build]
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
     runs-on: macos-latest
@@ -99,35 +95,35 @@ jobs:
     permissions:
       contents: read
     outputs:
-      macos_dmg_sha256: ${{ steps.hash.outputs.dmg_sha256 }}
+      macos_sha256: ${{ steps.hash.outputs.binary_sha256 }}
+      macos_pkg_sha256: ${{ steps.hash.outputs.package_sha256 }}
       team_id: ${{ steps.identities.outputs.team_id }}
       submission_id: ${{ steps.notarize.outputs.submission_id }}
     steps:
-      - name: Download The Unsigned Mac App
-        timeout-minutes: 3
+      - name: Download The Build's Release Files
         uses: actions/download-artifact@v8
         with:
-          name: marshal-macos-app
+          name: ${{ needs.build.outputs.artifact }}
           path: unsigned
       # refuses before anything is imported: an empty secret or team ID (the
       # Environment is missing or incomplete), a version that is not X.Y.Z, any file
-      # but the app archive and the build's unsigned disk image, an archive whose
-      # hash is not the app job's app_sha256, or a tool that is not where the job
-      # calls it. the build's disk image is not used; this job makes its own.
+      # but the five of the release, a macOS file that differs from its SHA256SUMS
+      # line, or a tool that is not where the job calls it.
       - name: Check The Secrets, The Files And The Tools
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          APP_SHA256: ${{ needs.build.outputs.app_sha256 }}
-          MACOS_APPLICATION_P12_BASE64: ${{ secrets.MACOS_APPLICATION_P12_BASE64 }}
-          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
-          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
-          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
+          APPLE_APPLICATION_P12_BASE64: ${{ secrets.APPLE_APPLICATION_P12_BASE64 }}
+          APPLE_INSTALLER_P12_BASE64: ${{ secrets.APPLE_INSTALLER_P12_BASE64 }}
+          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_TEAM_KEY_ID: ${{ secrets.APPLE_NOTARY_TEAM_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           # sign-macos: check
           set -euo pipefail
           : "${SYSTEM_BIN:=/usr/bin}"
+          : "${SYSTEM_SBIN:=/usr/sbin}"
 
           refuse() {
             echo "error: $*" >&2
@@ -136,7 +132,7 @@ jobs:
 
           # names only; no value is ever printed.
           empty=""
-          for name in MACOS_APPLICATION_P12_BASE64 MACOS_P12_PASSWORD MACOS_NOTARY_KEY_P8 MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID MACOS_TEAM_ID; do
+          for name in APPLE_APPLICATION_P12_BASE64 APPLE_INSTALLER_P12_BASE64 APPLE_P12_PASSWORD APPLE_NOTARY_KEY_P8 APPLE_NOTARY_TEAM_KEY_ID APPLE_NOTARY_ISSUER_ID APPLE_TEAM_ID; do
             if [[ -z "${!name:-}" ]]; then
               empty="${empty} ${name}"
             fi
@@ -145,50 +141,69 @@ jobs:
             refuse "these secrets or variables are empty:${empty}; the release Environment is missing or incomplete"
           fi
           team_pattern='^[A-Z0-9]{10}$'
-          [[ "$MACOS_TEAM_ID" =~ $team_pattern ]] || refuse "MACOS_TEAM_ID is not a 10-character team ID"
+          [[ "$APPLE_TEAM_ID" =~ $team_pattern ]] || refuse "APPLE_TEAM_ID is not a 10-character team ID"
 
           number='(0|[1-9][0-9]*)'
           [[ "$VERSION" =~ ^${number}\.${number}\.${number}$ ]] || refuse "the version '${VERSION}' is not X.Y.Z"
-          hash_pattern='^[0-9a-f]{64}$'
-          [[ "$APP_SHA256" =~ $hash_pattern ]] || refuse "the build's app_sha256 '${APP_SHA256}' is not a SHA-256"
 
           # every tool the job calls, by the path it calls it at.
-          bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"
+          bin_tools="security codesign pkgbuild openssl plutil shasum xcrun"
+          sbin_tools="pkgutil"
           for tool in $bin_tools; do
             [[ -x "$SYSTEM_BIN/${tool}" ]] || refuse "$SYSTEM_BIN/${tool} is missing"
+          done
+          for tool in $sbin_tools; do
+            [[ -x "$SYSTEM_SBIN/${tool}" ]] || refuse "$SYSTEM_SBIN/${tool} is missing"
           done
           for tool in notarytool stapler; do
             "$SYSTEM_BIN/xcrun" --find "$tool" >/dev/null || refuse "xcrun cannot find ${tool}"
           done
 
-          archive="marshal-${VERSION}-macos-arm64-app.zip"
-          build_image="marshal-${VERSION}-macos-arm64.dmg"
-          expected="$(printf '%s\n' "$archive" "$build_image" | LC_ALL=C sort)"
+          windows="marshal-${VERSION}-windows-x64.exe"
+          windows_msi="marshal-${VERSION}-windows-x64.msi"
+          macos="marshal-${VERSION}-macos-arm64"
+          macos_pkg="marshal-${VERSION}-macos-arm64.pkg"
+          expected="$(printf '%s\n' SHA256SUMS "$macos" "$macos_pkg" "$windows" "$windows_msi" | LC_ALL=C sort)"
           present="$(find unsigned -mindepth 1 -maxdepth 1 | sed 's|^unsigned/||' | LC_ALL=C sort)"
           if [[ "$present" != "$expected" ]]; then
-            refuse "the downloaded files are not exactly ${archive} and ${build_image}:
+            refuse "the downloaded files are not exactly ${macos}, ${macos_pkg}, ${windows}, ${windows_msi} and SHA256SUMS:
           ${present}"
           fi
-          if [[ -L "unsigned/${archive}" || ! -f "unsigned/${archive}" ]]; then
-            refuse "${archive} is not a regular file"
-          fi
-          line="$("$SYSTEM_BIN/shasum" -a 256 "unsigned/${archive}")"
-          have="${line%% *}"
-          [[ "$have" == "$APP_SHA256" ]] || refuse "${archive} has SHA-256 ${have}, not the ${APP_SHA256} that the app job output"
+          for file in SHA256SUMS "$macos" "$macos_pkg" "$windows" "$windows_msi"; do
+            if [[ -L "unsigned/${file}" || ! -f "unsigned/${file}" ]]; then
+              refuse "${file} is not a regular file"
+            fi
+          done
 
-          echo "The secrets, the app archive for ${VERSION} and the tools are all present."
-      # the temporary keychain holds the Developer ID Application identity and Apple's
-      # Developer ID G2
+          # listed_hash <name>: the hash SHA256SUMS lists for the name, which exactly one line must.
+          listed_hash() {
+            local lines
+            lines="$(awk -v name="$1" '$2 == name { print $1 }' unsigned/SHA256SUMS)"
+            if [[ -z "$lines" || "$lines" == *$'\n'* ]]; then
+              refuse "SHA256SUMS does not list $1 exactly once"
+            fi
+            echo "$lines"
+          }
+          for name in "$macos" "$macos_pkg"; do
+            want="$(listed_hash "$name")"
+            line="$("$SYSTEM_BIN/shasum" -a 256 "unsigned/${name}")"
+            have="${line%% *}"
+            [[ "$have" == "$want" ]] || refuse "${name} has SHA-256 ${have}, not the ${want} that SHA256SUMS lists"
+          done
+
+          echo "The secrets, the files for ${VERSION} and the tools are all present."
+      # the temporary keychain holds both identities and Apple's Developer ID G2
       # intermediate certificate, which is embedded here because the runner image's
       # trust in it is unknown and this job fetches nothing. it is Apple's
       # DeveloperIDG2CA.cer, fetched from
       # https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer on
       # 2026-11-03 over TLS, valid until 2031-09-17. the job refuses it unless its
-      # SHA-256 equals the pin, which docs/conventions/security.md also records.
+      # SHA-256 equals the pin in docs/security/dependency-pins.md#pinning-convention.
       - name: Create The Keychain And Import The Certificates
         env:
-          MACOS_APPLICATION_P12_BASE64: ${{ secrets.MACOS_APPLICATION_P12_BASE64 }}
-          MACOS_P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
+          APPLE_APPLICATION_P12_BASE64: ${{ secrets.APPLE_APPLICATION_P12_BASE64 }}
+          APPLE_INSTALLER_P12_BASE64: ${{ secrets.APPLE_INSTALLER_P12_BASE64 }}
+          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}
         run: |
           # sign-macos: keychain
           set -euo pipefail
@@ -223,7 +238,7 @@ jobs:
           g2_base64+="jGgNe30dfsy1k/DWbz0VeoCldNPhj33SiOgxp5jFH9/iglmugIFgRhbsnrmKQKobKuFhhgqMcA/ZSizsTKIFEdZ5jKVjJSEj"
           g2_base64+="Am+TW1pXoddFbd/M93+fX9vH7WSnb0Qvb009eHgKVrQ71zrIK2Wik+rbWOqO1LnEwDD8MhpNupIMJDmYgjqgmd7n5OS8DryF"
           g2_base64+="r1qrXND828wQww=="
-          printf '%s' "$g2_base64" | base64 --decode >"${dir}/DeveloperIDG2CA.cer"
+          printf '%s' "$g2_base64" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/DeveloperIDG2CA.cer"
           line="$("$SYSTEM_BIN/shasum" -a 256 "${dir}/DeveloperIDG2CA.cer")"
           if [[ "${line%% *}" != "$g2_sha256" ]]; then
             refuse "the embedded Developer ID G2 certificate has SHA-256 ${line%% *}, not the pinned ${g2_sha256}"
@@ -236,19 +251,24 @@ jobs:
           "$SYSTEM_BIN/security" unlock-keychain -p "$keychain_password" "$keychain"
           "$SYSTEM_BIN/security" list-keychains -d user -s "$keychain"
 
-          printf '%s' "$MACOS_APPLICATION_P12_BASE64" | base64 --decode >"${dir}/application.p12"
-          chmod 0600 "${dir}/application.p12"
-          [[ -s "${dir}/application.p12" ]] || refuse "application.p12 is empty after decoding its secret"
+          printf '%s' "${APPLE_APPLICATION_P12_BASE64//[$'\r\n']/}" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/application.p12"
+          printf '%s' "${APPLE_INSTALLER_P12_BASE64//[$'\r\n']/}" | "$SYSTEM_BIN/openssl" enc -base64 -d -A >"${dir}/installer.p12"
+          chmod 0600 "${dir}/application.p12" "${dir}/installer.p12"
+          for file in application.p12 installer.p12; do
+            [[ -s "${dir}/${file}" ]] || refuse "${file} is empty after decoding its secret"
+          done
 
           "$SYSTEM_BIN/security" import "${dir}/DeveloperIDG2CA.cer" -k "$keychain" -t cert
-          "$SYSTEM_BIN/security" import "${dir}/application.p12" -k "$keychain" -f pkcs12 -P "$MACOS_P12_PASSWORD" -T "$SYSTEM_BIN/codesign"
+          for file in application.p12 installer.p12; do
+            "$SYSTEM_BIN/security" import "${dir}/${file}" -k "$keychain" -f pkcs12 -P "$APPLE_P12_PASSWORD" -T "$SYSTEM_BIN/codesign" -T "$SYSTEM_BIN/pkgbuild"
+          done
           "$SYSTEM_BIN/security" set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" >/dev/null
-          rm -f "${dir}/application.p12"
-          echo "Imported the Developer ID G2 certificate and the Developer ID Application identity."
-      - name: Select The Identity And Check Its Certificate
+          rm -f "${dir}/application.p12" "${dir}/installer.p12"
+          echo "Imported the Developer ID G2 certificate and both identities."
+      - name: Select The Identities And Check Their Certificates
         id: identities
         env:
-          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           # sign-macos: identities
           set -euo pipefail
@@ -262,11 +282,12 @@ jobs:
           umask 077
           dir="${RUNNER_TEMP}/marshal-signing"
           keychain="${RUNNER_TEMP}/marshal-signing.keychain-db"
-          all="$("$SYSTEM_BIN/security" find-identity "$keychain")"
+          # without -v, valid identities also appear in a second list.
+          all="$("$SYSTEM_BIN/security" find-identity "$keychain" | sed '/^[[:space:]]*Valid identities only[[:space:]]*$/,$d')"
           valid="$("$SYSTEM_BIN/security" find-identity -v "$keychain")"
           echo "$all"
 
-          # pick_identity <Application>: sets identity_hash and
+          # pick_identity <Application or Installer>: sets identity_hash and
           # identity_name to the one identity named "Developer ID <kind>: ...", and
           # refuses unless there is exactly one.
           identity_pattern='^[[:space:]]*[0-9]+\)[[:space:]]+([0-9A-Fa-f]{40})[[:space:]]+"([^"]*)"'
@@ -291,13 +312,14 @@ jobs:
 
           hash_pattern='^SHA-1 hash: ([0-9A-Fa-f]{40})[[:space:]]*$'
 
-          # check_certificate <Application>: prints the subject, the team
+          # check_certificate <Application or Installer>: prints the subject, the team
           # and the expiry date of the certificate of the identity pick_identity
           # chose, refuses a certificate of another team or an expired one, and warns
           # within 90 days. find-certificate matches by name and lists the SHA-1 hash
           # of each certificate it finds, so the certificate checked is the one with
-          # the identity's hash, and the name must match exactly one certificate, so
-          # that what is checked is what codesign signs with.
+          # the identity's hash, and the name must match exactly one certificate:
+          # pkgbuild signs by name, and a second certificate of that name could be
+          # the one it uses.
           check_certificate() {
             local kind="$1" pem listing line have want found=0 selected=0 matched=0 details subject team ends
             pem="${dir}/${kind}.pem"
@@ -324,7 +346,7 @@ jobs:
             team="$(printf '%s\n' "$subject" | tr ',' '\n' | sed -n 's/^ *OU=//p')"
             ends="$(printf '%s\n' "$details" | sed -n 's/^notAfter=//p')"
             echo "Developer ID ${kind}: subject ${subject}; team ${team}; expires ${ends}"
-            [[ "$team" == "$MACOS_TEAM_ID" ]] || refuse "the Developer ID ${kind} certificate names team '${team}', not MACOS_TEAM_ID"
+            [[ "$team" == "$APPLE_TEAM_ID" ]] || refuse "the Developer ID ${kind} certificate names team '${team}', not APPLE_TEAM_ID"
             if ! "$SYSTEM_BIN/openssl" x509 -in "$pem" -noout -checkend 0 >/dev/null; then
               refuse "the Developer ID ${kind} certificate expired on ${ends}"
             fi
@@ -336,144 +358,81 @@ jobs:
           pick_identity Application
           application_identity="$identity_hash"
           check_certificate Application
+          pick_identity Installer
+          installer_name="$identity_name"
+          check_certificate Installer
           {
             echo "APPLICATION_IDENTITY=${application_identity}"
+            echo "INSTALLER_IDENTITY_NAME=${installer_name}"
           } >>"$GITHUB_ENV"
-          echo "team_id=${MACOS_TEAM_ID}" >>"$GITHUB_OUTPUT"
-      # the layout the app job checked, again, since this job trusts only the hash.
-      # the bundle may hold no nested code (Frameworks, PlugIns, Helpers,
-      # XPCServices, Library, or a second executable in MacOS), so signing the
-      # bundle, which signs its one executable with it, is the whole inside-out
-      # order; a bundle that gains nested code fails here before anything is signed.
-      - name: Unpack The App And Check Its Layout
-        timeout-minutes: 3
+          echo "team_id=${APPLE_TEAM_ID}" >>"$GITHUB_OUTPUT"
+      # the signature replaces the linker's ad-hoc one. the identifier is fixed, not
+      # taken from the file name, which carries the version: the binary's
+      # designated requirement, which Keychain trust follows, must not change from
+      # release to release.
+      - name: Sign The Binary
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-        run: |
-          # sign-macos: unpack
-          set -euo pipefail
-          : "${SYSTEM_BIN:=/usr/bin}"
-
-          refuse() {
-            echo "error: $*" >&2
-            exit 1
-          }
-
-          mkdir app
-          "$SYSTEM_BIN/ditto" -x -k "unsigned/marshal-${VERSION}-macos-arm64-app.zip" app
-          entries="$(find app -mindepth 1 -maxdepth 1 | sed 's|^app/||' | LC_ALL=C sort)"
-          [[ "$entries" == "Marshal.app" ]] || refuse "the archive holds '${entries}', not only Marshal.app"
-          contents="app/Marshal.app/Contents"
-          executables="$(find "${contents}/MacOS" -mindepth 1 -maxdepth 1 | sed "s|^${contents}/MacOS/||" | LC_ALL=C sort)"
-          [[ "$executables" == "marshal-app" ]] || refuse "Contents/MacOS holds '${executables}', not only marshal-app"
-          for nested in Frameworks PlugIns Helpers XPCServices Library; do
-            [[ ! -e "${contents}/${nested}" ]] || refuse "the app holds Contents/${nested}, nested code this job does not sign"
-          done
-          plist="${contents}/Info.plist"
-          identifier="$("$SYSTEM_BIN/plutil" -extract CFBundleIdentifier raw -o - "$plist")"
-          [[ "$identifier" == "app.axross.marshal" ]] || refuse "the app's identifier is '${identifier}', not app.axross.marshal"
-          version="$("$SYSTEM_BIN/plutil" -extract CFBundleShortVersionString raw -o - "$plist")"
-          [[ "$version" == "$VERSION" ]] || refuse "the app's version is '${version}', not ${VERSION}"
-          echo "Unpacked Marshal.app ${version}, with marshal-app as its only code."
-      # the signature takes the fixed identifier, as Keychain trust follows the
-      # designated requirement, which must not change from release to release. the
-      # requirement must be F0's form A (plain codesign's) or form B (Xcode's,
-      # TN3127) for that identifier and MACOS_TEAM_ID; verify-macos checks it again.
-      - name: Sign The App
-        timeout-minutes: 5
-        env:
-          MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
         run: |
           # sign-macos: sign
           set -euo pipefail
           : "${SYSTEM_BIN:=/usr/bin}"
 
-          refuse() {
-            echo "error: $*" >&2
-            exit 1
-          }
-
           keychain="${RUNNER_TEMP}/marshal-signing.keychain-db"
           identifier="app.axross.marshal"
-          app="app/Marshal.app"
-          "$SYSTEM_BIN/codesign" --force --sign "$APPLICATION_IDENTITY" --keychain "$keychain" --options runtime --timestamp --identifier "$identifier" "$app"
-          "$SYSTEM_BIN/codesign" --verify --strict --verbose=2 "$app"
-
-          # normalized <requirement>: without /* */ comments, one space between
-          # tokens and the team ID unquoted, the only ways codesign's text differs.
-          normalized() {
-            printf '%s\n' "$1" |
-              sed -e 's|/\*[^*]*\*/||g' -e 's/[[:space:]][[:space:]]*/ /g' -e 's/^ //' -e 's/ $//' \
-                -e 's/\(subject\.OU] = \)"\([A-Z0-9]*\)"/\1\2/'
-          }
-          # clauses <normalized requirement>: its clauses, one per line and sorted.
-          clauses() {
-            printf '%s\n' "$1" |
-              awk '{ n = split($0, parts, / and /); for (i = 1; i <= n; i++) print parts[i] }' |
-              LC_ALL=C sort
-          }
-          requirement="$("$SYSTEM_BIN/codesign" --display --requirements - "$app" 2>&1 | sed -n 's/^designated => //p')"
-          [[ -n "$requirement" ]] || refuse "codesign printed no designated requirement for the app"
-          form_a="anchor apple generic and identifier \"${identifier}\" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ${MACOS_TEAM_ID}"
-          form_b="anchor apple generic and identifier \"${identifier}\" and (certificate leaf[field.1.2.840.113635.100.6.1.9] or certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = ${MACOS_TEAM_ID})"
-          have="$(normalized "$requirement")"
-          want_b="$(normalized "$form_b")"
-          want_a="$(normalized "$form_a")"
-          have_clauses="$(clauses "$have")"
-          want_clauses="$(clauses "$want_a")"
-          if [[ "$have" == "$want_b" ]]; then
-            form=B
-          elif [[ "$have_clauses" == "$want_clauses" ]]; then
-            form=A
-          else
-            refuse "the app's designated requirement is not the default one for ${identifier} and team ${MACOS_TEAM_ID} in form A or B: ${requirement}"
-          fi
-          echo "Signed the app; its designated requirement is form ${form}: ${requirement}"
-      # the app job's hdiutil create arguments, repeated because this job runs no
-      # repository file; check-release-shape.mjs fails if the two differ. the image
-      # is signed under its own identifier with the Application identity.
-      - name: Build And Sign The Disk Image
-        timeout-minutes: 6
+          binary="signed/marshal-${VERSION}-macos-arm64"
+          mkdir signed
+          cp "unsigned/marshal-${VERSION}-macos-arm64" "$binary"
+          chmod 0755 "$binary"
+          "$SYSTEM_BIN/codesign" --force --sign "$APPLICATION_IDENTITY" --keychain "$keychain" --options runtime --timestamp --identifier "$identifier" "$binary"
+          "$SYSTEM_BIN/codesign" --verify --strict --verbose=2 "$binary"
+          "$SYSTEM_BIN/codesign" --display --requirements - "$binary"
+      # build-pkg.sh's layout and pkgbuild arguments, repeated because this job runs
+      # no repository file; check-release-shape.mjs fails if the two differ. the
+      # signing options are the only addition. pkgbuild takes the Installer
+      # identity by its name, the one form its manual gives. the identities step
+      # has shown that the temporary keychain holds one Developer ID Installer
+      # identity and one certificate of that name, and --keychain keeps pkgbuild
+      # to that keychain, so the name cannot be another identity's. codesign takes
+      # the Application identity by its SHA-1 hash.
+      - name: Build The Signed Package
         env:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          # sign-macos: dmg
+          # sign-macos: package
           set -euo pipefail
           : "${SYSTEM_BIN:=/usr/bin}"
 
-          refuse() {
-            echo "error: $*" >&2
-            exit 1
-          }
-
+          dir="${RUNNER_TEMP}/marshal-signing"
           keychain="${RUNNER_TEMP}/marshal-signing.keychain-db"
-          stage="${RUNNER_TEMP}/marshal-dmg"
-          image="signed/marshal-${VERSION}-macos-arm64.dmg"
-          mkdir -p "$stage" signed
-          "$SYSTEM_BIN/ditto" app/Marshal.app "${stage}/Marshal.app"
-          ln -s /Applications "${stage}/Applications"
-          attempt=1
-          until "$SYSTEM_BIN/hdiutil" create -volname Marshal -srcfolder "$stage" -format UDZO -ov "$image"; do
-            if [[ "$attempt" -ge 3 ]]; then
-              refuse "hdiutil create failed ${attempt} times"
-            fi
-            echo "hdiutil create failed on attempt ${attempt}; trying again in 10 seconds"
-            attempt=$((attempt + 1))
-            sleep 10
-          done
-          "$SYSTEM_BIN/codesign" --force --sign "$APPLICATION_IDENTITY" --keychain "$keychain" --timestamp --identifier app.axross.marshal.dmg "$image"
-          "$SYSTEM_BIN/codesign" --verify --strict --verbose=2 "$image"
-          echo "Built and signed ${image}."
+          identifier="app.axross.marshal"
+          version="$VERSION"
+          binary="signed/marshal-${VERSION}-macos-arm64"
+          output="signed/marshal-${VERSION}-macos-arm64.pkg"
+          stage="$(mktemp -d "${dir}/stage.XXXXXX")"
+          mkdir -p "${stage}/usr/local/bin"
+          cp "$binary" "${stage}/usr/local/bin/marshal"
+          chmod 0755 "$stage" "${stage}/usr" "${stage}/usr/local" "${stage}/usr/local/bin" "${stage}/usr/local/bin/marshal"
+          "$SYSTEM_BIN/pkgbuild" \
+            --root "$stage" \
+            --identifier "$identifier" \
+            --version "$version" \
+            --install-location / \
+            --ownership recommended \
+            --sign "$INSTALLER_IDENTITY_NAME" \
+            --keychain "$keychain" \
+            "$output"
+          echo "Built ${output} at version ${version}."
       # notarytool may exit non-zero, or zero, whatever Apple decided, so the
       # decision is the status in its JSON. the log is fetched whenever a
       # submission ID exists, and the next steps upload it even when this one fails.
-      - name: Notarize The Disk Image
+      - name: Notarize The Package
         id: notarize
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
-          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_TEAM_KEY_ID: ${{ secrets.APPLE_NOTARY_TEAM_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: |
           # sign-macos: notarize
           set -euo pipefail
@@ -488,7 +447,7 @@ jobs:
           dir="${RUNNER_TEMP}/marshal-signing"
           notary="${RUNNER_TEMP}/marshal-notary"
           mkdir -p "$notary"
-          image="signed/marshal-${VERSION}-macos-arm64.dmg"
+          pkg="signed/marshal-${VERSION}-macos-arm64.pkg"
           key_file="${dir}/AuthKey.p8"
           result="${dir}/submission.json"
           log="${notary}/notary-log.json"
@@ -500,13 +459,13 @@ jobs:
             if [[ -n "$line" ]]; then
               echo "::add-mask::${line}"
             fi
-          done <<<"$MACOS_NOTARY_KEY_P8"
-          printf '%s\n' "$MACOS_NOTARY_KEY_P8" >"$key_file"
+          done <<<"$APPLE_NOTARY_KEY_P8"
+          printf '%s\n' "$APPLE_NOTARY_KEY_P8" >"$key_file"
           chmod 0600 "$key_file"
 
           submit_status=0
-          "$SYSTEM_BIN/xcrun" notarytool submit "$image" \
-            --key "$key_file" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" \
+          "$SYSTEM_BIN/xcrun" notarytool submit "$pkg" \
+            --key "$key_file" --key-id "$APPLE_NOTARY_TEAM_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" \
             --wait --timeout 30m --output-format json >"$result" || submit_status=$?
           echo "notarytool submit exited ${submit_status} and printed:"
           cat "$result"
@@ -527,7 +486,7 @@ jobs:
           if [[ -n "$submission_id" ]]; then
             echo "submission_id=${submission_id}" >>"$GITHUB_OUTPUT"
             "$SYSTEM_BIN/xcrun" notarytool log "$submission_id" \
-              --key "$key_file" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID" \
+              --key "$key_file" --key-id "$APPLE_NOTARY_TEAM_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" \
               "$log" || log_status=$?
           fi
 
@@ -540,19 +499,26 @@ jobs:
             refuse "the notary log of submission ${submission_id} could not be fetched (exit ${log_status})"
           fi
           echo "Submission ${submission_id} was accepted."
-      - name: Staple And Check The Disk Image
+      - name: Staple And Check The Package
         env:
           VERSION: ${{ needs.plan.outputs.version }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           # sign-macos: staple
           set -euo pipefail
           : "${SYSTEM_BIN:=/usr/bin}"
+          : "${SYSTEM_SBIN:=/usr/sbin}"
 
-          image="signed/marshal-${VERSION}-macos-arm64.dmg"
-          "$SYSTEM_BIN/xcrun" stapler staple "$image"
-          "$SYSTEM_BIN/xcrun" stapler validate "$image"
-          "$SYSTEM_BIN/codesign" --verify --strict --verbose=2 "$image"
-      - name: Hash The Signed Disk Image
+          pkg="signed/marshal-${VERSION}-macos-arm64.pkg"
+          "$SYSTEM_BIN/xcrun" stapler staple "$pkg"
+          "$SYSTEM_BIN/xcrun" stapler validate "$pkg"
+          signature="$("$SYSTEM_SBIN/pkgutil" --check-signature "$pkg")"
+          echo "$signature"
+          if [[ "$signature" != *"Developer ID Installer: "*"(${APPLE_TEAM_ID})"* ]]; then
+            echo "error: the package is not signed by a Developer ID Installer certificate of team ${APPLE_TEAM_ID}" >&2
+            exit 1
+          fi
+      - name: Hash The Signed Files
         id: hash
         env:
           VERSION: ${{ needs.plan.outputs.version }}
@@ -561,11 +527,16 @@ jobs:
           set -euo pipefail
           : "${SYSTEM_BIN:=/usr/bin}"
 
-          image="signed/marshal-${VERSION}-macos-arm64.dmg"
-          line="$("$SYSTEM_BIN/shasum" -a 256 "$image")"
-          hash="${line%% *}"
-          echo "${hash}  ${image}"
-          echo "dmg_sha256=${hash}" >>"$GITHUB_OUTPUT"
+          # hash_file <file> <output name>
+          hash_file() {
+            local line hash
+            line="$("$SYSTEM_BIN/shasum" -a 256 "$1")"
+            hash="${line%% *}"
+            echo "${hash}  $1"
+            echo "${2}=${hash}" >>"$GITHUB_OUTPUT"
+          }
+          hash_file "signed/marshal-${VERSION}-macos-arm64" binary_sha256
+          hash_file "signed/marshal-${VERSION}-macos-arm64.pkg" package_sha256
       # runs whether the job passed or failed, and is the only step besides the
       # notary log upload that may.
       - name: Delete The Keychain And The Key Files
@@ -607,30 +578,27 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # no Environment and no secret. it checks the signed disk image and the app in it
-  # with the tools a reader of the release would use, on a runner that holds no
-  # signing identity.
+  # no Environment and no secret. it checks the signed package with the tools a
+  # reader of the release would use, on a runner that holds no signing identity.
   verify-macos:
-    name: Verify The Signed Mac Disk Image
+    name: Verify The Signed macOS Files
     needs: [plan, build, sign-macos]
     if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''
     runs-on: macos-latest
     timeout-minutes: 20
     permissions:
       contents: read
-    outputs:
-      designated_requirement: ${{ steps.test.outputs.designated_requirement }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Download The Unsigned Mac App
+      - name: Download The Build's Release Files
         uses: actions/download-artifact@v8
         with:
-          name: marshal-macos-app
+          name: ${{ needs.build.outputs.artifact }}
           path: unsigned
-      - name: Download The Signed Disk Image
+      - name: Download The Signed Files
         uses: actions/download-artifact@v8
         with:
           name: marshal-macos-arm64-signed
@@ -640,41 +608,35 @@ jobs:
         with:
           name: notary-log-macos
           path: notary
-      # the archive must be the one the app job hashed, and the disk image the one
-      # sign-macos hashed.
-      - name: Check The Files Against Their Jobs' Hashes
+      - name: Check The Signed Files Against The Signing Job's Hashes
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          APP_SHA256: ${{ needs.build.outputs.app_sha256 }}
-          MACOS_DMG_SHA256: ${{ needs.sign-macos.outputs.macos_dmg_sha256 }}
+          MACOS_SHA256: ${{ needs.sign-macos.outputs.macos_sha256 }}
+          MACOS_PKG_SHA256: ${{ needs.sign-macos.outputs.macos_pkg_sha256 }}
         run: |
           set -euo pipefail
-          # check_hash <file> <hash it must have> <the job that output it>
+          # check_hash <file> <hash it must have>
           check_hash() {
             local line
             line="$(/usr/bin/shasum -a 256 "$1")"
             if [[ "${line%% *}" != "$2" ]]; then
-              echo "error: $1 has SHA-256 ${line%% *}, not the ${2} that $3 output" >&2
+              echo "error: $1 has SHA-256 ${line%% *}, not the ${2} that sign-macos output" >&2
               exit 1
             fi
           }
-          check_hash "unsigned/marshal-${VERSION}-macos-arm64-app.zip" "$APP_SHA256" "the app job"
-          check_hash "signed/marshal-${VERSION}-macos-arm64.dmg" "$MACOS_DMG_SHA256" "sign-macos"
-      # also checks that the notary log is of the submission sign-macos output, and
-      # outputs the app's designated requirement.
-      - name: Test The Signed Disk Image
-        id: test
-        timeout-minutes: 5
+          check_hash "signed/marshal-${VERSION}-macos-arm64" "$MACOS_SHA256"
+          check_hash "signed/marshal-${VERSION}-macos-arm64.pkg" "$MACOS_PKG_SHA256"
+      - name: Test The Signed Package
+        timeout-minutes: 10
         env:
           VERSION: ${{ needs.plan.outputs.version }}
           TEAM_ID: ${{ needs.sign-macos.outputs.team_id }}
           SUBMISSION_ID: ${{ needs.sign-macos.outputs.submission_id }}
-        run: bash .github/scripts/tests/test-signed-dmg.sh "$VERSION" "unsigned/marshal-${VERSION}-macos-arm64-app.zip" "signed/marshal-${VERSION}-macos-arm64.dmg" notary/notary-log.json "$TEAM_ID" "$SUBMISSION_ID"
+        run: bash .github/scripts/tests/test-signed-pkg.sh "$VERSION" unsigned signed notary/notary-log.json "$TEAM_ID" "$SUBMISSION_ID"
 
   # writes SHA256SUMS over the set that is published: the Windows files as the
-  # build made them, each checked against its line in the build's SHA256SUMS, and
-  # the disk image as sign-macos signed it, checked against the hash that job
-  # handed over.
+  # build made them, the macOS files as sign-macos signed them. each file must
+  # match the hash its own job handed over.
   assemble-signed:
     name: Assemble The Signed Release Files
     needs: [plan, build, sign-macos, verify-macos]
@@ -695,7 +657,7 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: unsigned
-      - name: Download The Signed Disk Image
+      - name: Download The Signed Files
         uses: actions/download-artifact@v8
         with:
           name: marshal-macos-arm64-signed
@@ -703,15 +665,18 @@ jobs:
       - name: Check The Hashes And Write SHA256SUMS
         env:
           VERSION: ${{ needs.plan.outputs.version }}
-          MACOS_DMG_SHA256: ${{ needs.sign-macos.outputs.macos_dmg_sha256 }}
+          MACOS_SHA256: ${{ needs.sign-macos.outputs.macos_sha256 }}
+          MACOS_PKG_SHA256: ${{ needs.sign-macos.outputs.macos_pkg_sha256 }}
         run: |
           set -euo pipefail
           windows="marshal-${VERSION}-windows-x64.exe"
           windows_msi="marshal-${VERSION}-windows-x64.msi"
-          macos_dmg="marshal-${VERSION}-macos-arm64.dmg"
+          macos="marshal-${VERSION}-macos-arm64"
+          macos_pkg="marshal-${VERSION}-macos-arm64.pkg"
           signed_present="$(find signed -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
-          if [[ "$signed_present" != "$macos_dmg" ]]; then
-            echo "error: the signed files are not exactly ${macos_dmg}:" >&2
+          signed_expected="$(printf '%s\n' "$macos" "$macos_pkg" | LC_ALL=C sort)"
+          if [[ "$signed_present" != "$signed_expected" ]]; then
+            echo "error: the signed files are not exactly ${macos} and ${macos_pkg}:" >&2
             echo "$signed_present" >&2
             exit 1
           fi
@@ -729,8 +694,8 @@ jobs:
           windows_sha256="$(listed_hash "$windows")"
           windows_msi_sha256="$(listed_hash "$windows_msi")"
           mkdir dist
-          cp "unsigned/${windows}" "unsigned/${windows_msi}" "signed/${macos_dmg}" dist
-          bash .github/scripts/assemble-release.sh signed "$VERSION" dist "$windows_sha256" "$windows_msi_sha256" "$MACOS_DMG_SHA256"
+          cp "unsigned/${windows}" "unsigned/${windows_msi}" "signed/${macos}" "signed/${macos_pkg}" dist
+          bash .github/scripts/cli-recovery/assemble-release.sh "$VERSION" dist "$windows_sha256" "$windows_msi_sha256" "$MACOS_SHA256" "$MACOS_PKG_SHA256"
       - name: Upload The Signed Release Files
         uses: actions/upload-artifact@v7
         with:
@@ -764,16 +729,17 @@ jobs:
         run: |
           windows="marshal-${VERSION}-windows-x64.exe"
           windows_msi="marshal-${VERSION}-windows-x64.msi"
-          macos_dmg="marshal-${VERSION}-macos-arm64.dmg"
-          attested="$(printf '%s\n' "$windows" "$windows_msi" "$macos_dmg" | LC_ALL=C sort)"
-          expected="$(printf '%s\n' SHA256SUMS "$windows" "$windows_msi" "$macos_dmg" | LC_ALL=C sort)"
+          macos="marshal-${VERSION}-macos-arm64"
+          macos_pkg="marshal-${VERSION}-macos-arm64.pkg"
+          attested="$(printf '%s\n' "$macos" "$macos_pkg" "$windows" "$windows_msi" | LC_ALL=C sort)"
+          expected="$(printf '%s\n' SHA256SUMS "$macos" "$macos_pkg" "$windows" "$windows_msi" | LC_ALL=C sort)"
           present="$(find . -mindepth 1 -maxdepth 1 -printf '%P\n' | LC_ALL=C sort)"
           if [[ "$present" != "$expected" ]]; then
-            echo "error: the release files are not exactly ${windows}, ${windows_msi}, ${macos_dmg} and SHA256SUMS:" >&2
+            echo "error: the release files are not exactly ${macos}, ${macos_pkg}, ${windows}, ${windows_msi} and SHA256SUMS:" >&2
             echo "$present" >&2
             exit 1
           fi
-          for file in SHA256SUMS "$windows" "$windows_msi" "$macos_dmg"; do
+          for file in SHA256SUMS "$macos" "$macos_pkg" "$windows" "$windows_msi"; do
             if [[ ! -f "$file" ]]; then
               echo "error: ${file} is not a regular file" >&2
               exit 1
@@ -781,14 +747,15 @@ jobs:
           done
           listed="$(awk '{ print $2 }' SHA256SUMS | LC_ALL=C sort)"
           if [[ "$listed" != "$attested" ]]; then
-            echo "error: SHA256SUMS does not list exactly ${windows}, ${windows_msi} and ${macos_dmg}" >&2
+            echo "error: SHA256SUMS does not list exactly ${macos}, ${macos_pkg}, ${windows} and ${windows_msi}" >&2
             exit 1
           fi
           sha256sum --check --strict SHA256SUMS
           {
             echo "windows=${windows}"
             echo "windows_msi=${windows_msi}"
-            echo "macos_dmg=${macos_dmg}"
+            echo "macos=${macos}"
+            echo "macos_pkg=${macos_pkg}"
           } >> "$GITHUB_OUTPUT"
       - name: Attest The Build Provenance
         uses: actions/attest@v4
@@ -796,7 +763,8 @@ jobs:
           subject-path: |
             release-files/${{ steps.files.outputs.windows }}
             release-files/${{ steps.files.outputs.windows_msi }}
-            release-files/${{ steps.files.outputs.macos_dmg }}
+            release-files/${{ steps.files.outputs.macos }}
+            release-files/${{ steps.files.outputs.macos_pkg }}
 
   release:
     name: Release

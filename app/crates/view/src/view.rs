@@ -14,6 +14,7 @@ use crate::icon::{IconState, shape};
 use crate::input::{Cause, Connection, Input};
 use crate::menu::{Menu, menu};
 use crate::pools::{PoolCard, cards};
+use crate::settings::{self, SettingsTab};
 use crate::state::{Context, ImageStatus, Resident, Stop};
 use crate::summary::{Summary, summary};
 use crate::text::LOG_FOLDER;
@@ -46,17 +47,20 @@ pub struct Header {
     pub opens_on: Tab,
     /// the chip on the Tokens tab.
     pub tokens_chip: Option<String>,
+    /// the chip on the Settings tab.
+    pub settings_chip: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ListWindow {
     pub header: Header,
-    /// the first items of the scrolling list, over both tabs.
+    /// the first items of the scrolling list, over every tab.
     pub banners: Vec<Banner>,
     pub pools: Vec<PoolCard>,
     /// what stands where the pools would be when there are none.
     pub pools_note: Option<String>,
     pub tokens: TokensTab,
+    pub settings: SettingsTab,
     /// whether the list is the last one heard: its words take the low-emphasis colour.
     pub stale: bool,
 }
@@ -72,6 +76,8 @@ pub enum Body {
 pub struct Window {
     pub body: Body,
     pub footer: Footer,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor: Option<crate::EditorAccess>,
 }
 
 /// something that needs the user's eye, which the live region says when it appears.
@@ -182,6 +188,7 @@ fn header(
     summary: &Summary,
     banners: &[Banner],
     tokens: &TokensTab,
+    settings: &SettingsTab,
 ) -> Header {
     let banner_leads = banners.iter().any(|banner| {
         banner.action.as_ref().is_some_and(|action| {
@@ -222,6 +229,7 @@ fn header(
             Tab::Pools
         },
         tokens_chip: tokens.chip.clone(),
+        settings_chip: settings.chip.clone(),
     }
 }
 
@@ -287,6 +295,17 @@ fn github_attention(context: &Context<'_>, cards: &[PoolCard]) -> Vec<Attention>
 #[must_use]
 pub fn build(input: &Input<'_>) -> View {
     let context = Context::new(input);
+    let editor = input.editor.then(|| {
+        crate::editor_access(
+            if cfg!(target_os = "macos") {
+                marshal_cli::profile::Profile::Axmc
+            } else {
+                marshal_cli::profile::Profile::Axpc
+            },
+            input.connection,
+            input.snapshot,
+        )
+    });
     let summary = summary(&context);
     let footer = footer(&context);
     let menu = menu(&context, &summary.menu_line);
@@ -300,6 +319,7 @@ pub fn build(input: &Input<'_>) -> View {
             window: Window {
                 body: Body::Full(full_window(&context)),
                 footer,
+                editor,
             },
             summary,
             attention: Vec::new(),
@@ -309,7 +329,8 @@ pub fn build(input: &Input<'_>) -> View {
     }
     let banners = banners(&context);
     let tokens = tokens::tab(&context);
-    let header = header(&context, &summary, &banners, &tokens);
+    let settings = settings::tab(&context);
+    let header = header(&context, &summary, &banners, &tokens, &settings);
     let pools = cards(&context);
     View {
         icon,
@@ -325,9 +346,11 @@ pub fn build(input: &Input<'_>) -> View {
                 pools_note: pools_note(&context),
                 pools,
                 tokens,
+                settings,
                 stale: context.is_stale(),
             }),
             footer,
+            editor,
         },
         summary,
     }

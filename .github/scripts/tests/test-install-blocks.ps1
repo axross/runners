@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    runs the Windows install blocks of docs/operations/cli.md against stand-ins.
+    runs the Windows install blocks of docs/marshal-cli/install-on-windows.md against stand-ins.
 
 .DESCRIPTION
     runs the optional check and uninstall blocks, each extracted from the
@@ -9,10 +9,10 @@
     Unblock-File, Get-Process, and the Windows Installer COM object. each stand-in
     records its calls, so every refusal is produced and a case asserts what ran
     and what did not. LOCALAPPDATA points into a temporary directory. runs under
-    Windows PowerShell 5.1 and PowerShell 7. see docs/operations/cli.md.
+    Windows PowerShell 5.1 and PowerShell 7. see docs/marshal-cli/install-on-windows.md.
 #>
 param(
-    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/operations/cli.md')
+    [string]$Document = (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'docs/marshal-cli/install-on-windows.md')
 )
 
 $ErrorActionPreference = 'Stop'

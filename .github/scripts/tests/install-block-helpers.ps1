@@ -1,5 +1,5 @@
 # helpers that the Windows install block tests dot-source: extracting a
-# documented block from docs/operations/cli.md, replacing its assignment lines,
+# documented block from docs/marshal-cli/install-on-windows.md, replacing its assignment lines,
 # and the stand-in for gh. written for Windows PowerShell 5.1 and 7.
 
 # ends the script with exit code 2 and one line when jq is not on PATH, because the

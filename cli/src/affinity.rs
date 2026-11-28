@@ -1,5 +1,5 @@
 //! where each slot's CPUs start, shared by the plan summary and the backend, and which
-//! allowed CPUs it takes; see `docs/operations/cli.md`.
+//! allowed CPUs it takes; see `docs/marshal-cli/pool-runtime.md`.
 
 use std::fmt;
 
@@ -284,8 +284,10 @@ mod tests {
         Entry {
             index: 0,
             path: String::new(),
-            owner: String::new(),
-            repository: String::new(),
+            target: crate::validate::PoolTarget::Repository {
+                owner: String::new(),
+                repository: String::new(),
+            },
             name: String::new(),
             slots,
             token_path: None,

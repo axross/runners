@@ -1,7 +1,7 @@
 //! the runner releases this CLI has declared: each one's release date and the
 //! SHA-256 of its osx-arm64 archive, the version the Linux image and the macOS
 //! golden VM both install, and the debug-only override of that declaration; see
-//! `docs/operations/cli.md`.
+//! `docs/marshal-cli/macos-pools.md`.
 
 /// the variable that declares another runner in a debug build.
 pub const TEST_RUNNER_VARIABLE: &str = "MARSHAL_TEST_RUNNER";

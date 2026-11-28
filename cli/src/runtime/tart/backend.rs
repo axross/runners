@@ -1,6 +1,6 @@
 //! the Tart backend: a job VM per job, cloned from the golden VM and booted for one
 //! job, with every Docker command of the run contract run inside it through the
-//! guest agent; `docs/operations/cli.md` describes the steps, the budgets and the
+//! guest agent; `docs/marshal-cli/tart-backend.md` describes the steps, the budgets and the
 //! texts.
 
 use std::cell::{Cell, RefCell};
@@ -509,30 +509,16 @@ impl<C: Clock> TartBackend<C> {
                 BackendError::new("no golden VM that runs here was found when the VM was cloned")
             })?
             .to_string();
-        let vcpus = u32::try_from(request.vcpus)
-            .map_err(|_| BackendError::new("the pool's vCPU count is out of range"))?;
-        let disk_gb = request
-            .disk_gb
-            .ok_or_else(|| BackendError::new("the pool has no disk size for its VMs"))?;
+        let (vcpus, disk_gb) = vm_resources(request)?;
         let vm = job_vm_name(&request.host.pool, request.host.slot, self.clock.now());
         host.vm.replace(Some(vm.clone()));
         self.client
             .clone_vm(&source, &vm)
             .await
             .map_err(|error| BackendError::new(text_of(&error)))?;
-        self.client
-            .set_resources(&vm, vcpus, request.memory_gb, disk_gb)
-            .await
-            .map_err(|error| BackendError::new(text_of(&error)))?;
-        let started = if request.diagnostic {
-            HeldVm::start_diagnostic(&self.client, &self.launcher, &vm, &request.host.pool)
-        } else {
-            HeldVm::start(&self.client, &self.launcher, &vm)
-        };
-        let held = started
-            .map(Rc::new)
-            .map_err(|error| boot_failure(&vm, &BootEnd::NoAnswer(text_of(&error))))?;
-        host.hold.replace(Some(held.clone()));
+        let held = self
+            .start_sized(request, host, &vm, vcpus, disk_gb, request.diagnostic)
+            .await?;
         self.log
             .info(&format!("{label}: booting job VM {vm} from {source}."));
         match self.wait_for_agent(&vm, &held).await {
@@ -542,6 +528,33 @@ impl<C: Clock> TartBackend<C> {
             }
             Err(end) => Err(boot_failure(&vm, &end)),
         }
+    }
+
+    /// sizes the cloned job VM and starts its `tart run` under the launcher, as a
+    /// diagnostics-enabled pool's when `diagnostic` is set, holding it in `host`.
+    async fn start_sized(
+        &self,
+        request: &HostRequest,
+        host: &Host,
+        vm: &str,
+        vcpus: u32,
+        disk_gb: u32,
+        diagnostic: bool,
+    ) -> Result<Rc<HeldVm>, BackendError> {
+        self.client
+            .set_resources(vm, vcpus, request.memory_gb, disk_gb)
+            .await
+            .map_err(|error| BackendError::new(text_of(&error)))?;
+        let started = if diagnostic {
+            HeldVm::start_diagnostic(&self.client, &self.launcher, vm, &request.host.pool)
+        } else {
+            HeldVm::start(&self.client, &self.launcher, vm)
+        };
+        let held = started
+            .map(Rc::new)
+            .map_err(|error| boot_failure(vm, &BootEnd::NoAnswer(text_of(&error))))?;
+        host.hold.replace(Some(held.clone()));
+        Ok(held)
     }
 
     /// takes a place under the macOS VM limit and clones the golden macOS VM into it,
@@ -590,19 +603,10 @@ impl<C: Clock> TartBackend<C> {
     ) -> Result<(), BackendError> {
         let label = format!("{} slot {}", request.host.pool, request.host.slot);
         let Placed { vm, golden, parsed } = placed;
-        let vcpus = u32::try_from(request.vcpus)
-            .map_err(|_| BackendError::new("the pool's vCPU count is out of range"))?;
-        let disk_gb = request
-            .disk_gb
-            .ok_or_else(|| BackendError::new("the pool has no disk size for its VMs"))?;
-        self.client
-            .set_resources(&vm, vcpus, request.memory_gb, disk_gb)
-            .await
-            .map_err(|error| BackendError::new(text_of(&error)))?;
-        let held = HeldVm::start(&self.client, &self.launcher, &vm)
-            .map(Rc::new)
-            .map_err(|error| boot_failure(&vm, &BootEnd::NoAnswer(text_of(&error))))?;
-        host.hold.replace(Some(held.clone()));
+        let (vcpus, disk_gb) = vm_resources(request)?;
+        let held = self
+            .start_sized(request, host, &vm, vcpus, disk_gb, false)
+            .await?;
         self.log.info(&format!(
             "{label}: booting macOS job VM {vm} from {golden}."
         ));
@@ -613,7 +617,7 @@ impl<C: Clock> TartBackend<C> {
         };
         if let Err(end) = wait_for_agent(&self.client, &self.clock, wait, &vm, &held).await {
             if let BootEnd::Ended(ended) = &end
-                && is_vm_limit_refusal(&format!("{}\n{}", ended.stdout, ended.stderr))
+                && is_vm_limit_refusal(&ended.output())
             {
                 let message = vm_limit_message(&ended.error_text());
                 self.log.warn(&format!("{label}: {message}"));
@@ -926,6 +930,16 @@ impl<C: Clock> TartBackend<C> {
         }
         groups
     }
+}
+
+/// a job VM's vCPU count and disk size in GB, as `tart set` takes them.
+fn vm_resources(request: &HostRequest) -> Result<(u32, u32), BackendError> {
+    let vcpus = u32::try_from(request.vcpus)
+        .map_err(|_| BackendError::new("the pool's vCPU count is out of range"))?;
+    let disk_gb = request
+        .disk_gb
+        .ok_or_else(|| BackendError::new("the pool has no disk size for its VMs"))?;
+    Ok((vcpus, disk_gb))
 }
 
 fn boot_failure(vm: &str, end: &BootEnd) -> BackendError {

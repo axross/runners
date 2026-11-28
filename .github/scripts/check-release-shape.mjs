@@ -1,4 +1,4 @@
-// fails unless the release workflows keep the shape docs/conventions/security.md
+// fails unless the release workflows keep the shape docs/security/release-authority.md
 // records: which job may declare the `release` Environment and read the signing
 // secrets, what that job may hold and run, how the signing jobs chain to the
 // attest and release jobs, and that no job can bypass a failed signing step.
@@ -20,10 +20,9 @@
 //     `read -r "$name"` and `printf -v "$name"`;
 //   - an assignment through `${PATH:=...}`, and any environment variable other
 //     than PATH, BASH_ENV and ENV.
-// it also does not see a write to SHA256SUMS in release-build.yaml's assemble
-// job other than by a redirection, tee, cp or mv, or a step condition in attest
-// or release that skips a step, such as `if: false`. a later signing job or step
-// (W4, M4) is added to this check in its own pull request, under REVIEW.md's
+// it also does not see a write to SHA256SUMS in either build's assemble
+// job other than by a redirection, tee, cp or mv. a later signing job or step
+// (W4, M2, M4) is added to this check in its own pull request, under REVIEW.md's
 // release lens.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -40,6 +39,7 @@ const GUARD =
   "github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''";
 const SIGNING_ENVIRONMENT = "release";
 const SIGNING_JOB = "sign-macos";
+const HISTORICAL_SOURCE = "dc8e1ebcc0722997206487f3dcca2ae7e519cf02";
 const NEW_JOBS = ["sign-macos", "verify-macos", "assemble-signed"];
 const SIGNING_ACTIONS = [
   "actions/download-artifact",
@@ -48,16 +48,13 @@ const SIGNING_ACTIONS = [
 const BIN_TOOLS = [
   "security",
   "codesign",
+  "pkgbuild",
   "openssl",
   "plutil",
   "shasum",
   "xcrun",
-  "ditto",
-  "hdiutil",
 ];
-// sign-macos calls nothing in /usr/sbin; verify-macos's script does, and the
-// app job measures those tools.
-const SBIN_TOOLS = [];
+const SBIN_TOOLS = ["pkgutil"];
 const XCRUN_TOOLS = ["notarytool", "stapler"];
 const PACKAGE_MANAGERS = [
   "npm",
@@ -104,7 +101,6 @@ const ALLOWED_COMMANDS = new Set([
   "cp",
   "mv",
   "chmod",
-  "base64",
   "mktemp",
   "find",
   "sort",
@@ -117,8 +113,6 @@ const ALLOWED_COMMANDS = new Set([
   "tail",
   "cut",
   "date",
-  "ln",
-  "sleep",
   "true",
   "false",
   "exit",
@@ -143,15 +137,20 @@ const SHELL_KEYWORDS = new Set([
   "{",
   "time",
 ]);
-// the identities step hands the name the later steps need on through
+// the identities step hands the two names the later steps need on through
 // GITHUB_ENV, in one block of `echo "NAME=${variable}"` lines.
-const EXPORTED = ["APPLICATION_IDENTITY"];
+const EXPORTED = ["APPLICATION_IDENTITY", "INSTALLER_IDENTITY_NAME"];
 const EXPORT_BLOCK = new RegExp(
   `\\{\\n(?:[ \\t]*echo "(?:${EXPORTED.join("|")})=\\$\\{[a-z_]+\\}"\\n)+[ \\t]*\\} >>"\\$GITHUB_ENV"`,
 );
 const GUARD_CONTEXT = "every new job";
 // the jobs that run every step they have: a step condition could skip a check.
-const CONDITION_FREE_JOBS = ["verify-macos", "assemble-signed"];
+const CONDITION_FREE_JOBS = [
+  "verify-macos",
+  "assemble-signed",
+  "attest",
+  "release",
+];
 // the runner labels of the jobs after sign-macos, all GitHub-hosted. sign-macos
 // has its own rule.
 const RUNNERS = {
@@ -194,8 +193,10 @@ for (const file of readdirSync(workflowDirectory)
 }
 const release = workflows["release.yaml"];
 const releaseBuild = workflows["release-build.yaml"];
+const recoveryBuild = workflows["cli-recovery-build.yaml"];
 if (!release) problem("release.yaml is missing or unreadable");
 if (!releaseBuild) problem("release-build.yaml is missing or unreadable");
+if (!recoveryBuild) problem("cli-recovery-build.yaml is missing or unreadable");
 
 const jobsOf = (doc) => Object.entries(doc?.jobs ?? {});
 const stepsOf = (job) => (Array.isArray(job?.steps) ? job.steps : []);
@@ -219,6 +220,7 @@ const triggersOf = (doc) => {
 
 // ---- the Environment -----------------------------------------------------
 
+/** detects an Environment declared on a job or a misplaced step. */
 function declaresEnvironment(doc) {
   return jobsOf(doc).some(
     ([, job]) =>
@@ -299,7 +301,7 @@ for (const [file, doc] of Object.entries(workflows)) {
 // `secrets` context, or by passing all of them (`secrets: inherit`) to a called
 // workflow. every workflow file is read, and none but release.yaml's sign-macos
 // is exempt. this reads the parsed documents, not the scripts' text.
-const SECRET_READ = /\bsecrets\s*(?:\.\s*MACOS_|\[)|\(\s*secrets\s*\)/i;
+const SECRET_READ = /\bsecrets\s*(?:\.\s*APPLE_|\[)|\(\s*secrets\s*\)/i;
 function secretReads(value, path = "") {
   if (typeof value === "string") {
     return SECRET_READ.test(value) ? [`${path} reads ${value.trim()}`] : [];
@@ -326,8 +328,6 @@ for (const [file, doc] of Object.entries(workflows)) {
     problem(`${file}: ${use}; only ${SIGNING_JOB} may read a signing secret`);
   }
 }
-
-// ---- sign-macos ----------------------------------------------------------
 
 const scriptsOf = (job) =>
   stepsOf(job).filter((step) => typeof step.run === "string");
@@ -365,12 +365,20 @@ const BLANK = "\u0001";
 // a quoted string that starts with `-` could be an option, so it is kept.
 const OPTION_LIKE = /^-[^\s"'`()\\]*$/;
 
-// the script with the text of every quoted string blanked, so that a `;` or a
-// tool's name inside a message is not read as a command. a `$(...)` inside a
-// string is kept, and so is a string that is only a tool's path or that could
-// be an option, which find's arguments are checked for.
+/**
+ * blanks quoted text without hiding command substitutions, tool paths or
+ * option-like strings from the command checks.
+ * @throws {Error} for backticks, unterminated quotes or arithmetic, or a
+ * command inside arithmetic that blanking would conceal.
+ */
 function skeleton(script) {
   const source = script.replace(/\\\n/g, " ");
+  /**
+   * returns a blanked span and the offset after its closing parenthesis, or
+   * the end of source for the outer span.
+   * @throws {Error} for backticks, unterminated quotes or arithmetic, or a
+   * command inside arithmetic that blanking would conceal.
+   */
   function scan(start, closer) {
     let out = "";
     let i = start;
@@ -497,8 +505,11 @@ function substitutionsOf(span) {
   return found;
 }
 
-// every word a script uses as a command, the functions it defines, and the
-// commands it uses in a way this check will not read (`refused`).
+/**
+ * returns command words, local function names and refused command forms,
+ * including commands held in traps and substitutions.
+ * @throws {Error} when skeleton cannot safely blank the script or a trap body.
+ */
 function commandWords(script) {
   let flat = skeleton(script);
   const functions = new Set();
@@ -594,6 +605,7 @@ function commandWords(script) {
   return { words, functions, refused };
 }
 
+/** lists tools referenced through a system-tool prefix, excluding comments. */
 function usedTools(script, variable) {
   const found = new Set();
   const pattern = new RegExp(`\\$\\{?${variable}\\}?/([A-Za-z0-9_]+)`, "g");
@@ -603,6 +615,137 @@ function usedTools(script, variable) {
   return found;
 }
 
+/**
+ * records a signing script's command and environment violations in problems;
+ * unsupported shell syntax is reported without executing it.
+ */
+function checkSigningScript(where, label, script) {
+  const first = script.split("\n")[0];
+  if (!/^# sign-macos: [a-z]+$/.test(first)) {
+    problem(
+      `${where}: the script of step "${label}" does not start with a "# sign-macos: <name>" marker line`,
+    );
+  }
+  // the stand-in prefixes: literal defaults, set by nothing else.
+  for (const [variable, fallback] of [
+    ["SYSTEM_BIN", "/usr/bin"],
+    ["SYSTEM_SBIN", "/usr/sbin"],
+  ]) {
+    const uses = new RegExp(`\\$\\{?${variable}\\b`).test(script);
+    const lines = codeLines(script).map((line) => line.trim());
+    if (uses && !lines.includes(`: "\${${variable}:=${fallback}}"`)) {
+      problem(
+        `${where}: the script of step "${label}" uses ${variable} without the line : "\${${variable}:=${fallback}}"`,
+      );
+    }
+    for (const match of script.matchAll(
+      new RegExp(`\\$\\{${variable}[:=?+-]+([^}]*)\\}`, "g"),
+    )) {
+      if (match[0] !== `\${${variable}:=${fallback}}`) {
+        problem(
+          `${where}: the script of step "${label}" gives ${variable} a default other than ${fallback}: ${match[0]}`,
+        );
+      }
+    }
+    if (
+      new RegExp(`\\b${variable}\\s*=`).test(script) ||
+      new RegExp(`\\bexport\\s+${variable}\\b`).test(script)
+    ) {
+      problem(`${where}: the script of step "${label}" assigns ${variable}`);
+    }
+  }
+  if (
+    /\.github\/|GITHUB_WORKSPACE|github\.workspace/.test(
+      codeLines(script).join("\n"),
+    )
+  ) {
+    problem(
+      `${where}: the script of step "${label}" refers to the repository's files`,
+    );
+  }
+
+  // the environment the script's commands run in.
+  const code = codeLines(script).join("\n");
+  if (/\bGITHUB_PATH\b/.test(code)) {
+    problem(
+      `${where}: the script of step "${label}" refers to GITHUB_PATH, which could change where the tools are found`,
+    );
+  }
+  if (EXPORT_BLOCK.test(code)) {
+    // the one block that sets the two names the later steps read.
+    if (code.replace(EXPORT_BLOCK, "").includes("GITHUB_ENV"))
+      problem(
+        `${where}: the script of step "${label}" writes GITHUB_ENV outside its block of ${EXPORTED.join(" and ")}`,
+      );
+  } else if (/\bGITHUB_ENV\b/.test(code)) {
+    problem(
+      `${where}: the script of step "${label}" refers to GITHUB_ENV other than to set ${EXPORTED.join(" and ")}`,
+    );
+  }
+  for (const match of code.matchAll(
+    /(?<![A-Za-z0-9_])(PATH|BASH_ENV|ENV)\+?=/g,
+  )) {
+    problem(`${where}: the script of step "${label}" assigns ${match[1]}`);
+  }
+  for (const match of code.matchAll(NAMING_COMMAND)) {
+    problem(
+      `${where}: the script of step "${label}" names ${match[2]} to ${match[1]}, which could assign it`,
+    );
+  }
+  for (const match of code.matchAll(PRINTF_TO_VARIABLE)) {
+    problem(
+      `${where}: the script of step "${label}" names ${match[1]} to printf -v, which assigns it`,
+    );
+  }
+
+  let analysis;
+  try {
+    analysis = commandWords(script);
+  } catch (error) {
+    problem(
+      `${where}: the script of step "${label}" cannot be analysed: ${error.message}`,
+    );
+    return;
+  }
+  for (const message of analysis.refused) {
+    problem(`${where}: step "${label}" ${message}`);
+  }
+  for (const word of analysis.words) {
+    const bare = word.replaceAll('"', "");
+    if (TOOL_PATH.test(bare) && (word === bare || word === `"${bare}"`))
+      continue;
+    if (analysis.functions.has(bare) || ALLOWED_COMMANDS.has(bare)) continue;
+    if (PACKAGE_MANAGERS.includes(bare)) {
+      problem(`${where}: step "${label}" runs the package manager ${bare}`);
+    } else if (FETCHERS.includes(bare)) {
+      problem(
+        `${where}: step "${label}" runs ${bare}; the job downloads nothing but its artifacts`,
+      );
+    } else if (BIN_TOOLS.includes(bare) || SBIN_TOOLS.includes(bare)) {
+      problem(
+        `${where}: step "${label}" calls ${bare} by name, not by its system path`,
+      );
+    } else if (
+      INTERPRETERS.includes(bare) ||
+      bare.startsWith("./") ||
+      bare.startsWith("../") ||
+      bare.includes(".github")
+    ) {
+      problem(
+        `${where}: step "${label}" runs ${bare}, which could run a file from the repository`,
+      );
+    } else {
+      problem(
+        `${where}: step "${label}" runs ${bare}, which is neither a shell built-in, a base utility nor a tool at its system path`,
+      );
+    }
+  }
+}
+
+/**
+ * records signing-job privilege, artifact, cleanup and tool-inventory
+ * violations in problems; individual script boundaries are checked separately.
+ */
 function checkSigningJob() {
   if (!signing) {
     problem(`release.yaml has no ${SIGNING_JOB} job`);
@@ -658,6 +801,15 @@ function checkSigningJob() {
     if (typeof step.run === "string") {
       if (step.run.includes("${{"))
         problem(`${where}: step "${label}" expands \${{ }} inside run`);
+      for (const [name, value] of Object.entries(step.env ?? {})) {
+        if (!name.startsWith("APPLE_")) continue;
+        const context = name === "APPLE_TEAM_ID" ? "vars" : "secrets";
+        if (value !== `\${{ ${context}.${name} }}`) {
+          problem(
+            `${where}: step "${label}" must read ${name} from ${context}.${name}`,
+          );
+        }
+      }
       scripts.push({ label, script: step.run, step });
     }
   }
@@ -665,130 +817,9 @@ function checkSigningJob() {
   const bin = new Set();
   const sbin = new Set();
   for (const { label, script } of scripts) {
-    const first = script.split("\n")[0];
-    if (!/^# sign-macos: [a-z]+$/.test(first)) {
-      problem(
-        `${where}: the script of step "${label}" does not start with a "# sign-macos: <name>" marker line`,
-      );
-    }
+    checkSigningScript(where, label, script);
     for (const tool of usedTools(script, "SYSTEM_BIN")) bin.add(tool);
     for (const tool of usedTools(script, "SYSTEM_SBIN")) sbin.add(tool);
-
-    // the stand-in prefixes: literal defaults, set by nothing else.
-    for (const [variable, fallback] of [
-      ["SYSTEM_BIN", "/usr/bin"],
-      ["SYSTEM_SBIN", "/usr/sbin"],
-    ]) {
-      const uses = new RegExp(`\\$\\{?${variable}\\b`).test(script);
-      const lines = codeLines(script).map((line) => line.trim());
-      if (uses && !lines.includes(`: "\${${variable}:=${fallback}}"`)) {
-        problem(
-          `${where}: the script of step "${label}" uses ${variable} without the line : "\${${variable}:=${fallback}}"`,
-        );
-      }
-      for (const match of script.matchAll(
-        new RegExp(`\\$\\{${variable}[:=?+-]+([^}]*)\\}`, "g"),
-      )) {
-        if (match[0] !== `\${${variable}:=${fallback}}`) {
-          problem(
-            `${where}: the script of step "${label}" gives ${variable} a default other than ${fallback}: ${match[0]}`,
-          );
-        }
-      }
-      if (
-        new RegExp(`\\b${variable}\\s*=`).test(script) ||
-        new RegExp(`\\bexport\\s+${variable}\\b`).test(script)
-      ) {
-        problem(`${where}: the script of step "${label}" assigns ${variable}`);
-      }
-    }
-    if (
-      /\.github\/|GITHUB_WORKSPACE|github\.workspace/.test(
-        codeLines(script).join("\n"),
-      )
-    ) {
-      problem(
-        `${where}: the script of step "${label}" refers to the repository's files`,
-      );
-    }
-
-    // the environment the script's commands run in.
-    const code = codeLines(script).join("\n");
-    if (/\bGITHUB_PATH\b/.test(code)) {
-      problem(
-        `${where}: the script of step "${label}" refers to GITHUB_PATH, which could change where the tools are found`,
-      );
-    }
-    if (EXPORT_BLOCK.test(code)) {
-      // the one block that sets the name the later steps read.
-      if (code.replace(EXPORT_BLOCK, "").includes("GITHUB_ENV"))
-        problem(
-          `${where}: the script of step "${label}" writes GITHUB_ENV outside its block of ${EXPORTED.join(" and ")}`,
-        );
-    } else if (/\bGITHUB_ENV\b/.test(code)) {
-      problem(
-        `${where}: the script of step "${label}" refers to GITHUB_ENV other than to set ${EXPORTED.join(" and ")}`,
-      );
-    }
-    for (const match of code.matchAll(
-      /(?<![A-Za-z0-9_])(PATH|BASH_ENV|ENV)\+?=/g,
-    )) {
-      problem(`${where}: the script of step "${label}" assigns ${match[1]}`);
-    }
-    for (const match of code.matchAll(NAMING_COMMAND)) {
-      problem(
-        `${where}: the script of step "${label}" names ${match[2]} to ${match[1]}, which could assign it`,
-      );
-    }
-    for (const match of code.matchAll(PRINTF_TO_VARIABLE)) {
-      problem(
-        `${where}: the script of step "${label}" names ${match[1]} to printf -v, which assigns it`,
-      );
-    }
-
-    // commands.
-    let analysis;
-    try {
-      analysis = commandWords(script);
-    } catch (error) {
-      problem(
-        `${where}: the script of step "${label}" cannot be analysed: ${error.message}`,
-      );
-      continue;
-    }
-    for (const message of analysis.refused) {
-      problem(`${where}: step "${label}" ${message}`);
-    }
-    for (const word of analysis.words) {
-      const bare = word.replaceAll('"', "");
-      if (TOOL_PATH.test(bare) && (word === bare || word === `"${bare}"`))
-        continue;
-      if (analysis.functions.has(bare) || ALLOWED_COMMANDS.has(bare)) continue;
-      if (PACKAGE_MANAGERS.includes(bare)) {
-        problem(`${where}: step "${label}" runs the package manager ${bare}`);
-      } else if (FETCHERS.includes(bare)) {
-        problem(
-          `${where}: step "${label}" runs ${bare}; the job downloads nothing but its artifacts`,
-        );
-      } else if (BIN_TOOLS.includes(bare) || SBIN_TOOLS.includes(bare)) {
-        problem(
-          `${where}: step "${label}" calls ${bare} by name, not by its system path`,
-        );
-      } else if (
-        INTERPRETERS.includes(bare) ||
-        bare.startsWith("./") ||
-        bare.startsWith("../") ||
-        bare.includes(".github")
-      ) {
-        problem(
-          `${where}: step "${label}" runs ${bare}, which could run a file from the repository`,
-        );
-      } else {
-        problem(
-          `${where}: step "${label}" runs ${bare}, which is neither a shell built-in, a base utility nor a tool at its system path`,
-        );
-      }
-    }
   }
   // the only steps that carry a condition. any other could skip a signing step
   // (`if: false`) or let one run after a failure.
@@ -878,77 +909,301 @@ function checkSigningJob() {
         );
   }
 
-  checkDiskImageArguments(where, scripts);
+  checkPackageArguments(where, scripts);
 }
 
-// ---- the disk image ------------------------------------------------------
-
-// the arguments of the `until <hdiutil> create ...; do` line of a script, which
-// retries the command, after the tool's path, or null when the script has none or
-// more than one.
-function hdiutilCreate(script) {
-  const matches = [
-    ...codeLines(script)
-      .join("\n")
-      .matchAll(
-        /^\s*until\s+"?[^\s"]*hdiutil"?\s+create\s+([^;\n]*);\s*do\s*$/gm,
-      ),
-  ];
-  return matches.length === 1 ? matches[0][1].trim() : null;
+// the arguments of the command that starts a line with `command`, with
+// continuation lines joined.
+function invocationOf(script, command) {
+  const lines = script.split("\n");
+  const start = lines.findIndex(
+    (line) =>
+      line.trimStart().startsWith(`${command} `) ||
+      line.trim() === `${command} \\`,
+  );
+  if (start === -1) return null;
+  let joined = "";
+  for (let i = start; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    joined += ` ${line.replace(/\\$/, "")}`;
+    if (!line.endsWith("\\")) break;
+  }
+  return joined.trim().split(/\s+/).slice(1);
 }
 
-// the app identifier sign-macos signs the app under, and the disk image's.
-const APP_IDENTIFIER = "app.axross.marshal";
-const DMG_IDENTIFIER = "app.axross.marshal.dmg";
-
-function checkDiskImageArguments(where, scripts) {
+/**
+ * records signed-package layout and argument differences from the immutable
+ * historical builder in problems; only signing options may differ.
+ */
+function checkPackageArguments(where, scripts) {
+  // the builder lives only in the pinned historical checkout. these are its
+  // package contract, not a second executable copy of that builder.
+  const identifier = "app.axross.marshal";
   for (const { label, script } of scripts) {
     for (const match of script.matchAll(/^\s*identifier="([^"]*)"\s*$/gm)) {
-      if (match[1] !== APP_IDENTIFIER)
+      if (match[1] !== identifier)
         problem(
-          `${where}: step "${label}" sets identifier "${match[1]}", not "${APP_IDENTIFIER}"`,
+          `${where}: step "${label}" sets identifier "${match[1]}", not build-pkg.sh's "${identifier}"`,
         );
     }
   }
-  const imaging = scripts.find(
-    (entry) => entry.script.split("\n")[0] === "# sign-macos: dmg",
+  const layout = [
+    'mkdir -p "${stage}/usr/local/bin"',
+    'cp "$binary" "${stage}/usr/local/bin/marshal"',
+    'chmod 0755 "$stage" "${stage}/usr" "${stage}/usr/local" "${stage}/usr/local/bin" "${stage}/usr/local/bin/marshal"',
+  ];
+  const pkgbuildArguments = [
+    "--root",
+    '"$stage"',
+    "--identifier",
+    '"$identifier"',
+    "--version",
+    '"$version"',
+    "--install-location",
+    "/",
+    "--ownership",
+    "recommended",
+    '"$output"',
+  ];
+  const packaging = scripts.find(
+    (entry) => entry.script.split("\n")[0] === "# sign-macos: package",
   );
-  if (!imaging) {
-    problem(`${where} has no "# sign-macos: dmg" script`);
+  if (!packaging) {
+    problem(`${where} has no "# sign-macos: package" script`);
     return;
   }
-  if (!imaging.script.includes(`--identifier ${DMG_IDENTIFIER} `)) {
+  const lines = packaging.script.split("\n").map((line) => line.trim());
+  const at = lines.indexOf(layout[0]);
+  if (at === -1 || lines[at + 1] !== layout[1] || lines[at + 2] !== layout[2]) {
     problem(
-      `${where}: the dmg script does not sign the disk image under ${DMG_IDENTIFIER}`,
+      `${where}: the package script's staging lines differ from build-pkg.sh's:\n    ${layout.join("\n    ")}`,
     );
   }
-  const signed = hdiutilCreate(imaging.script);
+  const signed = invocationOf(packaging.script, '"$SYSTEM_BIN/pkgbuild"');
   if (!signed) {
     problem(
-      `${where}: the dmg script does not call hdiutil create exactly once`,
+      `${where}: the package script does not call "$SYSTEM_BIN/pkgbuild"`,
     );
     return;
   }
-  const appJob = jobsOf(releaseBuild).find(([id]) => id === "app-macos")?.[1];
-  const built = scriptsOf(appJob)
-    .map((step) => hdiutilCreate(step.run))
-    .filter(Boolean);
-  if (built.length !== 1) {
+  const options = ["--sign", "--keychain"];
+  const counts = options.map(
+    (option) => signed.filter((argument) => argument === option).length,
+  );
+  if (counts.some((count) => count !== 1)) {
     problem(
-      "release-build.yaml's app-macos job does not call hdiutil create exactly once",
+      `${where}: the package script must pass --sign and --keychain to pkgbuild once each`,
     );
-    return;
   }
-  if (signed !== built[0]) {
+  const rest = [];
+  for (let i = 0; i < signed.length; i += 1) {
+    if (options.includes(signed[i])) i += 1;
+    else rest.push(signed[i]);
+  }
+  if (rest.join(" ") !== pkgbuildArguments.join(" ")) {
     problem(
-      `${where}: hdiutil create's arguments differ from the app job's:\n    ${signed}\n    ${built[0]}`,
+      `${where}: pkgbuild's arguments differ from build-pkg.sh's apart from --sign and --keychain:\n    ${rest.join(" ")}\n    ${pkgbuildArguments.join(" ")}`,
     );
   }
 }
 
-// ---- the other new jobs, and the chain -----------------------------------
+// binds the unsigned package contract to the complete immutable historical tree;
+// current app packaging is not an alternative source for it.
+function checkHistoricalBuild() {
+  for (const id of ["dependencies", "build"]) {
+    const job = recoveryBuild.jobs?.[id];
+    const steps = stepsOf(job);
+    const checkouts = steps.filter(
+      (step) =>
+        text(step.uses).startsWith("actions/checkout@") &&
+        step.with?.path === "historical",
+    );
+    if (
+      checkouts.length !== 1 ||
+      checkouts[0].with?.repository !== "axross/runners" ||
+      checkouts[0].with?.ref !== HISTORICAL_SOURCE ||
+      checkouts[0].with?.["persist-credentials"] !== "false"
+    ) {
+      problem(
+        `cli-recovery-build.yaml ${id} must check out the complete pinned historical source without credentials`,
+      );
+    }
+    const bindings = scriptsOf(job).filter((step) =>
+      step.run.includes(".github/scripts/cli-recovery/prepare-source.sh"),
+    );
+    if (
+      "if" in (job ?? {}) ||
+      "continue-on-error" in (job ?? {}) ||
+      bindings.some((step) => "if" in step || "continue-on-error" in step)
+    ) {
+      problem(
+        `cli-recovery-build.yaml ${id} historical source binding must not be skippable`,
+      );
+    }
+    for (const step of bindings) {
+      if (
+        step["working-directory"] !== "." ||
+        (step.shell ??
+          job?.defaults?.run?.shell ??
+          recoveryBuild.defaults?.run?.shell) !== "bash" ||
+        step.env?.VERSION !== "${{ inputs.version }}"
+      ) {
+        problem(
+          `cli-recovery-build.yaml ${id} historical source binding must use bash at the workflow root with the input version`,
+        );
+      }
+    }
+    const expectedPhases =
+      id === "dependencies"
+        ? ["prepare", "verify"]
+        : ["prepare", "verify", "verify"];
+    const phases = bindings.map((step) => {
+      const lines = codeLines(step.run)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (
+        lines[0] === 'echo "Current workflow/tag commit: ${WORKFLOW_COMMIT}"'
+      ) {
+        lines.shift();
+      }
+      return ["prepare", "verify"].find(
+        (phase) =>
+          lines.length === 1 &&
+          lines[0] ===
+            `bash .github/scripts/cli-recovery/prepare-source.sh ${phase} historical "$VERSION"`,
+      );
+    });
+    for (const phase of ["prepare", "verify"]) {
+      const count = expectedPhases.filter((value) => value === phase).length;
+      if (phases.filter((value) => value === phase).length !== count) {
+        problem(
+          `cli-recovery-build.yaml ${id} must ${phase} the historical source binding in ${count} distinct unconditional step(s)`,
+        );
+      }
+    }
+    if (phases.join() !== expectedPhases.join()) {
+      problem(
+        `cli-recovery-build.yaml ${id} historical source checks must follow ${expectedPhases.join(" -> ")} in distinct steps`,
+      );
+    } else {
+      const checkpoints = bindings.map((step) => steps.indexOf(step));
+      if (
+        checkouts.length === 1 &&
+        steps.indexOf(checkouts[0]) >= checkpoints[0]
+      ) {
+        problem(
+          `cli-recovery-build.yaml ${id} must prepare the historical source binding after its checkout`,
+        );
+      }
+      const stages =
+        id === "dependencies"
+          ? [
+              [
+                "rustup show active-toolchain",
+                "jdx/mise-action@",
+                "cargo fetch --locked",
+                "mise exec cargo-deny -- cargo deny",
+              ],
+            ]
+          : [
+              [
+                "rustup show active-toolchain",
+                "installer-version.sh",
+                "cargo test --locked --release",
+                "cargo build --locked --release --bin marshal",
+              ],
+              [
+                "fetch-wix.sh",
+                "build-msi.ps1",
+                "build-pkg.sh",
+                "test-msi-installer.ps1",
+                "test-pkg-installer.sh",
+              ],
+              ['hash_file "$ASSET"', 'hash_file "$INSTALLER"'],
+            ];
+      for (const [stage, commands] of stages.entries()) {
+        for (const command of commands) {
+          const operations = steps.filter(
+            (step) =>
+              text(step.run).includes(command) ||
+              text(step.uses).startsWith(command),
+          );
+          const at = steps.indexOf(operations[0]);
+          if (
+            operations.length !== 1 ||
+            at <= checkpoints[stage] ||
+            at >= (checkpoints[stage + 1] ?? steps.length)
+          ) {
+            problem(
+              `cli-recovery-build.yaml ${id} historical source checks must surround ${command} in order`,
+            );
+          }
+        }
+      }
+    }
+    const scripts = scriptsOf(job)
+      .map((step) => step.run)
+      .join("\n");
+    if (
+      id === "dependencies" &&
+      !scripts
+        .split("\n")
+        .some(
+          (line) =>
+            line.trim() ===
+            "mise exec cargo-deny -- cargo deny --locked check bans licenses sources",
+        )
+    ) {
+      problem(
+        "cli-recovery-build.yaml must select only cargo-deny for historical dependency checks",
+      );
+    }
+  }
+  const build = recoveryBuild.jobs?.build;
+  const packaging = scriptsOf(build).filter((step) =>
+    step.run.includes("build-pkg.sh"),
+  );
+  if (
+    build?.defaults?.run?.["working-directory"] !== "historical/cli" ||
+    packaging.length !== 1 ||
+    packaging[0].run !==
+      'bash ../.github/scripts/build-pkg.sh "../../dist/${ASSET}" "$INSTALLER_VERSION" "../../dist/${INSTALLER}"'
+  ) {
+    problem(
+      "cli-recovery-build.yaml must run historical/.github/scripts/build-pkg.sh from historical/cli",
+    );
+  }
+  try {
+    if (
+      !read(".github/scripts/cli-recovery/prepare-source.sh").includes(
+        `source_commit=${HISTORICAL_SOURCE}\n`,
+      )
+    ) {
+      problem("prepare-source.sh must pin the historical source identity");
+    }
+  } catch {
+    problem("cli-recovery/prepare-source.sh is missing");
+  }
+}
 
+/**
+ * records release-chain violations in problems, including missing jobs,
+ * privilege changes, unsigned publication inputs and failure bypasses.
+ */
 function checkNewJobs() {
+  const wantedJobs = ["plan", "build", ...NEW_JOBS, "attest", "release"];
+  if (Object.keys(jobs).sort().join() !== wantedJobs.sort().join()) {
+    problem("release.yaml must contain exactly the seven CLI release jobs");
+  }
+  if (jobs.build?.uses !== "./.github/workflows/cli-recovery-build.yaml") {
+    problem("release.yaml build must call cli-recovery-build.yaml");
+  }
+  if (!asList(jobs.build?.needs).includes("plan"))
+    problem("release.yaml build must need plan directly");
+  if (text(jobs.build?.if).trim() !== GUARD)
+    problem(`release.yaml build must carry \`if: ${GUARD}\``);
+  if (!sameMap(jobs.build?.permissions, { contents: "read" }))
+    problem("release.yaml build must hold exactly `contents: read`");
   for (const id of NEW_JOBS) {
     const job = jobs[id];
     if (!job) {
@@ -1000,7 +1255,6 @@ function checkNewJobs() {
         problem(`release.yaml ${id} must need ${name} directly`);
     }
   }
-  // the jobs that publish carry the guard too, in the same form.
   for (const id of ["attest", "release"]) {
     if (jobs[id] && text(jobs[id].if).trim() !== GUARD)
       problem(`release.yaml ${id} must carry \`if: ${GUARD}\``);
@@ -1029,6 +1283,41 @@ function checkNewJobs() {
       );
     }
   }
+  const attestations = stepsOf(jobs.attest).filter((step) =>
+    text(step.uses).startsWith("actions/attest@"),
+  );
+  const subjects = ["windows", "windows_msi", "macos", "macos_pkg"].map(
+    (name) => `release-files/\${{ steps.files.outputs.${name} }}`,
+  );
+  if (
+    attestations.length !== 1 ||
+    text(attestations[0].with?.["subject-path"])
+      .trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .sort()
+      .join() !== subjects.sort().join()
+  ) {
+    problem(
+      "release.yaml attest must attest exactly the four CLI release subjects",
+    );
+  }
+  if (
+    !scriptsOf(jobs["assemble-signed"]).some((step) =>
+      step.run.includes(".github/scripts/cli-recovery/assemble-release.sh"),
+    )
+  ) {
+    problem(
+      "release.yaml assemble-signed does not call cli-recovery/assemble-release.sh",
+    );
+  }
+  if (
+    !scriptsOf(jobs["verify-macos"]).some((step) =>
+      step.run.includes(".github/scripts/tests/test-signed-pkg.sh"),
+    )
+  ) {
+    problem("release.yaml verify-macos does not call test-signed-pkg.sh");
+  }
   if (
     jobs.release &&
     stepsOf(jobs.release).some((step) =>
@@ -1038,7 +1327,6 @@ function checkNewJobs() {
     problem("release.yaml release must not read the build's artifact");
   }
 
-  // no way past a failed job.
   for (const [id, job] of Object.entries(jobs)) {
     if ("continue-on-error" in job)
       problem(`release.yaml ${id} sets continue-on-error`);
@@ -1065,36 +1353,38 @@ function checkNewJobs() {
   }
 }
 
-// ---- the tools the dry run measures --------------------------------------
-
+/**
+ * records missing unprivileged tool measurements in problems; the required set
+ * comes from the signing and verification scripts, without executing them.
+ */
 function checkMeasuredTools() {
-  const appJob = jobsOf(releaseBuild).find(([id]) => id === "app-macos")?.[1];
-  if (appJob && appJob["runs-on"] !== "macos-latest")
-    problem("release-build.yaml's app-macos job must run on macos-latest");
-  const step = stepsOf(appJob).find(
+  const build = jobsOf(recoveryBuild).find(([id]) => id === "build")?.[1];
+  const step = stepsOf(build).find(
     (entry) =>
       typeof entry.run === "string" &&
       entry.run.includes("MEASURED: signing tools"),
   );
   if (!step) {
     problem(
-      "release-build.yaml's app-macos job has no step that prints the MEASURED: signing tools line",
+      "cli-recovery-build.yaml's build job has no step that prints the MEASURED: signing tools line",
     );
     return;
   }
-  if ("if" in step)
+  if (step.if !== "runner.os == 'macOS'")
     problem(
-      "release-build.yaml's signing tools step has a condition, which could skip it",
+      "cli-recovery-build.yaml's signing tools step must run on the macOS leg only",
     );
   if (!/exit 1/.test(step.run))
     problem(
-      "release-build.yaml's signing tools step does not fail when a tool is missing",
+      "cli-recovery-build.yaml's signing tools step does not fail when a tool is missing",
     );
   if (
     "env" in step &&
-    Object.keys(step.env ?? {}).some((key) => /SECRET|MACOS_/.test(key))
+    Object.keys(step.env ?? {}).some((key) => /SECRET|APPLE_/.test(key))
   ) {
-    problem("release-build.yaml's signing tools step receives a signing value");
+    problem(
+      "cli-recovery-build.yaml's signing tools step receives a signing value",
+    );
   }
   const listed = (name) =>
     new Set(
@@ -1117,9 +1407,9 @@ function checkMeasuredTools() {
   }
   let testScript = null;
   try {
-    testScript = read(".github/scripts/tests/test-signed-dmg.sh");
+    testScript = read(".github/scripts/tests/test-signed-pkg.sh");
   } catch {
-    problem("test-signed-dmg.sh is missing");
+    problem("test-signed-pkg.sh is missing");
   }
   if (testScript) sources.push(testScript);
   for (const source of sources) {
@@ -1129,17 +1419,17 @@ function checkMeasuredTools() {
   for (const tool of needBin)
     if (!measuredBin.has(tool))
       problem(
-        `release-build.yaml's signing tools step does not measure /usr/bin/${tool}`,
+        `cli-recovery-build.yaml's signing tools step does not measure /usr/bin/${tool}`,
       );
   for (const tool of needSbin)
     if (!measuredSbin.has(tool))
       problem(
-        `release-build.yaml's signing tools step does not measure /usr/sbin/${tool}`,
+        `cli-recovery-build.yaml's signing tools step does not measure /usr/sbin/${tool}`,
       );
   for (const tool of XCRUN_TOOLS) {
     if (!step.run.includes(`for tool in ${XCRUN_TOOLS.join(" ")}`))
       problem(
-        `release-build.yaml's signing tools step does not look for ${tool} with xcrun --find`,
+        `cli-recovery-build.yaml's signing tools step does not look for ${tool} with xcrun --find`,
       );
   }
 }
@@ -1159,10 +1449,14 @@ const SUMS_WRITES = [
   ),
 ];
 
-function checkBuildAssemble() {
-  const assemble = jobsOf(releaseBuild).find(([id]) => id === "assemble")?.[1];
+/**
+ * records unsafe checkout credentials or checksum writers in problems for
+ * either build's unsigned assembly job, without running its scripts.
+ */
+function checkBuildAssemble(workflow, file, scriptPath) {
+  const assemble = jobsOf(workflow).find(([id]) => id === "assemble")?.[1];
   if (!assemble) {
-    problem("release-build.yaml has no assemble job");
+    problem(`${file} has no assemble job`);
     return;
   }
   for (const step of stepsOf(assemble)) {
@@ -1171,26 +1465,13 @@ function checkBuildAssemble() {
       step.with?.["persist-credentials"] !== "false"
     ) {
       problem(
-        "release-build.yaml assemble: a checkout does not set persist-credentials: false",
+        `${file} assemble: a checkout does not set persist-credentials: false`,
       );
     }
   }
   const scripts = scriptsOf(assemble).map((step) => step.run);
-  if (
-    !scripts.some((script) =>
-      script.includes(".github/scripts/assemble-release.sh"),
-    )
-  ) {
-    problem("release-build.yaml assemble does not call assemble-release.sh");
-  }
-  if (
-    !scripts.some((script) =>
-      script.includes(".github/scripts/assemble-release.sh unsigned "),
-    )
-  ) {
-    problem(
-      "release-build.yaml assemble does not call assemble-release.sh in unsigned mode",
-    );
+  if (!scripts.some((script) => script.includes(scriptPath))) {
+    problem(`${file} assemble does not call assemble-release.sh`);
   }
   if (
     scripts.some((script) =>
@@ -1198,7 +1479,7 @@ function checkBuildAssemble() {
     )
   ) {
     problem(
-      "release-build.yaml assemble writes SHA256SUMS itself; assemble-release.sh is the only writer",
+      `${file} assemble writes SHA256SUMS itself; assemble-release.sh is the only writer`,
     );
   }
 }
@@ -1238,27 +1519,21 @@ if (release) {
   }
 }
 
-// the signed set is the unsigned set and the disk image, which only it holds.
-function checkSignedAssemble() {
-  const assemble = jobs["assemble-signed"];
-  if (
-    assemble &&
-    !scriptsOf(assemble).some((step) =>
-      step.run.includes(".github/scripts/assemble-release.sh signed "),
-    )
-  ) {
-    problem(
-      "release.yaml assemble-signed does not call assemble-release.sh in signed mode",
-    );
-  }
-}
-
-if (release && releaseBuild) {
+if (release && releaseBuild && recoveryBuild) {
   checkSigningJob();
+  checkHistoricalBuild();
   checkNewJobs();
   checkMeasuredTools();
-  checkBuildAssemble();
-  checkSignedAssemble();
+  checkBuildAssemble(
+    recoveryBuild,
+    "cli-recovery-build.yaml",
+    ".github/scripts/cli-recovery/assemble-release.sh",
+  );
+  checkBuildAssemble(
+    releaseBuild,
+    "release-build.yaml",
+    ".github/scripts/assemble-release.sh",
+  );
 }
 
 if (problems.length > 0) {
