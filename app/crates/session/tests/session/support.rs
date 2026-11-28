@@ -717,8 +717,6 @@ impl Record for Updates {
     }
 }
 
-// ---- the login item and its record
-
 /// what the session asked of the fake login item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginCall {

@@ -1287,8 +1287,7 @@ textarea.config-input {
   border-radius: 0;
 }
 
-/* ---- macOS's Increase Contrast, which forced-colors does not cover in its web view */
-
+/* forced-colors does not cover macOS's Increase Contrast in its web view, so this block does. */
 @media (prefers-contrast: more) {
   :root[data-platform="macos"] {
     --border-neutral-subtle: var(--text-neutral-high);

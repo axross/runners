@@ -451,8 +451,6 @@ fn the_macs_agent_reporting_no_settings_leaves_every_setting_unavailable_without
     assert_eq!(list(&view).header.settings_chip, None);
 }
 
-// ---- the Mac
-
 fn mac_view(
     snapshot: &marshal_cli::agent::snapshot::Snapshot,
     login: Option<LoginItemState>,
