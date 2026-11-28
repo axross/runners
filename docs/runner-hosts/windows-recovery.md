@@ -82,10 +82,8 @@ a job in flight fails.
 1. Select the target release and verify that it supports this host's profile and
    configuration before uninstalling anything. If no compatible target is
    verified, keep the installed app. When the last command-line release is the
-   target, open
-   `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`
-   now, replacing `<version>` with the CLI recovery release's version without the
-   `v`, as [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
+   target, open the guide at its tag now, as
+   [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
    says. Use that tag’s install procedure.
    A retained diagnostic container survives the installation. If the target may handle
    it differently, [recover the marked containers](./windows-diagnostics.md#recover-before-disabling-diagnostics)

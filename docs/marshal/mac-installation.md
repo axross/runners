@@ -28,11 +28,9 @@ own.
 
 With the command line still running, the app shows that another Marshal holds the
 runner lock. Stop it with `marshal stop`, then remove the command line with the
-uninstall procedure of the guide at the last command-line release's tag, at
-`https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`,
-replacing `<version>` with the CLI recovery release's version without the `v`, as
+uninstall procedure of the guide at the last command-line release's tag, which
 [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
-says. For a manual copy at `~/.local/bin/marshal`, use that guide's macOS block under
+says how to open. For a manual copy at `~/.local/bin/marshal`, use that guide's macOS block under
 Migrating From a Manual Install instead. From then on the app runs the pools.
 
 To uninstall, quit Marshal and move it to the Trash. What it leaves, and how to remove

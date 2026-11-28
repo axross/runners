@@ -124,10 +124,7 @@ The contracts F0 owns are these:
 ## Reading a Signature
 
 No file of a release is signed until M2's disk-image pull request. The commands that
-read the command line's signed macOS package are in this section of the document at
-the last command-line release's tag, at
-`https://github.com/axross/runners/blob/v<version>/docs/marshal-cli/signing.md#reading-a-signature`,
-where `<version>` is the CLI recovery release's version without the `v`; The Last
-Command-Line Release section of [Release artifacts](./release-artifacts.md#the-last-command-line-release)
-describes that tag and how to find its version. M2's pull request brings this section back, rewritten for the app
+read the command line's signed macOS package are in this section of this document at
+the last command-line release's tag. [The Last Command-Line Release](./release-artifacts.md#the-last-command-line-release)
+says how to find that tag's version and open the file there. M2's pull request brings this section back, rewritten for the app
 and the disk image.

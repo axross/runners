@@ -16,10 +16,10 @@ and the trust rules the host is reviewed against are in
 
 **The command line.** Since W1's installer pull request there is no command line: a
 release carries Marshal and its per-user MSI, and the app's menu and window are how a
-host is run. The axpc host ran its pools with the command line, `marshal`, until then.
-Its installation procedures are in the guide at the last command-line release's tag,
-and the program tree that release identifies holds its commands, token files and
-`--config` path, as
+host is run. The axpc host still runs its pools with the last command-line release,
+`marshal`, until it moves to the app. The command line's installation procedures are
+in the guide at the last command-line release's tag, and the program tree that
+release identifies holds its commands, token files and `--config` path, as
 [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
 says. A host moves from it to the app with that release's uninstall procedure, then
 [Installing Marshal](#installing-marshal). The host evidence that names a command

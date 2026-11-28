@@ -280,7 +280,10 @@ macOS, migrating from a manual install, updating it, uninstalling it and rolling
 back, at the same tag. Open that tag's document on GitHub, at
 `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`,
 replacing `<version>` with the CLI recovery release's version without the `v`, and use
-the procedures there rather than the app's blocks in this document. That guide
+the procedures there rather than the app's blocks in this document. The same form
+reaches any other file at that tag, such as
+`docs/marshal-cli/signing.md#reading-a-signature`, which holds the commands that
+read the command line's signed macOS package. The recovery guide
 distinguishes the release's workflow commit from the program commit it built and
 carries the optional check's pins for that release. Its program tree keeps the
 command line's runtime documentation and embedded inputs. The commit before W1's
