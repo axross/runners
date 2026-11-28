@@ -59,6 +59,25 @@ impl Cadence {
             real
         }
     }
+
+    /// one tick of the cadence on `clock`; it always yields, so a clock that does not
+    /// wait cannot starve the instance's other work.
+    pub async fn tick(&self, clock: &impl Clock) {
+        clock.sleep(self.sample).await;
+        tokio::task::yield_now().await;
+    }
+
+    /// the network `signals` reads once the ticks of a check have passed on `clock`.
+    pub async fn read_after_a_check(
+        &self,
+        clock: &impl Clock,
+        signals: &impl SignalSource,
+    ) -> NetworkReading {
+        for _ in 0..self.samples_per_check {
+            self.tick(clock).await;
+        }
+        signals.read_network().await
+    }
 }
 
 /// clears the flag when the watch ends, however it ends.
@@ -109,13 +128,6 @@ impl<'a, S: SignalSource, K: Clock> SignalMonitor<'a, S, K> {
             state: self.state.with_settings(settings),
             ..self
         }
-    }
-
-    /// one tick of the cadence; it always yields, so a clock that does not wait cannot
-    /// starve the instance's other work.
-    async fn tick(&self) {
-        self.clock.sleep(self.cadence.sample).await;
-        tokio::task::yield_now().await;
     }
 
     /// reads the network the instance has just begun to run on: a primary network is
@@ -182,7 +194,7 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
         let mut network = self.record().await;
         let mut samples = 0_u32;
         loop {
-            self.tick().await;
+            self.cadence.tick(self.clock).await;
             if self.signals.sleep_detected() {
                 return StopReason::Slept;
             }
@@ -201,7 +213,7 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
 
     async fn maintain(&self) -> Infallible {
         loop {
-            self.tick().await;
+            self.cadence.tick(self.clock).await;
             self.state.reconcile(&self.signals, self.log);
         }
     }
@@ -230,9 +242,8 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
     }
 
     async fn next_reading(&self) -> NetworkReading {
-        for _ in 0..self.cadence.samples_per_check {
-            self.tick().await;
-        }
-        self.signals.read_network().await
+        self.cadence
+            .read_after_a_check(self.clock, &self.signals)
+            .await
     }
 }

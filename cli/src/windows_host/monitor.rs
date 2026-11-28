@@ -46,11 +46,6 @@ impl<'a, S: SignalSource, K: Clock> WindowsMonitor<'a, S, K> {
         }
     }
 
-    async fn tick(&self) {
-        self.clock.sleep(self.cadence.sample).await;
-        tokio::task::yield_now().await;
-    }
-
     fn stops_on_change(&self) -> bool {
         self.settings.is_on(Setting::StopOnNetworkChange)
     }
@@ -106,7 +101,7 @@ impl<S: SignalSource, K: Clock> Monitor for WindowsMonitor<'_, S, K> {
         }
         let mut samples = 0_u32;
         loop {
-            self.tick().await;
+            self.cadence.tick(self.clock).await;
             // a sleep is judged before the network, so a wake on another network stops
             // with the sleep's reason
             if self.signals.sleep_detected() {
@@ -130,7 +125,7 @@ impl<S: SignalSource, K: Clock> Monitor for WindowsMonitor<'_, S, K> {
 
     async fn maintain(&self) -> Infallible {
         loop {
-            self.tick().await;
+            self.cadence.tick(self.clock).await;
             self.state.reconcile(&self.signals, self.log);
         }
     }
@@ -156,9 +151,8 @@ impl<S: SignalSource, K: Clock> Monitor for WindowsMonitor<'_, S, K> {
     }
 
     async fn next_reading(&self) -> NetworkReading {
-        for _ in 0..self.cadence.samples_per_check {
-            self.tick().await;
-        }
-        self.signals.read_network().await
+        self.cadence
+            .read_after_a_check(self.clock, &self.signals)
+            .await
     }
 }
