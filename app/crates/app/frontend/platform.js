@@ -1,7 +1,7 @@
 // what macOS draws differently: with option B's unified title bar the window buttons sit
 // in the page's top band, so on macOS that band is a drag region and the page marks the
 // root for the stylesheet, which also follows macOS's own settings, such as Increase
-// Contrast. Elsewhere the window has its own title bar and nothing changes.
+// Contrast. elsewhere the window has its own title bar and nothing changes.
 
 /** whether the page runs in macOS's web view. */
 export const ON_MAC = navigator.userAgent.includes("Macintosh");

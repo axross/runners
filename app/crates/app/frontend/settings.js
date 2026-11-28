@@ -2,10 +2,10 @@
 // label toggles it, with its description and state as its accessible description and
 // a note under it when the view gives one.
 //
-// A checkbox that cannot be changed stays focusable and is never dimmed: it reports
+// a checkbox that cannot be changed stays focusable and is never dimmed: it reports
 // itself disabled, the reason is part of its description and its balloon, and a click
-// does not toggle it. The agent writes a change, and the next view shows what it came to.
-// On macOS the first setting also shows its login item's state, with a button to Login
+// does not toggle it. the agent writes a change, and the next view shows what it came to.
+// on macOS the first setting also shows its login item's state, with a button to Login
 // Items while the state differs from the setting.
 
 import { nextId } from "./controls.js";

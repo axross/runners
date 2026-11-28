@@ -110,7 +110,7 @@ impl LaunchEvent {
     }
 
     /// whether the login item started the app, with its icon and without its window: the
-    /// open-application event's launch mark says so. An event with no mark, or another one,
+    /// open-application event's launch mark says so. an event with no mark, or another one,
     /// is an ordinary launch.
     #[must_use]
     pub fn is_login_launch(self) -> bool {

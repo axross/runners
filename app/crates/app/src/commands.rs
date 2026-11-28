@@ -135,7 +135,7 @@ pub async fn set_setting(state: State<'_, AppState>, key: String, on: bool) -> R
 }
 
 /// opens Login Items & Extensions in System Settings, where the app's login item is
-/// approved or added back. Only macOS has it.
+/// approved or added back. only macOS has it.
 #[tauri::command]
 pub fn open_login_items() -> Result<(), String> {
     #[cfg(target_os = "macos")]

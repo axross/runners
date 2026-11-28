@@ -43,7 +43,7 @@ pub fn open_settings() {
 }
 
 /// the Apple Event macOS is delivering, which at launch is the open-application event, and
-/// none outside an event's delivery. Call it before anything that can run the event loop,
+/// none outside an event's delivery. call it before anything that can run the event loop,
 /// as `start` does from Tauri's setup.
 pub fn launch_event() -> Option<LaunchEvent> {
     let event = NSAppleEventManager::sharedAppleEventManager().currentAppleEvent()?;

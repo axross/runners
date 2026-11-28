@@ -2,9 +2,9 @@
 //! the Run value on Windows: at launch, each time the settings in effect change and once
 //! after each Start all, the app registers its login item when the setting is on and
 //! macOS reports it not registered, and unregisters it when the setting is off and macOS
-//! reports it registered. It never registers over "requires approval", nor over a
+//! reports it registered. it never registers over "requires approval", nor over a
 //! removal by the maintainer, which a "not registered" while the record that Marshal
-//! registered itself exists counts as. Showing the window only reads the state again.
+//! registered itself exists counts as. showing the window only reads the state again.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -88,7 +88,7 @@ impl LoginItem {
     }
 
     /// reads macOS's status again, so a removal or an approval made in Login Items shows,
-    /// and registers and unregisters nothing. A failed registration or unregistration
+    /// and registers and unregisters nothing. a failed registration or unregistration
     /// keeps its code until macOS reports something else.
     pub(crate) fn refresh(&mut self) {
         let Some(state) = self.state else {

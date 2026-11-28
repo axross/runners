@@ -1,6 +1,6 @@
 //! the Settings tab: the five `[lifecycle]` settings in two groups, each a checkbox with
 //! its description, its state against its default, which macOS shares with Windows, and
-//! a note when something about it needs saying. The agent writes a change; the view
+//! a note when something about it needs saying. the agent writes a change; the view
 //! shows what it came to.
 
 use marshal_cli::agent::StopReason;
@@ -43,7 +43,7 @@ type Words = (&'static str, &'static str);
 type MacWords = (Option<&'static str>, Option<&'static str>);
 
 /// each setting with its group, and its words on Windows and on macOS, in the order the
-/// window shows them. A macOS word that is `None` reads as the Windows one.
+/// window shows them. a macOS word that is `None` reads as the Windows one.
 const SETTINGS: [(&str, Setting, Words, MacWords); 5] = [
     (
         "Starting Marshal",

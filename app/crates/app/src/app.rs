@@ -135,7 +135,7 @@ fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processe
 }
 
 /// on macOS, the login item the app keeps in step with `start_at_login`, with its record
-/// beside the update's; elsewhere the agent keeps the sign-in item. It reads the same raw
+/// beside the update's; elsewhere the agent keeps the sign-in item. it reads the same raw
 /// executable path and `HOME` as `may_control_agent`, without that guard's debug-only
 /// `MARSHAL_TEST_ANY_LOCATION` override.
 #[cfg(target_os = "macos")]

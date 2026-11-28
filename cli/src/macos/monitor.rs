@@ -1,7 +1,7 @@
 //! the instance's signals on axmc: the sleep and network watch that stops every runner,
-//! and the keep-awake hold, driven by a [`SignalSource`] on a cadence. The Tart backend
+//! and the keep-awake hold, driven by a [`SignalSource`] on a cadence. the Tart backend
 //! waits at the [`NetworkGate`] this monitor keeps until a primary network is recorded.
-//! The resident agent gives it the settings in effect, so the hold follows `keep_awake`
+//! the resident agent gives it the settings in effect, so the hold follows `keep_awake`
 //! at each tick; the stops stay fixed whatever the settings say.
 
 use std::cell::Cell;

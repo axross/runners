@@ -1,6 +1,6 @@
 //! what a signal monitor keeps between ticks beside its signals: whether the instance
 //! wants the keep-awake hold, the settings in effect the hold follows, and the primary
-//! network last recorded while running. The Mac's and Windows' monitors each hold one,
+//! network last recorded while running. the Mac's and Windows' monitors each hold one,
 //! so a fix to how the hold follows `keep_awake` lands once.
 
 use std::cell::{Cell, RefCell};
