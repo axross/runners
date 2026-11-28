@@ -194,7 +194,9 @@ executed.
 - **The copy.** The `Install Head Reader` step runs after the checkout and before
   the action. It copies the script to one declared path outside the workspace, the
   runner's temporary directory, and the home directory, with the repository name,
-  the `gh` path and the other tools' paths fixed into the copy. The copy is owned
+  the `gh` path and the other tools' paths fixed into the copy. The step accepts a
+  tool only from a directory chain and a file that root alone can change, and fails
+  the job otherwise. The copy is owned
   by root, mode 555, in a directory that holds only the copy, and every ancestor
   of that directory is owned by root and writable by neither group nor others. The
   step checks each of these properties, prints the ownership chain, and fails the

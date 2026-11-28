@@ -5,10 +5,12 @@
 //
 //   node .github/scripts/check-review-workflow.mjs [workflow file]
 //   node .github/scripts/check-review-workflow.mjs --print-copy-step [workflow file]
+//   node .github/scripts/check-review-workflow.mjs --print-copy-destination [workflow file]
 //
 // the workflow defaults to the one beside this script's repository; the test points
 // the check at altered copies. --print-copy-step writes the copy step's run script
-// to standard output, so the test runs the shipped step. the check guards against
+// to standard output, so the test runs the shipped step, and --print-copy-destination
+// writes the path it installs to. the check guards against
 // a mistake: a pull request can edit it, so it is no control against a hostile one.
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,9 +118,9 @@ export function checkWorkflow(workflow) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const printStep = process.argv[2] === "--print-copy-step";
+const mode = process.argv[2]?.startsWith("--") ? process.argv[2] : null;
 const file = resolve(
-  process.argv[printStep ? 3 : 2] ??
+  process.argv[mode ? 3 : 2] ??
     join(here, "..", "workflows", "claude-review.yaml"),
 );
 
@@ -128,8 +130,13 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   const workflow = readWorkflow(file);
-  if (printStep) {
+  if (mode === "--print-copy-step") {
     process.stdout.write(copyStep(workflow).run);
+  } else if (mode === "--print-copy-destination") {
+    process.stdout.write(copyStep(workflow).env[COPY_ENV_NAME]);
+  } else if (mode) {
+    console.error(`unknown option ${mode}`);
+    process.exit(2);
   } else {
     const problems = checkWorkflow(workflow);
     for (const problem of problems) console.error(`error: ${problem}`);

@@ -5,7 +5,8 @@
 # the reviewer runs that root-owned copy, so a head file is read without
 # checking the head out; docs/security/workflow-permissions.md says how.
 set -euo pipefail
-# a path character is judged byte by byte, so a multibyte one is refused
+# defence in depth for collating locales, where a bracket range can match more than
+# ASCII letters; judging bytes also refuses a multibyte path character
 export LC_ALL=C
 
 repository='@REPOSITORY@'

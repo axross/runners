@@ -20,6 +20,7 @@ guard="${scripts}/check-review-workflow.mjs"
 work="$(mktemp -d)"
 parent=""
 use_sudo=false
+real_dir=""
 
 # runs a command with root's privileges, by whichever route the probe found
 as_root() {
@@ -34,6 +35,9 @@ cleanup() {
   rm -rf -- "$work"
   if [[ -n $parent ]]; then
     as_root rm -rf -- "$parent"
+  fi
+  if [[ -n $real_dir ]]; then
+    as_root rm -rf -- "$real_dir"
   fi
 }
 trap cleanup EXIT
@@ -126,8 +130,9 @@ else
 fi
 as_root chmod 0755 "$parent"
 
-mkdir "${work}/bin"
-cat >"${work}/bin/gh" <<'GH'
+# the copy step accepts a tool only from a chain that root alone can change, so the
+# stand-in gh is installed root-owned beside the copy, not left in a user's /tmp
+cat >"${work}/gh" <<'GH'
 #!/usr/bin/env bash
 # the stand-in gh: records each call's arguments, joined by U+001F, one line per call,
 # and answers call N with response.N and exit status status.N from $FAKE_GH_DIR.
@@ -147,17 +152,20 @@ if [[ -f "${FAKE_GH_DIR}/status.${n}" ]]; then
   exit "$(<"${FAKE_GH_DIR}/status.${n}")"
 fi
 GH
-chmod +x "${work}/bin/gh"
+as_root install -D -o root -g root -m 0755 "${work}/gh" "${parent}/stub-bin/gh"
 
 node "$guard" --print-copy-step "$workflow" >"${work}/copy-step.sh"
 
 repository="example/widgets"
 # run_step <destination> [<repository>]: runs the shipped copy step as the workflow's
 # shell does, with only its declared inputs moved, and keeps its output in step.log.
+# STEP_WORKSPACE, STEP_RUNNER_TEMP, STEP_HOME and STEP_PATH move the other inputs; the
+# search path holds the stand-in gh and the system directories, not the user's tools.
 run_step() {
   (cd "$root" && env READ_HEAD_COPY="$1" READ_HEAD_REPOSITORY="${2:-$repository}" \
-    GITHUB_WORKSPACE="${GITHUB_WORKSPACE_OVERRIDE:-$root}" RUNNER_TEMP="$work" \
-    PATH="${work}/bin:${PATH}" bash -e "${work}/copy-step.sh") >"${work}/step.log" 2>&1
+    GITHUB_WORKSPACE="${STEP_WORKSPACE:-$root}" RUNNER_TEMP="${STEP_RUNNER_TEMP:-$work}" \
+    HOME="${STEP_HOME:-$HOME}" PATH="${STEP_PATH:-${parent}/stub-bin:/usr/bin:/bin}" \
+    bash -e "${work}/copy-step.sh") >"${work}/step.log" 2>&1
 }
 
 copy="${parent}/bin/read-head"
@@ -172,7 +180,7 @@ check "the copy's directory holds only the copy" test "$(find "${parent}/bin" -m
 check "the step prints the ownership chain" grep -q "root root read-head" "${work}/step.log"
 copy_has_fixed_values() {
   grep -q "^repository='example/widgets'$" "$copy" \
-    && grep -q "^gh='${work}/bin/gh'$" "$copy" \
+    && grep -q "^gh='${parent}/stub-bin/gh'$" "$copy" \
     && ! grep -q "@[A-Z0-9]*@" "$copy"
 }
 check "the copy has the repository and the stand-in gh fixed in" copy_has_fixed_values
@@ -206,13 +214,22 @@ expect_step_failure "the step fails when the directory holds another file" "hold
 as_root mkdir "${parent}/real"
 as_root ln -s "${parent}/real" "${parent}/link"
 expect_step_failure "the step fails when the path has a symbolic link" "has a symbolic link in its path" "${parent}/link/read-head"
-if GITHUB_WORKSPACE_OVERRIDE="$parent" run_step "${parent}/inside/read-head"; then
-  flunk "the step succeeded inside the workspace"
-elif grep -qF "is inside" "${work}/step.log"; then
-  pass "the step fails inside the workspace"
-else
-  flunk "the step did not say it is inside the workspace: $(cat "${work}/step.log")"
-fi
+STEP_WORKSPACE="$parent" expect_step_failure "the step fails inside the workspace" "is inside" "${parent}/inside-workspace/read-head"
+STEP_RUNNER_TEMP="$parent" expect_step_failure "the step fails inside the runner's temporary directory" "is inside" "${parent}/inside-temp/read-head"
+STEP_HOME="$parent" expect_step_failure "the step fails inside the home directory" "is inside" "${parent}/inside-home/read-head"
+as_root mkdir "${parent}/owned"
+as_root chown 65534:65534 "${parent}/owned"
+as_root chmod 0755 "${parent}/owned"
+expect_step_failure "the step fails when an ancestor is owned by another user" "${parent}/owned is not owned by root" "${parent}/owned/sub/read-head"
+as_root mkdir "${parent}/tools-writable"
+as_root chmod 0775 "${parent}/tools-writable"
+as_root install -o root -g root -m 0755 /usr/bin/true "${parent}/tools-writable/jq"
+STEP_PATH="${parent}/tools-writable:${parent}/stub-bin:/usr/bin:/bin" expect_step_failure \
+  "the step fails for a tool in a group-writable directory" "${parent}/tools-writable is writable by its group or others" "${parent}/tools-check/read-head"
+as_root mkdir "${parent}/tools-owned"
+as_root install -o 65534 -g 65534 -m 0755 /usr/bin/true "${parent}/tools-owned/jq"
+STEP_PATH="${parent}/tools-owned:${parent}/stub-bin:/usr/bin:/bin" expect_step_failure \
+  "the step fails for a tool that another user owns" "${parent}/tools-owned/jq is not owned by root" "${parent}/tools-check/read-head"
 expect_step_failure "the step fails for a repository name that is not owner/name" "is not owner/name" "${parent}/name/read-head" "not a name"
 expect_step_failure "the step fails for a relative destination" "must be absolute" "relative/read-head"
 
@@ -248,7 +265,7 @@ call_line() {
 # run_head <argument>...: runs the installed copy in an empty directory.
 run_head() {
   status=0
-  (cd "${case_dir}/cwd" && LC_ALL=C.UTF-8 FAKE_GH_DIR="$case_dir" "$copy" "$@") \
+  (cd "${case_dir}/cwd" && LC_ALL="${HEAD_LOCALE:-C.UTF-8}" FAKE_GH_DIR="$case_dir" "$copy" "$@") \
     >"${case_dir}/out" 2>"${case_dir}/err" || status=$?
 }
 
@@ -512,7 +529,14 @@ refused "an empty segment" "$sha" docs//a.txt
 refused "a trailing /" "$sha" docs/
 refused "a space in the path" "$sha" "a b"
 refused "a newline in the path" "$sha" $'a\nb'
+# C.UTF-8 matches ASCII ranges by code point, so this refusal holds without the
+# script's LC_ALL line; only a collating locale, if one is installed, can show that line
 refused "a non-ASCII letter under a UTF-8 locale" "$sha" "caf$(printf '\303\251')"
+if locale -a 2>/dev/null | grep -qix 'en_US\.utf-\?8'; then
+  HEAD_LOCALE=en_US.UTF-8 refused "a non-ASCII letter under a collating UTF-8 locale" "$sha" "caf$(printf '\303\251')"
+else
+  echo "skip the collating-locale variant of the non-ASCII refusal: en_US.UTF-8 is not installed"
+fi
 refused "a glob character" "$sha" "a*"
 refused "a backslash" "$sha" 'a\b'
 refused "a line number of 0" "$sha" a.txt 0 1
@@ -523,6 +547,29 @@ refused "a non-numeric line number" "$sha" a.txt 1 x
 refused "an empty line number" "$sha" a.txt "" 2
 refused "a line number of 10 digits" "$sha" a.txt 1 1234567890
 refused "a first line greater than the last" "$sha" a.txt 5 3
+
+# on GitHub Actions the runner is ephemeral, so the step also runs at its real destination
+# with the system search path, to show before merge that the hosted image's directories
+# and tools pass it. nowhere else is the real destination touched.
+if [[ ${GITHUB_ACTIONS:-} == "true" ]]; then
+  real_copy="$(node "$guard" --print-copy-destination "$workflow")"
+  if [[ -e "$(dirname "$real_copy")" ]]; then
+    flunk "the real destination's directory already exists, so the step is not run there"
+  else
+    real_dir="$(dirname "$real_copy")"
+    if (cd "$root" && env READ_HEAD_COPY="$real_copy" READ_HEAD_REPOSITORY="${GITHUB_REPOSITORY:-$repository}" \
+      PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+      bash -e "${work}/copy-step.sh") >"${work}/step-real.log" 2>&1; then
+      pass "the shipped copy step passes at its real destination ${real_copy}"
+    else
+      flunk "the shipped copy step failed at its real destination"
+    fi
+    cat "${work}/step-real.log"
+    check "the real copy is root-owned and mode 555" test "$(stat -c '%U:%G %a' "$real_copy")" = "root:root 555"
+    as_root rm -rf -- "$real_dir"
+    real_dir=""
+  fi
+fi
 
 if [[ $failures -ne 0 ]]; then
   echo "${failures} check(s) failed" >&2

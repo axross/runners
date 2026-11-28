@@ -72,11 +72,32 @@ jobs:
           as_root() {
             if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
           }
-          # the absolute path of a program, in a form the copy can carry safely
+          # a path is trusted when root owns it and neither its group nor others can write it
+          require_root_only() {
+            [[ "$(stat -c %u "$1")" -eq 0 ]] || fail "$1 is not owned by root"
+            (( (8#$(stat -c %a "$1") & 8#022) == 0 )) || fail "$1 is writable by its group or others"
+          }
+          require_root_chain() {
+            local current="$1"
+            while :; do
+              require_root_only "$current"
+              [[ $current != / ]] || break
+              current="$(dirname "$current")"
+            done
+          }
+          # the absolute path of a program the copy may run: found on the search path,
+          # in a directory chain only root can change, and resolving to a regular file
+          # that only root can change. the found path is kept, since a multicall binary
+          # reads the name it was started under.
           resolve() {
-            local found
+            local found canonical
             found="$(command -v "$1")" || fail "$1 is not on the search path"
             [[ $found =~ ^/[A-Za-z0-9._/+-]+$ ]] || fail "the path of $1 has a character the copy does not accept"
+            canonical="$(readlink -f -- "$found")" || fail "the path of $1 cannot be resolved"
+            [[ "$(stat -c %F "$canonical")" == "regular file" ]] || fail "$canonical is not a regular file"
+            require_root_chain "$(dirname "$found")"
+            [[ "$(stat -c %u "$found")" -eq 0 ]] || fail "$found is not owned by root"
+            require_root_chain "$canonical"
             printf '%s' "$found"
           }
           [[ $READ_HEAD_REPOSITORY =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "the repository name is not owner/name"
@@ -89,11 +110,10 @@ jobs:
             body="${body//"@$1@"/$2}"
           }
           fill REPOSITORY "$READ_HEAD_REPOSITORY"
-          fill GH "$(resolve gh)"
-          fill JQ "$(resolve jq)"
-          fill BASE64 "$(resolve base64)"
-          fill SED "$(resolve sed)"
-          fill WC "$(resolve wc)"
+          for tool in gh jq base64 sed wc; do
+            tool_path="$(resolve "$tool")"
+            fill "${tool^^}" "$tool_path"
+          done
 
           directory="$(dirname "$READ_HEAD_COPY")"
           as_root install -d -o root -g root -m 0755 "$directory"
@@ -112,13 +132,7 @@ jobs:
           [[ "$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]] || fail "$directory holds more than the copy"
           [[ "$(stat -c %F "$READ_HEAD_COPY")" == "regular file" ]] || fail "$READ_HEAD_COPY is not a regular file"
           [[ "$(stat -c %a "$READ_HEAD_COPY")" == 555 ]] || fail "$READ_HEAD_COPY is not mode 555"
-          path="$READ_HEAD_COPY"
-          while :; do
-            [[ "$(stat -c %u "$path")" -eq 0 ]] || fail "$path is not owned by root"
-            (( (8#$(stat -c %a "$path") & 8#022) == 0 )) || fail "$path is writable by its group or others"
-            [[ $path != / ]] || break
-            path="$(dirname "$path")"
-          done
+          require_root_chain "$READ_HEAD_COPY"
           echo "$READ_HEAD_COPY is root-owned, mode 555, in a directory that only root can change."
 
       - name: Claude Review
