@@ -74,7 +74,7 @@ Two groups ship no licence file, and `generate.sh` fills in their line itself:
   from (in each crate's `.cargo_vcs_info.json`) names no copyright holder; a later
   licence there, from commit `ee9a7ad`, names one, and applies once a release carries
   it. Their notice is the licence text without the template line, after one sentence
-  saying so. `generate.sh` lists the eleven name and version pairs checked, so any
+  saying so. `generate.sh` lists the fourteen name and version pairs checked, so any
   other version of these crates keeps the template line and fails the run until its
   licence is checked again.
 

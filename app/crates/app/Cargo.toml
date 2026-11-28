@@ -80,6 +80,12 @@ tokio = { version = "1.54.1", default-features = false, features = ["time"] }
 # wraps objc2-service-management's unsafe calls behind a safe interface, so the app's
 # own code keeps no unsafe; pinned exactly, as its source was read for this version.
 smappservice-rs = "=0.1.3"
+# reads the open-application Apple Event macOS sends at launch, whose login-item mark says
+# the login item opened the app. Only its Apple Event and enum-code reads are used, and
+# those are safe calls, so the app's own code keeps no unsafe. Its defaults are off: the
+# two classes and the Core Services types their methods take are the whole feature set. It
+# is the version the tree already links through Tauri's window crates.
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSAppleEventManager", "NSAppleEventDescriptor", "objc2-core-services"] }
 
 # the named pipe a test squats on, as the library does, to stand in for another process
 # that holds the agent's channel.

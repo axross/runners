@@ -11,7 +11,7 @@ as a procedural macro is. They are grouped by licence, and each crate's name and
 version are the ones in Cargo.lock.
 
 Overview of licences:
-  * MIT License (228)
+  * MIT License (229)
   * Unicode License v3 (19)
   * Apache License 2.0 (5)
   * Mozilla Public License 2.0 (5)
@@ -3780,6 +3780,7 @@ Used by:
   * objc2-app-kit 0.3.2 - https://github.com/madsmtm/objc2
   * objc2-core-foundation 0.3.2 - https://github.com/madsmtm/objc2
   * objc2-core-graphics 0.3.2 - https://github.com/madsmtm/objc2
+  * objc2-core-services 0.3.2 - https://github.com/madsmtm/objc2
   * objc2-encode 4.1.0 - https://github.com/madsmtm/objc2
   * objc2-exception-helper 0.1.1 - https://github.com/madsmtm/objc2
   * objc2-foundation 0.3.2 - https://github.com/madsmtm/objc2
