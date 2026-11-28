@@ -38,7 +38,6 @@ impl LoginItemService for MainApp {
     }
 }
 
-/// opens Login Items & Extensions in System Settings.
 pub fn open_settings() {
     AppService::open_system_settings_login_items();
 }

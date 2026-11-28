@@ -542,7 +542,6 @@ async fn an_instance_without_a_monitor_asks_for_no_signals() {
     assert_eq!(state, "running");
 }
 
-/// the settings in effect with `keep_awake` set to `on`, the others at their defaults.
 fn keep_awake(on: bool) -> InEffect {
     InEffect::new(Lifecycle {
         keep_awake: Some(on),
@@ -550,7 +549,8 @@ fn keep_awake(on: bool) -> InEffect {
     })
 }
 
-/// lets the monitor's `maintain` run a few ticks.
+/// runs `maintain`, which never ends, beside 20 yields of the test task, then drops it. the
+/// fake clock's sleep returns at once, so the monitor ticks about once per yield.
 async fn ticks<M: Monitor>(monitor: &M) {
     tokio::select! {
         _ = monitor.maintain() => {}

@@ -365,7 +365,6 @@ function setSetting(key, on) {
   run("set_setting", { key, on });
 }
 
-/** opens Login Items in macOS's System Settings. */
 function openLoginItems() {
   run("open_login_items");
 }

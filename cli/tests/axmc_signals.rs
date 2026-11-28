@@ -271,9 +271,10 @@ fn a_sleep_while_the_instance_is_stopped_is_not_a_stop_at_the_resume() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn the_resident_agent_on_axmc_holds_the_mac_awake_and_a_wake_stops_its_runners() {
-    // the agent's axmc wiring passes M1's monitor to the machine: running holds the
-    // Mac awake while `keep_awake` is on, a wake stops every runner with the reason
-    // `slept`, and the stop has the time to delete the job VM, so the agent ends cleanly
+    // the agent's axmc wiring passes the Mac's signal monitor to the machine: running
+    // holds the Mac awake while `keep_awake` is on, a wake stops every runner with the
+    // reason `slept`, and the stop has the time to delete the job VM, so the agent ends
+    // cleanly
     let host = holding_host();
     let stub = github();
     let agent = host.agent(&stub.address, &["linuxone"]);
@@ -337,7 +338,6 @@ async fn the_resident_agent_on_axmc_holds_the_mac_awake_and_a_wake_stops_its_run
     );
 }
 
-/// the snapshot's pending resume and the stop it follows.
 fn resume_of(snapshot: &Snapshot) -> (Option<String>, Option<String>) {
     let lifecycle = snapshot.lifecycle.clone().unwrap();
     (lifecycle.resume, lifecycle.resume_cause)
@@ -347,7 +347,6 @@ fn waiting_after(cause: &str) -> (Option<String>, Option<String>) {
     (Some("waiting".into()), Some(cause.into()))
 }
 
-/// sets `key` in effect through `lifecycle_set`.
 async fn set(conn: &Conn, key: &str, value: bool) {
     conn.call("lifecycle_set", json!({ "key": key, "value": value }))
         .await
@@ -367,7 +366,7 @@ async fn sleep_onto_another_network(host: &MacHost, conn: &Conn) -> Snapshot {
 #[tokio::test(flavor = "current_thread")]
 async fn on_axmc_a_network_change_stops_whatever_the_setting_says_and_resume_waits_for_the_network_the_runners_ran_on()
  {
-    // M1's source feeds W3's resume: a stop for another network waits until the Mac
+    // the network read feeds the resume: a stop for another network waits until the Mac
     // is back on the first one, and a sleep on the same network resumes after two
     // matching readings; `stop_on_network_change` off changes nothing on the Mac
     let host = holding_host();
