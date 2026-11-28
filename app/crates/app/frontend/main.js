@@ -359,10 +359,11 @@ function gotoToken(repository) {
 
 /**
  * turns a setting on or off. Focus stays on its checkbox, the agent writes the change,
- * and the next view shows and announces what it came to.
+ * and the next view shows and announces what it came to. The editor waits for the call,
+ * which returns once the change is saved, refused, unanswered or cut off.
  */
 function setSetting(key, on) {
-  run("set_setting", { key, on });
+  editor.whileSettingSaves(() => run("set_setting", { key, on }));
 }
 
 const context = {

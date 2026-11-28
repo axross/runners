@@ -255,7 +255,9 @@ export function editorPools(model, list, ctx, liveCard) {
         "read-config",
         "Read Configuration",
         () => model.read(),
-        model.busy ? "Reading the configuration." : model.access.read_reason,
+        model.busy
+          ? "Reading the configuration."
+          : (model.savingReason ?? model.access.read_reason),
       ),
     ];
   const cards = model.pools.map((pool) => {
@@ -332,12 +334,8 @@ export function editorPools(model, list, ctx, liveCard) {
         button(
           `edit-pool:${pool.id}`,
           "Edit",
-          () => {
-            model.applyResult = null;
-            model.editing = pool.id;
-            model.changed(`edit-heading:${pool.id}`);
-          },
-          reason,
+          () => model.openPool(pool),
+          model.openReason,
         ),
       );
     }
@@ -352,7 +350,12 @@ export function editorPools(model, list, ctx, liveCard) {
       cards,
       remaining.map((pool) => liveCard(pool, ctx)),
     ),
-    button("add-pool", "Add Pool", () => model.addPool(), reason),
+    button(
+      "add-pool",
+      "Add Pool",
+      () => model.openNewPool(),
+      model.openReason,
+    ),
   ];
 }
 
@@ -425,7 +428,7 @@ export function editorNotice(model) {
             "read-again-config",
             "Read Again",
             () => model.read(),
-            model.access.read_reason,
+            model.savingReason ?? model.access.read_reason,
           ),
         )
       : null,
@@ -551,7 +554,8 @@ export function editorReview(model) {
         () => model.apply(),
         model.busy
           ? "Waiting for the agent's answer."
-          : (model.reason ??
+          : (model.savingReason ??
+              model.reason ??
               (change.effects.some((e) => !EFFECT[e.change])
                 ? "The agent listed an unknown effect."
                 : null)),
@@ -577,7 +581,7 @@ export function editorBar(model) {
         "read-confirm",
         "Read Again",
         () => model.read(true),
-        model.access.read_reason,
+        model.savingReason ?? model.access.read_reason,
         "destructive",
       ),
     );
@@ -594,14 +598,15 @@ export function editorBar(model) {
         "reload-now",
         "Reload",
         () => model.check(true),
-        null,
+        model.savingReason,
         "destructive",
       ),
     );
   if (model.applyResult || (!model.dirty && !model.busy)) return null;
   const reason = model.busy
     ? "Waiting for the agent's answer."
-    : (model.reason ??
+    : (model.savingReason ??
+      model.reason ??
       model.fileReason ??
       (model.error?.code === "config_changed"
         ? "Read Again before applying."
@@ -659,18 +664,7 @@ export function editorFooter(model, configuration) {
       button(
         "host-settings",
         model.hostOpen ? "Done" : "Edit Host Settings",
-        () => {
-          model.applyResult = null;
-          if (!model.document) {
-            model.read().then(() => {
-              model.hostOpen = !model.fileReason;
-              model.changed();
-            });
-          } else {
-            model.hostOpen = !model.hostOpen;
-            model.changed();
-          }
-        },
+        () => model.toggleHost(),
         model.lockReason ??
           (model.document ? model.fileReason : null) ??
           model.access.read_reason,

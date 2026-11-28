@@ -75,20 +75,22 @@ function settingRow(row, off, ctx) {
 
 /** the Settings panel. */
 export function settingsPanel(tab, ctx) {
-  const offId = tab.unavailable ? nextId("settings-off") : null;
+  // a reason the view gives takes precedence over the open configuration editor's
+  const unavailable = tab.unavailable ?? ctx.editor?.settingsReason ?? null;
+  const offId = unavailable ? nextId("settings-off") : null;
   // when the intro already says why, it is the reason every checkbox points to
-  const introSaysWhy = tab.reason_in_intro;
+  const introSaysWhy = tab.unavailable && tab.reason_in_intro;
   return [
     h("p", {
       id: introSaysWhy ? offId : null,
       class: `description wrap intro${introSaysWhy ? "" : " low"}`,
       text: tab.intro,
     }),
-    tab.unavailable && !introSaysWhy
+    unavailable && !introSaysWhy
       ? h("p", {
           id: offId,
           class: "description wrap intro",
-          text: tab.unavailable,
+          text: unavailable,
         })
       : null,
     tab.groups.map((group) => {
@@ -103,7 +105,7 @@ export function settingsPanel(tab, ctx) {
           group.rows.map((row) =>
             settingRow(
               row,
-              offId && { id: offId, reason: tab.unavailable },
+              offId && { id: offId, reason: unavailable },
               ctx,
             ),
           ),
