@@ -147,8 +147,13 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::mpsc;
+    use std::time::Instant;
 
     use super::*;
+
+    /// how long a test waits for a reader thread that is slow under load before it
+    /// fails, so only a thread that never starts or finishes fails the test.
+    const CEILING: Duration = Duration::from_secs(10);
 
     #[test]
     fn an_interface_is_named_by_kind_and_index() {
@@ -205,13 +210,16 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn a_hung_reading_counts_as_no_route_and_blocks_a_second_until_it_returns() {
         let started = Arc::new(AtomicU32::new(0));
+        let (signal_start, reader_started) = mpsc::channel::<()>();
         let (release, released) = mpsc::channel::<()>();
         let released = Mutex::new(released);
         let counter = Arc::clone(&started);
-        let bounded = Bounded::new(
+        let mut bounded = Bounded::new(
             Arc::new(move || {
+                let first = counter.fetch_add(1, Ordering::SeqCst) == 0;
+                let _ = signal_start.send(());
                 // the first reading hangs until the test lets it return
-                if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                if first {
                     let _ = released.lock().unwrap().recv();
                 }
                 wifi()
@@ -220,14 +228,18 @@ mod tests {
         );
         assert_eq!(bounded.read().await, NetworkReading::NoDefaultRoute);
         assert_eq!(bounded.read().await, NetworkReading::NoDefaultRoute);
+        reader_started
+            .recv_timeout(CEILING)
+            .expect("the reader did not start");
         assert_eq!(started.load(Ordering::SeqCst), 1);
         release.send(()).unwrap();
-        for _ in 0..200 {
-            if !bounded.is_reading() {
-                break;
-            }
+        let deadline = Instant::now() + CEILING;
+        while bounded.is_reading() && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+        assert!(!bounded.is_reading(), "the released reading did not finish");
+        // the final reading may start its thread late; only a hang should fail it
+        bounded.limit = CEILING;
         assert_eq!(bounded.read().await, wifi());
         assert_eq!(started.load(Ordering::SeqCst), 2);
     }
@@ -235,12 +247,14 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn a_reading_whose_wait_was_dropped_still_blocks_a_second() {
         let started = Arc::new(AtomicU32::new(0));
+        let (signal_start, reader_started) = mpsc::channel::<()>();
         let (release, released) = mpsc::channel::<()>();
         let released = Mutex::new(released);
         let counter = Arc::clone(&started);
         let bounded = Bounded::new(
             Arc::new(move || {
                 counter.fetch_add(1, Ordering::SeqCst);
+                let _ = signal_start.send(());
                 let _ = released.lock().unwrap().recv();
                 wifi()
             }),
@@ -250,6 +264,9 @@ mod tests {
         let dropped = tokio::time::timeout(Duration::from_millis(20), bounded.read()).await;
         assert!(dropped.is_err());
         assert_eq!(bounded.read().await, NetworkReading::NoDefaultRoute);
+        reader_started
+            .recv_timeout(CEILING)
+            .expect("the reader did not start");
         assert_eq!(started.load(Ordering::SeqCst), 1);
         release.send(()).unwrap();
     }
