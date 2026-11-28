@@ -31,9 +31,13 @@ change as checked when it was not.
 The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
-need drive-letter paths run only on Windows. Four more steps run on Linux only: the
-base-address, instance-roots, build-definition, release-overrides, and
-agent-overrides tests again with `--release` and `MARSHAL_EXPECT_RELEASE=1`, which
+need drive-letter paths run only on Windows. The job's tests run with
+`--no-fail-fast`, so a test executable that fails does not stop the executables after
+it, and one flaky executable cannot hide the rest of the suite; the job still fails
+when any test fails. The `test:rust` task, and so the Check job's run of it, stays
+`cargo test --locked` and stops at the first failing executable. Four more steps run
+on Linux only: the base-address, instance-roots, build-definition, release-overrides,
+and agent-overrides tests again with `--release` and `MARSHAL_EXPECT_RELEASE=1`, which
 makes each fail if built in the wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;

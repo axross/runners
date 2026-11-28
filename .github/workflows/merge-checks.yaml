@@ -88,7 +88,7 @@ jobs:
       - name: Lint With Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run Tests
-        run: cargo test --locked
+        run: cargo test --locked --no-fail-fast
       # another OS user must be refused the instance lock while it is held. the
       # script runs the debug helper as `nobody` through sudo, which the Linux and
       # macOS hosted runners allow without a password; a hosted Windows runner has
