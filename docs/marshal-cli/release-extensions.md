@@ -183,21 +183,18 @@ M2's disk-image work lands in two pull requests. Pull request 2 builds the unsig
 disk image in the app job, adds the app job's shape rules, and stages the text of
 `sign-macos` and `verify-macos`, rewritten for the app and the disk image, in
 [`.github/staged/release-macos-app.yaml`](../../.github/staged/release-macos-app.yaml).
-It changes no release workflow of the recovery route, nor `assemble-release.sh`,
+It changes no job of `release.yaml`, nor `assemble-release.sh`,
 `verify-release.sh`, `.releaserc.json` or the shape check's rules for `release.yaml`,
 and nothing in it reaches an Environment. Its stand-in test,
 `test-staged-sign-macos.sh`, and the `verify-macos` refusal suite,
-`test-signed-dmg-refusals.sh`, are in `mise run check`, apart from the recovery
-route's own `test-sign-macos.sh`. The stand-in test also checks that no workflow
-names the staged file, that the staged `hdiutil create` arguments equal the app
-job's, and that the app job measures every tool the staged scripts call. Pull request
-3 opens after #132's restoration brings the app's release route back. It moves the
-staged jobs into `release.yaml` as it is then, changes only what the restored release
-graph's job names, `needs` and outputs require, makes `assemble-signed` need them
-again, gives the signed release set the disk image, restores the shape check's rules
-for them and deletes the staged file. If the restoration merges before pull request 2,
-it leaves the staged file for pull request 3. The requirements below are pull request
-3's, and it marks the split wired.
+`test-signed-dmg-refusals.sh`, are in `mise run check`. The stand-in test also checks
+that no workflow names the staged file, that the staged `hdiutil create` arguments
+equal the app job's, and that the app job measures every tool the staged scripts
+call. Pull request 3 moves the staged jobs into `release.yaml`, changes only what
+its job names, `needs` and outputs require, makes `assemble-signed` need them again,
+gives the signed release set the disk image, restores the shape check's rules for
+them and deletes the staged file. The requirements below are pull request 3's, and it
+marks the split wired.
 [Signing the Mac App](./signing.md#signing-the-mac-app-staged) describes what is
 staged now.
 
@@ -280,10 +277,12 @@ archive commands, and its `darwin-aarch64` feed entry follows W4's contract.
 
 ### Extending the Shape Check
 
-An extension MUST add its jobs or steps to `check-release-shape.mjs` and its
-mutation tests in the same pull request, under REVIEW.md's release lens and the
-maintainer's review. [CLI recovery release authority](../security/release-authority.md#temporary-cli-recovery) owns the active release
-boundary, including the permitted signing Environment. The check guards against
-mistakes, not a hostile pull request that edits the check itself. It does not see
-a write to `SHA256SUMS` in either build's `assemble` job other than by a
-redirection, `tee`, `cp` or `mv`.
+An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
+own pull request, under REVIEW.md's release lens and the maintainer's review, and
+allows its signing job the Environment there. The shape check guards against
+mistakes. A pull request can edit it, so it is not the control against a hostile
+one: what keeps pull requests away from the Environment is the maintainer's branch
+rule and that `release.yaml` runs only on a dispatch. It does not see a write to
+`SHA256SUMS` in `release-build.yaml`'s `assemble` job other than by a redirection,
+`tee`, `cp` or `mv`, or a step condition in `attest` or `release` that skips a step,
+such as `if: false`.

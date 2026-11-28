@@ -155,8 +155,9 @@ WiX. To bump it:
 The change needs the maintainer's review, since it changes the supply-chain
 surface (see [REVIEW.md](../../REVIEW.md)).
 
-The temporary CLI signing job uses the existing certificate pin, which also
-remains the contract for M2 and W4 after app restoration. Apple's Developer ID
+The macOS signing job pins the one certificate it embeds. This pin is held for M2
+and W4: W1's installer pull request removed the job that embeds it, and M2's
+disk-image pull request brings the job back with the pin below. Apple's Developer ID
 G2 intermediate certificate is embedded in `sign-macos` as base64, because the runner
 image's trust in it is unknown and the job fetches nothing. The job refuses it
 unless its SHA-256 is
@@ -208,21 +209,19 @@ W4's tool job, which signs update archives, commits one that moves with the pin 
 it lands. The
 install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
-the Windows app job of `merge-checks.yaml` and, since W1's installer pull
-request, in the Windows leg of [the retained app build](../../.github/workflows/release-build.yaml).
-M2's pull request 2 extends the exception to that workflow's `app-macos` job, which
-builds the unsigned Mac app. Each holds `contents: read`, reads no secret and
-publishes nothing, and each installs the tool the same way, at the same pin read
-through the same script, under `$RUNNER_TEMP` with no cache. The macOS job signs
-nothing and keeps the unsigned Mac app and disk image only as the `marshal-macos-app`
-workflow artifact, outside the unsigned release set; the staged `sign-macos` checks
-the archive against the job's hash once pull request 3 wires it in. `tauri-cli`'s build
-scripts and procedural macros run code at build time under those jobs' accounts,
-which is why the jobs bound the exception. The app build still runs for merge
-checks. During [CLI recovery](./release-authority.md#temporary-cli-recovery), the
-release workflow publishes only artifacts from the historical CLI build. The
-[app publication baseline](./release-authority.md#retained-app-release-baseline-suspended)
-records how the tool’s output was attested and published before recovery. Nothing else installs the tool. To move the pin, see
+the Windows app job of `merge-checks.yaml` and, in
+[`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
+released app, in the Windows leg and, since M2's pull request 2, in the `app-macos`
+job. Each holds `contents: read`, reads no secret and publishes nothing, and each
+installs the tool the same way, at the same pin read through the same script, under
+`$RUNNER_TEMP` with no cache. The macOS job signs nothing and keeps the unsigned Mac
+app and disk image only as the `marshal-macos-app` workflow artifact, outside the
+unsigned release set; the staged `sign-macos` checks the archive against the job's
+hash once pull request 3 wires it in. `tauri-cli`'s build scripts and procedural macros run
+code at build time under those jobs' accounts,
+which is why the jobs are what bounds them; in the release build the tool's output is
+the app that the next jobs attest and publish, so the exception covers the released
+app's build too. Nothing else installs the tool. To move the pin, see
 [App](../marshal/building.md#the-tauri-cli-pin); the change needs the maintainer's
 review, since it changes the supply-chain surface (see
 [REVIEW.md](../../REVIEW.md)). Any other unpinned download remains a finding.

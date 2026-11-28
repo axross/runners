@@ -8,16 +8,14 @@ description: "Which signatures and identities bind the CLI, package and planned 
 
 ## Signing, Held for M2 and W4
 
-The temporary recovery reinstates bare-CLI/pkg signing under CLI Recovery's
-bounded exception. The following held contract concerns the app path after
-restoration, not that temporary CLI job.
-
-No job of the suspended app baseline signs anything from W1's installer pull request until the
+No job of `release.yaml` signs anything from W1's installer pull request until the
 next signing job joins the chain: M2's disk-image pull request brings back
 `sign-macos` and `verify-macos`, rewritten for the app and the disk image, and W4's
 feed pull request adds `update-tool` and `sign-update`. Each joins before
 `assemble-signed`, which then needs it. Until then no job declares the `release`
 Environment, and the Environment and its secrets are kept for those jobs.
+[Signing the Mac App (Staged)](#signing-the-mac-app-staged) describes M2's two jobs,
+which pull request 2 stages outside `.github/workflows/`.
 [Security](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that period.
 
@@ -30,8 +28,8 @@ The contracts below stay in force through the gap.
 
 ## The Signing Contracts
 
-The temporary recovery uses these contracts for the bare CLI/pkg. They also remain
-held for M2 and W4's app-signing jobs after restoration. F0 owns these. W1, W4, M2
+These are held for M2 and W4: no job uses them until M2's or W4's signing job
+joins the chain, and they stay in force through the gap. F0 owns these. W1, W4, M2
 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
@@ -125,29 +123,7 @@ The contracts F0 owns are these:
   [Development Workflow](../releases/signing-renewal.md#renewing-the-certificates) says how
   to renew.
 
-## Reading a Signature
-
-For the temporary CLI recovery, these read-only commands inspect the actual
-release package and installed CLI. Replace `<version>` with its real version.
-They do not install or sign anything, and expected output is not measured evidence:
-
-```bash
-pkgutil --check-signature marshal-<version>-macos-arm64.pkg
-spctl --assess --type install -vv marshal-<version>-macos-arm64.pkg
-xcrun stapler validate marshal-<version>-macos-arm64.pkg
-codesign --verify --strict -vv /usr/local/bin/marshal
-codesign -d -r- /usr/local/bin/marshal
-```
-
-The package is expected to show a Developer ID Installer chain of the same team
-as the CLI, a notarized Developer ID assessment and a valid staple. The bare or
-installed CLI's designated requirement must match the existing identifier/team
-contract; its notarization is read from the CDHash in the notary log, not
-`spctl --type execute`. The actual team, requirement form and native outcomes remain
-pending for F0's measured record. App/dmg signature instructions remain M2's work
-after restoration, not substitutes for these CLI/pkg subjects.
-
-### Signing the Mac App (Staged)
+## Signing the Mac App (Staged)
 
 **Staged until M2's pull request 3.** The text below describes jobs that no
 workflow runs yet. M2's disk-image work is split in two, as
@@ -157,10 +133,9 @@ restoration point and rewritten for the app and the disk image, in
 [`.github/staged/release-macos-app.yaml`](../../.github/staged/release-macos-app.yaml),
 outside `.github/workflows/`. GitHub never runs that file, so its
 `environment: release` reaches no Environment, and the shape check and `actionlint`
-do not read it. Pull request 3 moves the jobs into the restored `release.yaml` after
-the restoration pull request (#132), makes `assemble-signed` need them again and deletes the staged
-file; until then the release is the temporary CLI recovery's, which signs the
-historical command line, not the app.
+do not read it. Pull request 3 moves the jobs into `release.yaml`, makes
+`assemble-signed` need them again and deletes the staged file; until then no job of
+any workflow signs anything.
 [`test-staged-sign-macos.sh`](../../.github/scripts/tests/test-staged-sign-macos.sh)
 and
 [`test-signed-dmg-refusals.sh`](../../.github/scripts/tests/test-signed-dmg-refusals.sh)
@@ -171,9 +146,9 @@ test the staged jobs against stand-ins, and neither shows what Apple's tools ans
 | `sign-macos`   | `plan`, `build`               | `macos-latest`, 60 minutes | `contents: read` | `release`   | `APPLE_APPLICATION_P12_BASE64`, `APPLE_P12_PASSWORD`, the three notary secrets and `APPLE_TEAM_ID`; not `APPLE_INSTALLER_P12_BASE64`. Downloads `marshal-macos-app`; uploads `marshal-macos-arm64-signed` and `notary-log-macos`. It checks nothing out.                                                                     |
 | `verify-macos` | `plan`, `build`, `sign-macos` | `macos-latest`, 20 minutes | `contents: read` | none        | No secret and no signing identity. Checks out the repository with `persist-credentials: false`, downloads three artifacts, checks the app archive against `app_sha256` and the disk image against `sign-macos`'s hash, and runs `test-signed-dmg.sh` with the team ID and the notary submission ID that `sign-macos` output. |
 
-The jobs name `plan` and `build`, which the restored release graph supplies:
-`build` outputs `app_sha256`, as the `app-macos` job of `release-build.yaml` does
-today. The kept uploads, the signed disk image and the notary log, hold no secret.
+The jobs name `plan` and `build`, which `release.yaml` has: `build` calls
+`release-build.yaml`, whose workflow output `app_sha256` comes from its `app-macos`
+job. The kept uploads, the signed disk image and the notary log, hold no secret.
 The workflows ask GitHub to keep them for 14 days; GitHub keeps them for the
 repository's artifact retention limit instead when that is shorter.
 
@@ -187,9 +162,8 @@ ticket services. Each signing tool is called by its absolute system path under
 `/usr/bin/`: `security`, `codesign`, `openssl`, `plutil`, `shasum`, `xcrun`, `ditto`
 and `hdiutil`, so nothing earlier on `PATH` can stand in for one. The scripts read the
 prefix from `SYSTEM_BIN`, whose default is that literal path and which only the
-stand-in test overrides; the shape check rejects the name, and `SYSTEM_SBIN`, as an
-`env:` key anywhere in `.github/workflows/`, and pull request 3 extends its rules to
-the wired job. Its steps run in this order:
+stand-in test overrides; pull request 3 adds the shape-check rules for the wired
+job. Its steps run in this order:
 
 1. It downloads `marshal-macos-app`, the app job's unsigned app archive and unsigned
    disk image.
@@ -298,11 +272,19 @@ equal the app job's and that the app job measures every tool the scripts call.
 signed release is therefore the first real run of `sign-macos` and `verify-macos`. A
 defect stops that release before its tag, and a later pull request fixes it.
 
+## Reading a Signature
+
+No file of a release is signed until M2's disk-image pull request 3. The commands
+that read the command line's signed macOS package are in this section of this document at
+the last command-line release's tag. [The Last Command-Line Release](./release-artifacts.md#the-last-command-line-release)
+says how to find that tag's version and open the file there. The commands for the
+Mac app's files are below, staged with its jobs.
+
 ### Reading a Mac Signature (Staged)
 
 These commands show what a release's Mac files carry once the staged signing jobs
 are wired into the release, in pull request 3; until then no release carries a disk
-image, and the command line's package is read under Reading a Signature above. They
+image, and the command line's package is read at the last command-line release's tag. They
 are information, not steps of the install procedure, and the answers below are what
 the documentation leads to expect, not what a Mac has shown.
 
@@ -330,5 +312,5 @@ spctl --assess --type execute -vv /Applications/Marshal.app
   identifier contract, and `spctl --type execute` is expected to accept the app as
   notarized Developer ID.
 
-The command line's signed macOS package is read by the commands under Reading a
-Signature above, and at the last command-line release's tag.
+The command line's signed macOS package is read with the commands in the
+Reading a Signature section of this document at the last command-line release's tag.

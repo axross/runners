@@ -173,9 +173,8 @@ bundle's layout, and builds an unsigned disk image with `hdiutil`. It keeps the 
 `ditto` archive and the disk image as the `marshal-macos-app` artifact, outside the
 unsigned set, and hands the archive's SHA-256 over as the workflow output
 `app_sha256`. The dry run signs nothing and references no Environment, and no
-app-build job declares one. The temporary CLI recovery has its own unsigned dry
-run; only its dispatch-only signing job declares the `release` Environment.
-The app dry run holds `contents: read`, and nothing is attested or published; [CLI](../marshal-cli/release-artifacts.md#releases)
+job of any workflow declares one until the next signing job returns. It holds
+`contents: read`, and nothing is attested or published; [CLI](../marshal-cli/release-artifacts.md#releases)
 describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
 and holds `contents: read`. It downloads the dry run's artifact and runs the check and
 uninstall blocks that [CLI](../marshal-cli/install-on-windows.md#installing-updating-and-rolling-back) documents:

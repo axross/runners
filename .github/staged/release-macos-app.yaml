@@ -1,14 +1,13 @@
-# TODO(#84): pull request 3 moves sign-macos and verify-macos into release.yaml as
-# it is after #132's restoration, with assemble-signed needing them again, and
-# deletes this file.
+# TODO(#84): pull request 3 moves sign-macos and verify-macos into release.yaml,
+# with assemble-signed needing them again, and deletes this file.
 #
 # GitHub never runs this file, because it sits outside .github/workflows/, so the
 # `environment: release` below reaches no Environment, and check-release-shape.mjs
 # and actionlint do not read it. test-staged-sign-macos.sh and
 # test-signed-dmg-refusals.sh extract its marked `run:` steps and run them
-# against stand-ins. the jobs name `plan` and `build`, which the restored
-# release graph supplies: `build` outputs app_sha256, as release-build.yaml's
-# app-macos job does.
+# against stand-ins. the jobs name `plan` and `build`, which release.yaml has:
+# `build` calls release-build.yaml, whose output app_sha256 comes from its
+# app-macos job.
 
 jobs:
   # the only job that declares an Environment or reads a signing secret. it holds

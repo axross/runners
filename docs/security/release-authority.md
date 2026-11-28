@@ -1,76 +1,17 @@
 ---
 type: Policy
 title: "Release authority and signing boundaries"
-description: "Determine who may dispatch or approve a release and which jobs may sign, attest or publish under the active recovery route."
+description: "Determine who may dispatch or approve a release and which jobs may sign, attest or publish."
 ---
 
 # Release authority and signing boundaries
 
-The maintainer controls release dispatch and Environment approval. Use the active CLI recovery record to review a release today. The suspended app record preserves the conditions for restoring app publication.
+The maintainer controls release dispatch and Environment approval. Use the record below to check a change to the release workflows, the release tooling or the release scripts.
 
 ## A Release Is Published Only From a Dispatch on Main
 
-The active release route is the temporary fixed-source CLI recovery below.
-The app source and its unsigned build remain, but the app publication route is
-suspended. The retained app baseline in the following subsection is not a second
-active release graph. [CLI Recovery](../runner-recovery/index.md) owns the
-operator procedure and the two source identities.
-
-### Temporary CLI Recovery
-
-[The recovery release workflow](../../.github/workflows/release.yaml) remains dispatch-only on main with the existing release concurrency.
-Its seven stages are plan, build, sign-macos, verify-macos, assemble-signed, attest
-and release. Only `sign-macos` declares `release` and reads the six signing secrets
-and `APPLE_TEAM_ID` under the Environment contract retained below. It holds only
-`contents: read`, checks nothing out, and runs inline operating-system tools, no
-repository script, package manager or third-party action. Secret files are 0600,
-notary-key lines are masked, and keychain/files are removed after success or failure.
-The existing G2 certificate, team, identifier, expiry and notarization checks apply.
-The maintainer alone dispatches and approves; no agent performs either operation
-or changes release settings.
-
-[The recovery build](../../.github/workflows/cli-recovery-build.yaml) is unprivileged and reusable by merge checks. It obtains
-the complete historical tree at `dc8e1ebcc0722997206487f3dcca2ae7e519cf02`, disables
-persisted checkout credentials, verifies HEAD/tree/CLI/lock/toolchain identities,
-and allows only its exact version stamp. Build outputs stay outside that tree;
-tracked and untracked input changes, including ignored files, fail revalidation.
-The production CLI and legacy installers come from that tree, not the current app
-or a test helper. Historical dependencies use their pinned policy and lockfile.
-The existing pinned `jdx/mise-action`, with cache disabled and only cargo-deny
-selected, installs the historical checker without a signing Environment. Normal
-app builds and their installer tests still run separately.
-
-`verify-macos`, outside the Environment, checks signed bare CLI/package identity,
-both accepted designated-requirement forms, payload, notarization and stapling.
-Only verified signed macOS output joins the unchanged Windows CLI/MSI in
-`assemble-signed`. Its recovery assembler writes SHA256SUMS; attest and the recovery
-semantic-release gate independently require exactly four payload files plus those
-checksums. The npm jobs retain only contents write; attest alone has OIDC and
-attestations write and checks out no code. No job has both write authorities.
-
-Default provenance identifies the workflow/tag commit from OIDC, not the historical
-secondary checkout's HEAD. Build logs record both identities and checked inputs;
-the optional download checks keep the workflow, main-ref, tag-commit and hosted
-attester pins, without claiming that default provenance proves every fetched input.
-PR dry runs never reach signing, the Environment, attestation or publication.
-Stand-ins and unsigned hosted installer checks are not native evidence.
-The shape checker, mutation suite, inline-signing stand-ins, signed-package refusals
-and CLI install-block suites guard this temporary boundary; they do not defend
-against a hostile PR changing the checks themselves.
-
-After successful public F0 release/signing and native-host evidence, a separate
-reviewed restoration removes the temporary route and reconciles then-current app
-owners. Only restoration completes recovery; neither code PR completes F0, whose
-measured signing record remains a later documents-only change. The recovery tag's
-CLI instructions remain valid. This is not a permanent dual-product selector.
-
-### Retained App Release Baseline (Suspended)
-
-The following describes the app publication baseline to reconcile on restoration,
-not the active recovery dispatch. Its app build and tests remain active.
-
-The [last app publication workflow before CLI recovery](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/workflows/release.yaml) was configured to publish the app with
-semantic-release. The current
+[`release.yaml`](../../.github/workflows/release.yaml) releases the app with
+semantic-release, and
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the app
 executable and its MSI, and the unsigned Mac app and disk image; [CLI](../marshal-cli/release-artifacts.md#releases) owns the steps. This is the
 record a change to either workflow, to the build call in
@@ -219,9 +160,9 @@ record a change to either workflow, to the build call in
   outside `.github/workflows/`: GitHub never runs it, so its `environment: release`
   reaches nothing, and the shape check and `actionlint` do not read it. Its stand-in
   tests run the staged scripts against recording tools, with no credential, and check
-  that no workflow names the file. M2's pull request 3 moves the jobs into the
-  restored `release.yaml` under this record, and brings back the shape check's rules
-  for them before any release can run them. The record the staged jobs are written to:
+  that no workflow names the file. M2's pull request 3 moves the jobs into
+  `release.yaml` under this record, and brings back the shape check's rules for them
+  before any release can run them. The record the staged jobs are written to:
   - **`sign-macos` holds `contents: read`**, checks nothing out, runs no repository
     file and no package manager, and uses no action but `actions/download-artifact`
     and `actions/upload-artifact`. It fetches no tool or certificate. Each signing
@@ -420,17 +361,12 @@ Residual risks, accepted:
 - **Unprotected tags change the next version.** Any account with write access can
   push, move, or delete a `v*` tag that has no published release, `v0.0.0` and
   `v0.1.1` included, and that changes the version semantic-release works out next.
-  Until the recovery release is published, moving `v0.1.1` to another commit, or
-  deleting it, can make the next plan print `1.0.0`; once a later release exists,
-  `v0.1.1` no longer affects the version. The check in
+  Once a release exists after `v0.1.1`, that tag no longer affects the version; before
+  one did, moving `v0.1.1` to another commit, or deleting it, could make the next plan
+  print `1.0.0`, as [Version Rules](../releases/versions.md#version-rules) records. The check in
   [Each Release](../releases/publish.md#each-release) names such a
   tag only when the check would start at it, and never `v0.1.1`, which it skips.
-  The version is guarded instead by the read-back of `v0.1.1` in
-  [CLI Recovery](../runner-recovery/release.md#release-the-fixed-cli) before the
-  recovery dispatch, and by the maintainer cancelling, before approving
-  `sign-macos`, a run whose plan prints a version
-  [Version Rules](../releases/versions.md#version-rules) does not
-  expect. Immutable releases lock only the tags of published releases.
+  Immutable releases lock only the tags of published releases.
 - **A weaker install pin.** `--source-ref refs/heads/main` proves that the build
   ran from main, not from a particular tag. `--source-digest` and the reachability
   check still tie the file to one commit on main, but no longer to a version. The

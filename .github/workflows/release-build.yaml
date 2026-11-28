@@ -4,8 +4,8 @@ name: Release Build
 # unsigned per-user MSI, tests the MSI, and puts the app executable, the MSI and
 # SHA256SUMS in one artifact. it also builds the unsigned Mac app and a disk image
 # of it, kept apart in marshal-macos-app for the staged signing job.
-# merge-checks.yaml retains it as an app dry run; it has no publish or attest step.
-# see
+# merge-checks.yaml calls it as a dry run and release.yaml for a release; it has
+# no publish or attest step. see
 # docs/security/release-authority.md, which also says why only the callers declare
 # `concurrency`.
 

@@ -8,34 +8,25 @@ description: "Which parts of Marshal exist, and what has been tested on a host?"
 
 ## What Exists
 
-The app builds and its tests run. W1's installer pull request (pull request 3)
-established the Windows app and per-user MSI release baseline in place of the
-command line, as [Release artifacts and workflow boundaries](../marshal-cli/release-artifacts.md#releases) describes. W1,
-[#73](https://github.com/axross/runners/issues/73), is the child that owns the app.
-That pull request removed the `marshal` binary target from main on every operating
-system; normal app builds do not build a CLI.
+The app builds, its tests run, and since W1's installer pull request (pull request 3)
+each release carries it and its per-user MSI, as [Release artifacts and workflow boundaries](../marshal-cli/release-artifacts.md#releases) describes,
+in place of the command line. W1, [#73](https://github.com/axross/runners/issues/73),
+is the child that owns the app. No host has installed it yet: axpc still runs its
+pools with the last command-line release, identified in
+[The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release),
+so this document describes an app that CI builds and tests and the release ships,
+not one a host has run. The same pull request removed the command line: no `marshal`
+binary is built on any operating system, and the app is the only way to run a host.
 
-During bounded F0 recovery, app publication is suspended while the release workflow
-builds the fixed historical CLI and its legacy MSI/pkg instead.
-[CLI Recovery](../runner-recovery/index.md) owns those actual-version installation procedures
-and the successful public F0 evidence required before a separate reviewed app-path
-restoration. App source and normal builds remain; the recovery is not a supported
-parallel CLI product. The [app release and installation instructions](../marshal-cli/install-on-windows.md) describe the
-suspended baseline, not the recovery installers. No recovery release version or
-native installer evidence is recorded yet.
-
-No host has installed the app yet: axpc still runs its pools with the command line,
-identified in [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release). The evidence here comes from CI builds and tests. Host verification is pending.
-
-| Part                                                                                    | State                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The app, its menu and its main window                                                   | Built by the Windows app job of `merge-checks.yaml` and the macOS app job of `release-build.yaml`; each build is kept as a run artifact                                                                                                                                                      |
-| The agent's resident mode and protocol version 2                                        | In the `marshal-cli` library, served by the app's executable in its agent mode                                                                                                                                                                                                               |
-| The token store                                                                         | The Credential Manager on Windows and the login keychain on macOS, entered in the main window                                                                                                                                                                                                |
-| The installer, the release, the [install layout](../marshal/rollback.md#install-layout) | Built and tested by the retained app release build on every pull request; see [the installer contract](../marshal-cli/release-artifacts.md#installers). The Mac's unsigned dry-run disk image is built by `release-build.yaml`; its signed release disk image comes with M2's pull request 3 |
-| Updates                                                                                 | The app's side, with the committed public key; the feed comes with W4's last pull request                                                                                                                                                                                                    |
-| The command line's removal                                                              | Removed from main by W1; only the bounded recovery builds the fixed historical CLI                                                                                                                                                                                                           |
-| Verification on axpc                                                                    | Not done; see [Verification Status](#verification-status)                                                                                                                                                                                                                                    |
+| Part                                                                                    | State                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The app, its menu and its main window                                                   | Built by the Windows app job of `merge-checks.yaml` and the `app-macos` job of `release-build.yaml`; each build is kept as a run artifact. The macOS app job of `merge-checks.yaml` lints and tests the workspace                                                               |
+| The agent's resident mode and protocol version 2                                        | In the `marshal-cli` library, served by the app's executable in its agent mode                                                                                                                                                                                                  |
+| The token store                                                                         | The Credential Manager on Windows and the login keychain on macOS, entered in the main window                                                                                                                                                                                   |
+| The installer, the release, the [install layout](../marshal/rollback.md#install-layout) | Built and tested by the release build on every pull request; see [the installer contract](../marshal-cli/release-artifacts.md#installers). The Mac's unsigned dry-run disk image is built by `release-build.yaml`; its signed release disk image comes with M2's pull request 3 |
+| Updates                                                                                 | The app's side, with the committed public key; the feed comes with W4's last pull request                                                                                                                                                                                       |
+| The command line's removal                                                              | Done in W1's installer pull request; the last command-line release keeps it                                                                                                                                                                                                     |
+| Verification on axpc                                                                    | Not done; see [Verification Status](#verification-status)                                                                                                                                                                                                                       |
 
 ## Verification Status
 

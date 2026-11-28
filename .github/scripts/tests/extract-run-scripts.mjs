@@ -7,7 +7,8 @@
 // `# <job id>: <name>` that must be the script's first line. steps.json holds
 // each step's kind (run or uses), name, id, condition and env, and a uses step's
 // action and inputs, so the test can run each script with exactly the environment
-// its step declares.
+// its step declares. only test-staged-sign-macos.sh uses it now, on the staged
+// sign-macos job.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readWorkflow } from "../workflow-reader.mjs";
