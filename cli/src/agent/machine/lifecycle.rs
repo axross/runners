@@ -37,6 +37,17 @@ pub const RESUME_WAITING: &str = "waiting";
 /// is armed.
 pub const RESUME_NO_GATEWAY: &str = "no_gateway";
 
+/// the settings a plan's `[lifecycle]` puts in effect; a plan without the table takes the
+/// defaults.
+pub(super) fn settings_of(plan: &Plan) -> InEffect {
+    let lifecycle = plan
+        .settings
+        .as_ref()
+        .map(|settings| settings.lifecycle)
+        .unwrap_or_default();
+    InEffect::windows(lifecycle)
+}
+
 impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, B, K, R, D, M> {
     /// whether this host has the `[lifecycle]` settings: on axmc they are M4's.
     pub(super) fn has_lifecycle(&self) -> bool {
@@ -68,12 +79,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         if !self.has_lifecycle() {
             return;
         }
-        let lifecycle = plan
-            .settings
-            .as_ref()
-            .map(|settings| settings.lifecycle)
-            .unwrap_or_default();
-        let settings = InEffect::windows(lifecycle);
+        let settings = settings_of(plan);
         self.take_settings(settings);
         self.end_resume_when_off(settings);
     }
