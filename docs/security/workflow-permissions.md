@@ -226,10 +226,11 @@ executed.
 - **The guard.** `mise run test:read-head` reads the workflow and fails unless the
   allowlist is exactly the expected set, the deny list holds its entries including
   the denied command, the copy step's path, the allowlist entry, and the prompt
-  name the same path, the copy step comes after the checkout and before the action
-  and sets no condition and no continue-on-error, so that it runs every time and a
-  failure fails the job, and the prompt keeps its two prohibitions. Like the other
-  guards here, it catches a mistake and is no control against a hostile edit.
+  name the same path, the copy step's repository is this one, the copy step comes
+  after the checkout and before the action and sets no condition and no
+  continue-on-error, so that it runs every time and a failure fails the job, and
+  the prompt keeps its two prohibitions. Like the other guards here, it catches a
+  mistake and is no control against a hostile edit.
   The tests that run the copy step need a root-owned directory; they run as root or
   with passwordless `sudo`, skip with a note elsewhere, and fail on GitHub Actions.
 

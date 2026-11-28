@@ -17,6 +17,8 @@ const COPY_STEP_NAME = "Install Head Reader";
 const COPY_ENV_NAME = "READ_HEAD_COPY";
 const TOOL_PATH_ENV_NAME = "READ_HEAD_TOOL_PATH";
 const EXPECTED_TOOL_PATH = "/usr/bin:/bin";
+const REPOSITORY_ENV_NAME = "READ_HEAD_REPOSITORY";
+const EXPECTED_REPOSITORY = "${{ github.repository }}";
 const EXPECTED_CLAUDE_ARGS_FLAGS = [
   "--append-system-prompt",
   "--allowedTools",
@@ -168,6 +170,12 @@ function checkWorkflow(workflow) {
   if (toolPath !== EXPECTED_TOOL_PATH)
     problems.push(
       `the copy step must declare ${TOOL_PATH_ENV_NAME} as ${EXPECTED_TOOL_PATH}, found ${JSON.stringify(toolPath ?? null)}`,
+    );
+
+  const repository = copyEnvironment[REPOSITORY_ENV_NAME];
+  if (repository !== EXPECTED_REPOSITORY)
+    problems.push(
+      `the copy step must declare ${REPOSITORY_ENV_NAME} as ${EXPECTED_REPOSITORY}, found ${JSON.stringify(repository ?? null)}`,
     );
 
   const expectedAllowed =

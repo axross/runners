@@ -117,6 +117,8 @@ alter "a different tool search path fails the guard" \
 alter "a missing tool search path fails the guard" \
   "          READ_HEAD_TOOL_PATH: /usr/bin:/bin
 " "" "must declare READ_HEAD_TOOL_PATH as /usr/bin:/bin"
+alter "a different repository fails the guard" \
+  "READ_HEAD_REPOSITORY: \${{ github.repository }}" "READ_HEAD_REPOSITORY: octo-org/other-repo" "must declare READ_HEAD_REPOSITORY as \${{ github.repository }}, found \"octo-org/other-repo\""
 alter "an added claude_args flag fails the guard" \
   "--max-turns 200" "--max-turns 200 --model other" "the flag --model"
 alter "an added short claude_args flag fails the guard" \
