@@ -100,12 +100,12 @@ therefore collect the items most likely to vanish first.
 ## Collecting the Evidence
 
 Run each command in the terminal of the macOS user that runs Marshal. Replace the
-`<placeholders>` with your values, and keep them out of anything you post; see
-[Post the Evidence](#post-the-evidence). Each command goes through `tart exec`, which
-runs it in the VM as `admin` directly and without a shell. A command that waits on the
-network carries its time limit inside, as `timeout <seconds>` in the executed command,
-so nothing lingers if you stop waiting. macOS has no `timeout` to wrap `tart exec`
-itself.
+`<placeholders>` with your values, and keep them out of anything you post, except the
+addresses that [Post the Evidence](#post-the-evidence) says stay. Each command goes
+through `tart exec`, which runs it in the VM as `admin` directly and without a shell.
+A command that waits on the network carries its time limit inside, as
+`timeout <seconds>` in the executed command, so nothing lingers if you stop waiting.
+macOS has no `timeout` to wrap `tart exec` itself.
 
 A value you read from the VM or the container, such as the DNS address or an interface
 name, is untrusted, because a job can change what the container's files and the VM's
@@ -462,7 +462,13 @@ does for committed files:
   configuration file's path in the status;
 - resolver search domains, and the VM's host name;
 - MAC addresses, home-directory paths and the Mac's account name;
-- any host name or address other than the VM's, Docker's and public GitHub hosts.
+- any host name or address other than the VM's, its gateway's and its DNS server's,
+  Docker's and public GitHub hosts.
+
+The gateway and DNS server addresses stay, because their overlap with the bridge's
+subnet is the evidence. An upstream DNS address in the VM's resolver files, including
+systemd-resolved's file, stays only when it is the gateway's, and you replace it
+otherwise.
 
 The notes file holds MAC addresses, neighbour tables and the status's configuration
 path. Keep it private, and delete it once the evidence or the abort is posted.
