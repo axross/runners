@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::runtime::registration::RUNNER_GROUP_ID;
 use crate::runtime::secret::Secret;
 
-use super::transport::{Error, ErrorKind, decode};
+use super::transport::{Error, ErrorKind, SERVICE_API_VERSION, decode};
 
 pub(crate) const ADMIN_RENEWAL_MARGIN: Duration = Duration::from_secs(60);
 
@@ -65,7 +65,7 @@ impl Connection {
         url.set_query(None);
         url.query_pairs_mut().extend_pairs(retained);
         url.query_pairs_mut()
-            .append_pair("api-version", "6.0-preview");
+            .append_pair("api-version", SERVICE_API_VERSION);
         Ok(url)
     }
 }

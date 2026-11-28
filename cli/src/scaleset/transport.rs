@@ -15,7 +15,7 @@ use crate::runtime::secret::Secret;
 
 /// the service may hold a poll for 50 seconds; response reading needs time beyond that hold.
 pub const POLL_TIMEOUT: Duration = Duration::from_secs(70);
-const SERVICE_ACCEPT: &str = "application/json; api-version=6.0-preview";
+pub(super) const SERVICE_API_VERSION: &str = "6.0-preview";
 const MAX_HOST_CHARS: usize = 253;
 
 /// failures the listener classifies without inspecting untrusted service text.
@@ -184,7 +184,7 @@ impl Transport {
             method,
             url,
             ("Bearer", token),
-            Some(SERVICE_ACCEPT),
+            Some(&service_accept()),
             true,
             body,
         )?;
@@ -205,7 +205,7 @@ impl Transport {
                 method,
                 url,
                 ("Bearer", token),
-                Some(SERVICE_ACCEPT),
+                Some(&service_accept()),
                 true,
                 None,
             )?
@@ -243,7 +243,7 @@ impl Transport {
                 Method::GET,
                 url,
                 ("Bearer", token),
-                Some(SERVICE_ACCEPT),
+                Some(&service_accept()),
                 false,
                 None,
             )?
@@ -295,6 +295,10 @@ impl Transport {
             Err(classify(status, response.headers(), &body, now_seconds()))
         }
     }
+}
+
+fn service_accept() -> String {
+    format!("application/json; api-version={SERVICE_API_VERSION}")
 }
 
 fn unreachable_error(error: reqwest::Error) -> Error {
