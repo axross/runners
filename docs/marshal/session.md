@@ -67,7 +67,7 @@ them: the `marshal-modes` crate reads its three only when `debug_assertions` is 
 the CLI library does the same for its own, and the location rule reads its variable
 only in a debug build, so no environment moves a release build's lock, channel,
 files, `docker`, `tart` or GitHub address, or lifts the Applications rule. The
-`app-macos` job runs the location rule's tests in the release profile with the
+`app-macos` job of `release-build.yaml` runs the location rule's tests in the release profile with the
 variable set, so they fail if a release build reads it.
 [Security](../security/app-trust.md#the-app-surface) records why. The crate has a
 test of that in the release profile, which the `app-modes` job runs on a macOS hosted

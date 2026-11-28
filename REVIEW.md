@@ -357,8 +357,19 @@ Apply the lens for each kind of file in the diff.
   `assemble-signed`, or one in `attest` or `release` that skips a step, which the
   shape check does not see, and an attest or release job that reads the unsigned set
   are findings. A change to the identifier `app.axross.marshal`, the team pin, or the
-  G2 intermediate's pin without its source and the record's update is a finding. A
-  change that relaxes the record needs the maintainer's review.
+  G2 intermediate's pin without its source and the record's update is a finding.
+  M2's Mac signing jobs are staged in `.github/staged/release-macos-app.yaml` until
+  its last pull request wires them into `release.yaml`, and the staged text is
+  reviewed as the jobs it will become. These are findings: a `sign-macos` or
+  `verify-macos` job in a workflow before that pull request; in the staged
+  `sign-macos`, a read of `APPLE_INSTALLER_P12_BASE64`, a signing tool not called by
+  its `/usr/bin/` path, a `codesign --deep`, an app signed without the hardened
+  runtime, a timestamp or the identifier `app.axross.marshal`, a disk image made with
+  other `hdiutil create` arguments than the app job's, and a notarization result read
+  from the exit code instead of the status; and, in the `app-macos` job of
+  `release-build.yaml`, a secret, a signing step, a cache, an action but checkout and
+  artifact upload, or a measured-tools list that leaves out a tool the staged scripts
+  call. A change that relaxes the record needs the maintainer's review.
 - **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
   `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
   indexing). The CLI collects every error in the order

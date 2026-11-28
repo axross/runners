@@ -179,6 +179,28 @@ M2's Keychain trust depends on that identity.
 
 ### M2's Disk-Image Pull Request
 
+M2's disk-image work lands in two pull requests. Pull request 2 builds the unsigned
+disk image in the app job, adds the app job's shape rules, and stages the text of
+`sign-macos` and `verify-macos`, rewritten for the app and the disk image, in
+[`.github/staged/release-macos-app.yaml`](../../.github/staged/release-macos-app.yaml).
+It changes no release workflow of the recovery route, nor `assemble-release.sh`,
+`verify-release.sh`, `.releaserc.json` or the shape check's rules for `release.yaml`,
+and nothing in it reaches an Environment. Its stand-in test,
+`test-staged-sign-macos.sh`, and the `verify-macos` refusal suite,
+`test-signed-dmg-refusals.sh`, are in `mise run check`, apart from the recovery
+route's own `test-sign-macos.sh`. The stand-in test also checks that no workflow
+names the staged file, that the staged `hdiutil create` arguments equal the app
+job's, and that the app job measures every tool the staged scripts call. Pull request
+3 opens after #132's restoration brings the app's release route back. It moves the
+staged jobs into `release.yaml` as it is then, changes only what the restored release
+graph's job names, `needs` and outputs require, makes `assemble-signed` need them
+again, gives the signed release set the disk image, restores the shape check's rules
+for them and deletes the staged file. If the restoration merges before pull request 2,
+it leaves the staged file for pull request 3. The requirements below are pull request
+3's, and it marks the split wired.
+[Signing the Mac App](./signing.md#signing-the-mac-app-staged) describes what is
+staged now.
+
 M2 MUST restore `sign-macos`, `verify-macos`, the measured-tools step, their
 shape-check rules and test cases from the restoration point. It leaves out the
 command-line signing and package steps, the Installer identity's check, import
