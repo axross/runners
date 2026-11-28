@@ -154,16 +154,14 @@ repository's artifact retention limit instead when that is shorter.
 
 `sign-macos` is the one staged job that declares the Environment or reads a signing secret.
 [Security](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
-owns what it may hold and run: `contents: read`, no checkout, no repository file, no
-package manager, no fetch, and no action but `actions/download-artifact` and
-`actions/upload-artifact`. Its steps are the job's own definition in the staged file, and in `release.yaml` once wired,
-and its only network use is the artifact transfer and Apple's timestamp, notary and
-ticket services. Each signing tool is called by its absolute system path under
-`/usr/bin/`: `security`, `codesign`, `openssl`, `plutil`, `shasum`, `xcrun`, `ditto`
-and `hdiutil`, so nothing earlier on `PATH` can stand in for one. The scripts read the
-prefix from `SYSTEM_BIN`, whose default is that literal path and which only the
-stand-in test overrides; pull request 3 adds the shape-check rules for the wired
-job. Its steps run in this order:
+owns what it may hold and run, and why each signing tool is called by its absolute
+path. Its steps are the job's own definition in the staged file, and in `release.yaml`
+once wired, and its only network use is the artifact transfer and Apple's timestamp,
+notary and ticket services. The signing tools it calls are `security`, `codesign`,
+`openssl`, `plutil`, `shasum`, `xcrun`, `ditto` and `hdiutil`, all under `/usr/bin/`.
+The scripts read that prefix from `SYSTEM_BIN`, whose default is that literal path and
+which only the stand-in test overrides; pull request 3 adds the shape-check rules for
+the wired job. Its steps run in this order:
 
 1. It downloads `marshal-macos-app`, the app job's unsigned app archive and unsigned
    disk image.
