@@ -96,10 +96,11 @@ A round reads three things:
 - the default branch's checkout, which shows files as they were before the
   pull request;
 - head files, through [`read-head.sh`](../../.github/scripts/read-head.sh), which the
-  workflow installs where the reviewer cannot change it. It prints one file, a line
-  range, or a directory listing at the head commit the reviewer names. The
+  workflow installs root-owned, where no tool the reviewer may run can change it. It
+  prints one file, a line range, or a directory listing at the head commit the
+  reviewer names. The
   [Security](../security/workflow-permissions.md#the-review-job-reads-head-files-only-through-a-fixed-command)
-  page says how it is protected.
+  page says how it is protected and where that protection stops.
 
 There is no head-wide search, so a question across the whole head stays a long
 scan of single reads or an unchecked item. The workflow runs from the default

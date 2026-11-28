@@ -57,8 +57,9 @@ jobs:
 
       # the reviewer reads pull request head files only through this copy. it is
       # made after the checkout and before the action, root-owned in a directory
-      # no job-user command can write, and checked before the job goes on;
-      # docs/security/workflow-permissions.md says why.
+      # only root can write (the job user's sudo can, so this is defence in depth),
+      # and checked before the job goes on; docs/security/workflow-permissions.md
+      # says why.
       - name: Install Head Reader
         env:
           READ_HEAD_COPY: /usr/local/libexec/claude-review/read-head
