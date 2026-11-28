@@ -39,9 +39,12 @@ pub const OPEN_LOGIN_ITEMS: &str = "Open Login Items Settings";
 /// a setting's label and description.
 type Words = (&'static str, &'static str);
 
+/// a setting's label and description on macOS, where `None` is the Windows word.
+type MacWords = (Option<&'static str>, Option<&'static str>);
+
 /// each setting with its group, and its words on Windows and on macOS, in the order the
-/// window shows them.
-const SETTINGS: [(&str, Setting, Words, Words); 5] = [
+/// window shows them. A macOS word that is `None` reads as the Windows one.
+const SETTINGS: [(&str, Setting, Words, MacWords); 5] = [
     (
         "Starting Marshal",
         Setting::StartAtLogin,
@@ -50,8 +53,8 @@ const SETTINGS: [(&str, Setting, Words, Words); 5] = [
             "Marshal starts with only its icon in the notification area.",
         ),
         (
-            "Open Marshal when I log in",
-            "Marshal opens with only its icon in the menu bar.",
+            Some("Open Marshal when I log in"),
+            Some("Marshal opens with only its icon in the menu bar."),
         ),
     ),
     (
@@ -62,8 +65,8 @@ const SETTINGS: [(&str, Setting, Words, Words); 5] = [
             "Applies when you launch Marshal or sign in, not after an update.",
         ),
         (
-            "Start the runners when Marshal opens",
-            "Applies when you open Marshal or log in, not after an update.",
+            Some("Start the runners when Marshal opens"),
+            Some("Applies when you open Marshal or log in, not after an update."),
         ),
     ),
     (
@@ -73,10 +76,7 @@ const SETTINGS: [(&str, Setting, Words, Words); 5] = [
             "Keep the computer awake while runners run",
             "Prevents idle sleep only. Closing the lid or choosing Sleep still sleeps.",
         ),
-        (
-            "Keep the Mac awake while runners run",
-            "Prevents idle sleep only. Closing the lid or choosing Sleep still sleeps.",
-        ),
+        (Some("Keep the Mac awake while runners run"), None),
     ),
     (
         "Sleep and network",
@@ -86,8 +86,8 @@ const SETTINGS: [(&str, Setting, Words, Words); 5] = [
             "A sleep or wake always stops them.",
         ),
         (
-            "Stop the runners when the network changes",
-            "A sleep, wake or network change always stops them on the Mac.",
+            None,
+            Some("A sleep, wake or network change always stops them on the Mac."),
         ),
     ),
     (
@@ -97,17 +97,15 @@ const SETTINGS: [(&str, Setting, Words, Words); 5] = [
             "Start the runners again after a sleep or network stop",
             "Only on the network they stopped on.",
         ),
-        (
-            "Start the runners again after a sleep or network stop",
-            "Only on the network they stopped on.",
-        ),
+        (None, None),
     ),
 ];
 
-fn words(platform: Platform, windows: Words, macos: Words) -> Words {
+/// the words on `platform`, with the Windows word where the macOS one is `None`.
+fn words(platform: Platform, windows: Words, macos: MacWords) -> Words {
     match platform {
         Platform::Windows => windows,
-        Platform::Macos => macos,
+        Platform::Macos => (macos.0.unwrap_or(windows.0), macos.1.unwrap_or(windows.1)),
     }
 }
 
