@@ -112,7 +112,8 @@ def escape:
   explode
   | map(if . < 32 or . == 92 or (. >= 127 and . <= 159)
       then ("\\x" + hex2 | explode)
-      elif . == 8232 or . == 8233 or (. >= 8234 and . <= 8238) or (. >= 8294 and . <= 8297)
+      elif . == 1564 or . == 8206 or . == 8207 or . == 8232 or . == 8233
+         or (. >= 8234 and . <= 8238) or (. >= 8294 and . <= 8297)
       then ("\\u" + hex4 | explode)
       else [.] end)
   | (add // [])

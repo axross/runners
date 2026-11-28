@@ -706,8 +706,8 @@ finish "a backslash and a control character in a link target are escaped" 0 "${w
   "$(call_line "$object_type" "/docs/link?ref=${sha}")"
 
 new_case
-jq -n '{type: "dir", entries: [{type: "file", name: "a\u2028b\u2029c\u202ed\u2066e"}, {type: "file", name: "g\u200eh"}]}' >"${case_dir}/response.1"
-printf 'file\ta\\u2028b\\u2029c\\u202ed\\u2066e\nfile\tg\342\200\216h\n' >"${work}/want"
+jq -n '{type: "dir", entries: [{type: "file", name: "a\u2028b\u2029c\u202ed\u2066e"}, {type: "file", name: "g\u200eh\u200fi\u061cj"}]}' >"${case_dir}/response.1"
+printf 'file\ta\\u2028b\\u2029c\\u202ed\\u2066e\nfile\tg\\u200eh\\u200fi\\u061cj\n' >"${work}/want"
 run_head "$sha" "docs"
 finish "a line separator, a paragraph separator and bidirectional controls in a name are escaped" 0 "${work}/want" "2 entries" \
   "$(call_line "$object_type" "/docs?ref=${sha}")"
