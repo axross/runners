@@ -2,14 +2,12 @@
 //! configuration is and whether it is the one in use, and that closing the window
 //! keeps Marshal running.
 
-use marshal_cli::agent::snapshot::{
-    ConfigurationInfo, ImageInfo, ImageLine, ImageWarning, WarningKind,
-};
+use marshal_cli::agent::snapshot::{ImageInfo, ImageLine, ImageWarning, WarningKind};
 use serde::Serialize;
 
 use crate::banner::built_just_before_the_stop;
 use crate::host::HostWords;
-use crate::next_step::NextStep;
+use crate::next_step::{NextStep, migration_is};
 use crate::state::Context;
 use crate::text::{MIGRATE_ON_NEXT_START, plain};
 
@@ -172,13 +170,6 @@ fn warning(kind: &WarningKind, warning: &ImageWarning, image: &str) -> Option<St
     })
 }
 
-fn migration_state(configuration: &ConfigurationInfo) -> Option<&str> {
-    configuration
-        .migration
-        .as_ref()
-        .map(|migration| migration.state.as_str())
-}
-
 /// where the configuration is, and when it was migrated from `config.json` by this
 /// agent.
 fn configuration_line(context: &Context<'_>) -> String {
@@ -245,7 +236,7 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
         }
         _ => {}
     }
-    if migration_state(configuration) == Some("pending") {
+    if migration_is(context, "pending") {
         warnings.push(MIGRATE_ON_NEXT_START.to_string());
     }
     warnings
