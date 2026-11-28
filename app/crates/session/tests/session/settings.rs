@@ -208,3 +208,71 @@ async fn a_refusal_for_problems_keeps_them_as_the_snapshot_words_them() {
         "{shown}"
     );
 }
+
+// the next step a refused setting names ---------------------------------------------
+
+async fn refused_with_the_agent(
+    snapshot: marshal_cli::agent::snapshot::Snapshot,
+    edits: bool,
+) -> (Vec<String>, Vec<String>) {
+    let (agent, link) = Agent::reporting(marshal_session::AgentInfo {
+        version: "1.4.0".into(),
+        drains: true,
+        edits,
+    });
+    let world = World::default();
+    world.then(Answer::Agent(link));
+    let session = start(world);
+    agent.push(snapshot);
+    session.settle().await;
+    agent.answer(
+        "lifecycle_set",
+        Err(Failure::Config {
+            code: "config_changed".to_string(),
+            message: "config.toml changed after the agent read it".to_string(),
+            problems: Vec::new(),
+        }),
+    );
+    session
+        .handle
+        .set_setting("keep_awake".to_string(), false)
+        .await
+        .unwrap();
+    session.settle().await;
+    (session.screen.announced(), session.log.lines())
+}
+
+fn with_settings(name: &str) -> marshal_cli::agent::snapshot::Snapshot {
+    patched(name, |value| {
+        value["configuration"]["status"] = json!("valid");
+        value["lifecycle"] = json!({
+            "settings": { "keep_awake": { "on": true, "defaulted": true } },
+            "keep_awake": "held"
+        });
+    })
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_refused_settings_announcement_and_log_line_name_the_step_for_the_agents_state() {
+    for (name, edits, step) in [
+        ("running", true, "Choose Reload config.toml to read them"),
+        (
+            "running",
+            false,
+            "Choose Stop All and Start All to read them",
+        ),
+        ("stopped_by_you", true, "Choose Start All to read them"),
+    ] {
+        let (announced, log) = refused_with_the_agent(with_settings(name), edits).await;
+        let said = announced
+            .iter()
+            .find(|text| text.starts_with("Not saved: config.toml changed"))
+            .unwrap_or_else(|| panic!("{name}: nothing announced: {announced:?}"));
+        assert!(said.contains(step), "{name} {edits}: {said}");
+        assert!(
+            log.iter()
+                .any(|line| line.contains("keep_awake was not set off") && line.contains(step)),
+            "{name} {edits}: {log:?}"
+        );
+    }
+}

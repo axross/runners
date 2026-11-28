@@ -10,15 +10,24 @@ use marshal_cli::lifecycle_settings::Setting;
 use serde::Serialize;
 
 use crate::input::SettingResult;
+use crate::next_step::NextStep;
 use crate::state::{Context, Resident, Stop};
 use crate::text::{capitalised, plain};
 
-const INTRO: &str = "Saved in config.toml as soon as you change it. An edit made in the file \
-takes effect at the next Start All.";
+fn intro(step: NextStep) -> String {
+    format!(
+        "Saved in config.toml as soon as you change it. An edit made in the file takes effect {}.",
+        step.takes_effect()
+    )
+}
 
-const INVALID: &str = "Settings cannot be changed while config.toml has problems. Fix the file, then choose Start All.";
-/// the same, while the runners run on the configuration read before the file changed.
-const INVALID_RUNNING: &str = "Settings cannot be changed while config.toml has problems. Fix the file, then choose Stop All and Start All.";
+fn invalid(step: NextStep) -> String {
+    format!(
+        "Settings cannot be changed while config.toml has problems. Fix the file, then {}.",
+        step.choose()
+    )
+}
+
 const MISSING: &str = "Settings cannot be changed until config.toml exists.";
 
 /// the chip the Settings tab carries while something there needs the user.
@@ -129,16 +138,13 @@ enum Unusable {
     Missing,
     /// unreadable or with problems.
     Invalid,
-    /// the same, while the runners run on the configuration read before the file changed.
-    InvalidRunning,
 }
 
 impl Unusable {
-    fn words(self) -> &'static str {
+    fn words(self, step: NextStep) -> String {
         match self {
-            Self::Missing => MISSING,
-            Self::Invalid => INVALID,
-            Self::InvalidRunning => INVALID_RUNNING,
+            Self::Missing => MISSING.to_string(),
+            Self::Invalid => invalid(step),
         }
     }
 
@@ -149,21 +155,21 @@ impl Unusable {
 
 /// why no setting can be changed now, and whether the intro says it.
 struct Reason {
-    words: &'static str,
+    words: String,
     in_intro: bool,
 }
 
 impl Reason {
-    fn elsewhere(words: &'static str) -> Self {
+    fn elsewhere(words: &str) -> Self {
         Self {
-            words,
+            words: words.to_string(),
             in_intro: false,
         }
     }
 
-    fn file(file: Unusable) -> Self {
+    fn file(file: Unusable, step: NextStep) -> Self {
         Self {
-            words: file.words(),
+            words: file.words(step),
             in_intro: file.has_problems(),
         }
     }
@@ -181,15 +187,12 @@ fn file_unusable(context: &Context<'_>) -> Option<Unusable> {
         .map_or("", |snapshot| snapshot.configuration.status.as_str());
     match status {
         "missing" => Some(Unusable::Missing),
-        "invalid" | "unreadable" => Some(match context.resident {
-            Resident::Running | Resident::Resuming => Unusable::InvalidRunning,
-            _ => Unusable::Invalid,
-        }),
+        "invalid" | "unreadable" => Some(Unusable::Invalid),
         _ => None,
     }
 }
 
-fn unavailable(context: &Context<'_>) -> Option<Reason> {
+fn unavailable(context: &Context<'_>, step: NextStep) -> Option<Reason> {
     match &context.resident {
         Resident::LostContact { .. } => {
             Some("Settings cannot be changed while Marshal's agent does not answer.")
@@ -201,7 +204,7 @@ fn unavailable(context: &Context<'_>) -> Option<Reason> {
         _ => None,
     }
     .map(Reason::elsewhere)
-    .or_else(|| file_unusable(context).map(Reason::file))
+    .or_else(|| file_unusable(context).map(|file| Reason::file(file, step)))
     .or_else(|| {
         context
             .input
@@ -220,15 +223,17 @@ fn on_off(on: bool) -> &'static str {
     if on { "On" } else { "Off" }
 }
 
-/// what the latest change of a setting says under it, as the live region says it too.
-fn result_note(result: &SettingResult) -> Option<SettingNote> {
+/// what the latest change of a setting says under it, as the live region says it too;
+/// `step` is what the window names for reading the file.
+fn result_note(result: &SettingResult, step: NextStep) -> Option<SettingNote> {
     let (text, tone) = match result {
         SettingResult::Saved { .. } => return None,
         SettingResult::Refused { code, .. } if code == "config_changed" => (
-            "Not saved: config.toml changed since Marshal read it. Your edits in the file were \
-             kept. Start All reads them, after Stop All while the runners run; then change the \
-             setting again."
-                .to_string(),
+            format!(
+                "Not saved: config.toml changed since Marshal read it. Your edits in the file \
+                 were kept. {} to read them; then change the setting again.",
+                capitalised(step.choose())
+            ),
             NoteTone::Error,
         ),
         SettingResult::Refused { code, .. } if code == "busy" => (
@@ -241,15 +246,16 @@ fn result_note(result: &SettingResult) -> Option<SettingNote> {
             let next = match code.as_str() {
                 "config_unwritable" => {
                     "Close any program that has config.toml open, then change the setting again."
+                        .to_string()
                 }
                 "config_invalid" | "config_unusable" => {
-                    "Fix config.toml; Start All reads it, after Stop All while the runners run."
+                    format!("Fix config.toml, then {}.", step.choose())
                 }
                 // a form the agent does not edit, or a refusal this version does not know
-                _ => {
-                    "You can change the setting in config.toml instead; Start All reads it, \
-                     after Stop All while the runners run."
-                }
+                _ => format!(
+                    "You can change the setting in config.toml instead, then {} to read it.",
+                    step.choose()
+                ),
             };
             (
                 format!("Not saved: {}. {next}", words.trim_end_matches('.')),
@@ -271,14 +277,15 @@ fn result_note(result: &SettingResult) -> Option<SettingNote> {
 }
 
 impl SettingResult {
-    /// what the live region says of the result; `label` is the setting's.
+    /// what the live region says of the result; `label` is the setting's and `step` what
+    /// the window names for reading the file, as [`crate::next_step`] has it.
     #[must_use]
-    pub fn announcement(&self, label: &str) -> String {
+    pub fn announcement(&self, label: &str, step: NextStep) -> String {
         match self {
             Self::Saved { on } => {
                 format!("Saved: \"{label}\" is {}.", if *on { "on" } else { "off" })
             }
-            other => result_note(other).map_or_else(String::new, |note| note.text),
+            other => result_note(other, step).map_or_else(String::new, |note| note.text),
         }
     }
 }
@@ -366,6 +373,7 @@ fn unreadable(context: &Context<'_>, setting: Setting) -> bool {
 fn row(
     context: &Context<'_>,
     lifecycle: Option<&LifecycleInfo>,
+    step: NextStep,
     (setting, label, description): (Setting, &str, &str),
 ) -> (SettingRow, bool) {
     let key = setting.name();
@@ -399,7 +407,7 @@ fn row(
         (None, None) if lifecycle.is_some() => "Not readable in config.toml.".to_string(),
         (None, None) => "Not known while config.toml cannot be read.".to_string(),
     };
-    let result = latest.and_then(result_note);
+    let result = latest.and_then(|result| result_note(result, step));
     let refused = result
         .as_ref()
         .is_some_and(|note| note.tone == NoteTone::Error);
@@ -418,12 +426,13 @@ fn row(
 
 pub fn tab(context: &Context<'_>) -> SettingsTab {
     let lifecycle = lifecycle(context);
-    let unavailable = unavailable(context);
+    let step = NextStep::of(context);
+    let unavailable = unavailable(context, step);
     let invalid = file_unusable(context).filter(|file| file.has_problems());
     let mut attention = invalid.is_some();
     let mut groups: Vec<SettingGroup> = Vec::new();
     for (group, setting, label, description) in SETTINGS {
-        let (row, needs) = row(context, lifecycle, (setting, label, description));
+        let (row, needs) = row(context, lifecycle, step, (setting, label, description));
         attention |= needs;
         match groups.last_mut().filter(|last| last.title == group) {
             Some(last) => last.rows.push(row),
@@ -434,9 +443,9 @@ pub fn tab(context: &Context<'_>) -> SettingsTab {
         }
     }
     SettingsTab {
-        intro: invalid.map_or(INTRO, Unusable::words).to_string(),
+        intro: invalid.map_or_else(|| intro(step), |file| file.words(step)),
         reason_in_intro: unavailable.as_ref().is_some_and(|reason| reason.in_intro),
-        unavailable: unavailable.map(|reason| reason.words.to_string()),
+        unavailable: unavailable.map(|reason| reason.words),
         groups,
         chip: attention.then(|| NEEDS_ATTENTION.to_string()),
     }

@@ -230,7 +230,10 @@ fn a_change_refused_because_the_file_changed_stays_under_its_setting_and_needs_a
     );
     // what the live region says is what the setting shows
     assert_eq!(
-        refused.announcement("Keep the computer awake while runners run"),
+        refused.announcement(
+            "Keep the computer awake while runners run",
+            marshal_view::NextStep::StopAndStart
+        ),
         note.text
     );
     // the value shown is still the one in effect
@@ -281,7 +284,10 @@ fn a_saved_change_shows_no_note_holds_its_value_and_is_announced_with_its_label(
         "Off (default: on)."
     );
     assert_eq!(
-        saved.announcement("Keep the computer awake while runners run"),
+        saved.announcement(
+            "Keep the computer awake while runners run",
+            marshal_view::NextStep::StartAll
+        ),
         "Saved: \"Keep the computer awake while runners run\" is off."
     );
 }

@@ -30,7 +30,7 @@ use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
 use marshal_cli::github_status::GithubStatus;
 use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, SettingResult,
+    Cause, Connection, GithubFeed, Input, NextStep, NotSaved, Pending, PendingKind, SettingResult,
     SettingsUi, TokenResult, TokenUi, Tracker, Update, View, job_page, pools_started_by,
     setting_label,
 };
@@ -1255,8 +1255,17 @@ impl<D: Dial> Session<D> {
     }
 
     fn record_setting(&mut self, key: &str, label: &str, result: SettingResult) {
-        self.announce.push(result.announcement(label));
+        self.announce
+            .push(result.announcement(label, self.next_step()));
         self.settings.results.insert(key.to_string(), result);
+    }
+
+    /// the step the window names for reading `config.toml`, for the agent's state now.
+    fn next_step(&self) -> NextStep {
+        let input = Input::new(self.connection, self.snapshot.as_ref(), self.time.clock())
+            .pending(self.pending)
+            .editor(self.agent.edits);
+        marshal_view::next_step(&input)
     }
 
     fn setting_answered(&mut self, key: &str, on: bool, outcome: Result<(), Failure>) {
@@ -1287,7 +1296,7 @@ impl<D: Dial> Session<D> {
             self.log.warn(&format!(
                 "{key} was not set {}: {}",
                 if on { "on" } else { "off" },
-                result.announcement(&label)
+                result.announcement(&label, self.next_step())
             ));
         }
         self.record_setting(key, &label, result);

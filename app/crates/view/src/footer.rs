@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::banner::built_just_before_the_stop;
 use crate::host::HostWords;
+use crate::next_step::NextStep;
 use crate::state::Context;
 use crate::text::{MIGRATE_ON_NEXT_START, plain};
 
@@ -218,14 +219,7 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
             _ => format!("is not valid ({})", problems.join("; ")),
         }
     };
-    let after_fix = if context.input.editor
-        && migration_state(configuration) != Some("pending")
-        && migration_state(configuration) != Some("failed")
-    {
-        "Fix the file, then choose Reload config.toml."
-    } else {
-        "Fix the file, then choose Stop All and Start All."
-    };
+    let after_fix = format!("Fix the file, then {}.", NextStep::of(context).choose());
     match in_use.source.as_str() {
         "last_valid" => warnings.push(format!(
             "Warning: config.toml {}, so Marshal runs the configuration it read {read}. \
@@ -235,7 +229,7 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
         // config.toml appeared after a migration that could not write it
         "json" if configuration.status != "missing" => warnings.push(format!(
             "Warning: config.toml {}, so Marshal runs the configuration of config.json it \
-             read {read}. Fix the file, then choose Stop All and Start All.",
+             read {read}. {after_fix}",
             file_state()
         )),
         "json" => {

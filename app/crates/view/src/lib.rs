@@ -18,6 +18,7 @@ mod host;
 mod icon;
 mod input;
 mod menu;
+mod next_step;
 mod pools;
 mod settings;
 mod settled;
@@ -43,6 +44,7 @@ pub use input::{
     SettingsUi, TokenResult, TokenUi,
 };
 pub use menu::{Menu, MenuItem};
+pub use next_step::{NextStep, next_step};
 pub use pools::{Mark, PoolCard, RunnerRow};
 pub use settings::{
     NEEDS_ATTENTION, NoteTone, SettingGroup, SettingNote, SettingRow, SettingsTab,
