@@ -78,6 +78,20 @@ impl Cadence {
         }
         signals.read_network().await
     }
+
+    /// reconciles the hold with the settings on every tick of `clock`; it never ends.
+    pub async fn maintain(
+        &self,
+        clock: &impl Clock,
+        state: &MonitorState<'_>,
+        signals: &impl SignalSource,
+        log: &dyn Log,
+    ) -> Infallible {
+        loop {
+            self.tick(clock).await;
+            state.reconcile(signals, log);
+        }
+    }
 }
 
 /// clears the flag when the watch ends, however it ends.
@@ -212,10 +226,9 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
     }
 
     async fn maintain(&self) -> Infallible {
-        loop {
-            self.cadence.tick(self.clock).await;
-            self.state.reconcile(&self.signals, self.log);
-        }
+        self.cadence
+            .maintain(self.clock, &self.state, &self.signals, self.log)
+            .await
     }
 
     fn hold(&self) {
