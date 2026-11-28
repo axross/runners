@@ -2,13 +2,12 @@
 //! configuration is and whether it is the one in use, and that closing the window
 //! keeps Marshal running.
 
-use marshal_cli::agent::snapshot::{
-    ConfigurationInfo, ImageInfo, ImageLine, ImageWarning, WarningKind,
-};
+use marshal_cli::agent::snapshot::{ImageInfo, ImageLine, ImageWarning, WarningKind};
 use serde::Serialize;
 
 use crate::banner::built_just_before_the_stop;
 use crate::host::HostWords;
+use crate::next_step::{NextStep, migration_is};
 use crate::state::Context;
 use crate::text::{MIGRATE_ON_NEXT_START, plain};
 
@@ -171,13 +170,6 @@ fn warning(kind: &WarningKind, warning: &ImageWarning, image: &str) -> Option<St
     })
 }
 
-fn migration_state(configuration: &ConfigurationInfo) -> Option<&str> {
-    configuration
-        .migration
-        .as_ref()
-        .map(|migration| migration.state.as_str())
-}
-
 /// where the configuration is, and when it was migrated from `config.json` by this
 /// agent.
 fn configuration_line(context: &Context<'_>) -> String {
@@ -218,14 +210,7 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
             _ => format!("is not valid ({})", problems.join("; ")),
         }
     };
-    let after_fix = if context.input.editor
-        && migration_state(configuration) != Some("pending")
-        && migration_state(configuration) != Some("failed")
-    {
-        "Fix the file, then choose Reload config.toml."
-    } else {
-        "Fix the file, then choose Stop All and Start All."
-    };
+    let after_fix = format!("Fix the file, then {}.", NextStep::of(context).choose());
     match in_use.source.as_str() {
         "last_valid" => warnings.push(format!(
             "Warning: config.toml {}, so Marshal runs the configuration it read {read}. \
@@ -235,7 +220,7 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
         // config.toml appeared after a migration that could not write it
         "json" if configuration.status != "missing" => warnings.push(format!(
             "Warning: config.toml {}, so Marshal runs the configuration of config.json it \
-             read {read}. Fix the file, then choose Stop All and Start All.",
+             read {read}. {after_fix}",
             file_state()
         )),
         "json" => {
@@ -251,7 +236,7 @@ fn configuration_warnings(context: &Context<'_>) -> Vec<String> {
         }
         _ => {}
     }
-    if migration_state(configuration) == Some("pending") {
+    if migration_is(context, "pending") {
         warnings.push(MIGRATE_ON_NEXT_START.to_string());
     }
     warnings

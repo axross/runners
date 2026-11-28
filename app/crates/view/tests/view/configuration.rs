@@ -79,7 +79,7 @@ fn a_missing_file_beside_config_json_warns_and_says_how_the_migration_runs() {
         configuration_warnings(&view),
         [
             "Warning: config.toml is missing, so Marshal runs the configuration it read \
-             today 01:05. Fix the file, then choose Stop All and Start All.",
+             today 01:05. Fix the file, then quit Marshal and launch it again.",
             "Marshal migrates config.json when it next starts: quit Marshal and launch it again."
         ]
     );

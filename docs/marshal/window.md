@@ -67,9 +67,11 @@ the web view reports the page hidden, a second route; the form stays open and em
 
 From `app/`, `cargo run -p marshal-view --example dump_view -- <fixture.json>` prints a
 recorded snapshot's view as JSON, with options to set the connection, a pending
-action, an open token form, a token result, the settled count, and a recorded `github`
-value or an agent without one, which the example's header comment lists, so the pages
-can be rendered outside the app.
+action, an open token form, a token result, the settled count, a recorded `github`
+value or an agent without one, and whether the agent offers the configuration editor
+(`--agent-offers-editor`, which decides the step the window names after a fix to
+`config.toml`), which the example's header comment lists, so the pages can be rendered
+outside the app.
 
 ### Fonts and Colours
 

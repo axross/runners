@@ -30,7 +30,7 @@ use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
 use marshal_cli::github_status::GithubStatus;
 use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, SettingResult,
+    Cause, Connection, GithubFeed, Input, NextStep, NotSaved, Pending, PendingKind, SettingResult,
     SettingsUi, TokenResult, TokenUi, Tracker, Update, View, job_page, pools_started_by,
     setting_label,
 };
@@ -349,6 +349,8 @@ enum Internal<L> {
         outcome: Result<(), Failure>,
         reply: Reply<()>,
     },
+    /// the agent answered an edit or a reload as written or applied.
+    ConfigWritten,
     QuitAnswered(Result<(), Failure>),
     /// what a check of the update feed found.
     Checked(Result<Option<Box<dyn Verified>>, String>),
@@ -1255,8 +1257,26 @@ impl<D: Dial> Session<D> {
     }
 
     fn record_setting(&mut self, key: &str, label: &str, result: SettingResult) {
-        self.announce.push(result.announcement(label));
+        self.announce
+            .push(result.announcement(label, self.next_step()));
         self.settings.results.insert(key.to_string(), result);
+    }
+
+    /// the step the window names for reading `config.toml`, for the agent's state now.
+    fn next_step(&self) -> NextStep {
+        let input = Input::new(self.connection, self.snapshot.as_ref(), self.time.clock())
+            .pending(self.pending)
+            .editor(self.agent.edits);
+        marshal_view::next_step(&input)
+    }
+
+    /// removes the notes an edit or a reload has made obsolete; a saved value keeps
+    /// holding its checkbox until the snapshot shows it.
+    fn config_written(&mut self) {
+        self.settings
+            .results
+            .retain(|_, result| matches!(result, SettingResult::Saved { .. }));
+        self.refresh();
     }
 
     fn setting_answered(&mut self, key: &str, on: bool, outcome: Result<(), Failure>) {
@@ -1287,7 +1307,7 @@ impl<D: Dial> Session<D> {
             self.log.warn(&format!(
                 "{key} was not set {}: {}",
                 if on { "on" } else { "off" },
-                result.announcement(&label)
+                result.announcement(&label, self.next_step())
             ));
         }
         self.record_setting(key, &label, result);
@@ -1323,6 +1343,11 @@ impl<D: Dial> Session<D> {
             CALL_WITHIN
         };
         let log = Arc::clone(&self.log);
+        let report = self.report.clone();
+        let writes = matches!(
+            &request,
+            ConfigRequest::Edit { check: false, .. } | ConfigRequest::Reload { check: false, .. }
+        );
         tokio::spawn(async move {
             let answer = tokio::time::timeout(within, link.config(request))
                 .await
@@ -1335,6 +1360,9 @@ impl<D: Dial> Session<D> {
                     }
                     Err(Failure::TimedOut)
                 });
+            if writes && matches!(answer, Ok(ConfigAnswer::Change(_))) {
+                let _ = report.send(Internal::ConfigWritten);
+            }
             let _ = reply.send(answer);
         });
     }
@@ -1587,6 +1615,7 @@ impl<D: Dial> Session<D> {
                 self.setting_answered(&key, on, outcome);
                 let _ = reply.send(Ok(()));
             }
+            Internal::ConfigWritten => self.config_written(),
             Internal::QuitAnswered(outcome) => self.quit_answered(outcome),
             Internal::Checked(outcome) => self.checked(outcome),
             Internal::DrainAnswered(outcome) => self.drain_answered(outcome),

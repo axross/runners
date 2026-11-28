@@ -27,7 +27,7 @@ use crate::instance::lifecycle::{
 use crate::instance::restart::{RestartPolicy, Verdict};
 use crate::instance::resume::Resume;
 use crate::instance::steps::{self, Steps};
-use crate::lifecycle_settings::{Current, InEffect};
+use crate::lifecycle_settings::Current;
 use crate::macos::count::ConfiguredPool;
 use crate::macos::network::NetworkReading;
 use crate::profile::Profile;
@@ -59,6 +59,7 @@ mod configure;
 mod lifecycle;
 
 use configure::{Mode, Request};
+use lifecycle::settings_of;
 pub use lifecycle::{NOT_STARTED_AT_LAUNCH, RESUME_NO_GATEWAY, RESUME_WAITING};
 
 /// the reason the agent ends when asked to by a client.
@@ -184,6 +185,9 @@ pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     /// the revision of `config.toml` as the agent last read or wrote it, which
     /// `lifecycle_set` refuses a file changed since.
     read_revision: RefCell<Option<String>>,
+    /// true while an edit or a reload waits for the check of a new image, when
+    /// `lifecycle_set` is refused as busy.
+    checking_image: Cell<bool>,
     board: Board,
     scale_set_client: Result<crate::scaleset::Client, crate::scaleset::Error>,
     listeners: watch::Sender<BTreeMap<String, ListenerView>>,
@@ -308,6 +312,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             resume: RefCell::new(Resume::new()),
             resume_note: Cell::new(None),
             read_revision: RefCell::new(None),
+            checking_image: Cell::new(false),
             board: Board::default(),
             scale_set_client: crate::scaleset::Client::new(
                 seams.registrar.base_override(),
@@ -573,15 +578,8 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             .as_ref()
             .filter(|in_use| in_use.origin != Origin::LastValid)
         {
-            // `config.json`, used after a failed migration, has no table, so it takes
-            // the defaults
-            let lifecycle = in_use
-                .plan
-                .settings
-                .as_ref()
-                .map(|settings| settings.lifecycle)
-                .unwrap_or_default();
-            self.take_settings(InEffect::windows(lifecycle));
+            // `config.json`, used after a failed migration, has no table
+            self.take_settings(settings_of(&in_use.plan));
         } else if loaded.in_use.is_some() {
             // the settings in effect stay, and the sign-in item is still put in step
             self.sync_sign_in();

@@ -31,17 +31,19 @@ function settingRow(row, off, ctx) {
   const descriptionId = nextId("setting-description");
   const noteId = row.note ? nextId("setting-note") : null;
   const describedBy = [descriptionId, noteId, offId].filter(Boolean).join(" ");
+  // while its change is out, the checkbox keeps the value chosen, whichever view is drawn
+  const checked = ctx.editor?.chosenFor(row.key) ?? row.checked;
   const box = h("input", {
     type: "checkbox",
     class: "check",
     id: checkId,
-    checked: row.checked === true,
+    checked: checked === true,
     "aria-describedby": describedBy,
     "aria-disabled": offId ? "true" : null,
     "data-key": `setting:${row.key}`,
     on: {
       click: (event) => {
-        if (offId || row.checked === null) {
+        if (offId || checked === null) {
           event.preventDefault();
         }
       },
@@ -49,7 +51,7 @@ function settingRow(row, off, ctx) {
     },
   });
   // a value the view does not know shows neither on nor off
-  box.indeterminate = row.checked === null;
+  box.indeterminate = checked === null;
   const control = off ? h("span", { class: "tipwrap" }, box) : box;
   if (off) {
     attachTip(control, () => off.reason);
@@ -75,20 +77,22 @@ function settingRow(row, off, ctx) {
 
 /** the Settings panel. */
 export function settingsPanel(tab, ctx) {
-  const offId = tab.unavailable ? nextId("settings-off") : null;
+  // a reason the view gives takes precedence over the open configuration editor's
+  const unavailable = tab.unavailable ?? ctx.editor?.settingsReason ?? null;
+  const offId = unavailable ? nextId("settings-off") : null;
   // when the intro already says why, it is the reason every checkbox points to
-  const introSaysWhy = tab.reason_in_intro;
+  const introSaysWhy = tab.unavailable && tab.reason_in_intro;
   return [
     h("p", {
       id: introSaysWhy ? offId : null,
       class: `description wrap intro${introSaysWhy ? "" : " low"}`,
       text: tab.intro,
     }),
-    tab.unavailable && !introSaysWhy
+    unavailable && !introSaysWhy
       ? h("p", {
           id: offId,
           class: "description wrap intro",
-          text: tab.unavailable,
+          text: unavailable,
         })
       : null,
     tab.groups.map((group) => {
@@ -101,11 +105,7 @@ export function settingsPanel(tab, ctx) {
           "div",
           { class: "set-list" },
           group.rows.map((row) =>
-            settingRow(
-              row,
-              offId && { id: offId, reason: tab.unavailable },
-              ctx,
-            ),
+            settingRow(row, offId && { id: offId, reason: unavailable }, ctx),
           ),
         ),
       );

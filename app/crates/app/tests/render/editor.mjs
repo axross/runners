@@ -8,7 +8,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { chromium } from "playwright-core";
 import { bridge } from "./bridge.mjs";
-import { accessibility, geometryAndContrast } from "./checks.mjs";
+import {
+  accessibility,
+  geometryAndContrast,
+  settingsAccessibility,
+} from "./checks.mjs";
 
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
 const frontend = path.join(root, "app/crates/app/frontend");
@@ -43,17 +47,26 @@ const scenarios = [
   "busy",
   "stopped",
 ];
+const editingReason =
+  "Settings cannot be changed while the configuration is open for editing. Apply, discard or close your changes first.";
 const results = [];
 await mkdir(output, { recursive: true });
 
 /** builds both profiles' editor metadata from the real Rust view and recorded snapshots. */
 function recordedViews(profile) {
   return Object.fromEntries(
-    ["running", "stopped", "busy", "lost"].map((state) => {
+    ["running", "stopped", "busy", "lost", "settings"].map((state) => {
       const fixture =
-        { stopped: "stopped_by_you", busy: "resuming" }[state] ?? "running";
+        {
+          stopped: "stopped_by_you",
+          busy: "resuming",
+          settings: "running_lifecycle",
+        }[state] ?? "running";
       const options =
-        state === "lost" ? ["--connection", "dropped", "--keep-snapshot"] : [];
+        {
+          lost: ["--connection", "dropped", "--keep-snapshot"],
+          settings: ["--agent-offers-editor"],
+        }[state] ?? [];
       return [
         state,
         JSON.parse(
@@ -318,6 +331,58 @@ async function waitingTokenChoice(page, label) {
   );
   await page.keyboard.press("Escape");
   return { label: `${label}-waiting`, ...geometry };
+}
+
+/** the Settings tab while the editor holds a draft: every checkbox is explained, focusable and inert. */
+async function settingsWhileEditing(page, label, rows) {
+  await enter(page, "edit");
+  await key(page, "tab:settings").click();
+  assert.equal(
+    await key(page, "tab:settings").getAttribute("aria-selected"),
+    "true",
+  );
+  assert.equal(
+    await key(page, "config-field:0:labels").inputValue(),
+    "linux\nx64\nchanged",
+  );
+  await page.mouse.move(0, 0);
+  for (const [index, row] of rows.entries()) {
+    const box = key(page, `setting:${row.key}`);
+    await box.scrollIntoViewIfNeeded();
+    assert.equal(await box.getAttribute("aria-disabled"), "true");
+    assert.equal(await box.isChecked(), row.checked);
+    await page.mouse.move(0, 0);
+    await page.keyboard.press("Tab");
+    await box.focus();
+    assert.equal(await active(page), `setting:${row.key}`);
+    assert.equal(
+      await box.evaluate((element) => element.matches(":focus-visible")),
+      true,
+    );
+    assert.equal(await page.getByRole("tooltip").innerText(), editingReason);
+    if (index === 0 || index === rows.length - 1) {
+      await geometryAndContrast(page);
+      await page.screenshot({
+        path: path.join(output, `${label}-${row.key}-focus.png`),
+      });
+    }
+    await page.keyboard.press("Space");
+    await box.dispatchEvent("click");
+    assert.equal(await box.isChecked(), row.checked);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.getByRole("tooltip").count(), 0);
+  }
+  assert.equal(
+    await page.evaluate(() =>
+      window.__fixture.calls.some((call) => call.command === "set_setting"),
+    ),
+    false,
+  );
+  await page.mouse.move(0, 0);
+  const geometry = await geometryAndContrast(page);
+  const tree = await settingsAccessibility(page, rows, editingReason);
+  await page.screenshot({ path: path.join(output, `${label}.png`) });
+  return { label, ...geometry, ...tree };
 }
 
 try {
@@ -647,6 +712,45 @@ try {
               await context.close();
             }
           }
+
+  // the recorded Settings view is the Windows one, so only that profile renders it
+  const settingsRows = views.axpc.settings.window.body.settings.groups
+    .flatMap((group) => group.rows)
+    .map(({ key: name, label, checked }) => ({ key: name, label, checked }));
+  assert.ok(settingsRows.length > 0, "the recorded view lists no settings");
+  for (const width of [880, 480])
+    for (const theme of ["light", "dark"])
+      for (const forcedColors of ["none", "active"]) {
+        const label = `axpc-settings-held-${width}-${theme}-${forcedColors}`;
+        const { page, context, failures } = await open({
+          profile: "axpc",
+          width,
+          theme,
+          forcedColors,
+          scenario: "settings",
+        });
+        try {
+          results.push(await settingsWhileEditing(page, label, settingsRows));
+          assert.deepEqual(failures, [], `${label}: page or policy failure`);
+          if (width === 480 && theme === "light" && forcedColors === "none") {
+            // a checkbox whose description lost the reason must fail the check
+            await key(page, `setting:${settingsRows[0].key}`).evaluate(
+              (element) => element.removeAttribute("aria-describedby"),
+            );
+            await assert.rejects(
+              settingsAccessibility(page, settingsRows, editingReason),
+              /lost its reason/,
+            );
+          }
+        } catch (error) {
+          await page.screenshot({
+            path: path.join(output, `${label}-failure.png`),
+          });
+          throw new Error(label, { cause: error });
+        } finally {
+          await context.close();
+        }
+      }
 
   for (const width of [880, 480])
     for (const scenario of ["saved-unreadable", "saved-token-wait"]) {

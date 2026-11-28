@@ -37,8 +37,9 @@ app enters each repository's token in the window, once.
 
 K1 ([#77](https://github.com/axross/runners/issues/77)) owns this section. The agent
 runs `config.toml`, migrates a `config.json` it finds alone at its start, and keeps the
-last valid configuration in use when a Start All finds the file broken or gone. The
-window takes all of it from the snapshot's `configuration`: `path`, `problems`,
+last valid configuration in use when a Start All finds the file broken or gone, or a
+Reload finds it broken (a Reload of a missing file is refused as `config_unusable`).
+The window takes all of it from the snapshot's `configuration`: `path`, `problems`,
 `status`, `in_use` and `migration`, as [The Snapshot](../marshal-cli/agent-protocol.md#the-snapshot) lists
 them. It adds no state, control or banner kind; the wording lives in the
 `marshal-view` crate.
@@ -48,13 +49,30 @@ them. It adds no state, control or banner kind; the wording lives in the
 - **A footer warning** stands beside the image warnings while the agent holds a
   configuration that is not the file's: the last valid one, naming the file's problems
   (or that it is missing) and when the configuration in use was read; or `config.json`'s,
-  after a migration that could not write `config.toml`, with why. A migration that
-  waits for the next start says to quit Marshal and launch it again.
+  after a migration that could not write `config.toml`, with why. The warning for the
+  last valid configuration, and the one for `config.json`'s when `config.toml` has
+  appeared since, end with the next step below; the one for a migration that could not
+  write `config.toml` says instead that Marshal tries again when it next starts. A
+  migration still waiting to happen is a warning of its own: quit Marshal and launch it
+  again.
 - **The stopped banners** keep their roles. With no configuration the banner names
   `config.toml`, and says to launch Marshal again when `config.json` waits to be
   migrated. When `config.json` broke the rules at its migration, the invalid
   configuration banner names `config.json`, its problems in the JSON wording, and that
-  a fix takes effect when Marshal starts again.
+  a fix takes effect when Marshal starts again. The other banners for a stop for the
+  file end with the next step below.
+- **The next step.** Every place that names the step after `config.toml` is fixed, or
+  the step that makes Marshal read an edit made in the file, names the same one: the
+  footer's warnings, the [Settings tab's](./settings.md#the-settings-tab) introduction,
+  unavailable reason and notes, the announcement and log line of a refused setting, and
+  the banners of a stop for the file. While a migration of `config.json` is pending, or
+  `config.json` was rejected at its migration, it is to quit Marshal and launch it
+  again. Otherwise, while the runners run or resume, it is "Reload config.toml" when the
+  agent offers the editor and no migration failed, and "Stop All and Start All" when it
+  does not or a migration failed. In every other state, building, stopping and quitting
+  included, it is "Start All". The editor's own "take effect at the next Start All"
+  results after a write on a stopped agent are not this step: they describe pool and
+  host changes, which wait for Start All.
 
 Build needs a configuration in use: it uses that configuration's image name and reads
 no file. `app/crates/view/tests/view/configuration.rs` covers each wording, and the
@@ -70,7 +88,10 @@ meantime are ignored while `config.toml` exists. Delete `config.toml` to migrate
 
 K3 adds Edit to each pool card. A card's form replaces its runner rows, not the
 running pool: the draft changes nothing until Apply. Host Settings opens the
-host-wide fields in the footer. An unread file is read first; an uneditable file
+host-wide fields in the footer. A file the editor has not read, or whose read a
+change on the Settings tab has made stale, is read first: Edit, Add Pool and Host
+Settings read `config.toml` again, with the read's busy state and announcement, and
+open the form only once the read has found the file editable; an uneditable file
 keeps this control unavailable with its reason. The profile selects the fields; the page offers
 neither `schema_version` nor `[lifecycle]`. An unset value stays unset unless edited,
 so displaying a default never adds it to the file. The page sends only changed
@@ -119,13 +140,41 @@ description and explain the lock on hover and keyboard focus. Read Again asks be
 Reload reads the file now and uses the same check and confirmation flow. It does
 not watch or poll the file. Availability comes from the negotiated methods and
 the agent's snapshot; a transition, lost contact, migration, update drain,
-pending apply or runtime restart explains why Apply and Reload are unavailable.
+pending apply, runtime restart or a setting being saved explains why Apply and
+Reload are unavailable.
 
-**Known limit** ([#164](https://github.com/axross/runners/issues/164)). A change on
-the [Settings tab](./settings.md#the-settings-tab) rewrites `config.toml` through the agent, which
-moves the revision a draft was made against. A draft started before the change is
-then refused as changed elsewhere (`config_changed`), and Read Again drops its
-unapplied changes, so apply or discard the draft before changing a setting.
+An applied Reload or Edit also puts the file's `[lifecycle]` settings in effect,
+whether the runners run or are stopped, as Start All does, so the Settings tab shows
+the file's values. On Windows the sign-in entry follows `start_at_login`, keep-awake,
+the network stop and the resume follow the settings from then on, and a waiting
+resume is cancelled when `resume_after_stop` is now off. A check, a refusal and a
+failure change no setting in effect. On a Mac, which has no `[lifecycle]`, nothing
+changes. When the written change was made on an agent stopped because
+`config.toml` was missing or invalid, the agent becomes stopped by you, as after a
+successful Build: the window drops its configuration banner for the stopped-by-you
+one, Build is available and the Settings tab follows the file. The runners stay
+stopped until Start All. A `config.json` rejected at its migration keeps its stop,
+because the agent refuses Reload and Edit then. After a written or applied Edit or
+Reload the window also removes the refusal, lost-contact and unanswered notes under
+the settings, which that read has made obsolete.
+
+**The Settings tab and the editor.** Both change `config.toml`, so the page keeps
+their changes apart. While the editor shows a form, holds unapplied changes, shows a
+review or a question about dropping changes, or has a read, check or apply in flight,
+every Settings checkbox is unavailable, with the reason
+[The Settings Tab](./settings.md#the-settings-tab) lists. From the moment a checkbox
+sends a change until its call returns, the editor's controls that open a form, read,
+check, apply or reload are unavailable, with "Unavailable while a setting is being
+saved." After the call returns, whatever came of it, the editor's read is stale until
+a read that began afterwards completes; a read already in flight when the call
+returns leaves it stale. The next form therefore reads first, and a draft made in it
+is checked against the file as the setting left it, so it needs no Read Again.
+
+**Remaining limit.** The window does not watch the file. A hand edit made while a
+draft is open, or a setting change the agent saves after the 10 s the window waits
+for its answer, moves the file's revision, so the agent refuses that draft as changed
+elsewhere (`config_changed`). Read Again reads the file anew and still asks before it
+drops the draft.
 
 The review may offer to remove the tokens of repositories no remaining pool uses.
 Keeping them is the default. Removal uses the existing `token_remove` method only
@@ -148,7 +197,10 @@ unavailable until the configuration can be read and edited again.
 
 The page tests exercise minimal edits, source revisions, refusal retention,
 discard confirmation, optional token removal and retry, labelled problems,
-draft persistence across views and hides, and Cancel/Esc focus. These Node tests
+draft persistence across views and hides, and Cancel/Esc focus. They also exercise
+the Settings checkboxes' reasons and their precedence, the editor's lock while a
+setting is being saved, and the read before a form after a setting change
+(`tests/frontend/settings-editor-page.test.mjs`). These Node tests
 use a document stand-in: they establish neither rendered layout nor native web
 view or screen-reader behaviour.
 
@@ -163,18 +215,26 @@ or Puppeteer, and writes its screenshots and measurements under
 The renderer uses `dump_view --editor-profile axpc|axmc` over recorded running,
 stopped, transition and lost-contact snapshots, and a fake Tauri command bridge
 with shaped protocol replies, not captured native command executions.
+For the Settings tab it uses `dump_view --editor-profile axpc --agent-offers-editor`
+over `running_lifecycle.json`, the one recorded snapshot with a `lifecycle` part.
 The bridge retains pool membership edits in memory for read-back, not on disk;
 it does not reproduce other field writes or live runner effects.
 It covers the editor states in both themes, with and without forced colours, at
-880 and 480 px. It measures horizontal overflow, the scroll/footer boundary, a
-balloon cut off by the scrolling area, text contrast (4.5:1), field boundaries and
-keyboard focus (3:1), and Chromium's accessibility tree for field names,
-problem/reason descriptions and pool headings.
+880 and 480 px. It also renders the Settings tab on the axpc profile, in the same
+themes and widths, while the editor holds unapplied changes: each setting's
+checkbox stays focusable, does not toggle, is reported disabled in Chromium's
+accessibility tree, and carries the editing reason in its accessible description
+and balloon.
+It measures horizontal overflow, the scroll/footer boundary, a balloon cut off by
+the scrolling area, text contrast (4.5:1), field boundaries and keyboard focus
+(3:1), and Chromium's accessibility tree for field names, problem/reason
+descriptions and pool headings.
 Keyboard checks retain focus through held writes, confirmation refusals, token
 removal retries and failed read-back. They keep uneditable Host Settings inert
 with an explained reason. Pool heading expectations come from fixture names,
 including pools marked for removal, not from the headings already in the DOM.
-Deliberate overflow, low-contrast, broken-name and missing-heading mutations must fail those
-checks. The job retains screenshots and measurements for 14 days. This is browser
-evidence, not a native Windows or Mac app, IPC, contrast-theme or screen-reader
-run; those stay manual checks on a real host.
+Deliberate overflow, low-contrast, broken-name, missing-heading and
+missing-reason mutations must fail those checks. The job retains screenshots and
+measurements for 14 days. This is browser evidence, not a native Windows or Mac
+app, IPC, contrast-theme or screen-reader run; those stay manual checks on a real
+host.

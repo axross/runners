@@ -10,6 +10,7 @@ use crate::confirm::confirmation;
 use crate::control::{Action, Control, Look, control};
 use crate::host::HostWords;
 use crate::input::Cause;
+use crate::next_step::{NextStep, json_refused};
 use crate::state::{Context, ImageStatus, Resident, Stop};
 use crate::text::{LOG_FOLDER, counted, plain};
 use crate::tokens;
@@ -82,23 +83,6 @@ fn banner(
         action: None,
         announcement,
     }
-}
-
-/// whether the snapshot says the migration of `config.json` is in `state`.
-fn migration_is(context: &Context<'_>, state: &str) -> bool {
-    context
-        .snapshot
-        .and_then(|snapshot| snapshot.configuration.migration.as_ref())
-        .is_some_and(|migration| migration.state == state)
-}
-
-/// whether `config.json` was refused at its migration: the one failure that leaves no
-/// configuration in use, as the others run `config.json`'s.
-fn json_refused(context: &Context<'_>) -> bool {
-    migration_is(context, "failed")
-        && context
-            .snapshot
-            .is_some_and(|snapshot| snapshot.configuration.in_use.is_none())
 }
 
 /// the heading and the sentence that leads the body, as the live region reads them.
@@ -314,16 +298,18 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
         Stop::NoConfiguration => {
             let heading = "Stopped: there is no configuration";
             let lead = format!("{path} does not exist");
-            let next = if migration_is(context, "pending") {
-                crate::text::MIGRATE_ON_NEXT_START
-            } else {
-                "Create it as Marshal's operations document describes, then choose Start All."
+            let next = match NextStep::of(context) {
+                NextStep::QuitAndLaunch => crate::text::MIGRATE_ON_NEXT_START.to_string(),
+                step => format!(
+                    "Create it as Marshal's operations document describes, then {}.",
+                    step.choose()
+                ),
             };
             banner(
                 BannerKind::NoConfiguration,
                 Tone::Error,
                 heading,
-                vec![lead.clone(), next.to_string()],
+                vec![lead.clone(), next],
                 spoken(heading, &lead),
             )
         }
@@ -344,17 +330,18 @@ fn stopped(context: &Context<'_>, stop: &Stop) -> Banner {
                 lines.push(plain(message));
             }
             let lead = lines.first().cloned().unwrap_or_default();
-            lines.push(if json {
-                format!(
-                    "Fix {}, then quit Marshal and launch it again.",
-                    path.strip_suffix("config.toml").map_or_else(
-                        || "config.json".to_string(),
-                        |folder| { format!("{folder}config.json") }
-                    )
+            let file = if json {
+                path.strip_suffix("config.toml").map_or_else(
+                    || "config.json".to_string(),
+                    |folder| format!("{folder}config.json"),
                 )
             } else {
-                format!("Fix {path}, then choose Start All.")
-            });
+                path.clone()
+            };
+            lines.push(format!(
+                "Fix {file}, then {}.",
+                NextStep::of(context).choose()
+            ));
             banner(
                 BannerKind::InvalidConfiguration,
                 Tone::Error,

@@ -16,6 +16,7 @@ use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::Clock;
 use crate::runtime::registration::Registrar;
+use crate::validate::Plan;
 use crate::windows_host::run_key::SignIn;
 
 use super::super::api::{ApiError, ApiResult, Method};
@@ -35,6 +36,17 @@ pub const RESUME_WAITING: &str = "waiting";
 /// the snapshot's `resume` when that network has no gateway hardware address, so none
 /// is armed.
 pub const RESUME_NO_GATEWAY: &str = "no_gateway";
+
+/// the settings a plan's `[lifecycle]` puts in effect; a plan without the table takes the
+/// defaults.
+pub(super) fn settings_of(plan: &Plan) -> InEffect {
+    let lifecycle = plan
+        .settings
+        .as_ref()
+        .map(|settings| settings.lifecycle)
+        .unwrap_or_default();
+    InEffect::windows(lifecycle)
+}
 
 impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, B, K, R, D, M> {
     /// whether this host has the `[lifecycle]` settings: on axmc they are M4's.
@@ -58,6 +70,28 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         }
         self.in_effect.set(settings);
         self.sync_sign_in();
+    }
+
+    /// puts in effect the `[lifecycle]` of the configuration an applied edit or reload
+    /// made the one in use, as Start all does, and ends a waiting resume when
+    /// `resume_after_stop` is now off; nothing on a host without the settings.
+    pub(super) fn take_applied_settings(&self, plan: &Plan) {
+        if !self.has_lifecycle() {
+            return;
+        }
+        let settings = settings_of(plan);
+        self.take_settings(settings);
+        self.end_resume_when_off(settings);
+    }
+
+    /// cancels a waiting resume once `settings` turns `resume_after_stop` off.
+    fn end_resume_when_off(&self, settings: InEffect) {
+        if !settings.is_on(Setting::ResumeAfterStop) && self.resume_note.take().is_some() {
+            self.resume.borrow_mut().disarm();
+            self.log.info(
+                "resume_after_stop is off, so the runners will not start again on their own.",
+            );
+        }
     }
 
     /// writes or removes the sign-in item as `start_at_login` says; nothing while no
@@ -96,6 +130,12 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
                 "an edit of the configuration is being applied",
             ));
         }
+        if self.checking_image.get() {
+            return Err(ApiError::new(
+                ErrorCode::Busy,
+                "an edit of the configuration is waiting for the check of its image",
+            ));
+        }
         let Some(settings) = self.in_effect.get() else {
             return Err(ApiError::new(
                 ErrorCode::ConfigUnusable,
@@ -107,7 +147,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         if self.read_revision.borrow().as_deref() != Some(revision(file.bytes()).as_str()) {
             return Err(ApiError::new(
                 ErrorCode::ConfigChanged,
-                "config.toml changed after the agent read it; Start all reads it again",
+                "config.toml changed after the agent read it; Start all, or an applied edit or reload, reads it again",
             ));
         }
         let above = self.above();
@@ -119,12 +159,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         *self.read_revision.borrow_mut() = Some(revision(&written));
         let settings = settings.with(setting, value);
         self.in_effect.set(settings);
-        if !settings.is_on(Setting::ResumeAfterStop) && self.resume_note.take().is_some() {
-            self.resume.borrow_mut().disarm();
-            self.log.info(
-                "resume_after_stop is off, so the runners will not start again on their own.",
-            );
-        }
+        self.end_resume_when_off(settings);
         self.log.info(&format!(
             "{} is now {}.",
             setting.name(),

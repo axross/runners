@@ -11,8 +11,10 @@ description: "What does the agent do when a client reads, edits or reloads confi
 `config_read`, `config_edit` and `config_reload` let a client edit `config.toml` and
 apply a change without `stop_all` and `start_all`. `cli/src/agent/machine/configure.rs`
 answers them, `cli/src/agent/config/` reads the edits and works out each pool's
-effect, and `cli/src/agent/core.rs` applies it. The agent reads the file for these
-methods, at its start and at `start_all`, and never watches it.
+effect, and `cli/src/agent/core.rs` applies it. The agent reads the file at its start,
+at `start_all` and for each of these methods, and never watches it. Only the start,
+`start_all` and an applied `config_edit` or `config_reload` make what it read the
+configuration in use.
 
 - **`revision`** is a digest of the file's bytes and their length, from std's
   default hasher, compared for equality only. It names no path. A `config_edit` or `config_reload` names the revision it was made
@@ -42,7 +44,9 @@ methods, at its start and at `start_all`, and never watches it.
   agent checks again and writes through [Changing the File](./toml-configuration.md#changing-the-file). On
   a running agent a change of `image_name` first checks the new image, as `start_all`
   does, and is `image_unusable`, with nothing written, when the image is missing or
-  unusable.
+  unusable. While it waits for that check, `lifecycle_set` is refused as `busy`, so a
+  reload cannot put out of effect a setting saved meanwhile. A check changes no
+  setting in effect and no waiting resume.
 - **The answer** lists each pool's `effects`: `pool`, `change`, `runners_before`,
   `runners_after` and `stops_runners`, true when the change stops runners the pool has, which fails
   the jobs on them, on a running agent only. `repositories_released` lists the
@@ -55,9 +59,17 @@ methods, at its start and at `start_all`, and never watches it.
 
 The written file is the configuration in use from the moment the write succeeds, so
 an abandoned apply, a later `start_all` and a restart of the runtime core all use
-it. On a stopped agent nothing else happens. On a running agent the answer follows
-the write and the start of the apply, and the snapshot shows the rest. Pools are
-matched by name with the configuration in use:
+it. An applied `config_edit` or `config_reload`, on a stopped or a running agent, also
+puts the `[lifecycle]` of that file in effect as `start_all` does, with the effects
+[The Agent's Signals](./agent-lifecycle.md#the-agents-signals) lists, and ends a waiting
+resume when `resume_after_stop` is now off; a refused or failed one leaves the
+settings in effect as they were, and on axmc none changes. A write on an agent stopped
+for `no_configuration` or `invalid_configuration` leaves it stopped by you, as a
+successful `build` does; the runners stay stopped until `start_all`. A `config.json`
+rejected at its migration also stops the agent for `invalid_configuration`, but both
+methods are refused then, so that stop stays. On a stopped agent nothing else happens.
+On a running agent the answer follows the write and the start of the apply, and the
+snapshot shows the rest. Pools are matched by name with the configuration in use:
 
 | Change                                                                                                     | `change`          | Effect                                                |
 | ---------------------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------- |

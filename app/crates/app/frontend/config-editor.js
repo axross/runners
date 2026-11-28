@@ -1,6 +1,8 @@
 // the window's unapplied configuration, kept in memory across hides. Checks and
 // writes go only through the agent; a check's preview never replaces its source revision.
 
+const SAVING_SETTING = "Unavailable while a setting is being saved.";
+
 const STATE_CHANGED =
   "Marshal's state changed. Check and review again before applying. Your changes are kept.";
 
@@ -145,6 +147,9 @@ export class ConfigEditor {
     this.readAsk = false;
     this.problemsInResult = false;
     this.checked = null;
+    this.settingsOut = [];
+    this.reads = 0;
+    this.staleAfter = null;
   }
 
   /** view updates may invalidate consent, but must not replace the user's draft. */
@@ -168,12 +173,70 @@ export class ConfigEditor {
     );
   }
   get locked() {
-    return this.busy || this.review !== null;
+    return this.busy || this.review !== null || this.saving;
   }
   get lockReason() {
     if (this.busy) return "Waiting for the agent's answer.";
+    if (this.saving) return SAVING_SETTING;
     return this.review ? "Finish or cancel the review first." : null;
   }
+
+  /** whether a setting change from the Settings tab is waiting for its answer. */
+  get saving() {
+    return this.settingsOut.length > 0;
+  }
+  /** the value the newest change to a setting chose while its call is out, or null. */
+  chosenFor(key) {
+    return (
+      this.settingsOut.findLast((change) => change.key === key)?.on ?? null
+    );
+  }
+  /** the reason the controls that read, check or apply give while a setting is saved. */
+  get savingReason() {
+    return this.saving ? SAVING_SETTING : null;
+  }
+
+  /**
+   * keeps the editor's controls unavailable while `send` runs the setting change `{ key, on }`,
+   * then marks the editor's read stale: the change may have moved config.toml's revision,
+   * and the page is not told whether it did.
+   */
+  async whileSettingSaves(change, send) {
+    const out = { ...change };
+    this.settingsOut.push(out);
+    this.changed();
+    try {
+      await send();
+    } finally {
+      this.settingsOut.splice(this.settingsOut.indexOf(out), 1);
+      this.staleAfter = this.reads;
+      this.changed();
+    }
+  }
+
+  /** whether no read has begun since the last setting change returned. */
+  get stale() {
+    return this.staleAfter !== null;
+  }
+
+  /**
+   * why the Settings checkboxes cannot be changed, or null. the editor is offered when the
+   * agent sends its access; a form is shown only while the file is editable, but unapplied
+   * changes in a hidden form still count.
+   */
+  get settingsReason() {
+    if (!this.access) return null;
+    if (this.busy)
+      return "Settings cannot be changed while Marshal is reading, checking or applying the configuration.";
+    if (this.review)
+      return "Settings cannot be changed while a configuration change is being reviewed. Finish or cancel the review on the Pools tab first.";
+    const formShown =
+      !this.fileReason && (this.editing !== null || this.hostOpen);
+    if (formShown || this.dirty || this.readAsk || this.reloadAsk)
+      return "Settings cannot be changed while the configuration is open for editing. Apply, discard or close your changes first.";
+    return null;
+  }
+
   /** a read may succeed while the file's syntax or form cannot be edited here. */
   get fileReason() {
     const doc = this.document;
@@ -293,7 +356,25 @@ export class ConfigEditor {
     this.hostOpen = false;
   }
 
-  /** asks before replacing a changed draft; a failed read retains the old draft. */
+  /**
+   * asks the agent for config.toml. a read that began after the last setting change
+   * returned, and is answered, ends the stale state; one already out when it returned does not.
+   */
+  async fetchFile() {
+    this.reads += 1;
+    const began = this.reads;
+    const answer = await this.invoke("configuration", {
+      request: { kind: "read" },
+    });
+    if (this.staleAfter !== null && began > this.staleAfter)
+      this.staleAfter = null;
+    return answer;
+  }
+
+  /**
+   * asks before replacing a changed draft; a failed read retains the old draft. nothing here
+   * waits for a setting change: the editor's first read starts when the view first offers it.
+   */
   async read(discard = false) {
     if (this.busy || this.access?.read_reason || !this.access) return;
     if (this.dirty && !discard) {
@@ -306,9 +387,7 @@ export class ConfigEditor {
     this.busy = true;
     this.changed();
     try {
-      const answer = await this.invoke("configuration", {
-        request: { kind: "read" },
-      });
+      const answer = await this.fetchFile();
       this.loaded(answer.value);
       this.notify(this.fileReason ?? "config.toml read. Nothing was applied.");
     } catch (error) {
@@ -336,6 +415,54 @@ export class ConfigEditor {
     this.applyResult = null;
     row.fields[key] = value;
     this.changed();
+  }
+
+  /** why a form cannot be opened: the editor is held or, once stale, a read cannot be made. */
+  get openReason() {
+    return (
+      this.lockReason ??
+      this.fileReason ??
+      (this.stale ? this.access.read_reason : null)
+    );
+  }
+
+  /** reads config.toml again, and says whether a form may open: the read was answered and the file is editable. */
+  async readForForm() {
+    await this.read();
+    return !this.stale && !this.fileReason;
+  }
+
+  /** opens a pool's form, reading config.toml again first when a setting change left the read stale. */
+  async openPool(pool) {
+    this.applyResult = null;
+    let target = pool;
+    if (this.stale) {
+      if (!(await this.readForForm())) return;
+      const named = this.pools.filter(
+        (p) => p.source !== null && p.original.name === pool.original.name,
+      );
+      target =
+        named.find((p) => p.source === pool.source) ??
+        (named.length === 1 ? named[0] : undefined);
+      if (!target) return;
+    }
+    this.editing = target.id;
+    this.changed(`edit-heading:${target.id}`);
+  }
+
+  /** opens the Host Settings form, or closes it; it reads config.toml first when none was read or the read is stale. */
+  async toggleHost() {
+    this.applyResult = null;
+    if (!this.hostOpen && (!this.document || this.stale))
+      await this.readForForm();
+    this.hostOpen = this.hostOpen ? false : !this.stale && !this.fileReason;
+    this.changed();
+  }
+
+  /** the new-pool form, after a read of config.toml when a setting change left the last one stale. */
+  async openNewPool() {
+    if (this.stale && !(await this.readForForm())) return;
+    this.addPool();
   }
 
   /** a new pool is only a draft and receives focus before any agent request. */
@@ -431,6 +558,7 @@ export class ConfigEditor {
     if (
       this.reason ||
       this.busy ||
+      this.saving ||
       this.review ||
       (!reload && (this.fileReason || !this.dirty))
     )
@@ -448,9 +576,7 @@ export class ConfigEditor {
     this.notify("Checking changes. Nothing is written yet.");
     try {
       if (reload) {
-        const read = await this.invoke("configuration", {
-          request: { kind: "read" },
-        });
+        const read = await this.fetchFile();
         this.loaded(read.value);
       }
       const request = reload
@@ -521,7 +647,7 @@ export class ConfigEditor {
 
   /** writes the checked request, then performs only separately chosen token removals. */
   async apply() {
-    if (!this.review || this.reason || this.busy) return;
+    if (!this.review || this.reason || this.busy || this.saving) return;
     const review = this.review;
     let saved = false;
     let sent = false;
@@ -569,9 +695,7 @@ export class ConfigEditor {
       this.changed();
       for (const repository of review.remove)
         await this.removeToken(repository);
-      const answer = await this.invoke("configuration", {
-        request: { kind: "read" },
-      });
+      const answer = await this.fetchFile();
       this.loaded(answer.value);
       this.notify(
         review.change.applies

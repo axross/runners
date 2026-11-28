@@ -1,6 +1,7 @@
 //! the configuration methods over the channel: `config_read`, and `config_edit` and
 //! `config_reload` on a running agent, which apply a change to the pools it touches
-//! alone, and on a stopped one, which only write it.
+//! alone, and on a stopped one, which only write it; a write on an agent stopped for a
+//! missing or invalid file ends that stop.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -19,7 +20,7 @@ use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
-use support::agent::{Conn, ONE_POOL, Rig, TOKEN, TWO_POOLS};
+use support::agent::{Conn, ONE_POOL, ONE_POOL_TOML, Rig, TOKEN, TWO_POOLS};
 use tokio::sync::Notify;
 
 const TWO_POOLS_TOML: &str = r#"# the host's pools
@@ -65,13 +66,6 @@ async fn refused(conn: &Conn, method: &str, params: Value) -> (String, Vec<Strin
         }
         other => panic!("{method} was not refused: {other:?}"),
     }
-}
-
-async fn read_revision(conn: &Conn) -> String {
-    conn.ok("config_read").await["revision"]
-        .as_str()
-        .unwrap()
-        .to_string()
 }
 
 /// each pool's change, as `pool:change:stops_runners`.
@@ -228,7 +222,7 @@ async fn raising_runners_starts_the_new_slot_alone_and_keeps_the_comments() {
             conn.until("three runners", |snapshot| snapshot.runners_up == 3)
                 .await;
             rig.mark_running();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let edit = json!({
                 "revision": revision,
                 "edits": [{"op": "set", "path": "pool[1].runners", "value": 2}],
@@ -304,7 +298,7 @@ async fn an_edit_on_the_mac_keeps_the_default_image_of_a_configuration_without_o
             assert_eq!(image_names(&before), ["actions-runner:local"]);
             rig.backend.state.borrow_mut().image_gate = Some(Rc::new(Notify::new()));
             rig.mark_running();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             conn.call(
                 "config_edit",
                 json!({
@@ -341,7 +335,7 @@ async fn lowering_runners_and_removing_a_pool_stop_only_their_slots() {
                 .await;
             rig.mark_running();
             let held: std::collections::BTreeMap<_, _> = workloads(&before).into_iter().collect();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -391,7 +385,7 @@ async fn a_refused_edit_writes_nothing_and_says_why() {
         .drive(Launch::Running, |conn| async move {
             conn.until("three runners", |snapshot| snapshot.runners_up == 3)
                 .await;
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let edit = |path: &str, value: Value| {
                 json!({
                     "revision": revision,
@@ -447,7 +441,7 @@ async fn an_edit_on_a_stopped_agent_is_written_and_used_at_the_next_start() {
     let rig = &rig;
     let (_, ()) = rig
         .drive(Launch::Stopped, |conn| async move {
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -527,7 +521,7 @@ async fn a_reload_of_a_bad_file_keeps_the_pools_running_and_a_good_one_applies()
             rig.mark_running();
             let bad = TWO_POOLS_TOML.replace("runners = 1", "runners = 1\nlimit = 2");
             rig.write_toml(&bad);
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let (code, paths) = refused(
                 &conn,
                 "config_reload",
@@ -543,7 +537,7 @@ async fn a_reload_of_a_bad_file_keeps_the_pools_running_and_a_good_one_applies()
 
             let good = TWO_POOLS_TOML.replace("runners = 1", "runners = 2");
             rig.write_toml(&good);
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let checked = conn
                 .call(
                     "config_reload",
@@ -583,7 +577,7 @@ async fn a_pool_waiting_for_its_token_takes_its_new_runners_and_starts_with_them
             conn.until("pool r running", |snapshot| snapshot.runners_up == 2)
                 .await;
             for runners in [3, 2] {
-                let revision = read_revision(&conn).await;
+                let revision = conn.config_revision().await;
                 let applied = conn
                     .call(
                         "config_edit",
@@ -641,7 +635,7 @@ async fn a_changed_pool_restarts_alone() {
                 .await;
             rig.mark_running();
             let held: std::collections::BTreeMap<_, _> = workloads(&before).into_iter().collect();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -696,7 +690,7 @@ async fn removing_a_pool_with_diagnostics_exports_its_evidence_first() {
                 .await;
             rig.mark_running();
             let held: std::collections::BTreeMap<_, _> = workloads(&before).into_iter().collect();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             conn.call(
                 "config_edit",
                 json!({
@@ -751,12 +745,12 @@ async fn a_slot_whose_stop_runs_late_is_finished_when_its_runner_ends() {
                     "edits": [{"op": "set", "path": "pool[0].runners", "value": runners}],
                 })
             };
-            conn.call("config_edit", lower(1, read_revision(&conn).await))
+            conn.call("config_edit", lower(1, conn.config_revision().await))
                 .await
                 .unwrap();
             // the apply waits on the stop, so another edit meanwhile is refused
             assert_eq!(
-                refused(&conn, "config_edit", lower(2, read_revision(&conn).await))
+                refused(&conn, "config_edit", lower(2, conn.config_revision().await))
                     .await
                     .0,
                 "config_applying"
@@ -792,7 +786,7 @@ async fn a_slot_whose_stop_runs_late_is_finished_when_its_runner_ends() {
             })
             .await;
             // and raising the runners again starts it
-            conn.call("config_edit", lower(2, read_revision(&conn).await))
+            conn.call("config_edit", lower(2, conn.config_revision().await))
                 .await
                 .unwrap();
             conn.until("slot 2 running again", |snapshot| {
@@ -810,7 +804,7 @@ async fn a_slot_whose_stop_runs_late_is_finished_when_its_runner_ends() {
 
 /// sets `path` to `value` in the file as it is now.
 async fn set(conn: &Conn, path: &str, value: Value) -> Result<Value, CallError> {
-    let revision = read_revision(conn).await;
+    let revision = conn.config_revision().await;
     conn.call(
         "config_edit",
         json!({
@@ -874,7 +868,7 @@ runners = 1
             conn.until("two runners", |snapshot| snapshot.runners_up == 2)
                 .await;
             rig.mark_running();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -1000,7 +994,7 @@ async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refus
                 .call(
                     "config_edit",
                     json!({
-                        "revision": read_revision(&conn).await,
+                        "revision": conn.config_revision().await,
                         "edits": [
                             {"op": "set", "path": "pool[0].diagnostics", "value": true},
                             {"op": "set", "path": "pool[0].diagnostic_directory",
@@ -1054,7 +1048,7 @@ async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refus
             let body = match conn
                 .call(
                     "config_reload",
-                    json!({"revision": read_revision(&conn).await}),
+                    json!({"revision": conn.config_revision().await}),
                 )
                 .await
             {
@@ -1094,7 +1088,7 @@ async fn an_edit_is_busy_while_the_agent_resumes() {
                 refused(
                     &conn,
                     "config_reload",
-                    json!({"revision": read_revision(&conn).await})
+                    json!({"revision": conn.config_revision().await})
                 )
                 .await
                 .0,
@@ -1120,7 +1114,7 @@ async fn an_edit_is_refused_while_the_runtime_waits_to_restart() {
                 &conn,
                 "config_edit",
                 json!({
-                    "revision": read_revision(&conn).await,
+                    "revision": conn.config_revision().await,
                     "edits": [{"op": "set", "path": "pool[1].runners", "value": 2}],
                 }),
             )
@@ -1323,7 +1317,7 @@ async fn one_pool_of_two_late_ones_ends(ending: &str) {
             conn.call(
                 "config_edit",
                 json!({
-                    "revision": read_revision(&conn).await,
+                    "revision": conn.config_revision().await,
                     "edits": [
                         {"op": "set", "path": "pool[0].labels", "value": ["big"]},
                         {"op": "set", "path": "pool[1].labels", "value": ["big"]},
@@ -1393,7 +1387,7 @@ async fn every_late_slot_is_listed_and_a_removed_pool_stays_listed_after_the_app
             conn.call(
                 "config_edit",
                 json!({
-                    "revision": read_revision(&conn).await,
+                    "revision": conn.config_revision().await,
                     "edits": [
                         {"op": "set", "path": "pool[0].runners", "value": 1},
                         {"op": "remove_entry", "path": "pool[1]"},
@@ -1448,7 +1442,7 @@ async fn a_valid_reload_on_a_stopped_agent_makes_the_file_the_one_in_use() {
             let reloaded = conn
                 .call(
                     "config_reload",
-                    json!({"revision": read_revision(&conn).await}),
+                    json!({"revision": conn.config_revision().await}),
                 )
                 .await
                 .unwrap();
@@ -1493,7 +1487,7 @@ async fn an_edit_and_a_reload_are_busy_while_the_agent_stops() {
             let stop = async { conn.ok("stop_all").await };
             let meanwhile = async {
                 other.until_state("stopping").await;
-                let revision = read_revision(&other).await;
+                let revision = other.config_revision().await;
                 assert_eq!(
                     refused(
                         &other,
@@ -1519,4 +1513,194 @@ async fn an_edit_and_a_reload_are_busy_while_the_agent_stops() {
             conn.ok("quit").await;
         })
         .await;
+}
+
+/// a rig with no `config.toml` and no `config.json`, or with `file` as its `config.toml`.
+fn without_a_usable_file(file: Option<&str>) -> Rig {
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    if let Some(file) = file {
+        rig.write_toml(file);
+    }
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    rig
+}
+
+/// the stop reason code and message the snapshot names.
+async fn stop_of(conn: &Conn) -> (String, String) {
+    let reason = conn.status().await.agent.reason.unwrap();
+    (reason.code, reason.message)
+}
+
+/// a reload, or an edit of the first pool's runners, at the file's current revision.
+async fn write_change(conn: &Conn, edit: bool) -> Result<Value, CallError> {
+    if edit {
+        conn.edit_first_pool_runners(false).await
+    } else {
+        conn.reload_config(false).await
+    }
+}
+
+/// the file the agent was stopped for is fixed, and an edit or a reload is written:
+/// the agent is stopped by you, shows the file as the configuration in use, and
+/// starts the runners at the next Start all.
+async fn a_fixed_file_ends_its_stop(file: Option<&str>, stopped_for: &str, edit: bool) {
+    let rig = without_a_usable_file(file);
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        assert_eq!(stop_of(&conn).await.0, stopped_for);
+        // the file is not fixed yet, so the change is refused and the stop is as it was
+        let (code, _) = refused(
+            &conn,
+            "config_reload",
+            json!({"revision": conn.config_revision().await}),
+        )
+        .await;
+        assert!(code.starts_with("config_"), "{code}");
+        assert_eq!(stop_of(&conn).await.0, stopped_for);
+
+        rig.write_toml(ONE_POOL_TOML);
+        write_change(&conn, edit).await.unwrap();
+        let snapshot = conn.status().await;
+        assert_eq!(snapshot.agent.state, "stopped");
+        let reason = snapshot.agent.reason.unwrap();
+        assert_eq!(
+            (reason.code.as_str(), reason.message.as_str()),
+            ("by_you", "stopped by you")
+        );
+        assert_eq!(snapshot.configuration.status, "valid");
+        assert_eq!(snapshot.configuration.in_use.unwrap().source, "file");
+        assert!(
+            !rig.backend
+                .calls()
+                .iter()
+                .any(|call| matches!(call, Call::RunContainer(_))),
+            "a runner started"
+        );
+
+        conn.ok("start_all").await;
+        conn.until_runner_runs().await;
+        rig.mark_running();
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_reload_that_finds_a_missing_file_created_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(None, "no_configuration", false).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_that_finds_a_missing_file_created_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(None, "no_configuration", true).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_reload_that_finds_an_invalid_file_fixed_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(Some("not = [toml"), "invalid_configuration", false).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_that_finds_an_invalid_file_fixed_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(Some("not = [toml"), "invalid_configuration", true).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stop_for_a_config_json_rejected_at_its_migration_is_not_ended() {
+    let rig = Rig::new(&ONE_POOL.replace("\"slots\":1", "\"slots\":0"));
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        let before = stop_of(&conn).await;
+        assert_eq!(before.0, "invalid_configuration");
+        // a valid config.toml beside it is not read until Start all, so the change is
+        // refused
+        rig.write_toml(ONE_POOL_TOML);
+        for edit in [false, true] {
+            let refusal = write_change(&conn, edit).await;
+            let Err(CallError::Agent(body)) = refusal else {
+                panic!("the change was not refused: {refusal:?}");
+            };
+            assert_eq!(body.code, "config_unusable");
+            assert_eq!(stop_of(&conn).await, before);
+        }
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_written_change_keeps_every_other_stop_reason() {
+    // stopped by you at launch, and for an image that is not usable
+    let rig = without_a_usable_file(Some(ONE_POOL_TOML));
+    let rig = &rig;
+    rig.drive(Launch::Stopped, |conn| async move {
+        let by_you = stop_of(&conn).await;
+        assert_eq!(by_you.0, "by_you");
+        write_change(&conn, false).await.unwrap();
+        assert_eq!(stop_of(&conn).await, by_you);
+
+        rig.backend
+            .state
+            .borrow_mut()
+            .image_answers
+            .push_back(marshal_cli::image::check::ImageCheck::Missing);
+        let answer = conn.ok("start_all").await;
+        assert_eq!(answer["reason"]["code"], "image_unusable");
+        let unusable = stop_of(&conn).await;
+        write_change(&conn, true).await.unwrap();
+        assert_eq!(stop_of(&conn).await, unusable);
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_written_change_keeps_a_stop_for_no_pool_started() {
+    // no token is stored, so the only pool is skipped
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.write_toml(ONE_POOL_TOML);
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        let stopped = stop_of(&conn).await;
+        assert_eq!(stopped.0, "no_pool_started");
+        for edit in [false, true] {
+            write_change(&conn, edit).await.unwrap();
+            assert_eq!(stop_of(&conn).await, stopped, "edit: {edit}");
+        }
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_written_change_keeps_a_stop_for_restart_limit() {
+    // the core fails each time a job container is run, so it stops at the fourth failure
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.write_toml(ONE_POOL_TOML);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    rig.clock.pause.set(Duration::from_millis(400));
+    rig.backend.state.borrow_mut().on_run = Some(Box::new(|| panic!("the core broke")));
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        let stopped = stop_of(&conn).await;
+        assert_eq!(stopped.0, "restart_limit");
+        for edit in [false, true] {
+            write_change(&conn, edit).await.unwrap();
+            assert_eq!(stop_of(&conn).await, stopped, "edit: {edit}");
+        }
+        conn.ok("quit").await;
+    })
+    .await;
 }
