@@ -213,7 +213,7 @@ export class ConfigEditor {
   }
 
   /**
-   * why the Settings checkboxes cannot be changed, or null. The editor is offered when the
+   * why the Settings checkboxes cannot be changed, or null. the editor is offered when the
    * agent sends its access; a form is shown only while the file is editable, but unapplied
    * changes in a hidden form still count.
    */
@@ -350,7 +350,7 @@ export class ConfigEditor {
   }
 
   /**
-   * asks the agent for config.toml. A read that began after the last setting change
+   * asks the agent for config.toml. a read that began after the last setting change
    * returned, and is answered, ends the stale state; one already out when it returned does not.
    */
   async fetchFile() {
@@ -365,7 +365,7 @@ export class ConfigEditor {
   }
 
   /**
-   * asks before replacing a changed draft; a failed read retains the old draft. Nothing here
+   * asks before replacing a changed draft; a failed read retains the old draft. nothing here
    * waits for a setting change: the editor's first read starts when the view first offers it.
    */
   async read(discard = false) {
