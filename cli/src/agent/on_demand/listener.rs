@@ -52,13 +52,8 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                 let wait = self.recreation_wait();
                 if !wait.is_zero() {
                     self.awaiting_recreation();
-                    tokio::select! {
-                        () = self.clock.sleep(wait) => {},
-                        _ = stop.changed() => {},
-                        _ = drain.changed() => {},
-                        _ = capacity.changed() => {},
-                        () = self.wake.notified() => {},
-                    }
+                    self.wait_for_change(&mut stop, &mut drain, &mut capacity, Some(wait))
+                        .await;
                     continue;
                 }
                 {
@@ -80,22 +75,13 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
                     .and_then(|at| at.duration_since(self.clock.now()).ok())
             };
             if self.state.borrow().fatal || self.halted() {
-                tokio::select! {
-                    _ = stop.changed() => {},
-                    _ = drain.changed() => {},
-                    _ = capacity.changed() => {},
-                    () = self.wake.notified() => {},
-                }
+                self.wait_for_change(&mut stop, &mut drain, &mut capacity, None)
+                    .await;
                 continue;
             }
             if let Some(wait) = wait.filter(|wait| !wait.is_zero()) {
-                tokio::select! {
-                    () = self.clock.sleep(wait) => {},
-                    _ = stop.changed() => {},
-                    _ = drain.changed() => {},
-                    _ = capacity.changed() => {},
-                    () = self.wake.notified() => {},
-                }
+                self.wait_for_change(&mut stop, &mut drain, &mut capacity, Some(wait))
+                    .await;
                 continue;
             }
             let result = tokio::select! {
@@ -129,6 +115,28 @@ impl<T: TokenSource, K: Clock> Coordinator<'_, T, K> {
         self.close().await;
         self.state.borrow_mut().view.stopped();
         self.publish();
+    }
+
+    /// every wait wakes on the same changes, so a new control cannot be missed by one of them.
+    async fn wait_for_change(
+        &self,
+        stop: &mut watch::Receiver<bool>,
+        drain: &mut watch::Receiver<bool>,
+        capacity: &mut watch::Receiver<u32>,
+        sleep: Option<Duration>,
+    ) {
+        tokio::select! {
+            () = async {
+                match sleep {
+                    Some(wait) => self.clock.sleep(wait).await,
+                    None => std::future::pending().await,
+                }
+            } => {},
+            _ = stop.changed() => {},
+            _ = drain.changed() => {},
+            _ = capacity.changed() => {},
+            () = self.wake.notified() => {},
+        }
     }
 
     /// how much of the minimum interval since the last recreation remains.
