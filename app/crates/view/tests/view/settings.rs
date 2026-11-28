@@ -521,6 +521,31 @@ fn the_mac_words_each_setting_for_the_mac_and_fixes_the_network_row() {
 }
 
 #[test]
+fn the_fixed_network_row_is_on_on_the_mac_whatever_the_file_says() {
+    for in_file in [false, true] {
+        let snapshot = with_lifecycle(|value| {
+            value["lifecycle"]["settings"]["stop_on_network_change"] =
+                json!({ "on": in_file, "defaulted": false });
+        });
+        let view = mac_view(&snapshot, Some(LoginItemState::On));
+        let network = row(settings(&view), "stop_on_network_change");
+        assert_eq!(network.checked, Some(true), "{in_file}");
+        assert_eq!(network.state, "On (default).", "{in_file}");
+        assert_eq!(
+            network.fixed.as_deref(),
+            Some("macOS always stops the runners when the primary network changes."),
+            "{in_file}"
+        );
+    }
+    // the file's value shows as it is on Windows, where the setting can be changed
+    let off = with_lifecycle(|_| {});
+    let view = view_of(&off);
+    let network = row(settings(&view), "stop_on_network_change");
+    assert_eq!(network.checked, Some(false));
+    assert_eq!(network.state, "Off (default: on).");
+}
+
+#[test]
 fn windows_shows_no_login_item_and_no_fixed_row() {
     let view = view_of(&with_lifecycle(|_| {}));
     let tab = settings(&view);

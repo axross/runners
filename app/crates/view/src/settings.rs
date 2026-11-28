@@ -493,7 +493,10 @@ fn row(
         Some(SettingResult::Saved { on }) => Some(*on),
         _ => None,
     };
-    let on = saved.or(value.map(|value| value.on));
+    let macos = context.input.platform == Platform::Macos;
+    let fixed = macos && setting == Setting::StopOnNetworkChange;
+    // macOS always stops the runners, whatever the file says, so the fixed row is on
+    let on = saved.or(value.map(|value| value.on)).map(|on| on || fixed);
     let state = match (saving, on) {
         // the checkbox keeps the value chosen until the agent answers
         (Some(saving), _) => format!("Being saved as {}.", on_off(saving).to_lowercase()),
@@ -512,7 +515,6 @@ fn row(
     let refused = result
         .as_ref()
         .is_some_and(|note| note.tone == NoteTone::Error);
-    let macos = context.input.platform == Platform::Macos;
     let login_item = context
         .input
         .login_item
@@ -539,8 +541,7 @@ fn row(
         note: result
             .or(login_note)
             .or_else(|| state_note(context, lifecycle, setting)),
-        fixed: (macos && setting == Setting::StopOnNetworkChange)
-            .then(|| NETWORK_FIXED_ON_MACOS.to_string()),
+        fixed: fixed.then(|| NETWORK_FIXED_ON_MACOS.to_string()),
         login_item: login_item.map(LoginItemState::text),
     };
     (row, refused || startup_off || login_attention)

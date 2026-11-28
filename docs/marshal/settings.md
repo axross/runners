@@ -85,8 +85,9 @@ M4 ([#90](https://github.com/axross/runners/issues/90)) owns this section: W3's 
 in the Mac wording approved on #90, chosen by `Input::macos`, which the session sets
 where it keeps a login item. Windows is unchanged.
 
-- **The network row is fixed.** It reports itself disabled, stays focusable, does
-  not toggle and is never dimmed; "macOS always stops the runners when the primary
+- **The network row is fixed.** It is checked, whatever `config.toml` holds for
+  `stop_on_network_change`, reports itself disabled, stays focusable, does not toggle
+  and is never dimmed; "macOS always stops the runners when the primary
   network changes." shows in W3's balloon and stays on the page as hidden text in
   the checkbox's description. The page never sends `lifecycle_set` for it.
 - **"Login Items: <state>"** sits under the first setting: On, Waiting for approval,
