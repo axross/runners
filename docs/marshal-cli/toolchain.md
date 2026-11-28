@@ -56,6 +56,12 @@ fetches the RustSec database, so it runs in
 [`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) and not in
 `mise run check`; see [Development Workflow](../agent-work/change-delivery.md).
 
+The `rust` job's `Run Tests` step passes `--no-fail-fast`, so a test executable that
+fails does not stop the executables after it in that step, and one flaky executable
+cannot hide the rest of that step's results; the job still fails when any test fails.
+The `test:rust` task, and so the Check job's run of it, stays `cargo test --locked`
+and stops at the first failing executable.
+
 ## The App Workspace
 
 [`app/`](../../app) is a second Cargo workspace beside `cli/`: the Windows
