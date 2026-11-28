@@ -147,7 +147,7 @@ alter "a copy step that continues on error fails the guard" \
 " "the copy step must not set continue-on-error"
 
 alter "a workflow without a checkout step before the copy step fails the guard" \
-  "uses: actions/checkout@v7" "uses: actions/cache@v4" "the copy step must come after the checkout step"
+  "uses: actions/checkout@" "uses: actions/cache@" "the copy step must come after the checkout step"
 
 # the copy step, which comes last but one, moved behind the action step, which comes last
 copy_marker="      # the reviewer reads pull request head files only through this copy."
