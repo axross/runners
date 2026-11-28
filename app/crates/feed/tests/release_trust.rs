@@ -1,6 +1,6 @@
-//! the release CLI's default embedded trust, built from isolated source copies so a
-//! rotation never changes the checkout's app or release keys. no signer is needed:
-//! the throwaway fixture keys' private halves were not kept.
+//! the feed check's default embedded release-verification trust, built from isolated
+//! source copies so a rotation never changes the checkout's app or release keys. no
+//! signer is needed: the throwaway fixture keys' private halves were not kept.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -44,7 +44,8 @@ fn fixture(name: &str) -> String {
     .to_string()
 }
 
-/// an isolated CLI build whose embedded trust comes from `root`, not the checkout.
+/// an isolated build of the feed check whose embedded trust comes from `root`, not the
+/// checkout.
 fn build(root: &Path) -> Output {
     Command::new(env!("CARGO"))
         .args([
@@ -105,7 +106,7 @@ fn checked(root: &Path, signature: &str, address: &str, accepts: bool, diagnosti
 /// a transition changes app trust before release trust; neither stage may relax
 /// the other publication checks.
 #[test]
-fn the_default_cli_trust_rotates_independently_of_the_app_key() {
+fn the_default_release_trust_rotates_independently_of_the_app_key() {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -161,7 +162,7 @@ fn the_default_cli_trust_rotates_independently_of_the_app_key() {
         "signed-1.4.0.sig",
         &address,
         true,
-        "with the committed key",
+        "with the release-verification key",
     );
     checked(
         root,
@@ -215,7 +216,7 @@ fn the_default_cli_trust_rotates_independently_of_the_app_key() {
         "rotation-1.4.0.sig",
         &address,
         true,
-        "with the committed key",
+        "with the release-verification key",
     );
     checked(
         root,

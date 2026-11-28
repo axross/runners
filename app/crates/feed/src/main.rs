@@ -92,7 +92,7 @@ fn run(arguments: &[String]) -> Result<Vec<String>, Vec<String>> {
         .collect();
     check_feed(&feed, version, &released, &public_key)
         .map_err(|refusals| refusals.iter().map(ToString::to_string).collect::<Vec<_>>())?;
-    let key = key_file.map_or_else(|| "the committed key".to_string(), Clone::clone);
+    let key = key_file.map_or_else(|| "the release-verification key".to_string(), Clone::clone);
     Ok(released
         .iter()
         .map(|file| {
