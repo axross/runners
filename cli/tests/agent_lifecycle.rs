@@ -22,11 +22,16 @@ use serde_json::{Value, json};
 use support::agent::{Conn, ONE_POOL_TOML, Rig, TOKEN};
 use tokio::sync::Notify;
 
+/// the rig's file with `lifecycle` written by hand before the pools.
+fn hand_edited(lifecycle: &str) -> String {
+    ONE_POOL_TOML.replace("\n[[pool]]", &format!("{lifecycle}\n[[pool]]"))
+}
+
 /// a rig whose `config.toml` is [`ONE_POOL_TOML`] with `lifecycle` before the pools.
 fn rig(lifecycle: &str) -> Rig {
     let rig = Rig::new("");
     rig.remove("config.json");
-    rig.write_toml(&ONE_POOL_TOML.replace("\n[[pool]]", &format!("{lifecycle}\n[[pool]]")));
+    rig.write_toml(&hand_edited(lifecycle));
     rig.store_token("o", "r", TOKEN);
     rig.hold_jobs();
     rig
@@ -328,11 +333,6 @@ async fn the_sign_in_item_follows_start_at_login() {
 const HAND_EDIT: &str =
     "\n[lifecycle]\nkeep_awake = false\nstart_at_login = true\nstop_on_network_change = false\n";
 
-/// the rig's file with `lifecycle` written by hand before the pools.
-fn hand_edited(lifecycle: &str) -> String {
-    ONE_POOL_TOML.replace("\n[[pool]]", &format!("{lifecycle}\n[[pool]]"))
-}
-
 /// how a change of the file is sent: `config_reload`, or a `config_edit` of the
 /// first pool's runners.
 #[derive(Clone, Copy, Debug)]
@@ -598,48 +598,46 @@ async fn until_the_image_is_checked(other: &Conn, rig: &Rig) {
 }
 
 async fn a_setting_waits_for_the_image_check_of(via: Via) {
-    {
-        let rig = rig("");
-        let rig = &rig;
-        let gate = &Rc::new(Notify::new());
-        rig.drive(Launch::Running, |conn| async move {
-            running(&conn, rig).await;
-            rig.backend.state.borrow_mut().image_gate = Some(Rc::clone(gate));
-            let other = conn.another().await;
-            let change = image_change(&conn, rig, via);
-            let meanwhile = async {
-                until_the_image_is_checked(&other, rig).await;
-                let code = other
-                    .code(
-                        "lifecycle_set",
-                        json!({ "key": "keep_awake", "value": false }),
-                    )
-                    .await;
-                gate.notify_one();
-                code
-            };
-            let (changed, code) = tokio::join!(change, meanwhile);
-            assert_eq!(code, "busy", "{via:?}");
-            changed.unwrap();
+    let rig = rig("");
+    let rig = &rig;
+    let gate = &Rc::new(Notify::new());
+    rig.drive(Launch::Running, |conn| async move {
+        running(&conn, rig).await;
+        rig.backend.state.borrow_mut().image_gate = Some(Rc::clone(gate));
+        let other = conn.another().await;
+        let change = image_change(&conn, rig, via);
+        let meanwhile = async {
+            until_the_image_is_checked(&other, rig).await;
+            let code = other
+                .code(
+                    "lifecycle_set",
+                    json!({ "key": "keep_awake", "value": false }),
+                )
+                .await;
+            gate.notify_one();
+            code
+        };
+        let (changed, code) = tokio::join!(change, meanwhile);
+        assert_eq!(code, "busy", "{via:?}");
+        changed.unwrap();
 
-            // the settings in effect and the file agree: nothing was saved meanwhile,
-            // and a setting changed once the change is applied is written
-            until_applied_or_written(&conn).await;
-            let lifecycle = conn.status().await.lifecycle.unwrap();
-            assert!(lifecycle.settings["keep_awake"].defaulted, "{via:?}");
-            assert!(!file(rig).contains("keep_awake"), "{via:?}");
-            assert!(file(rig).contains("other:2"), "{via:?}");
-            conn.call(
-                "lifecycle_set",
-                json!({ "key": "keep_awake", "value": false }),
-            )
-            .await
-            .unwrap();
-            assert!(file(rig).contains("keep_awake = false"), "{via:?}");
-            conn.ok("quit").await;
-        })
-        .await;
-    }
+        // the settings in effect and the file agree: nothing was saved meanwhile,
+        // and a setting changed once the change is applied is written
+        until_applied_or_written(&conn).await;
+        let lifecycle = conn.status().await.lifecycle.unwrap();
+        assert!(lifecycle.settings["keep_awake"].defaulted, "{via:?}");
+        assert!(!file(rig).contains("keep_awake"), "{via:?}");
+        assert!(file(rig).contains("other:2"), "{via:?}");
+        conn.call(
+            "lifecycle_set",
+            json!({ "key": "keep_awake", "value": false }),
+        )
+        .await
+        .unwrap();
+        assert!(file(rig).contains("keep_awake = false"), "{via:?}");
+        conn.ok("quit").await;
+    })
+    .await;
 }
 
 #[tokio::test(flavor = "current_thread")]

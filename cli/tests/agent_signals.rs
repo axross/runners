@@ -23,10 +23,15 @@ use marshal_cli::windows_host::network::{Kind, primary};
 use serde_json::json;
 use support::agent::{Conn, ONE_POOL_TOML, Rig, TOKEN};
 
+/// the rig's file with `lifecycle` written by hand after the pools.
+fn hand_edited(lifecycle: &str) -> String {
+    format!("{ONE_POOL_TOML}\n[lifecycle]\n{lifecycle}")
+}
+
 fn rig(lifecycle: &str) -> Rig {
     let rig = Rig::new("");
     rig.remove("config.json");
-    rig.write_toml(&format!("{ONE_POOL_TOML}\n[lifecycle]\n{lifecycle}"));
+    rig.write_toml(&hand_edited(lifecycle));
     rig.store_token("o", "r", TOKEN);
     rig.hold_jobs();
     rig
@@ -301,11 +306,6 @@ async fn turning_resume_off_cancels_a_waiting_resume() {
         conn.ok("quit").await;
     })
     .await;
-}
-
-/// the rig's file with `lifecycle` written by hand after the pools.
-fn hand_edited(lifecycle: &str) -> String {
-    format!("{ONE_POOL_TOML}\n[lifecycle]\n{lifecycle}")
 }
 
 #[tokio::test(flavor = "current_thread")]

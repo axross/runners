@@ -254,10 +254,7 @@ async fn a_drain_after_a_reload_fixed_the_file_keeps_the_runners_stopped() {
             let stopped = conn.until_state("stopped").await;
             assert_eq!(stopped.agent.reason.unwrap().code, "no_configuration");
             rig.write_toml(ONE_POOL_TOML);
-            let revision = conn.ok("config_read").await["revision"].clone();
-            conn.call("config_reload", json!({ "revision": revision }))
-                .await
-                .unwrap();
+            conn.reload_config(false).await.unwrap();
             conn.client.subscribe().await.unwrap();
             let answer = drain(&conn).await;
             assert_eq!(answer["state"], "quitting");

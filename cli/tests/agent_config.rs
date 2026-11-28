@@ -66,13 +66,6 @@ async fn refused(conn: &Conn, method: &str, params: Value) -> (String, Vec<Strin
     }
 }
 
-async fn read_revision(conn: &Conn) -> String {
-    conn.ok("config_read").await["revision"]
-        .as_str()
-        .unwrap()
-        .to_string()
-}
-
 /// each pool's change, as `pool:change:stops_runners`.
 fn changes(answer: &Value) -> Vec<String> {
     answer["effects"]
@@ -227,7 +220,7 @@ async fn raising_runners_starts_the_new_slot_alone_and_keeps_the_comments() {
             conn.until("three runners", |snapshot| snapshot.runners_up == 3)
                 .await;
             rig.mark_running();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let edit = json!({
                 "revision": revision,
                 "edits": [{"op": "set", "path": "pool[1].runners", "value": 2}],
@@ -282,7 +275,7 @@ async fn lowering_runners_and_removing_a_pool_stop_only_their_slots() {
                 .await;
             rig.mark_running();
             let held: std::collections::BTreeMap<_, _> = workloads(&before).into_iter().collect();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -332,7 +325,7 @@ async fn a_refused_edit_writes_nothing_and_says_why() {
         .drive(Launch::Running, |conn| async move {
             conn.until("three runners", |snapshot| snapshot.runners_up == 3)
                 .await;
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let edit = |path: &str, value: Value| {
                 json!({
                     "revision": revision,
@@ -388,7 +381,7 @@ async fn an_edit_on_a_stopped_agent_is_written_and_used_at_the_next_start() {
     let rig = &rig;
     let (_, ()) = rig
         .drive(Launch::Stopped, |conn| async move {
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -468,7 +461,7 @@ async fn a_reload_of_a_bad_file_keeps_the_pools_running_and_a_good_one_applies()
             rig.mark_running();
             let bad = TWO_POOLS_TOML.replace("runners = 1", "runners = 1\nlimit = 2");
             rig.write_toml(&bad);
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let (code, paths) = refused(
                 &conn,
                 "config_reload",
@@ -484,7 +477,7 @@ async fn a_reload_of_a_bad_file_keeps_the_pools_running_and_a_good_one_applies()
 
             let good = TWO_POOLS_TOML.replace("runners = 1", "runners = 2");
             rig.write_toml(&good);
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let checked = conn
                 .call(
                     "config_reload",
@@ -524,7 +517,7 @@ async fn a_pool_waiting_for_its_token_takes_its_new_runners_and_starts_with_them
             conn.until("pool r running", |snapshot| snapshot.runners_up == 2)
                 .await;
             for runners in [3, 2] {
-                let revision = read_revision(&conn).await;
+                let revision = conn.config_revision().await;
                 let applied = conn
                     .call(
                         "config_edit",
@@ -582,7 +575,7 @@ async fn a_changed_pool_restarts_alone() {
                 .await;
             rig.mark_running();
             let held: std::collections::BTreeMap<_, _> = workloads(&before).into_iter().collect();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -637,7 +630,7 @@ async fn removing_a_pool_with_diagnostics_exports_its_evidence_first() {
                 .await;
             rig.mark_running();
             let held: std::collections::BTreeMap<_, _> = workloads(&before).into_iter().collect();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             conn.call(
                 "config_edit",
                 json!({
@@ -692,12 +685,12 @@ async fn a_slot_whose_stop_runs_late_is_finished_when_its_runner_ends() {
                     "edits": [{"op": "set", "path": "pool[0].runners", "value": runners}],
                 })
             };
-            conn.call("config_edit", lower(1, read_revision(&conn).await))
+            conn.call("config_edit", lower(1, conn.config_revision().await))
                 .await
                 .unwrap();
             // the apply waits on the stop, so another edit meanwhile is refused
             assert_eq!(
-                refused(&conn, "config_edit", lower(2, read_revision(&conn).await))
+                refused(&conn, "config_edit", lower(2, conn.config_revision().await))
                     .await
                     .0,
                 "config_applying"
@@ -733,7 +726,7 @@ async fn a_slot_whose_stop_runs_late_is_finished_when_its_runner_ends() {
             })
             .await;
             // and raising the runners again starts it
-            conn.call("config_edit", lower(2, read_revision(&conn).await))
+            conn.call("config_edit", lower(2, conn.config_revision().await))
                 .await
                 .unwrap();
             conn.until("slot 2 running again", |snapshot| {
@@ -751,7 +744,7 @@ async fn a_slot_whose_stop_runs_late_is_finished_when_its_runner_ends() {
 
 /// sets `path` to `value` in the file as it is now.
 async fn set(conn: &Conn, path: &str, value: Value) -> Result<Value, CallError> {
-    let revision = read_revision(conn).await;
+    let revision = conn.config_revision().await;
     conn.call(
         "config_edit",
         json!({
@@ -815,7 +808,7 @@ runners = 1
             conn.until("two runners", |snapshot| snapshot.runners_up == 2)
                 .await;
             rig.mark_running();
-            let revision = read_revision(&conn).await;
+            let revision = conn.config_revision().await;
             let applied = conn
                 .call(
                     "config_edit",
@@ -941,7 +934,7 @@ async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refus
                 .call(
                     "config_edit",
                     json!({
-                        "revision": read_revision(&conn).await,
+                        "revision": conn.config_revision().await,
                         "edits": [
                             {"op": "set", "path": "pool[0].diagnostics", "value": true},
                             {"op": "set", "path": "pool[0].diagnostic_directory",
@@ -995,7 +988,7 @@ async fn a_bad_diagnostic_directory_and_a_file_that_cannot_be_replaced_are_refus
             let body = match conn
                 .call(
                     "config_reload",
-                    json!({"revision": read_revision(&conn).await}),
+                    json!({"revision": conn.config_revision().await}),
                 )
                 .await
             {
@@ -1035,7 +1028,7 @@ async fn an_edit_is_busy_while_the_agent_resumes() {
                 refused(
                     &conn,
                     "config_reload",
-                    json!({"revision": read_revision(&conn).await})
+                    json!({"revision": conn.config_revision().await})
                 )
                 .await
                 .0,
@@ -1061,7 +1054,7 @@ async fn an_edit_is_refused_while_the_runtime_waits_to_restart() {
                 &conn,
                 "config_edit",
                 json!({
-                    "revision": read_revision(&conn).await,
+                    "revision": conn.config_revision().await,
                     "edits": [{"op": "set", "path": "pool[1].runners", "value": 2}],
                 }),
             )
@@ -1264,7 +1257,7 @@ async fn one_pool_of_two_late_ones_ends(ending: &str) {
             conn.call(
                 "config_edit",
                 json!({
-                    "revision": read_revision(&conn).await,
+                    "revision": conn.config_revision().await,
                     "edits": [
                         {"op": "set", "path": "pool[0].labels", "value": ["big"]},
                         {"op": "set", "path": "pool[1].labels", "value": ["big"]},
@@ -1334,7 +1327,7 @@ async fn every_late_slot_is_listed_and_a_removed_pool_stays_listed_after_the_app
             conn.call(
                 "config_edit",
                 json!({
-                    "revision": read_revision(&conn).await,
+                    "revision": conn.config_revision().await,
                     "edits": [
                         {"op": "set", "path": "pool[0].runners", "value": 1},
                         {"op": "remove_entry", "path": "pool[1]"},
@@ -1389,7 +1382,7 @@ async fn a_valid_reload_on_a_stopped_agent_makes_the_file_the_one_in_use() {
             let reloaded = conn
                 .call(
                     "config_reload",
-                    json!({"revision": read_revision(&conn).await}),
+                    json!({"revision": conn.config_revision().await}),
                 )
                 .await
                 .unwrap();
@@ -1434,7 +1427,7 @@ async fn an_edit_and_a_reload_are_busy_while_the_agent_stops() {
             let stop = async { conn.ok("stop_all").await };
             let meanwhile = async {
                 other.until_state("stopping").await;
-                let revision = read_revision(&other).await;
+                let revision = other.config_revision().await;
                 assert_eq!(
                     refused(
                         &other,
@@ -1502,7 +1495,7 @@ async fn a_fixed_file_ends_its_stop(file: Option<&str>, stopped_for: &str, edit:
         let (code, _) = refused(
             &conn,
             "config_reload",
-            json!({"revision": read_revision(&conn).await}),
+            json!({"revision": conn.config_revision().await}),
         )
         .await;
         assert!(code.starts_with("config_"), "{code}");
