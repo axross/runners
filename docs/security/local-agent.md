@@ -217,7 +217,9 @@ Residual risks, accepted on a single-user host:
 
 The agent's `config_read`, `config_edit` and `config_reload` methods change the
 configuration, which decides the repositories runners register to, their labels and
-the folder diagnostics are exported to. [CLI](../marshal-cli/config-protocol.md#editing-the-configuration)
+the folder diagnostics are exported to, and an applied edit or reload also puts the
+file's `[lifecycle]` settings in effect, such as the Run key value and keep-awake.
+[CLI](../marshal-cli/config-protocol.md#editing-the-configuration)
 owns the methods; these are the properties they keep.
 
 - Only the agent's own user reaches the channel, under

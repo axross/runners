@@ -21,13 +21,13 @@ the pools stay down until you start it again.
 
 From the notification-area icon's menu:
 
-| Item                  | What it does                                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Open Marshal**      | Opens the window: the agent's state, each pool's state, runners and diagnostics, the image and its freshness warnings, and tokens    |
-| **Start all runners** | Reads the configuration file again, checks the image, and runs the pools; use it after editing the configuration                     |
-| **Stop all runners**  | Stops every runner with the stop sequence, within 30 s, and leaves the agent running and stopped                                     |
-| **Build image**       | Builds the runner image while the runners are stopped; see [Building the Runner Image](./windows-image.md#building-the-runner-image) |
-| **Quit Marshal**      | Stops every runner as Stop all runners does, cancelling a build first, then ends the agent and the app                               |
+| Item                  | What it does                                                                                                                                                                                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Open Marshal**      | Opens the window: the agent's state, each pool's state, runners and diagnostics, the image and its freshness warnings, and tokens                                                                                                                                                                     |
+| **Start all runners** | Reads the configuration file again, `[lifecycle]` included, checks the image, and runs the pools; use it after editing the configuration while the runners are stopped; while they run, use **Reload config.toml** in the window's footer, as [Pools](./windows-pools.md#the-host-configuration) says |
+| **Stop all runners**  | Stops every runner with the stop sequence, within 30 s, and leaves the agent running and stopped                                                                                                                                                                                                      |
+| **Build image**       | Builds the runner image while the runners are stopped; see [Building the Runner Image](./windows-image.md#building-the-runner-image)                                                                                                                                                                  |
+| **Quit Marshal**      | Stops every runner as Stop all runners does, cancelling a build first, then ends the agent and the app                                                                                                                                                                                                |
 
 See the [window and notification-area presentation](../marshal/window.md#the-windows-page) and the [commands and events](../marshal/webview-commands.md#commands-and-events) that connect operator actions to the agent.
 The agent's states, waits and reasons are in [Agent State](../marshal-cli/resident-agent.md#agent-state).

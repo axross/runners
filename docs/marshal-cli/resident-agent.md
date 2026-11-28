@@ -55,21 +55,21 @@ The agent is `running`, `resuming`, `stopping`, `stopped`, `building`, or
 transition is answered at once, never queued behind it. It starts `running` or
 `stopped` as the caller asks.
 
-| Method             | Answer                                                                                                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`           | The snapshot, in any state                                                                                                                                                                  |
-| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in                                |
-| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`, by you when it cancels a resume     |
-| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused`                   |
-| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                                              |
-| `token_set`        | Stores the repository's token in any state                                                                                                                                                  |
-| `token_remove`     | Removes it in any state                                                                                                                                                                     |
-| `drain_for_update` | See [The Update Drain](./agent-lifecycle.md#the-update-drain)                                                                                                                               |
-| `config_read`      | The file's editable values in any state; see [Editing the Configuration](./config-protocol.md#editing-the-configuration)                                                                    |
-| `config_edit`      | Running: writes and applies. Stopped: writes, for the next `start_all`. A transition: `busy`. A drain: `refused`                                                                            |
-| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. A transition: `busy`. A drain: `refused`                                                                             |
-| `launch`           | Stopped: as `start_all` when `start_runners_on_launch` is on in effect, or while none is; otherwise stays stopped by you with the text `not started at launch`. Running: the state it is in |
-| `lifecycle_set`    | Writes one `[lifecycle]` key through the write path and puts it in effect at once, in any state; see [The Agent's Signals](./agent-lifecycle.md#the-agents-signals)                         |
+| Method             | Answer                                                                                                                                                                                                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | The snapshot, in any state                                                                                                                                                                                                                                                                                             |
+| `start_all`        | Stopped: reads the configuration again and checks the image, then answers `resuming`, or `stopped` with the reason it could not. Running: the state it is in                                                                                                                                                           |
+| `stop_all`         | Running: runs the stop sequence (the same grace, budget and exit deadline of 28 s as `stop`) and answers `stopped` when it is done. Stopped: `stopped`, by you when it cancels a resume                                                                                                                                |
+| `build`            | Stopped: answers `building` with the start time once the build began, and the snapshot tells the rest. Running: `refused`. A configuration that cannot be used: `refused`                                                                                                                                              |
+| `quit`             | Runs the stop sequence if runners run, cancels a build, answers `quitting`, and ends the agent; the lock is free within a second of the answer                                                                                                                                                                         |
+| `token_set`        | Stores the repository's token in any state                                                                                                                                                                                                                                                                             |
+| `token_remove`     | Removes it in any state                                                                                                                                                                                                                                                                                                |
+| `drain_for_update` | See [The Update Drain](./agent-lifecycle.md#the-update-drain)                                                                                                                                                                                                                                                          |
+| `config_read`      | The file's editable values in any state; see [Editing the Configuration](./config-protocol.md#editing-the-configuration)                                                                                                                                                                                               |
+| `config_edit`      | Running: writes and applies. Stopped: writes, so pool and host changes wait for the next `start_all`. Either way an applied edit puts the file's `[lifecycle]` in effect, and on an agent stopped for `no_configuration` or `invalid_configuration` leaves it stopped by you. A transition: `busy`. A drain: `refused` |
+| `config_reload`    | Running: applies the file. Stopped: makes it the configuration in use. Either way an applied reload puts the file's `[lifecycle]` in effect, and on an agent stopped for `no_configuration` or `invalid_configuration` leaves it stopped by you. A transition: `busy`. A drain: `refused`                              |
+| `launch`           | Stopped: as `start_all` when `start_runners_on_launch` is on in effect, or while none is; otherwise stays stopped by you with the text `not started at launch`. Running: the state it is in                                                                                                                            |
+| `lifecycle_set`    | Writes one `[lifecycle]` key through the write path and puts it in effect at once, in any state, and is `busy` while a running agent checks the image of an edit or a reload; see [The Agent's Signals](./agent-lifecycle.md#the-agents-signals)                                                                       |
 
 A request that arrives while the agent is `resuming`, `stopping`, `building` or
 `quitting` and is not one of `status`, `config_read`, `token_set`, `token_remove`,
@@ -92,18 +92,18 @@ the table in [The Update Drain](./agent-lifecycle.md#the-update-drain) takes its
 The agent stays up when something is wrong; it stops its runners and says why in the
 snapshot, as the reason of the `stopped` state:
 
-| Reason code             | When                                                                                           |
-| ----------------------- | ---------------------------------------------------------------------------------------------- |
-| `by_you`                | A `stop_all`, a `quit`, or an agent launched stopped                                           |
-| `no_configuration`      | There is no `config.toml` and no configuration is in use                                       |
-| `invalid_configuration` | The file, or a `config.json` it migrates, is not valid; problems in snapshot                   |
-| `image_unusable`        | The image is missing, or its contract version is not this CLI's                                |
-| `no_pool_started`       | No pool could start, such as every pool without a token                                        |
-| `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has                   |
-| `image_build_failed`    | A `build` failed; the build's message is in the snapshot                                       |
-| `slept`                 | The computer slept or woke; see [The Agent's Signals](./agent-lifecycle.md#the-agents-signals) |
-| `network_changed`       | The primary network changed on two checks in a row                                             |
-| `resumed_too_often`     | A signal stop after too many automatic resumes within an hour                                  |
+| Reason code             | When                                                                                                                                                                                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `by_you`                | A `stop_all`, a `quit`, an agent launched stopped, or an applied `config_edit` or `config_reload` on an agent stopped for `no_configuration` or `invalid_configuration`                                                                                                 |
+| `no_configuration`      | There is no `config.toml` and no configuration is in use; an applied `config_edit` or `config_reload` of a file that now exists and is valid ends it, stopped by you                                                                                                    |
+| `invalid_configuration` | The file, or a `config.json` it migrates, is not valid; problems in snapshot; an applied `config_edit` or `config_reload` of a fixed `config.toml` ends it, stopped by you, and a `config.json` rejected at its migration keeps it, since both methods are refused then |
+| `image_unusable`        | The image is missing, or its contract version is not this CLI's                                                                                                                                                                                                         |
+| `no_pool_started`       | No pool could start, such as every pool without a token                                                                                                                                                                                                                 |
+| `restart_limit`         | The runtime core failed too often, under the same restart policy `start` has                                                                                                                                                                                            |
+| `image_build_failed`    | A `build` failed; the build's message is in the snapshot                                                                                                                                                                                                                |
+| `slept`                 | The computer slept or woke; see [The Agent's Signals](./agent-lifecycle.md#the-agents-signals)                                                                                                                                                                          |
+| `network_changed`       | The primary network changed on two checks in a row                                                                                                                                                                                                                      |
+| `resumed_too_often`     | A signal stop after too many automatic resumes within an hour                                                                                                                                                                                                           |
 
 The answer to a `start_all` follows the configuration read and the image check; it
 is not sent first. The check is one `docker image inspect` and, when that fails, one
@@ -178,6 +178,11 @@ loading, and the agent keeps what the latest load found.
   the configuration in use was read. With none held, the agent stays stopped. A
   `start_all` migrates nothing: a missing `config.toml` beside `config.json` is
   `pending`, and the reason says to quit Marshal and launch it again.
+- **At each applied `config_edit` or `config_reload`** the file just read, or written,
+  becomes the configuration in use and its `[lifecycle]` takes effect, as at
+  `start_all`, whether the runners run or are stopped. A check changes neither.
+  [Editing the Configuration](./config-protocol.md#editing-the-configuration) has the
+  rest.
 - **`build`** uses the image name of the configuration in use, on axmc
   `actions-runner:local` when it names none, as the library's `build` does, and reads no
   file; with none in use it is `refused`. Start All checks the same image.
@@ -224,10 +229,17 @@ wrong-typed value and an undefined key, raising `runners` (the new slot starts, 
 comments stay, nothing stops), lowering it and removing a pool (only their slots'
 containers are stopped), the refusals that write nothing (`config_invalid`,
 `config_refused`, `image_unusable`, `config_changed`), an edit on a stopped agent, a
-reload of a bad file and then of a good one, a restarted pool, edits of a pool that
+reload of a bad file and then of a good one, a stop for a missing or invalid file
+that a written Edit or Reload ends, and one for a `config.json` rejected at its
+migration that it does not, a restarted pool, edits of a pool that
 waits for its token, and a removed pool with diagnostics on, whose evidence is
-exported first, and a stop that runs past its deadline. `tests/agent_drain.rs` shows the two editing methods refused during a
-drain.
+exported first, and a stop that runs past its deadline. `tests/agent_lifecycle.rs` and
+`tests/agent_signals.rs` cover the `[lifecycle]` an applied Edit or Reload puts in
+effect, stopped and running, on the axpc and axmc profiles, the refusal of
+`lifecycle_set` as `busy` while an image is checked, and the keep-awake hold, the
+network stop and a waiting resume that follow it. `tests/agent_drain.rs` shows the
+two editing methods refused during a drain, and a drain after a Reload that fixed
+the file keeping the runners stopped.
 `tests/agent_protocol.rs` covers the handshake, `welcome`, unknown methods, topics
 and fields, subscription (also by a client that arrives while the agent is idle),
 coalescing, heartbeats, `ending`, the limits as timers,

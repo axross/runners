@@ -78,7 +78,8 @@ each one.
 
 ## Checking a configuration
 
-Marshal checks `config.toml` at its start and at every Start all runners, without
+Marshal checks `config.toml` at its start, at every Start all runners and at every
+Reload config.toml or Apply of the window's configuration editor, without
 calling Docker or GitHub, and its window names every problem, as
 [The Host Configuration](../../docs/runner-hosts/windows-pools.md#the-host-configuration)
 describes. The library's plan of an accepted file holds each repository's

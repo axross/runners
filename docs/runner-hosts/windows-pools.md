@@ -61,15 +61,23 @@ that matter operationally:
   The limit applies to each container, not to an entry's slots together or to the
   host. The short container that resets volume ownership at startup has none.
 
-Marshal checks the file when it starts and at every **Start all runners**, and calls
+Marshal checks the file when it starts, at every **Start all runners** and at every
+**Reload config.toml** or Apply of the window's configuration editor, and calls
 neither Docker nor GitHub to do it. A file that breaks a rule is not used: the window
 names every problem, by its key and line, in its stopped banner when Marshal has no
 configuration in use, and in a footer warning beside the last valid configuration
 when it has one, which it keeps running on, as
 [The Configuration File](../marshal/configuration.md#the-configuration-file) describes. Marshal does not
-watch the file, so an edit applies at the next **Start all runners**: after every
-edit, **Stop all runners**, then **Start all runners**, and read the window. It does
-not check that a pool has a token; the Tokens tab shows which have none.
+watch the file, so after an edit by hand take the one step the window names in its
+footer warning, its Settings tab and its stopped banner, and read the window: while
+the runners are stopped, **Start all runners**; while they run, **Reload config.toml**
+in the window's footer, which lists each pool's effect and warns before a change stops
+a running job, or **Stop all runners** then **Start all runners** when the window
+offers no Reload; and, while a migration of `config.json` is pending or was rejected,
+quit Marshal and launch it again. A Reload or an applied edit in the window also puts
+the file's `[lifecycle]` settings in effect at once, the Run key and the keep-awake,
+network and resume handling included. It does not check that a pool has a token; the
+Tokens tab shows which have none.
 
 ### Split a repository into general and Android pools
 

@@ -55,7 +55,8 @@ has the time to delete its job VMs.
 
 `WindowsMonitor` reads the settings in effect, which the agent sets from each
 configuration it reads into `lifecycle_settings::Current`, at every tick, so a
-change takes effect within a second:
+change takes effect within a second. The agent reads a configuration at its start,
+at each `start_all` and at each applied `config_edit` or `config_reload`:
 
 | Signal          | What it reads                                                                                                                                                           | Gated by                                                                                       |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -67,11 +68,23 @@ change takes effect within a second:
 of the file keeps its form and comments, and `null` removes only that key's line. It
 answers with the snapshot's `lifecycle` part and refuses as `config_edit` does: a file
 that changed since the agent last read or wrote it (`config_changed`, so a hand edit
-is read at the next launch or Start all first), has problems or cannot be written, a
-file written in a form the write path does not edit (`config_file_form`, such as
-`lifecycle = { … }` over several lines), and while no valid configuration was read
-(`config_unusable`); while an edit applies it is `busy`. On axmc it is `refused`; the
-settings there are M4's.
+is read by the next launch, Start all, or applied `config_edit` or `config_reload`
+first), has problems or cannot be written, a file written in a form the write path
+does not edit (`config_file_form`, such as `lifecycle = { … }` over several lines),
+and while no valid configuration was read (`config_unusable`); it is `busy` while an
+edit applies, and while a running agent checks the new image of a `config_edit` or
+`config_reload` (a check that names one included), so that a reload cannot put out of
+effect a setting saved during the wait. On axmc it is `refused`; the settings there
+are M4's.
+
+An applied `config_edit` or `config_reload`, written on a stopped agent or applied
+on a running one, also puts the `[lifecycle]` of the file it made the configuration in
+use in effect, as `start_all` does and with the same effects: the snapshot's
+`lifecycle` part shows the file's values, the keep-awake hold, the network stop and
+the resume follow them, the sign-in item follows `start_at_login`, and a waiting
+resume ends when `resume_after_stop` is now off. A check changes no setting in effect
+and no resume, and a refused or failed `config_edit` or `config_reload` leaves the
+settings as they were. On axmc no setting changes.
 
 The snapshot's `lifecycle` part, present while settings are in effect on axpc, holds
 each setting's `on` and `defaulted`, the sign-in item (`registered`,
@@ -98,8 +111,9 @@ The resume (`instance::resume`) follows a signal stop while `resume_after_stop` 
   `next_reading`, every 5 s. Once two readings in a row match the record, with the
   gateway's hardware address read in both, it takes `start_all`'s path: the
   configuration is read again and the image checked.
-- `stop_all`, `quit`, `build`, `start_all`, `launch` and turning the setting off
-  cancel it. A `stop_all` that cancels one leaves the agent stopped `by_you`, and so
+- `stop_all`, `quit`, `build`, `start_all`, `launch` and turning the setting off,
+  by `lifecycle_set` or by an applied `config_edit` or `config_reload`, cancel it. A
+  check cancels nothing. A `stop_all` that cancels one leaves the agent stopped `by_you`, and so
   does a `stop_all` while the signal's stop is still stopping, which arms nothing.
 - The agent counts its automatic resumes over a rolling hour, in memory. A signal stop
   after 5 of them arms nothing and stops with `resumed_too_often`, whose text begins

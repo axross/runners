@@ -73,26 +73,26 @@ such method is covered without a check of its own.
 
 Errors have a stable `code`, an open set, and a `message` in plain text:
 
-| Code                   | Meaning                                                                                                                                  |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `unsupported_protocol` | The first line was not a `hello` that lists version 2; `versions` lists what the agent serves                                            |
-| `busy`                 | The agent is in a transition that does not take the method, or has its most connections                                                  |
-| `unknown_method`       | The agent has no such method                                                                                                             |
-| `invalid_request`      | The params are not what the method takes, or the message is not a request; a malformed request with a readable `id` is answered under it |
-| `subscription_limit`   | The agent has its most subscriptions                                                                                                     |
-| `not_subscribed`       | A `renew` on a connection that holds no subscription to the topic, such as one that ended for want of renewal; subscribe again           |
-| `token_invalid`        | The token is empty or too long                                                                                                           |
-| `store_failed`         | The token store could not do it; `store` holds `kind` and `code`                                                                         |
-| `refused`              | The agent's state does not allow the method                                                                                              |
-| `config_changed`       | `config.toml` no longer holds the bytes of the `revision` the request names                                                              |
-| `config_invalid`       | The result breaks the rules; `problems` lists each with its `path`, `line` and `message`                                                 |
-| `config_unusable`      | The file is missing, unreadable or not TOML, or the migration of `config.json` failed or is pending                                      |
-| `config_unwritable`    | `config.toml` could not be replaced, for example while another program holds it open on Windows                                          |
-| `config_refused`       | An edit touches `schema_version` or `lifecycle`                                                                                          |
-| `config_file_form`     | The file is written in a form the write path does not edit, such as an inline table over several lines; fix it in a text editor          |
-| `config_applying`      | An edit is being checked or applied while the runners run                                                                                |
-| `runtime_restarting`   | The runtime core waits to restart after a failure                                                                                        |
-| `image_unusable`       | The image a change names is missing or unusable on a running agent                                                                       |
+| Code                   | Meaning                                                                                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unsupported_protocol` | The first line was not a `hello` that lists version 2; `versions` lists what the agent serves                                                                    |
+| `busy`                 | The agent is in a transition that does not take the method, or has its most connections; for `lifecycle_set`, also while an edit applies or its image is checked |
+| `unknown_method`       | The agent has no such method                                                                                                                                     |
+| `invalid_request`      | The params are not what the method takes, or the message is not a request; a malformed request with a readable `id` is answered under it                         |
+| `subscription_limit`   | The agent has its most subscriptions                                                                                                                             |
+| `not_subscribed`       | A `renew` on a connection that holds no subscription to the topic, such as one that ended for want of renewal; subscribe again                                   |
+| `token_invalid`        | The token is empty or too long                                                                                                                                   |
+| `store_failed`         | The token store could not do it; `store` holds `kind` and `code`                                                                                                 |
+| `refused`              | The agent's state does not allow the method                                                                                                                      |
+| `config_changed`       | `config.toml` no longer holds the bytes of the `revision` the request names                                                                                      |
+| `config_invalid`       | The result breaks the rules; `problems` lists each with its `path`, `line` and `message`                                                                         |
+| `config_unusable`      | The file is missing, unreadable or not TOML, or the migration of `config.json` failed or is pending                                                              |
+| `config_unwritable`    | `config.toml` could not be replaced, for example while another program holds it open on Windows                                                                  |
+| `config_refused`       | An edit touches `schema_version` or `lifecycle`                                                                                                                  |
+| `config_file_form`     | The file is written in a form the write path does not edit, such as an inline table over several lines; fix it in a text editor                                  |
+| `config_applying`      | An edit is being checked or applied while the runners run                                                                                                        |
+| `runtime_restarting`   | The runtime core waits to restart after a failure                                                                                                                |
+| `image_unusable`       | The image a change names is missing or unusable on a running agent                                                                                               |
 
 A subscription gets the snapshot at once as an event with `seq` 1, then an event
 with the whole snapshot after each change, at most one per 250 ms: changes within a

@@ -39,7 +39,13 @@ description: "Diagnose startup, image and registration problems and decide wheth
   not retried until the pools are prepared again.
 - **A rejected configuration:** the window names every offending key and keeps the
   last valid configuration in use, or stays stopped when there is none. Fix the
-  file, then choose **Start all runners**.
+  file, then take the step the window names: **Start all runners** while the runners
+  are stopped, **Reload config.toml** while they run (**Stop all runners** then
+  **Start all runners** when the window offers no Reload), or quit Marshal and
+  launch it again while a migration of `config.json` is pending or was rejected.
+  When Marshal stopped for a missing or invalid file, a Reload or an edit that finds
+  the file fixed leaves it stopped by you, so **Start all runners** is still the step
+  that starts the runners.
 - **An image that cannot run jobs** (missing, or with another contract): the
   runners stay stopped, or stop, with that reason. Choose **Build image**, then
   **Start all runners**.
