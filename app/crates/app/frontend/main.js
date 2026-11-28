@@ -363,7 +363,7 @@ function gotoToken(repository) {
  * which returns once the change is saved, refused, unanswered or cut off.
  */
 function setSetting(key, on) {
-  editor.whileSettingSaves(() => run("set_setting", { key, on }));
+  editor.whileSettingSaves({ key, on }, () => run("set_setting", { key, on }));
 }
 
 const context = {

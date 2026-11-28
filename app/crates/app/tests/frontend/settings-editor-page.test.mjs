@@ -40,11 +40,14 @@ const ROW = {
   note: null,
 };
 
+/** the change a checkbox's `change` event sends in the model tests. */
+const CHANGED = { key: "keep_awake", on: false };
+
 let viewRevision = 0;
 let pages = 0;
 
 /** the view with the editor on offer, or without it, with the Settings tab's own reason. */
-function shown({ editor = true, settingsReason = null } = {}) {
+function shown({ editor = true, settingsReason = null, checked = true } = {}) {
   viewRevision += 1;
   return {
     revision: viewRevision,
@@ -84,7 +87,9 @@ function shown({ editor = true, settingsReason = null } = {}) {
             intro: "Saved in config.toml as soon as you change it.",
             unavailable: settingsReason,
             reason_in_intro: false,
-            groups: [{ title: "Sleep and network", rows: [ROW] }],
+            groups: [
+              { title: "Sleep and network", rows: [{ ...ROW, checked }] },
+            ],
             chip: null,
           },
           stale: false,
@@ -217,11 +222,18 @@ async function mount({ editor = true } = {}) {
         preventDefault: () => (prevented = true),
       });
       if (!prevented) {
-        box.checked = !box.checked;
+        box.checked = !page.settingChecked();
         box.dispatchEvent({ type: "change" });
       }
       return !prevented;
     },
+    /** whether the checkbox on show is checked: a drawn one holds the attribute until a click sets the state. */
+    settingChecked() {
+      const box = page.byKey("setting:keep_awake");
+      return box.checked ?? box.getAttribute("checked") !== null;
+    },
+    settingIndeterminate: () =>
+      page.byKey("setting:keep_awake").indeterminate === true,
     settingDisabled: () =>
       page.byKey("setting:keep_awake").getAttribute("aria-disabled") === "true",
     /** the page after its first view and the editor's first read. */
@@ -294,6 +306,74 @@ test("the editor's controls are unavailable from a checkbox's change until its c
   for (const key of ["reload-config", "host-settings", "add-pool"]) {
     assert.equal(page.byKey(key).getAttribute("aria-disabled"), null);
   }
+});
+
+test("a changed checkbox keeps the value chosen from its change until its call returns", async () => {
+  const page = await (await mount()).ready();
+  const call = hold();
+  page.agent.holdSetting = call.held;
+  assert.equal(page.settingChecked(), true, "the row starts on");
+  assert.equal(page.clickSetting(), true);
+  // no turn has passed, and the agent has sent no view after the call
+  assert.equal(
+    page.settingChecked(),
+    false,
+    "the click's redraw undid the choice",
+  );
+  assert.equal(page.settingIndeterminate(), false);
+  await page.settled();
+  assert.equal(page.agent.settingCalls, 1);
+  assert.equal(
+    page.settingChecked(),
+    false,
+    "the choice was lost while the call was out",
+  );
+  call.release();
+  await page.settled();
+});
+
+test("a redraw while a setting's call is out keeps the changed checkbox at the value chosen", async () => {
+  const page = await (await mount()).ready();
+  const call = hold();
+  page.agent.holdSetting = call.held;
+  assert.equal(page.clickSetting(), true);
+  await page.settled();
+  // the app has not yet sent a view with the setting being written
+  await page.send({});
+  await page.settled();
+  assert.equal(
+    page.settingChecked(),
+    false,
+    "a view without writing undid the choice",
+  );
+  await page.send({ settingsReason: VIEW_REASON });
+  await page.settled();
+  assert.equal(
+    page.settingChecked(),
+    false,
+    "a view with a reason undid the choice",
+  );
+  assert.equal(page.settingIndeterminate(), false);
+  call.release();
+  await page.settled();
+});
+
+test("after a setting's call returns, the drawn checkbox follows the current view", async () => {
+  const page = await (await mount()).ready();
+  const call = hold();
+  page.agent.holdSetting = call.held;
+  assert.equal(page.clickSetting(), true);
+  await page.settled();
+  call.release();
+  await page.settled();
+  assert.equal(page.settingChecked(), true, "the view still says on");
+  await page.send({ checked: false });
+  await page.settled();
+  assert.equal(page.settingChecked(), false, "a view that says off");
+  await page.send({ checked: true });
+  await page.settled();
+  assert.equal(page.settingChecked(), true, "a view that says on");
+  assert.equal(page.settingIndeterminate(), false);
 });
 
 test("a draft made after a setting was saved is sent at the revision the setting left", async () => {
@@ -487,7 +567,7 @@ test("a check or an apply does nothing while a setting is being saved", async ()
   const { model, calls } = editorModel();
   model.set(model.host, "routing_label", "other");
   const call = hold();
-  const saving = model.whileSettingSaves(() => call.held);
+  const saving = model.whileSettingSaves(CHANGED, () => call.held);
   assert.equal(model.saving, true);
   await model.check(true);
   await model.check();
@@ -528,7 +608,7 @@ test("the editor is locked while a setting is being saved, and by nothing else",
   const { model } = editorModel();
   assert.equal(model.locked, false);
   const call = hold();
-  const saving = model.whileSettingSaves(() => call.held);
+  const saving = model.whileSettingSaves(CHANGED, () => call.held);
   assert.equal(model.locked, true);
   assert.equal(model.lockReason, SAVING_REASON);
   call.release();
@@ -539,7 +619,7 @@ test("the editor is locked while a setting is being saved, and by nothing else",
 test("an apply of a reviewed draft sends nothing while a setting is being saved, and goes ahead once it is", async () => {
   const { model, requests } = await reviewedModel();
   const call = hold();
-  const saving = model.whileSettingSaves(() => call.held);
+  const saving = model.whileSettingSaves(CHANGED, () => call.held);
   await model.apply();
   assert.deepEqual(requests, []);
   assert.ok(model.review, "the review is kept");
@@ -561,8 +641,8 @@ test("two setting calls keep the editor held until both return", async () => {
   const { model } = editorModel();
   const first = hold();
   const second = hold();
-  const one = model.whileSettingSaves(() => first.held);
-  const two = model.whileSettingSaves(() => second.held);
+  const one = model.whileSettingSaves(CHANGED, () => first.held);
+  const two = model.whileSettingSaves(CHANGED, () => second.held);
   first.release();
   await one;
   assert.equal(model.saving, true);

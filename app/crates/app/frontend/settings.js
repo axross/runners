@@ -31,17 +31,19 @@ function settingRow(row, off, ctx) {
   const descriptionId = nextId("setting-description");
   const noteId = row.note ? nextId("setting-note") : null;
   const describedBy = [descriptionId, noteId, offId].filter(Boolean).join(" ");
+  // while its change is out, the checkbox keeps the value chosen, whichever view is drawn
+  const checked = ctx.editor?.chosenFor(row.key) ?? row.checked;
   const box = h("input", {
     type: "checkbox",
     class: "check",
     id: checkId,
-    checked: row.checked === true,
+    checked: checked === true,
     "aria-describedby": describedBy,
     "aria-disabled": offId ? "true" : null,
     "data-key": `setting:${row.key}`,
     on: {
       click: (event) => {
-        if (offId || row.checked === null) {
+        if (offId || checked === null) {
           event.preventDefault();
         }
       },
@@ -49,7 +51,7 @@ function settingRow(row, off, ctx) {
     },
   });
   // a value the view does not know shows neither on nor off
-  box.indeterminate = row.checked === null;
+  box.indeterminate = checked === null;
   const control = off ? h("span", { class: "tipwrap" }, box) : box;
   if (off) {
     attachTip(control, () => off.reason);

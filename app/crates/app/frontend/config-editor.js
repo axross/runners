@@ -147,7 +147,7 @@ export class ConfigEditor {
     this.readAsk = false;
     this.problemsInResult = false;
     this.checked = null;
-    this.settingCalls = 0;
+    this.settingsOut = [];
     this.reads = 0;
     this.staleAfter = null;
   }
@@ -183,7 +183,13 @@ export class ConfigEditor {
 
   /** whether a setting change from the Settings tab is waiting for its answer. */
   get saving() {
-    return this.settingCalls > 0;
+    return this.settingsOut.length > 0;
+  }
+  /** the value the newest change to a setting chose while its call is out, or null. */
+  chosenFor(key) {
+    return (
+      this.settingsOut.findLast((change) => change.key === key)?.on ?? null
+    );
   }
   /** the reason the controls that read, check or apply give while a setting is saved. */
   get savingReason() {
@@ -191,17 +197,18 @@ export class ConfigEditor {
   }
 
   /**
-   * keeps the editor's controls unavailable while `send` runs a setting change, then marks
-   * the editor's read stale: the change may have moved config.toml's revision, and the
-   * page is not told whether it did.
+   * keeps the editor's controls unavailable while `send` runs the setting change `{ key, on }`,
+   * then marks the editor's read stale: the change may have moved config.toml's revision,
+   * and the page is not told whether it did.
    */
-  async whileSettingSaves(send) {
-    this.settingCalls += 1;
+  async whileSettingSaves(change, send) {
+    const out = { ...change };
+    this.settingsOut.push(out);
     this.changed();
     try {
       await send();
     } finally {
-      this.settingCalls -= 1;
+      this.settingsOut.splice(this.settingsOut.indexOf(out), 1);
       this.staleAfter = this.reads;
       this.changed();
     }
