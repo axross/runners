@@ -1,9 +1,10 @@
 //! the macOS login item kept in step with `start_at_login` in effect, as the agent keeps
-//! the Run value on Windows: each time the settings in effect change, the app registers
-//! its login item when the setting is on and macOS reports it not registered, and
-//! unregisters it when the setting is off and macOS reports it registered. It never
-//! registers over "requires approval", nor over a removal by the maintainer, which a
-//! "not registered" while the record that Marshal registered itself exists counts as.
+//! the Run value on Windows: at launch, each time the settings in effect change and once
+//! after each Start all, the app registers its login item when the setting is on and
+//! macOS reports it not registered, and unregisters it when the setting is off and macOS
+//! reports it registered. It never registers over "requires approval", nor over a
+//! removal by the maintainer, which a "not registered" while the record that Marshal
+//! registered itself exists counts as. Showing the window only reads the state again.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -49,20 +50,26 @@ impl LoginItem {
         }
     }
 
-    /// the login item's state as the latest bringing in step left it; `None` before
-    /// the first, or from outside Applications.
+    /// the login item's state as the latest bringing in step or reading left it; `None`
+    /// before the first, or from outside Applications.
     #[must_use]
     pub fn state(&self) -> Option<LoginItemState> {
         self.state
     }
 
     /// what a snapshot's `lifecycle` part says: the login item is brought in step when the
-    /// settings in effect differ from the last ones learned, the first ones included.
-    pub(crate) fn learn(&mut self, lifecycle: Option<&LifecycleInfo>, log: &dyn Log) {
+    /// settings in effect differ from the last ones learned, the first ones included, and
+    /// when `after_start_all` says the snapshot is the first to show a Start all.
+    pub(crate) fn learn(
+        &mut self,
+        lifecycle: Option<&LifecycleInfo>,
+        after_start_all: bool,
+        log: &dyn Log,
+    ) {
         let Some(lifecycle) = lifecycle else {
             return;
         };
-        if self.settings.as_ref() == Some(&lifecycle.settings) {
+        if self.settings.as_ref() == Some(&lifecycle.settings) && !after_start_all {
             return;
         }
         self.settings = Some(lifecycle.settings.clone());
@@ -76,14 +83,29 @@ impl LoginItem {
             return;
         }
         if let Some(setting) = lifecycle.settings.get(Setting::StartAtLogin.name()) {
-            self.state = self.reconcile(setting.on, log);
+            self.state = Some(self.reconcile(setting.on, log));
+        }
+    }
+
+    /// reads macOS's status again, so a removal or an approval made in Login Items shows,
+    /// and registers and unregisters nothing. A failed registration keeps its code until
+    /// macOS reports something else.
+    pub(crate) fn refresh(&mut self) {
+        let Some(state) = self.state else {
+            return;
+        };
+        let status = self.service.status();
+        let failed = matches!(state, LoginItemState::NotAdded { .. });
+        let unregistered = matches!(status, LoginStatus::NotRegistered | LoginStatus::NotFound);
+        if !(failed && unregistered) {
+            self.state = Some(self.known(status));
         }
     }
 
     /// brings the login item in step with `on` and says the state it leaves it in. macOS
     /// reports a Marshal that has never registered as not found, so not found counts as
     /// not registered (plan revision 4).
-    fn reconcile(&self, on: bool, log: &dyn Log) -> Option<LoginItemState> {
+    fn reconcile(&self, on: bool, log: &dyn Log) -> LoginItemState {
         let status = self.service.status();
         match (on, status) {
             (true, LoginStatus::Enabled) => {}
@@ -109,9 +131,9 @@ impl LoginItem {
                     }
                     Err(error) => {
                         log.warn(&format!(
-                        "Marshal could not register its login item, and tries again when the settings change: {error}"
+                        "Marshal could not register its login item, and tries again at the next launch, Start all or change of a setting: {error}"
                     ));
-                        return Some(LoginItemState::NotAdded { code: error.code });
+                        return LoginItemState::NotAdded { code: error.code };
                     }
                 }
             }
@@ -120,10 +142,10 @@ impl LoginItem {
                     Ok(()) => {
                         log.info("Marshal unregistered its login item, as Start at login is off.");
                         self.forget(log);
-                        return Some(LoginItemState::Off);
+                        return LoginItemState::Off;
                     }
                     Err(error) => log.warn(&format!(
-                        "Marshal could not unregister its login item, and tries again when the settings change: {error}"
+                        "Marshal could not unregister its login item, and tries again at the next launch, Start all or change of a setting: {error}"
                     )),
                 }
             }
@@ -135,14 +157,14 @@ impl LoginItem {
     }
 
     /// the state `status` and the record give.
-    fn known(&self, status: LoginStatus) -> Option<LoginItemState> {
+    fn known(&self, status: LoginStatus) -> LoginItemState {
         match status {
-            LoginStatus::Enabled => Some(LoginItemState::On),
-            LoginStatus::RequiresApproval => Some(LoginItemState::WaitingForApproval),
+            LoginStatus::Enabled => LoginItemState::On,
+            LoginStatus::RequiresApproval => LoginItemState::WaitingForApproval,
             LoginStatus::NotRegistered | LoginStatus::NotFound if self.record.exists() => {
-                Some(LoginItemState::Removed)
+                LoginItemState::Removed
             }
-            LoginStatus::NotRegistered | LoginStatus::NotFound => Some(LoginItemState::Off),
+            LoginStatus::NotRegistered | LoginStatus::NotFound => LoginItemState::Off,
         }
     }
 

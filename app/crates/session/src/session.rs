@@ -907,17 +907,13 @@ impl<D: Dial> Session<D> {
                 if self.snapshot.as_ref().map(|old| &old.lifecycle) != Some(&snapshot.lifecycle) {
                     self.settings.results.clear();
                 }
-                if let Some(login_item) = &mut self.login_item {
-                    let before = login_item.state();
-                    login_item.learn(snapshot.lifecycle.as_ref(), self.log.as_ref());
-                    let after = login_item.state();
-                    // the first state learned is no change
-                    if let (Some(_), Some(now)) = (before, after)
-                        && before != after
-                    {
-                        self.announce.push(now.announcement());
-                    }
-                }
+                let after_start_all = self.pending.is_some_and(|pending| {
+                    pending.kind == PendingKind::StartAll && shows(&snapshot, pending)
+                });
+                let lifecycle = snapshot.lifecycle.clone();
+                self.change_login_item(|login_item, log| {
+                    login_item.learn(lifecycle.as_ref(), after_start_all, log);
+                });
                 self.snapshot = Some(*snapshot);
                 self.snapshot_for_drain();
                 self.refresh();
@@ -950,6 +946,22 @@ impl<D: Dial> Session<D> {
                 }
             }
             Pushed::Closed => self.closed(),
+        }
+    }
+
+    /// lets `change` act on the login item and announces the state it leaves, unless that
+    /// is the first one learned.
+    fn change_login_item(&mut self, change: impl FnOnce(&mut LoginItem, &dyn Log)) {
+        let Some(login_item) = &mut self.login_item else {
+            return;
+        };
+        let before = login_item.state();
+        change(login_item, self.log.as_ref());
+        let after = login_item.state();
+        if let (Some(_), Some(now)) = (before, after)
+            && before != after
+        {
+            self.announce.push(now.announcement());
         }
     }
 
@@ -1379,6 +1391,7 @@ impl<D: Dial> Session<D> {
         }
         self.window_shown = shown;
         if shown {
+            self.change_login_item(|login_item, _| login_item.refresh());
             self.github_begin();
         } else {
             self.github.close();

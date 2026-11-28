@@ -106,7 +106,8 @@ web view.
 - **Login item on the Mac.** M4 ([#90](https://github.com/axross/runners/issues/90))
   keeps the app's own bundle registered as its login item with `SMAppService` while
   `start_at_login` is on in effect; the agent leaves the snapshot's sign-in item unset
-  on macOS. The app reconciles when a snapshot's settings in effect change: it
+  on macOS. The app reconciles at launch, when a snapshot's settings in effect change,
+  and once after each Start all, whether or not that left the settings unchanged: it
   registers when the setting is on and macOS reports Marshal not registered, or not
   found, which is what macOS 27 reports for a Marshal that has never registered, and
   unregisters when it is off and Marshal is registered or waiting for approval. Only a
@@ -114,8 +115,11 @@ web view.
   "requires approval", and it keeps the empty file `login-item-registered-by-marshal`
   in the configuration folder after registering, so a later "not registered" counts as
   the maintainer turning Marshal off in Login Items; turning the setting off clears
-  it. A failed call is logged with its code and tried again at the next change of the
-  settings. This is unverified on axmc until M4's Mac run. Before removing Marshal,
+  it. Showing the window reads macOS's status again, so a removal or an approval made
+  in Login Items while Marshal runs shows then; it registers and unregisters nothing,
+  and it keeps a failed registration's code until macOS reports another state. A failed
+  call is logged with its code and tried again at the next launch, Start all or change
+  of a setting. This is unverified on axmc until M4's Mac run. Before removing Marshal,
   turn the setting off, or remove Marshal in Login Items.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then

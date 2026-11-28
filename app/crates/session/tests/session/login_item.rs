@@ -1,10 +1,10 @@
 //! the macOS login item, kept in step with `start_at_login` in effect from the snapshots
 //! the agent sends, against a fake login item: when it registers and unregisters, when it
-//! leaves the maintainer's choice alone, where it changes nothing, and when it tries
-//! again after a failure.
+//! leaves the maintainer's choice alone, where it changes nothing, when it tries again
+//! after a failure, and how showing the window reads its state again.
 
 use marshal_cli::agent::snapshot::Snapshot;
-use marshal_session::{LoginItemRecord, LoginItemRecordFile, LoginStatus};
+use marshal_session::{Act, LoginItemRecord, LoginItemRecordFile, LoginStatus};
 use serde_json::json;
 
 use crate::support::{
@@ -15,9 +15,10 @@ use crate::support::{
 const IN_APPLICATIONS: &str = "/Applications/Marshal.app/Contents/MacOS/marshal-app";
 const IN_HOME_APPLICATIONS: &str = "/Users/me/Applications/Marshal.app/Contents/MacOS/marshal-app";
 
-/// a snapshot whose settings in effect have `start_at_login` and `keep_awake` as given.
-fn settings(start_at_login: bool, keep_awake: bool) -> Snapshot {
-    patched("running", |value| {
+/// a snapshot of the agent in the state `name` whose settings in effect have
+/// `start_at_login` and `keep_awake` as given.
+fn settings_in(name: &str, start_at_login: bool, keep_awake: bool) -> Snapshot {
+    patched(name, |value| {
         value["lifecycle"] = json!({
             "settings": {
                 "start_at_login": { "on": start_at_login, "defaulted": false },
@@ -29,6 +30,11 @@ fn settings(start_at_login: bool, keep_awake: bool) -> Snapshot {
             "keep_awake": if keep_awake { "held" } else { "off" },
         });
     })
+}
+
+/// a snapshot of the running agent whose settings in effect are as given.
+fn settings(start_at_login: bool, keep_awake: bool) -> Snapshot {
+    settings_in("running", start_at_login, keep_awake)
 }
 
 async fn connected(login: &FakeLoginItem, executable: &str) -> (Agent, Running) {
@@ -198,6 +204,146 @@ async fn a_failed_registration_is_logged_and_tried_again_at_the_next_change_of_t
     send(&agent, &session, settings(true, false)).await;
     assert_eq!(login.calls(), [LoginCall::Register, LoginCall::Register]);
     assert!(login.recorded());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_start_all_with_unchanged_settings_reconciles_once_and_registers_what_macos_does_not_hold()
+ {
+    for status in [LoginStatus::NotRegistered, LoginStatus::NotFound] {
+        let login = FakeLoginItem::new(LoginStatus::Enabled, false);
+        let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+        send(&agent, &session, settings_in("stopped_by_you", true, true)).await;
+        assert!(login.calls().is_empty(), "{status:?}: it is registered");
+
+        login.set_status(status);
+        session.handle.act(Act::StartAll).await.unwrap();
+        // a snapshot from before the Start all does not show it
+        let read = login.statuses_read();
+        send(&agent, &session, settings_in("stopped_by_you", true, true)).await;
+        assert_eq!(login.statuses_read(), read, "{status:?}: not yet shown");
+
+        send(&agent, &session, settings(true, true)).await;
+        assert_eq!(login.calls(), [LoginCall::Register], "{status:?}");
+        assert!(login.recorded(), "{status:?}");
+
+        // the Start all is reconciled once, and the same settings again change nothing
+        let read = login.statuses_read();
+        send(&agent, &session, settings(true, true)).await;
+        assert_eq!(login.statuses_read(), read, "{status:?}: once");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_start_all_leaves_what_the_maintainer_removed_in_login_items_removed() {
+    let login = FakeLoginItem::new(LoginStatus::NotRegistered, true);
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings_in("stopped_by_you", true, true)).await;
+    session.handle.act(Act::StartAll).await.unwrap();
+    send(&agent, &session, settings(true, true)).await;
+    assert!(login.calls().is_empty(), "the maintainer's choice stands");
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Removed from Open at Login")
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn showing_the_window_reads_a_state_changed_outside_marshal_and_registers_nothing() {
+    let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings(true, true)).await;
+    assert_eq!(login.calls(), [LoginCall::Register]);
+    assert_eq!(login_line(&session).as_deref(), Some("On"));
+
+    // the maintainer turns Marshal off in Login Items while it runs
+    login.set_status(LoginStatus::NotRegistered);
+    session.handle.window_shown(true);
+    session.settle().await;
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Removed from Open at Login")
+    );
+    assert_eq!(
+        login.calls(),
+        [LoginCall::Register],
+        "nothing is registered"
+    );
+
+    // and approves it again
+    login.set_status(LoginStatus::Enabled);
+    session.handle.window_shown(false);
+    session.handle.window_shown(true);
+    session.settle().await;
+    assert_eq!(login_line(&session).as_deref(), Some("On"));
+    assert_eq!(login.calls(), [LoginCall::Register]);
+
+    let announced: Vec<String> = session
+        .screen
+        .announced()
+        .into_iter()
+        .filter(|line| line.starts_with("Login Items:"))
+        .collect();
+    assert_eq!(
+        announced,
+        [
+            "Login Items: Removed from Open at Login.",
+            "Login Items: On.",
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn showing_the_window_keeps_a_failed_registrations_code_and_reads_nothing_before_the_first_state()
+ {
+    let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
+    login.fail_with(Some((4, "the app's code signature is not valid")));
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    session.handle.window_shown(true);
+    session.settle().await;
+    assert_eq!(login.statuses_read(), 0, "no state has been learned yet");
+
+    send(&agent, &session, settings(true, true)).await;
+    session.handle.window_shown(false);
+    session.handle.window_shown(true);
+    session.settle().await;
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Could not be added (code 4)")
+    );
+    assert_eq!(login.calls(), [LoginCall::Register], "tried once");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_unregistration_is_logged_with_its_code_and_shown_as_still_on() {
+    let login = FakeLoginItem::new(LoginStatus::Enabled, true);
+    login.fail_with(Some((4, "the app's code signature is not valid")));
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings(false, true)).await;
+    assert_eq!(login.calls(), [LoginCall::Unregister]);
+    assert!(login.recorded(), "the record stays while it is registered");
+    assert!(
+        session
+            .log
+            .lines()
+            .iter()
+            .any(|line| line.starts_with("WARNING:")
+                && line.contains("unregister")
+                && line.contains("(code 4)")),
+        "the failure and its code are logged: {:?}",
+        session.log.lines()
+    );
+    assert_eq!(login_line(&session).as_deref(), Some("On"));
+
+    // the same settings again try nothing; the next change tries again
+    login.fail_with(None);
+    send(&agent, &session, settings(false, true)).await;
+    assert_eq!(login.calls(), [LoginCall::Unregister]);
+    send(&agent, &session, settings(false, false)).await;
+    assert_eq!(
+        login.calls(),
+        [LoginCall::Unregister, LoginCall::Unregister]
+    );
+    assert_eq!(login_line(&session).as_deref(), Some("Off"));
 }
 
 #[test]

@@ -91,7 +91,7 @@ where it keeps a login item. Windows is unchanged.
   the checkbox's description. The page never sends `lifecycle_set` for it.
 - **"Login Items: <state>"** sits under the first setting: On, Waiting for approval,
   Removed from Open at Login, Could not be added (code N), or Off, as the latest
-  bringing in step left it. While the setting is on and the item is not, W3's note and
+  bringing in step, or reading when the window is shown, left it. While the setting is on and the item is not, W3's note and
   an Open Login Items Settings button follow; the button calls `open_login_items`,
   which opens Login Items & Extensions. Approval and removal mark the tab "Needs
   attention"; a failure is an error note without the chip. Each change after the
