@@ -142,6 +142,11 @@ pub enum LoginItemState {
     NotAdded {
         code: u32,
     },
+    /// still registered or waiting for approval, as `SMAppService` refused to unregister
+    /// it, with its error code, while the setting is off.
+    NotRemoved {
+        code: u32,
+    },
     Off,
 }
 

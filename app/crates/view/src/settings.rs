@@ -32,7 +32,8 @@ const NETWORK_FIXED_ON_MACOS: &str =
 const LOGIN_ITEMS_PATH: &str =
     "System\u{a0}Settings >\u{a0}General >\u{a0}Login\u{a0}Items\u{a0}&\u{a0}Extensions";
 
-/// the button under the first setting while the login item differs from it.
+/// the button under the first setting while the login item differs from it, in either
+/// direction.
 pub const OPEN_LOGIN_ITEMS: &str = "Open Login Items Settings";
 
 /// a setting's label and description.
@@ -128,6 +129,7 @@ impl LoginItemState {
             Self::WaitingForApproval => "Waiting for approval".to_string(),
             Self::Removed => "Removed from Open at Login".to_string(),
             Self::NotAdded { code } => format!("Could not be added (code {code})"),
+            Self::NotRemoved { code } => format!("Could not be removed (code {code})"),
             Self::Off => "Off".to_string(),
         }
     }
@@ -138,17 +140,18 @@ impl LoginItemState {
         format!("Login Items: {}.", self.text())
     }
 
-    /// what the window says under the setting while the state differs from it on.
-    fn note(self) -> Option<SettingNote> {
-        let (text, tone) = match self {
-            Self::WaitingForApproval => (
+    /// what the window says under the setting while the state differs from the setting,
+    /// which is `on`.
+    fn note(self, on: bool) -> Option<SettingNote> {
+        let (text, tone) = match (on, self) {
+            (true, Self::WaitingForApproval) => (
                 format!(
                     "macOS needs your approval before Marshal opens at login. Allow Marshal in \
                      {LOGIN_ITEMS_PATH}."
                 ),
                 NoteTone::Warning,
             ),
-            Self::Removed => (
+            (true, Self::Removed) => (
                 format!(
                     "Marshal was removed from Open at Login, so it does not open at login. To \
                      have it open at login again, add Marshal under Open at Login in \
@@ -156,13 +159,30 @@ impl LoginItemState {
                 ),
                 NoteTone::Warning,
             ),
-            Self::NotAdded { .. } => (
+            (true, Self::NotAdded { .. }) => (
                 "Marshal could not add itself to Open at Login. It tries again at the next \
                  launch or Start All, or when you change a setting."
                     .to_string(),
                 NoteTone::Error,
             ),
-            Self::On | Self::Off => return None,
+            (false, Self::On | Self::WaitingForApproval) => (
+                format!(
+                    "Marshal is still in Open at Login, so it opens at login. To stop that, turn \
+                     Marshal off under Open at Login in {LOGIN_ITEMS_PATH}."
+                ),
+                NoteTone::Warning,
+            ),
+            (false, Self::NotRemoved { .. }) => (
+                format!(
+                    "Marshal could not remove itself from Open at Login, so it still opens at \
+                     login. It tries again at the next launch or Start All, or when you change \
+                     a setting. To stop that now, turn Marshal off under Open at Login in \
+                     {LOGIN_ITEMS_PATH}."
+                ),
+                NoteTone::Error,
+            ),
+            (true, Self::On | Self::NotRemoved { .. } | Self::Off)
+            | (false, Self::Removed | Self::NotAdded { .. } | Self::Off) => return None,
         };
         Some(SettingNote { text, tone })
     }
@@ -519,11 +539,11 @@ fn row(
         .input
         .login_item
         .filter(|_| macos && setting == Setting::StartAtLogin);
-    // the login item differs from the setting on: waiting, removed or not added
-    let login_note = login_item
-        .filter(|_| on == Some(true))
-        .and_then(LoginItemState::note);
+    // the login item differs from the setting: waiting, removed or not added while it is
+    // on, still there or not removed while it is off
+    let login_note = login_item.zip(on).and_then(|(state, on)| state.note(on));
     let login_attention = login_note.is_some()
+        && on == Some(true)
         && matches!(
             login_item,
             Some(LoginItemState::WaitingForApproval | LoginItemState::Removed)

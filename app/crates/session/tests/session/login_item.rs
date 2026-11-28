@@ -314,7 +314,7 @@ async fn showing_the_window_keeps_a_failed_registrations_code_and_reads_nothing_
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_failed_unregistration_is_logged_with_its_code_and_shown_as_still_on() {
+async fn a_failed_unregistration_is_logged_with_its_code_and_shown_as_not_removed() {
     let login = FakeLoginItem::new(LoginStatus::Enabled, true);
     login.fail_with(Some((4, "the app's code signature is not valid")));
     let (agent, session) = connected(&login, IN_APPLICATIONS).await;
@@ -332,7 +332,23 @@ async fn a_failed_unregistration_is_logged_with_its_code_and_shown_as_still_on()
         "the failure and its code are logged: {:?}",
         session.log.lines()
     );
-    assert_eq!(login_line(&session).as_deref(), Some("On"));
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Could not be removed (code 4)")
+    );
+    assert_eq!(
+        open_button(&session).as_deref(),
+        Some("Open Login Items Settings")
+    );
+
+    // showing the window keeps the code while macOS still holds the item
+    session.handle.window_shown(false);
+    session.handle.window_shown(true);
+    session.settle().await;
+    assert_eq!(
+        login_line(&session).as_deref(),
+        Some("Could not be removed (code 4)")
+    );
 
     // the same settings again try nothing; the next change tries again
     login.fail_with(None);
@@ -367,6 +383,38 @@ fn login_line(session: &Running) -> Option<String> {
         .flat_map(|group| &group.rows)
         .find(|row| row.key == "start_at_login")
         .and_then(|row| row.login_item.clone())
+}
+
+fn open_button(session: &Running) -> Option<String> {
+    let view = session.screen.view();
+    let list = view.list().expect("a list");
+    list.settings
+        .groups
+        .iter()
+        .flat_map(|group| &group.rows)
+        .find(|row| row.key == "start_at_login")
+        .and_then(|row| row.open_login_items.clone())
+}
+
+#[tokio::test(start_paused = true)]
+async fn showing_the_window_reads_an_item_still_registered_with_the_setting_off_and_shows_its_button()
+ {
+    let login = FakeLoginItem::new(LoginStatus::NotRegistered, false);
+    let (agent, session) = connected(&login, IN_APPLICATIONS).await;
+    send(&agent, &session, settings(false, true)).await;
+    assert_eq!(login_line(&session).as_deref(), Some("Off"));
+    assert_eq!(open_button(&session), None);
+
+    // the maintainer adds it in Login Items while Marshal runs
+    login.set_status(LoginStatus::Enabled);
+    session.handle.window_shown(true);
+    session.settle().await;
+    assert_eq!(login_line(&session).as_deref(), Some("On"));
+    assert_eq!(
+        open_button(&session).as_deref(),
+        Some("Open Login Items Settings")
+    );
+    assert!(login.calls().is_empty(), "nothing is unregistered");
 }
 
 #[tokio::test(start_paused = true)]

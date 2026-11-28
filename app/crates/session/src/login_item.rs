@@ -88,16 +88,20 @@ impl LoginItem {
     }
 
     /// reads macOS's status again, so a removal or an approval made in Login Items shows,
-    /// and registers and unregisters nothing. A failed registration keeps its code until
-    /// macOS reports something else.
+    /// and registers and unregisters nothing. A failed registration or unregistration
+    /// keeps its code until macOS reports something else.
     pub(crate) fn refresh(&mut self) {
         let Some(state) = self.state else {
             return;
         };
         let status = self.service.status();
-        let failed = matches!(state, LoginItemState::NotAdded { .. });
         let unregistered = matches!(status, LoginStatus::NotRegistered | LoginStatus::NotFound);
-        if !(failed && unregistered) {
+        let failure_stands = match state {
+            LoginItemState::NotAdded { .. } => unregistered,
+            LoginItemState::NotRemoved { .. } => !unregistered,
+            _ => false,
+        };
+        if !failure_stands {
             self.state = Some(self.known(status));
         }
     }
@@ -144,9 +148,12 @@ impl LoginItem {
                         self.forget(log);
                         return LoginItemState::Off;
                     }
-                    Err(error) => log.warn(&format!(
+                    Err(error) => {
+                        log.warn(&format!(
                         "Marshal could not unregister its login item, and tries again at the next launch, Start all or change of a setting: {error}"
-                    )),
+                    ));
+                        return LoginItemState::NotRemoved { code: error.code };
+                    }
                 }
             }
             // the item is already off, so a removal by the maintainer has nothing left to

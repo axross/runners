@@ -91,12 +91,17 @@ where it keeps a login item. Windows is unchanged.
   network changes." shows in W3's balloon and stays on the page as hidden text in
   the checkbox's description. The page never sends `lifecycle_set` for it.
 - **"Login Items: <state>"** sits under the first setting: On, Waiting for approval,
-  Removed from Open at Login, Could not be added (code N), or Off, as the latest
-  bringing in step, or reading when the window is shown, left it. While the setting is on and the item is not, W3's note and
-  an Open Login Items Settings button follow; the button calls `open_login_items`,
-  which opens Login Items & Extensions. Approval and removal mark the tab "Needs
-  attention"; a failure is an error note without the chip. Each change after the
-  first is said as "Login Items: <state>.". A copy outside Applications shows no line.
+  Removed from Open at Login, Could not be added (code N), Could not be removed (code
+  N), or Off, as the latest bringing in step, or reading when the window is shown, left
+  it. While the setting is on and the item is not, or the setting is off and the item
+  is still on, waiting for approval or not removed, W3's note and an Open Login Items
+  Settings button follow; the button calls `open_login_items`, which opens Login Items
+  & Extensions. With the setting off, the note says the item is still in Open at Login
+  and to turn it off there; after a failed removal it also says Marshal tries again.
+  Approval and removal with the setting on mark the tab "Needs attention"; a failure to
+  add or remove is an error note without the chip, and an item still there with the
+  setting off is a warning note without it. Each change after the first is said as "Login Items: <state>.". A
+  copy outside Applications shows no line.
   [Login item on the Mac](./session.md#the-agent-and-the-apps-session) says when the
   app registers and unregisters the item.
 - **Increase Contrast** (`prefers-contrast: more`, under `data-platform="macos"`)

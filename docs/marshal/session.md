@@ -117,9 +117,11 @@ web view.
   the maintainer turning Marshal off in Login Items; turning the setting off clears
   it. Showing the window reads macOS's status again, so a removal or an approval made
   in Login Items while Marshal runs shows then; it registers and unregisters nothing,
-  and it keeps a failed registration's code until macOS reports another state. A failed
-  call is logged with its code and tried again at the next launch, Start all or change
-  of a setting. This is unverified on axmc until M4's Mac run. Before removing Marshal,
+  and it keeps a failed registration's code until macOS reports another state, and a
+  failed unregistration's code while macOS still holds the item. A failed call is
+  logged with its code and tried again at the next launch, Start all or change of a
+  setting; a failed unregistration shows as "Could not be removed (code N)" with its
+  note and button, as does an item macOS still holds when the setting is off. This is unverified on axmc until M4's Mac run. Before removing Marshal,
   turn the setting off, or remove Marshal in Login Items.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then

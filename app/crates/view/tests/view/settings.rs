@@ -645,6 +645,66 @@ fn each_login_item_state_has_its_line_note_button_and_chip() {
 }
 
 #[test]
+fn with_the_setting_off_a_login_item_still_there_has_its_note_and_button_and_no_chip() {
+    let off = with_lifecycle(|value| {
+        value["lifecycle"]["settings"]["start_at_login"] =
+            json!({ "on": false, "defaulted": true });
+    });
+    let still = "Marshal is still in Open at Login, so it opens at login. To stop that, turn Marshal off under Open at Login in System\u{a0}Settings >\u{a0}General >\u{a0}Login\u{a0}Items\u{a0}&\u{a0}Extensions.";
+    let not_removed = "Marshal could not remove itself from Open at Login, so it still opens at login. It tries again at the next launch or Start All, or when you change a setting. To stop that now, turn Marshal off under Open at Login in System\u{a0}Settings >\u{a0}General >\u{a0}Login\u{a0}Items\u{a0}&\u{a0}Extensions.";
+    let cases = [
+        (LoginItemState::On, "On", Some((still, NoteTone::Warning))),
+        (
+            LoginItemState::WaitingForApproval,
+            "Waiting for approval",
+            Some((still, NoteTone::Warning)),
+        ),
+        (
+            LoginItemState::NotRemoved { code: 4 },
+            "Could not be removed (code 4)",
+            Some((not_removed, NoteTone::Error)),
+        ),
+        (LoginItemState::Removed, "Removed from Open at Login", None),
+        (LoginItemState::Off, "Off", None),
+    ];
+    for (state, line, note) in cases {
+        let view = mac_view(&off, Some(state));
+        let tab = settings(&view);
+        let first = row(tab, "start_at_login");
+        assert_eq!(first.login_item.as_deref(), Some(line), "{state:?}");
+        assert_eq!(
+            first
+                .note
+                .as_ref()
+                .map(|note| (note.text.as_str(), note.tone)),
+            note,
+            "{state:?}"
+        );
+        assert_eq!(
+            first.open_login_items.as_deref(),
+            note.map(|_| OPEN_LOGIN_ITEMS),
+            "{state:?}"
+        );
+        assert_eq!(
+            tab.chip, None,
+            "{state:?}: the chip is for approval and removal"
+        );
+        assert_eq!(state.announcement(), format!("Login Items: {line}."));
+    }
+}
+
+#[test]
+fn with_the_setting_on_a_login_item_that_could_not_be_removed_has_no_note() {
+    let view = mac_view(
+        &with_lifecycle(|_| {}),
+        Some(LoginItemState::NotRemoved { code: 4 }),
+    );
+    let first = row(settings(&view), "start_at_login");
+    assert_eq!(first.note, None);
+    assert_eq!(first.open_login_items, None);
+}
+
+#[test]
 fn on_the_mac_the_windows_startup_apps_note_is_not_shown() {
     let view = mac_view(
         &with_lifecycle(|value| {
