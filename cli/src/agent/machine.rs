@@ -651,7 +651,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             .iter()
             .map(|entry| TokenKey::for_pool(&entry.target))
             .collect();
-        self.tokens.refresh(&keys);
+        self.tokens.refresh(&keys, self.log);
     }
 
     fn core(&self) -> AgentCore<'_, B, K, R> {

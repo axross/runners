@@ -9,6 +9,7 @@ use std::path::Path;
 
 use crate::validate::PoolTarget;
 
+use super::log::Log;
 use super::secret::Secret;
 
 /// where a slot's registration reads its token: the commands read the pool's token
@@ -20,6 +21,17 @@ pub trait TokenSource {
     /// `file` is the pool's token file, which a configuration the agent reads has none
     /// of.
     fn token(&self, target: &PoolTarget, file: Option<&Path>) -> Result<Secret, String>;
+
+    /// the token for admitting the pool, which may read again where a single read
+    /// could miss; a source that does not is read as for a registration.
+    fn admission_token(
+        &self,
+        target: &PoolTarget,
+        file: Option<&Path>,
+        _log: &dyn Log,
+    ) -> Result<Secret, String> {
+        self.token(target, file)
+    }
 }
 
 /// the commands' source: the pool's token file.

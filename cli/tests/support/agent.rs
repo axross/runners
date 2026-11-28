@@ -329,6 +329,7 @@ impl Rig {
                         .clone()
                         .unwrap_or_else(|| self.store.clone() as Arc<dyn TokenStore>)
                 }),
+                reread_pause: Duration::ZERO,
                 log: &self.log,
                 roots: &self.roots,
                 lock: &lock,

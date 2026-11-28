@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::{mpsc, watch};
 
@@ -41,7 +42,7 @@ use super::log::AgentLog;
 use super::machine::{Agent, DRAIN_BOUND, Ended, Launch, Seams, Settings};
 use super::server::Limits;
 use super::snapshot::Snapshot;
-use super::tokens::StoreTokens;
+use super::tokens::{REREAD_PAUSE, StoreTokens};
 
 /// a resident agent on its seams: the tests give it fakes, and [`run`] gives it
 /// Docker and GitHub.
@@ -60,6 +61,8 @@ pub struct Resident<'a, B, K, R, D, M = NoMonitor> {
     pub sign_in: Option<&'a dyn crate::windows_host::run_key::SignInItem>,
     /// `None` on a host with no store; every pool is then skipped.
     pub store: Option<Arc<dyn TokenStore>>,
+    /// how long to wait before each re-read of a token that missed.
+    pub reread_pause: Duration,
     pub log: &'a dyn Log,
     pub roots: &'a Roots,
     /// the lock the caller holds, which lets the channel open.
@@ -83,7 +86,7 @@ where
     M: Monitor,
 {
     let store = resident.store.clone();
-    let tokens = StoreTokens::new(resident.store);
+    let tokens = StoreTokens::new(resident.store, resident.reread_pause);
     let (calls, mut requests) = mpsc::unbounded_channel();
     let (snapshots, receiver) = watch::channel(Arc::new(Snapshot::default()));
     let followed = receiver.clone();
@@ -368,6 +371,7 @@ pub fn run(options: AgentOptions<'_>, err: &mut dyn Write) -> u8 {
         in_effect: &in_effect,
         sign_in,
         store,
+        reread_pause: REREAD_PAUSE,
         log: &*log,
         roots: &roots,
         lock: &lock,
@@ -423,6 +427,7 @@ impl<'a, K, R, M> Resident<'a, (), K, R, (), M> {
             in_effect: self.in_effect,
             sign_in: self.sign_in,
             store: self.store,
+            reread_pause: self.reread_pause,
             log: self.log,
             roots: self.roots,
             lock: self.lock,

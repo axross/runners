@@ -275,7 +275,7 @@ pub fn admit_pool(
     log: &dyn Log,
     board: &Board,
 ) -> bool {
-    match tokens.token(&pool.target, pool.token_path.as_deref()) {
+    match tokens.admission_token(&pool.target, pool.token_path.as_deref(), log) {
         Err(error) => {
             skip(log, board, pool, &format!("{}: {error}.", pool.path));
             false

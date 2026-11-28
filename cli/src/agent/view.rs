@@ -551,7 +551,7 @@ mod tests {
             problems: Vec::new(),
         });
         let retained = Retained::default();
-        let tokens = StoreTokens::new(None);
+        let tokens = StoreTokens::new(None, std::time::Duration::ZERO);
         View {
             version: "test",
             inner: &inner,

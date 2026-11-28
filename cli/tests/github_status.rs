@@ -418,6 +418,26 @@ async fn a_repository_without_a_registered_runner_or_a_token_is_not_asked() {
     assert!(status_rx.borrow().repositories.is_empty());
 }
 
+/// the collector's read of a token is a single one: a miss fails that turn, and the
+/// next turn reads again.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_token_read_that_misses_is_not_read_again_until_the_next_turn() {
+    let world = World::new(idle_runner);
+    let key = TokenKey::parse("owner/app").unwrap();
+    world.store.script_reads(&key, &[false]);
+    let (_snapshot_tx, snapshot_rx, _a, active_rx, status_tx, _status_rx) =
+        channels(snapshot(&["app-1-20261112000000000"], true), true);
+    drive(&world, snapshot_rx, active_rx, status_tx, async {
+        sleep(Duration::from_secs(1)).await;
+        assert_eq!(world.store.reads_of(&key), 1);
+        assert!(world.fetch.seen().is_empty());
+        sleep(Duration::from_secs(15)).await;
+    })
+    .await;
+    assert_eq!(world.store.reads_of(&key), 2);
+    assert_eq!(world.fetch.seen()[0].at, Duration::from_secs(15));
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_busy_runners_job_is_looked_up_with_at_most_two_requests_a_turn() {
     let busy = "app-1-20261112000000000";

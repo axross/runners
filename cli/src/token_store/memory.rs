@@ -1,7 +1,7 @@
 //! the store the tests use: tokens in memory, as UTF-8, with a switch that makes
-//! every call fail.
+//! every call fail and a script that makes chosen reads answer "no entry".
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Mutex;
 
 use crate::runtime::secret::Secret;
@@ -12,6 +12,11 @@ use super::{StoreError, TokenKey, TokenStore};
 struct Held {
     tokens: BTreeMap<TokenKey, String>,
     failure: Option<StoreError>,
+    /// the answers the next reads of each key give, oldest first: `true` answers as
+    /// the store holds it, `false` answers "no entry" although the key has a token.
+    scripts: BTreeMap<TokenKey, VecDeque<bool>>,
+    /// how many times each key was read, whatever the answer.
+    reads: BTreeMap<TokenKey, u32>,
 }
 
 /// tokens kept in memory; it never writes a token anywhere, and its `Debug` form
@@ -45,6 +50,22 @@ impl MemoryTokenStore {
         self.held().failure = error;
     }
 
+    /// scripts the next reads of `key`, one entry each: `true` answers as the store
+    /// holds it, `false` answers "no entry" although the key has a token, as a store
+    /// that misses a read. Reads after the script answer as the store holds it, and a
+    /// failing store fails first, using no entry.
+    pub fn script_reads(&self, key: &TokenKey, answers: &[bool]) {
+        self.held()
+            .scripts
+            .insert(key.clone(), answers.iter().copied().collect());
+    }
+
+    /// how many times `key` was read, whatever the answer.
+    #[must_use]
+    pub fn reads_of(&self, key: &TokenKey) -> u32 {
+        self.held().reads.get(key).copied().unwrap_or(0)
+    }
+
     /// the keys that have a token.
     #[must_use]
     pub fn keys(&self) -> Vec<TokenKey> {
@@ -58,8 +79,17 @@ impl MemoryTokenStore {
 
 impl TokenStore for MemoryTokenStore {
     fn get(&self, key: &TokenKey) -> Result<Option<Secret>, StoreError> {
-        let held = self.held();
+        let mut held = self.held();
+        *held.reads.entry(key.clone()).or_default() += 1;
         Self::checked(&held)?;
+        if held
+            .scripts
+            .get_mut(key)
+            .and_then(VecDeque::pop_front)
+            .is_some_and(|holds| !holds)
+        {
+            return Ok(None);
+        }
         Ok(held.tokens.get(key).cloned().map(Secret::new))
     }
 

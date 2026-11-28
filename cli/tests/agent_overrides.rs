@@ -85,7 +85,7 @@ fn every_override_moves_a_setting_in_a_debug_build_only() {
 fn a_store_override_leaves_a_release_agent_with_no_store_of_the_test() {
     let watched = Path::new("/tmp/not-the-agent");
     let applied = applied_overrides(&asked_for_everything(watched));
-    let tokens = StoreTokens::new(applied.store);
+    let tokens = StoreTokens::new(applied.store, std::time::Duration::ZERO);
     let key = TokenKey::of("o", "r");
     let error = tokens.read(&key).unwrap_err();
     if cfg!(debug_assertions) {
