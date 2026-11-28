@@ -439,9 +439,7 @@ export class ConfigEditor {
   async toggleHost() {
     this.applyResult = null;
     if (!this.hostOpen && (!this.document || this.stale)) await this.read();
-    this.hostOpen = this.hostOpen
-      ? false
-      : !this.stale && !this.fileReason;
+    this.hostOpen = this.hostOpen ? false : !this.stale && !this.fileReason;
     this.changed();
   }
 

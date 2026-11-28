@@ -324,7 +324,8 @@ function assertLocked(page, reason) {
 function assertOpen(page) {
   assert.equal(page.settingDisabled(), false, "the checkbox is disabled");
   assert.equal(
-    page.byKey("setting:keep_awake").getAttribute("aria-describedby").split(" ").length,
+    page.byKey("setting:keep_awake").getAttribute("aria-describedby").split(" ")
+      .length,
     1,
   );
 }
@@ -341,7 +342,10 @@ test("a pool's form that is shown makes the checkboxes unavailable until it clos
 test("the Host Settings form that is shown makes the checkboxes unavailable until it closes", async () => {
   const page = await (await mount()).ready();
   await page.press("host-settings");
-  assert.ok(page.keysLike("config-field:host:").length > 0, "the form is shown");
+  assert.ok(
+    page.keysLike("config-field:host:").length > 0,
+    "the form is shown",
+  );
   assertLocked(page, OPEN_REASON);
   await page.press("host-settings");
   assertOpen(page);
@@ -523,7 +527,11 @@ test("a pool's form opens only after a read that began once the setting call ret
   page.agent.holdRead = read.held;
   await page.press(page.keysLike("edit-pool:")[0].dataset.key);
   assert.deepEqual(page.agent.calls, ["read"]);
-  assert.equal(page.keysLike("config-field:").length, 0, "the form opened before the read");
+  assert.equal(
+    page.keysLike("config-field:").length,
+    0,
+    "the form opened before the read",
+  );
   assert.deepEqual(page.descriptions("reload-config"), [WAITING]);
   read.release();
   await page.settled();
@@ -537,7 +545,11 @@ test("the new-pool form opens only after such a read", async () => {
   page.agent.holdRead = read.held;
   await page.press("add-pool");
   assert.deepEqual(page.agent.calls, ["read"]);
-  assert.equal(page.keysLike("config-field:").length, 0, "the form opened before the read");
+  assert.equal(
+    page.keysLike("config-field:").length,
+    0,
+    "the form opened before the read",
+  );
   read.release();
   await page.settled();
   const name = page
@@ -552,10 +564,17 @@ test("the Host Settings form opens only after such a read", async () => {
   page.agent.holdRead = read.held;
   await page.press("host-settings");
   assert.deepEqual(page.agent.calls, ["read"]);
-  assert.equal(page.keysLike("config-field:").length, 0, "the form opened before the read");
+  assert.equal(
+    page.keysLike("config-field:").length,
+    0,
+    "the form opened before the read",
+  );
   read.release();
   await page.settled();
-  assert.ok(page.keysLike("config-field:host:").length > 0, "the form did not open");
+  assert.ok(
+    page.keysLike("config-field:host:").length > 0,
+    "the form did not open",
+  );
 });
 
 test("a read that ends the stale state is not repeated before the next form", async () => {
@@ -584,14 +603,20 @@ test("no form opens when the read finds the file unusable", async () => {
   page.agent.file = { ...FILE, status: "missing", pools: [] };
   await page.press(page.keysLike("edit-pool:")[0].dataset.key);
   assert.equal(page.keysLike("config-field:").length, 0);
-  assert.equal(page.byKey("host-settings").getAttribute("aria-disabled"), "true");
+  assert.equal(
+    page.byKey("host-settings").getAttribute("aria-disabled"),
+    "true",
+  );
   assert.ok(page.byKey("read-config"), "the editor shows the read's result");
   assert.match(page.spoken().at(-1), /cannot be edited here/);
 });
 
 test("no form opens when the read fails, and the next try reads again", async () => {
   const page = await afterSetting();
-  page.agent.readError = { code: "lost_contact", message: "Marshal is not answering." };
+  page.agent.readError = {
+    code: "lost_contact",
+    message: "Marshal is not answering.",
+  };
   await page.press("add-pool");
   await page.press("host-settings");
   assert.equal(page.keysLike("config-field:").length, 0);
@@ -615,7 +640,10 @@ test("a read already out when the setting call returns leaves the editor stale",
   await page.settled();
   read.release();
   await page.settled();
-  assert.ok(page.keysLike("edit-pool:").length > 0, "the first read did not finish");
+  assert.ok(
+    page.keysLike("edit-pool:").length > 0,
+    "the first read did not finish",
+  );
   await page.press(page.keysLike("edit-pool:")[0].dataset.key);
   assert.deepEqual(page.agent.calls, ["set_setting", "read", "read"]);
   assert.ok(page.keysLike("config-field:").length > 0);

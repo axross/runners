@@ -350,12 +350,7 @@ export function editorPools(model, list, ctx, liveCard) {
       cards,
       remaining.map((pool) => liveCard(pool, ctx)),
     ),
-    button(
-      "add-pool",
-      "Add Pool",
-      () => model.openNewPool(),
-      model.openReason,
-    ),
+    button("add-pool", "Add Pool", () => model.openNewPool(), model.openReason),
   ];
 }
 

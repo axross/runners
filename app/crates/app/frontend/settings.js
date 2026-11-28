@@ -103,11 +103,7 @@ export function settingsPanel(tab, ctx) {
           "div",
           { class: "set-list" },
           group.rows.map((row) =>
-            settingRow(
-              row,
-              offId && { id: offId, reason: unavailable },
-              ctx,
-            ),
+            settingRow(row, offId && { id: offId, reason: unavailable }, ctx),
           ),
         ),
       );
