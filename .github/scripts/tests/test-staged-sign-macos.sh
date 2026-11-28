@@ -54,7 +54,7 @@ archive_sha256="$(printf '%s\n' "$archive_content" | sha256sum | cut -d' ' -f1)"
 
 node "${here}/check-staged-macos-app.mjs" "$repository"
 # shellcheck disable=SC2016 # the text the sed edits find is literal, not an expansion.
-for check in hdiutil-arguments unmeasured-tool unmeasured-literal-tool workflow-names-file; do
+for check in hdiutil-arguments unmeasured-tool unmeasured-literal-tool unmeasured-literal-xcrun-tool workflow-names-file; do
   altered="${work}/altered-${check}"
   mkdir -p "${altered}/.github/staged" "${altered}/.github/workflows" "${altered}/.github/scripts/tests"
   cp "${repository}/.github/staged/release-macos-app.yaml" "${altered}/.github/staged/"
@@ -64,6 +64,10 @@ for check in hdiutil-arguments unmeasured-tool unmeasured-literal-tool workflow-
     hdiutil-arguments) sed -i 's/-format UDZO -ov "\$image"; do/-format UDBZ -ov "$image"; do/' "${altered}/.github/staged/release-macos-app.yaml" ;;
     unmeasured-tool) sed -i 's/bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"/bin_tools="security codesign openssl plutil shasum xcrun ditto"/' "${altered}/.github/workflows/release-build.yaml" ;;
     unmeasured-literal-tool) sed -i '/check_hash "unsigned\//a\          /usr/bin/stat -f %z x' "${altered}/.github/staged/release-macos-app.yaml" ;;
+    unmeasured-literal-xcrun-tool)
+      sed -i 's|"\$SYSTEM_BIN/xcrun" stapler|/usr/bin/xcrun stapler|' "${altered}/.github/staged/release-macos-app.yaml" "${altered}/.github/scripts/tests/test-signed-dmg.sh"
+      sed -i 's/for tool in notarytool stapler; do/for tool in notarytool; do/' "${altered}/.github/workflows/release-build.yaml"
+      ;;
     workflow-names-file) printf '# see .github/staged/release-macos-app.yaml\n' >"${altered}/.github/workflows/other.yaml" ;;
   esac
   if node "${here}/check-staged-macos-app.mjs" "$altered" >/dev/null 2>&1; then
@@ -90,6 +94,9 @@ done < <(jq -r '.[] | select(.kind == "run") | [.marker, .script, (.if // "-"), 
 # the fake secrets. none may appear in the job's output.
 p8_one="P8LINEONE-0f3a9c51d2"
 p8_two="P8LINETWO-77be41aa90"
+# the one base64 in the suite. the stand-in openssl decodes with it by this path, so
+# a staged script that calls a bare base64 finds none on the base PATH.
+decode_base64="$(command -v base64)"
 secret_application="$(printf 'application p12 bytes' | base64 | tr -d '\n')"
 password="p12-password-4f81c2"
 key_id="KEYID-9d3b71e0"
@@ -98,7 +105,7 @@ issuer="ISSUER-5e7a2c44-b1d0"
 # a PATH with the base utilities and nothing else. sleep returns at once, so the
 # hdiutil retries do not wait.
 mkdir -p "${work}/base"
-for tool in bash env awk sed tr cat rm mkdir cp mv chmod ln mktemp find sort grep wc head tail cut date base64 stat dirname basename readlink tee sha256sum; do
+for tool in bash env awk sed tr cat rm mkdir cp mv chmod ln mktemp find sort grep wc head tail cut date stat dirname basename readlink tee sha256sum; do
   ln -s "$(command -v "$tool")" "${work}/base/${tool}"
 done
 printf '#!/bin/sh\nexit 0\n' >"${work}/base/sleep"
@@ -229,7 +236,7 @@ case "$tool" in
         [[ "$*" == "enc -base64 -d -A" ]] || exit 91
         encoded="$(cat)"
         [[ "$encoded" != *$'\n'* && "$encoded" != *$'\r'* ]] || exit 91
-        printf '%s' "$encoded" | base64 --decode
+        printf '%s' "$encoded" | "$DECODE_BASE64" --decode
         ;;
       rand) echo "$KEYCHAIN_PASSWORD" ;;
       x509)
@@ -474,7 +481,7 @@ run_job() {
       "SYSTEM_BIN=${case_dir}/bin" "SYSTEM_SBIN=${case_dir}/sbin"
       "SCENARIO=${case_dir}/scenario" "RECORD=${record}" "OUT=${out}"
       "STANDIN_STEP=${marker}" "KEYCHAIN_PASSWORD=${keychain_password}" "SUBMISSION=${submission}"
-      "VERSION_OF_APP=${version}"
+      "VERSION_OF_APP=${version}" "DECODE_BASE64=${decode_base64}"
     )
     while IFS= read -r line; do
       [[ -n "$line" ]] && env_args+=("$line")
@@ -761,6 +768,16 @@ reset_case
 mutate_script="02-keychain.sh"
 mutate_expression='s/^g2_base64="MIIEPj/g2_base64="MIIEPk/'
 run_case "an embedded intermediate whose SHA-256 differs from the pin (the certificate changed)" fail "not the pinned" none
+
+# the secret and the pinned certificate decode with the openssl the app job measures.
+# a bare base64 is not on the base PATH, so a script that calls one fails.
+for decoded in DeveloperIDG2CA.cer application.p12; do
+  reset_case
+  mutate_script="02-keychain.sh"
+  # shellcheck disable=SC2016 # the text the sed edit finds is literal, not an expansion.
+  mutate_expression='/'"${decoded}"'"$/s|"$SYSTEM_BIN/openssl" enc -base64 -d -A|base64 --decode|'
+  run_case "a script that decodes ${decoded%%.*} with a bare base64" fail "base64: command not found" some
+done
 
 echo "-- refusals after the keychain exists --"
 reset_case

@@ -145,7 +145,7 @@ for (const script of scripts) {
     called.add(`/usr/${directory}/${tool}`);
   }
   for (const [, tool] of code(script).matchAll(
-    /"\$SYSTEM_BIN\/xcrun" (notarytool|stapler)\b/g,
+    /(?:"\$SYSTEM_BIN\/xcrun"|(?<![\w/$])\/usr\/bin\/xcrun) (notarytool|stapler)\b/g,
   )) {
     called.add(`xcrun ${tool}`);
   }
