@@ -615,7 +615,8 @@ mod tests {
 
     /// the runner-age warnings of the golden macOS VM's entry in the snapshot of a
     /// view whose clock is `days_after_release` days after the release of runner 2.337.0, as
-    /// `(code, days, version)`; `None` is a check that found no golden macOS VM.
+    /// `(code, days, version)`; a `golden` of `None` is a check that found no golden
+    /// macOS VM.
     fn runner_age_warnings(
         golden: Option<&str>,
         days_after_release: u64,
