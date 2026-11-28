@@ -359,8 +359,10 @@ Apply the lens for each kind of file in the diff.
   job but `sign-update`; a secret read outside `sign-update`'s sign step; a checkout,
   another action, a package manager or a download in `sign-update`; the signer run
   other than by its hash-checked path under `unshare --net`; a privileged
-  command in `sign-update` other than the guarded `sysctl` of its `userns` step,
-  which comes before the sign step, as
+  command in `sign-update` other than
+  `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, run only where
+  `/proc/sys/kernel/apparmor_restrict_unprivileged_userns` exists and is not 0,
+  in its `userns` step before the sign step, as
   [Security](./docs/security/workflow-permissions.md#feed-signing-lifts-ubuntus-user-namespace-restriction)
   records; the two update-feed secrets on a command line or in output; a
   `latest.json` published without passing the feed check against the committed

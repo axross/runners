@@ -222,7 +222,7 @@ stages the text of `update-tool`, `sign-update` and `assemble-signed`'s feed ste
 [`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml). It
 changes no release workflow, `release/.releaserc.json`, `verify-release.sh` or release
 rule of the shape check, and nothing in it reaches an Environment. The last pull
-request moves the staged text into `release.yaml` as the restoration left it, deletes
+request moves the staged text into `release.yaml` as #188 left it, deletes
 the staged file and points the merge checks' extraction at `release.yaml`. The
 requirements below are that last pull request's, and it reviews whatever the release
 graph then needs.

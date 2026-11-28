@@ -110,8 +110,8 @@ jobs' text is staged in `.github/staged/release-feed.yaml`, outside `.github/wor
 where GitHub never runs it, and the signing scripts, the committed `tauri-cli` archive
 checksum and the merge checks' round trip are described in
 [CLI](../marshal-cli/release-artifacts.md#the-update-feeds-tools-and-checks). The last pull
-request of W4 moves the staged text into the release run, now that the app's publication
-is restored, and the first release after it is the first to carry a feed.
+request of W4 moves the staged text into the release run, now that the app release route
+is restored (#188), and the first release after it is the first to carry a feed.
 
 ### The Update-Feed Key
 

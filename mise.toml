@@ -411,7 +411,7 @@ description = "Check the script that writes SHA256SUMS for the release's app exe
 run = "bash .github/scripts/tests/test-assemble-release.sh"
 
 [tasks."test:sign-update"]
-description = "Run the staged release feed file's sign-update scripts against a stand-in signer: a signature for the build's MSI, and a refusal of a changed MSI, a changed signer and an empty secret"
+description = "Run the staged release feed file's sign-update scripts against a stand-in signer: a signature for the build's MSI, a refusal of a changed MSI, a changed signer and an empty secret, and the userns step's sudo call with the limit file at 1, at 0 and absent"
 run = "bash .github/scripts/tests/test-sign-update.sh"
 
 [tasks."test:update-tools"]

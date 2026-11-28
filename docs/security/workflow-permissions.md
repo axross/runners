@@ -109,7 +109,9 @@ marked step, `# sign-update: userns`, directly before its signing step. It runs
 file exists and holds something other than 0, so a runner without the restriction
 never calls `sudo`. The merge checks' round trip extracts and runs the same step,
 so `update-feed` carries no copy. The VM is ephemeral and GitHub-hosted, and the
-step runs before the signing step, which alone receives the secrets.
+step runs before the signing step, which alone receives the secrets. Once lifted,
+the limit stays lifted for every process in that VM, the signer included, until
+the VM is discarded; the maintainer accepted that.
 [REVIEW.md](../../REVIEW.md) holds the rule that bounds it.
 
 ## Self-Hosted Runners Stay Out of This Repository's Own Jobs

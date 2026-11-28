@@ -151,7 +151,8 @@ record a change to either workflow, to the build call in
     `signer sign`, built with `--locked` in a tool job without the Environment from a
     crate archive whose SHA-256 equals one committed in the repository. The signing
     job checks the binary it receives against the SHA-256 that the tool job outputs,
-    before it runs it.
+    before it runs it. The job also has one `sudo sysctl` step, recorded in
+    [Security](./workflow-permissions.md#feed-signing-lifts-ubuntus-user-namespace-restriction).
     These are contracts for later pull requests, not jobs already implemented.
     W1's installer pull request comes first; M2's disk-image and W4's feed
     pull requests may then merge in either order. From W1's installer pull request
