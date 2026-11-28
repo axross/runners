@@ -16,9 +16,18 @@ fn mac_view_of(snapshot: &Snapshot) -> View {
 
 /// a running Mac with M3's items, in the codes and fields the agent sends, as a fake
 /// snapshot: a slot waiting for the macOS VM limit and one for a VM's deletion,
-/// the golden macOS VM after the Linux one with its warnings, and leftover VMs of a
-/// configured pool and of one no longer configured.
+/// the golden macOS VM after the Linux one with a base-age warning, and leftover VMs
+/// of a configured pool and of one no longer configured.
 fn with_m3_items() -> Snapshot {
+    with_golden_macos_vm("2.338.2", json!([{"code": "base_old", "days": 45}]))
+}
+
+/// [`with_m3_items`] with the golden macOS VM built with runner `runner_version`
+/// and carrying `warnings`, which are the ones the agent can send together: at most
+/// one of the runner's age warnings, and `runner_age_unknown` only without the others.
+/// A runner age warning's code, days and version are kept in step by hand with the
+/// CLI's `the_golden_macos_vm_entry_warns_of_its_runner_in_the_linux_golden_vms_age_bands`.
+fn with_golden_macos_vm(runner_version: &str, warnings: Value) -> Snapshot {
     patched("running", |value| {
         let runners = &mut value["pools"][1]["runners"];
         runners[0]["state"] = json!("waiting_for_vm_limit");
@@ -31,22 +40,22 @@ fn with_m3_items() -> Snapshot {
         value["images"].as_array_mut().unwrap().push(json!({
             "name": "golden macOS VM",
             "lines": [
-                {"name": "name", "value": "marshal-golden-macos-g1-r2.338.2-20261101000000"},
+                {"name": "name", "value": format!("marshal-golden-macos-g1-r{runner_version}-20261101000000")},
                 {"name": "golden-vm-version", "value": "1"},
-                {"name": "runner-version", "value": "2.338.2"},
+                {"name": "runner-version", "value": runner_version},
                 {"name": "base-published", "value": "2026-09-20"}
             ],
-            "warnings": [
-                {"code": "runner_old", "days": 21},
-                {"code": "runner_age_unknown"},
-                {"code": "base_old", "days": 45}
-            ]
+            "warnings": warnings
         }));
         value["leftovers"] = json!([
             {"kind": "container", "name": "app-1-20261104020000000"},
             {"kind": "vm_unconfigured_pool", "name": "old-1-20261103020000000"}
         ]);
     })
+}
+
+fn footer_warnings(snapshot: &Snapshot) -> String {
+    mac_view_of(snapshot).window.footer.warnings.join("\n")
 }
 
 fn strings(value: &Value, out: &mut Vec<String>) {
@@ -171,19 +180,53 @@ fn the_golden_macos_vm_follows_the_linux_one_with_its_own_warnings() {
     );
     let warnings = view.window.footer.warnings.join("\n");
     assert!(
-        warnings.contains("Warning: the runner was released 21 days ago and never updates itself; update Marshal to get a newer runner, then build the golden macOS VM again before GitHub stops sending jobs to it."),
-        "{warnings}"
-    );
-    assert!(
-        warnings.contains("Warning: the golden macOS VM's runner has no known release date, so its age is unknown."),
-        "{warnings}"
-    );
-    assert!(
         warnings.contains("Warning: the golden macOS VM's macOS base was published 45 days ago; update Marshal to get a newer base, then build the golden macOS VM again."),
         "{warnings}"
     );
     // the Linux golden VM's warning keeps naming the golden VM
     assert!(warnings.contains("a newer runner may exist"), "{warnings}");
+}
+
+#[test]
+fn a_golden_macos_vm_runner_of_unknown_age_says_so() {
+    let warnings = footer_warnings(&with_golden_macos_vm(
+        "2.338.2",
+        json!([{"code": "runner_age_unknown"}, {"code": "base_old", "days": 45}]),
+    ));
+    assert!(
+        warnings.contains("Warning: the golden macOS VM's runner has no known release date, so its age is unknown."),
+        "{warnings}"
+    );
+}
+
+#[test]
+fn a_golden_macos_vm_runner_released_10_days_ago_may_have_a_newer_one() {
+    let warnings = footer_warnings(&with_golden_macos_vm(
+        "2.337.0",
+        json!([{"code": "runner_may_be_newer", "days": 10, "version": "2.337.0"}]),
+    ));
+    let line = "Warning: runner 2.337.0 was released 10 days ago, and a newer runner may exist.";
+    assert_eq!(warnings.matches(line).count(), 1, "{warnings}");
+    // beside the Linux golden VM's own may-be-newer warning, for another runner
+    assert!(
+        warnings.contains(
+            "Warning: runner 2.338.2 was released 9 days ago, and a newer runner may exist."
+        ),
+        "{warnings}"
+    );
+    assert!(!warnings.contains("never updates itself"), "{warnings}");
+}
+
+#[test]
+fn a_golden_macos_vm_runner_released_21_days_ago_never_updates_itself() {
+    let warnings = footer_warnings(&with_golden_macos_vm(
+        "2.337.0",
+        json!([{"code": "runner_old", "days": 21, "version": "2.337.0"}]),
+    ));
+    assert!(
+        warnings.contains("Warning: runner 2.337.0 was released 21 days ago and never updates itself; update Marshal to get a newer runner, then build the golden macOS VM again before GitHub stops sending jobs to it."),
+        "{warnings}"
+    );
 }
 
 #[test]

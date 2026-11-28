@@ -22,8 +22,12 @@ const RUNNER_SECOND_WARNING_DAYS: u64 = 21;
 /// a warning about the golden macOS VM, as data the snapshot carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MacosFreshness {
-    /// its runner was released this many days ago, 7 or more.
-    RunnerOld { days: u64 },
+    /// its runner, this version, was released this many days ago, from 7 up to but not
+    /// including 21: a newer runner may exist.
+    RunnerMayBeNewer { version: String, days: u64 },
+    /// its runner, this version, was released this many days ago, 21 or more: the
+    /// runner never updates itself.
+    RunnerOld { version: String, days: u64 },
     /// the runner record holds no release date for its runner's version.
     RunnerAgeUnknown,
     /// the pinned base was published this many days ago, 30 or more.
@@ -36,10 +40,14 @@ pub enum MacosFreshness {
 pub fn findings(golden: Option<&str>, base: &MacosBase, now: SystemTime) -> Vec<MacosFreshness> {
     let mut findings = Vec::new();
     if let Some(parsed) = golden.and_then(GoldenMacosName::parse) {
+        let version = parsed.runner_version().to_string();
         match runner_released(&parsed).map(|released| age_days(now, released)) {
             None => findings.push(MacosFreshness::RunnerAgeUnknown),
+            Some(days) if days >= RUNNER_SECOND_WARNING_DAYS => {
+                findings.push(MacosFreshness::RunnerOld { version, days });
+            }
             Some(days) if days >= RUNNER_FIRST_WARNING_DAYS => {
-                findings.push(MacosFreshness::RunnerOld { days });
+                findings.push(MacosFreshness::RunnerMayBeNewer { version, days });
             }
             Some(_) => {}
         }
@@ -110,7 +118,21 @@ pub fn status_fields(
         .collect();
     for finding in findings(golden, base, now) {
         match finding {
-            MacosFreshness::RunnerOld { days } => fields.push(("warning", runner_text(golden, days))),
+            MacosFreshness::RunnerMayBeNewer { version, days } => fields.push((
+                "warning",
+                format!(
+                    "the golden macOS VM's runner {version} was released {days} days ago, and a \
+                     newer runner may exist"
+                ),
+            )),
+            MacosFreshness::RunnerOld { version, days } => fields.push((
+                "warning",
+                format!(
+                    "the golden macOS VM's runner {version} was released {days} days ago and \
+                     never updates itself; update the CLI to get a newer runner, then rebuild \
+                     the golden macOS VM before GitHub stops sending jobs to this version"
+                ),
+            )),
             MacosFreshness::RunnerAgeUnknown => fields.push((
                 "warning",
                 "the golden macOS VM's runner has no release date in this CLI, so its age is unknown"
@@ -130,25 +152,6 @@ fn status_name(line: &str) -> &'static str {
         "golden-vm-version" => "golden-macos-vm-version",
         "runner-version" => "golden-macos-runner",
         _ => "macos-base-published",
-    }
-}
-
-fn runner_text(golden: Option<&str>, days: u64) -> String {
-    let version = golden
-        .and_then(GoldenMacosName::parse)
-        .map(|parsed| parsed.runner_version().to_string())
-        .unwrap_or_default();
-    if days >= RUNNER_SECOND_WARNING_DAYS {
-        format!(
-            "the golden macOS VM's runner {version} was released {days} days ago and never \
-             updates itself; update the CLI to get a newer runner, then rebuild the golden macOS \
-             VM before GitHub stops sending jobs to this version"
-        )
-    } else {
-        format!(
-            "the golden macOS VM's runner {version} was released {days} days ago, and a newer \
-             runner may exist"
-        )
     }
 }
 
@@ -176,22 +179,43 @@ mod tests {
     }
 
     #[test]
-    fn each_age_warns_from_its_first_threshold_inclusive_with_its_days() {
+    fn each_age_warns_from_its_first_threshold_inclusive_with_its_days_and_version() {
         let released = release("2.337.0").unwrap().released;
         let golden = "marshal-golden-macos-g1-r2.337.0-20260101000000";
         let base = MacosBase {
             published: released,
             ..BASE
         };
+        let version = || "2.337.0".to_string();
         assert_eq!(findings(Some(golden), &base, day(released, 6)), []);
         assert_eq!(
             findings(Some(golden), &base, day(released, 7)),
-            [MacosFreshness::RunnerOld { days: 7 }]
+            [MacosFreshness::RunnerMayBeNewer {
+                version: version(),
+                days: 7
+            }]
+        );
+        assert_eq!(
+            findings(Some(golden), &base, day(released, 20)),
+            [MacosFreshness::RunnerMayBeNewer {
+                version: version(),
+                days: 20
+            }]
+        );
+        assert_eq!(
+            findings(Some(golden), &base, day(released, 21)),
+            [MacosFreshness::RunnerOld {
+                version: version(),
+                days: 21
+            }]
         );
         assert_eq!(
             findings(Some(golden), &base, day(released, 30)),
             [
-                MacosFreshness::RunnerOld { days: 30 },
+                MacosFreshness::RunnerOld {
+                    version: version(),
+                    days: 30
+                },
                 MacosFreshness::BaseOld { days: 30 }
             ]
         );
@@ -240,8 +264,18 @@ mod tests {
                 .map(|(_, text)| text)
                 .collect()
         };
-        assert!(warnings(20)[0].ends_with("and a newer runner may exist"));
-        assert!(warnings(21)[0].contains("never updates itself"));
+        assert!(warnings(6).is_empty());
+        assert_eq!(
+            warnings(20)[0],
+            "the golden macOS VM's runner 2.337.0 was released 20 days ago, and a newer runner \
+             may exist"
+        );
+        assert_eq!(
+            warnings(21)[0],
+            "the golden macOS VM's runner 2.337.0 was released 21 days ago and never updates \
+             itself; update the CLI to get a newer runner, then rebuild the golden macOS VM \
+             before GitHub stops sending jobs to this version"
+        );
         let base_warning = |days| warnings(days).last().unwrap().clone();
         assert!(!base_warning(59).contains("far behind"));
         assert!(base_warning(60).contains("far behind"));
