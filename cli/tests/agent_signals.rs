@@ -1,7 +1,8 @@
 //! the resident agent's signal stops and keep-awake hold through the Windows monitor,
 //! on fake seams behind its real channel: a sleep stops every runner, a network change
 //! only with `stop_on_network_change` on, the hold follows the state and `keep_awake`,
-//! and an update keeps a signal's stop.
+//! and an update keeps a signal's stop. an applied `config_edit` or `config_reload`
+//! puts the file's `[lifecycle]` in effect for them.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -20,7 +21,7 @@ use marshal_cli::macos::network::NetworkReading;
 use marshal_cli::runtime::fake::Call;
 use marshal_cli::windows_host::network::{Kind, primary};
 use serde_json::json;
-use support::agent::{ONE_POOL_TOML, Rig, TOKEN};
+use support::agent::{Conn, ONE_POOL_TOML, Rig, TOKEN};
 
 fn rig(lifecycle: &str) -> Rig {
     let rig = Rig::new("");
@@ -297,6 +298,160 @@ async fn turning_resume_off_cancels_a_waiting_resume() {
         assert_eq!(snapshot.agent.state, "stopped");
         assert_eq!(snapshot.agent.reason.as_ref().unwrap().code, "slept");
         assert_eq!(resume_of(&snapshot), (None, None));
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+/// the rig's file with `lifecycle` written by hand after the pools.
+fn hand_edited(lifecycle: &str) -> String {
+    format!("{ONE_POOL_TOML}\n[lifecycle]\n{lifecycle}")
+}
+
+async fn revision(conn: &Conn) -> String {
+    conn.ok("config_read").await["revision"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+async fn reload(conn: &Conn) {
+    conn.call("config_reload", json!({"revision": revision(conn).await}))
+        .await
+        .unwrap();
+}
+
+async fn edit_runners(conn: &Conn) {
+    conn.call(
+        "config_edit",
+        json!({
+            "revision": revision(conn).await,
+            "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
+        }),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_applied_reload_that_turns_the_network_stop_off_leaves_a_network_change_alone() {
+    let rig = rig("resume_after_stop = false\n");
+    rig.signals.set_network(network(Kind::WiFi, 12, 1));
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_runner_runs().await;
+        rig.mark_running();
+        rig.write_toml(&hand_edited("stop_on_network_change = false\n"));
+        reload(&conn).await;
+        rig.signals.set_network(network(Kind::Ethernet, 3, 2));
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        assert_eq!(conn.status().await.agent.state, "running");
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_applied_reload_that_turns_keep_awake_off_ends_the_hold_and_one_that_turns_it_on_takes_it()
+ {
+    let rig = rig("keep_awake = false\n");
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_runner_runs().await;
+        rig.mark_running();
+        assert!(!rig.signals.is_held());
+        rig.write_toml(&hand_edited("keep_awake = true\n"));
+        reload(&conn).await;
+        conn.eventually("the hold taken", || rig.signals.is_held())
+            .await;
+        rig.write_toml(&hand_edited("keep_awake = false\n"));
+        reload(&conn).await;
+        conn.eventually("the hold ended", || !rig.signals.is_held())
+            .await;
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+/// sleeps the runners of a rig that began on the Wi-Fi network, so a resume waits for it.
+async fn waiting_to_resume(conn: &Conn, rig: &Rig) {
+    conn.until_runner_runs().await;
+    rig.mark_running();
+    rig.signals.sleep();
+    rig.signals.set_network(network(Kind::Ethernet, 3, 2));
+    let stopped = conn.until_state("stopped").await;
+    assert_eq!(
+        resume_of(&stopped),
+        (Some("waiting".into()), Some("slept".into()))
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_applied_reload_that_turns_resume_off_cancels_a_waiting_resume() {
+    let rig = rig("resume_after_stop = true\n");
+    rig.signals.set_network(network(Kind::WiFi, 12, 1));
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        waiting_to_resume(&conn, rig).await;
+        rig.write_toml(&hand_edited("resume_after_stop = false\n"));
+        reload(&conn).await;
+        resume_stays_cancelled(&conn, rig).await;
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_applied_edit_that_turns_resume_off_cancels_a_waiting_resume() {
+    let rig = rig("resume_after_stop = true\n");
+    rig.signals.set_network(network(Kind::WiFi, 12, 1));
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        waiting_to_resume(&conn, rig).await;
+        rig.write_toml(&hand_edited("resume_after_stop = false\n"));
+        edit_runners(&conn).await;
+        resume_stays_cancelled(&conn, rig).await;
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+/// the resume is gone from the snapshot, and the network they stopped on coming back
+/// starts nothing.
+async fn resume_stays_cancelled(conn: &Conn, rig: &Rig) {
+    let snapshot = conn.status().await;
+    assert_eq!(snapshot.agent.reason.as_ref().unwrap().code, "slept");
+    assert_eq!(resume_of(&snapshot), (None, None));
+    rig.signals.set_network(network(Kind::WiFi, 12, 1));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let snapshot = conn.status().await;
+    assert_eq!(snapshot.agent.state, "stopped");
+    assert_eq!(resume_of(&snapshot), (None, None));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_check_and_a_refused_reload_leave_a_waiting_resume_alone() {
+    let rig = rig("resume_after_stop = true\n");
+    rig.signals.set_network(network(Kind::WiFi, 12, 1));
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        waiting_to_resume(&conn, rig).await;
+        rig.write_toml(&hand_edited("resume_after_stop = false\n"));
+        conn.call(
+            "config_reload",
+            json!({"revision": revision(&conn).await, "check": true}),
+        )
+        .await
+        .unwrap();
+        let waiting = (Some("waiting".to_string()), Some("slept".to_string()));
+        assert_eq!(resume_of(&conn.status().await), waiting);
+
+        rig.write_toml(&hand_edited("resume_after_stop = 3\n"));
+        let code = conn
+            .code("config_reload", json!({"revision": revision(&conn).await}))
+            .await;
+        assert!(code.starts_with("config_"), "{code}");
+        assert_eq!(resume_of(&conn.status().await), waiting);
         conn.ok("quit").await;
     })
     .await;

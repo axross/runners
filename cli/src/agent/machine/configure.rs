@@ -3,6 +3,7 @@
 //! are stopped, and are refused during a transition, while an edit applies and while
 //! the runtime core waits to restart.
 
+use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::hash::{DefaultHasher, Hasher};
 use std::io;
@@ -28,7 +29,7 @@ use super::super::config::{
 };
 use super::super::core::ApplyOrder;
 use super::super::snapshot::{ApplyInfo, MAX_PROBLEMS};
-use super::super::state::{Applying, DRAINING, Phase};
+use super::super::state::{Applying, DRAINING, Phase, Reason};
 use super::super::view::{migration_failure_text, millis};
 use super::super::wire::{ErrorCode, MAX_AGENT_MESSAGE_BYTES};
 use super::{Agent, Reply};
@@ -63,6 +64,23 @@ impl Drop for Answer {
                 "the runners stopped before the change was written",
             )));
         }
+    }
+}
+
+/// marks an edit or a reload as waiting for the check of a new image, and clears the
+/// mark when the wait ends however it does, including a future dropped by a stop.
+struct CheckingImage<'a>(&'a Cell<bool>);
+
+impl<'a> CheckingImage<'a> {
+    fn begin(flag: &'a Cell<bool>) -> Self {
+        flag.set(true);
+        Self(flag)
+    }
+}
+
+impl Drop for CheckingImage<'_> {
+    fn drop(&mut self) {
+        self.0.set(false);
     }
 }
 
@@ -259,7 +277,10 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         if let Some(image) = prepared.plan.image_name.as_deref()
             && in_use.as_deref() != Some(image)
         {
-            let found = self.backend.check_image(image).await;
+            let found = {
+                let _waiting = CheckingImage::begin(&self.checking_image);
+                self.backend.check_image(image).await
+            };
             if let Some(refusal) = found.refusal(image) {
                 return Err(error(ErrorCode::ImageUnusable, refusal));
             }
@@ -440,11 +461,33 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         let result = self.change_result(&prepared, mode);
         let previous = self.use_file(prepared.plan.clone());
         self.refresh_tokens(&prepared.plan);
+        self.take_applied_settings(&prepared.plan);
         if mode == Mode::Apply {
             self.start_apply(prepared, previous);
         }
+        self.end_stop_for_file(mode);
         self.publish();
         Ok(result)
+    }
+
+    /// leaves the agent stopped by you when a change was written on one stopped because
+    /// its read of `config.toml` found the file missing or invalid, as a successful
+    /// build does; a stop for any other reason, a migration of `config.json` that was
+    /// rejected included, is kept, because such a change is refused before it is written.
+    fn end_stop_for_file(&self, mode: Mode) {
+        if mode != Mode::Write {
+            return;
+        }
+        let stopped_for_file = matches!(
+            &self.inner.borrow().phase,
+            Phase::Stopped(reason)
+                if [Reason::NO_CONFIGURATION, Reason::INVALID_CONFIGURATION].contains(&reason.code)
+        );
+        if stopped_for_file {
+            self.log
+                .info("config.toml is usable now, so the agent is stopped by you until Start all.");
+            self.set_phase(Phase::Stopped(Reason::by_you()));
+        }
     }
 
     /// makes `plan`, just read from the file, the configuration in use, and returns

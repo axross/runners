@@ -182,6 +182,9 @@ pub struct Agent<'a, B, K, R, D, M = NoMonitor> {
     /// the revision of `config.toml` as the agent last read or wrote it, which
     /// `lifecycle_set` refuses a file changed since.
     read_revision: RefCell<Option<String>>,
+    /// true while an edit or a reload waits for the check of a new image, when
+    /// `lifecycle_set` is refused as busy.
+    checking_image: Cell<bool>,
     board: Board,
     inner: RefCell<Inner>,
     /// the containers a stop could not remove.
@@ -303,6 +306,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
             resume: RefCell::new(Resume::new()),
             resume_note: Cell::new(None),
             read_revision: RefCell::new(None),
+            checking_image: Cell::new(false),
             board: Board::default(),
             inner: RefCell::new(Inner::new(phase)),
             left: RefCell::new(Vec::new()),

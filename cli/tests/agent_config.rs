@@ -1,6 +1,7 @@
 //! the configuration methods over the channel: `config_read`, and `config_edit` and
 //! `config_reload` on a running agent, which apply a change to the pools it touches
-//! alone, and on a stopped one, which only write it.
+//! alone, and on a stopped one, which only write it; a write on an agent stopped for a
+//! missing or invalid file ends that stop.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -18,7 +19,7 @@ use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::fake::Call;
 use serde_json::{Value, json};
-use support::agent::{Conn, ONE_POOL, Rig, TOKEN, TWO_POOLS};
+use support::agent::{Conn, ONE_POOL, ONE_POOL_TOML, Rig, TOKEN, TWO_POOLS};
 
 const TWO_POOLS_TOML: &str = r#"# the host's pools
 schema_version = 1
@@ -1459,4 +1460,160 @@ async fn an_edit_and_a_reload_are_busy_while_the_agent_stops() {
             conn.ok("quit").await;
         })
         .await;
+}
+
+// a stop for the file ends once an edit or a reload is written -------------------
+
+/// a rig with no `config.toml` and no `config.json`, or with `file` as its `config.toml`.
+fn without_a_usable_file(file: Option<&str>) -> Rig {
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    if let Some(file) = file {
+        rig.write_toml(file);
+    }
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    rig
+}
+
+/// the stop reason code and message the snapshot names.
+async fn stop_of(conn: &Conn) -> (String, String) {
+    let reason = conn.status().await.agent.reason.unwrap();
+    (reason.code, reason.message)
+}
+
+/// a reload, or an edit of the first pool's runners, at the file's current revision.
+async fn write_change(conn: &Conn, edit: bool) -> Result<Value, CallError> {
+    let revision = read_revision(conn).await;
+    if edit {
+        conn.call(
+            "config_edit",
+            json!({
+                "revision": revision,
+                "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
+            }),
+        )
+        .await
+    } else {
+        conn.call("config_reload", json!({"revision": revision}))
+            .await
+    }
+}
+
+/// the file the agent was stopped for is fixed, and an edit or a reload is written:
+/// the agent is stopped by you, shows the file as the configuration in use, and
+/// starts the runners at the next Start all.
+async fn a_fixed_file_ends_its_stop(file: Option<&str>, stopped_for: &str, edit: bool) {
+    let rig = without_a_usable_file(file);
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        assert_eq!(stop_of(&conn).await.0, stopped_for);
+        // the file is not fixed yet, so the change is refused and the stop is as it was
+        let (code, _) = refused(
+            &conn,
+            "config_reload",
+            json!({"revision": read_revision(&conn).await}),
+        )
+        .await;
+        assert!(code.starts_with("config_"), "{code}");
+        assert_eq!(stop_of(&conn).await.0, stopped_for);
+
+        rig.write_toml(ONE_POOL_TOML);
+        write_change(&conn, edit).await.unwrap();
+        let snapshot = conn.status().await;
+        assert_eq!(snapshot.agent.state, "stopped");
+        let reason = snapshot.agent.reason.unwrap();
+        assert_eq!(
+            (reason.code.as_str(), reason.message.as_str()),
+            ("by_you", "stopped by you")
+        );
+        assert_eq!(snapshot.configuration.status, "valid");
+        assert_eq!(snapshot.configuration.in_use.unwrap().source, "file");
+        assert!(
+            !rig.backend
+                .calls()
+                .iter()
+                .any(|call| matches!(call, Call::RunContainer(_))),
+            "a runner started"
+        );
+
+        conn.ok("start_all").await;
+        conn.until_runner_runs().await;
+        rig.mark_running();
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_reload_that_finds_a_missing_file_created_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(None, "no_configuration", false).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_that_finds_a_missing_file_created_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(None, "no_configuration", true).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_reload_that_finds_an_invalid_file_fixed_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(Some("not = [toml"), "invalid_configuration", false).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn an_edit_that_finds_an_invalid_file_fixed_ends_the_stop_for_it() {
+    a_fixed_file_ends_its_stop(Some("not = [toml"), "invalid_configuration", true).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stop_for_a_config_json_rejected_at_its_migration_is_not_ended() {
+    let rig = Rig::new(&ONE_POOL.replace("\"slots\":1", "\"slots\":0"));
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        let before = stop_of(&conn).await;
+        assert_eq!(before.0, "invalid_configuration");
+        // a valid config.toml beside it is not read until Start all, so the change is
+        // refused
+        rig.write_toml(ONE_POOL_TOML);
+        for edit in [false, true] {
+            let refusal = write_change(&conn, edit).await;
+            let Err(CallError::Agent(body)) = refusal else {
+                panic!("the change was not refused: {refusal:?}");
+            };
+            assert_eq!(body.code, "config_unusable");
+            assert_eq!(stop_of(&conn).await, before);
+        }
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_written_change_keeps_every_other_stop_reason() {
+    // stopped by you at launch, and for an image that is not usable
+    let rig = without_a_usable_file(Some(ONE_POOL_TOML));
+    let rig = &rig;
+    rig.drive(Launch::Stopped, |conn| async move {
+        let by_you = stop_of(&conn).await;
+        assert_eq!(by_you.0, "by_you");
+        write_change(&conn, false).await.unwrap();
+        assert_eq!(stop_of(&conn).await, by_you);
+
+        rig.backend
+            .state
+            .borrow_mut()
+            .image_answers
+            .push_back(marshal_cli::image::check::ImageCheck::Missing);
+        let answer = conn.ok("start_all").await;
+        assert_eq!(answer["reason"]["code"], "image_unusable");
+        let unusable = stop_of(&conn).await;
+        write_change(&conn, true).await.unwrap();
+        assert_eq!(stop_of(&conn).await, unusable);
+        conn.ok("quit").await;
+    })
+    .await;
 }

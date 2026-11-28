@@ -18,7 +18,7 @@ use marshal_cli::instance::lifecycle::StopTimes;
 use marshal_cli::runtime::backend::Backend;
 use marshal_cli::runtime::fake::Call;
 use serde_json::json;
-use support::agent::{Conn, ONE_POOL, Rig, TOKEN, TWO_POOLS};
+use support::agent::{Conn, ONE_POOL, ONE_POOL_TOML, Rig, TOKEN, TWO_POOLS};
 
 const LISTENING: &str = "2026-11-12 08:00:01Z: Listening for Jobs";
 const JOB: &str = "2026-11-12 08:03:00Z: Running job: build";
@@ -233,6 +233,34 @@ async fn a_drain_while_stopped_by_you_ends_at_once_and_keeps_stopped_by_you() {
             assert_eq!(answer["state"], "quitting");
             assert_eq!(answer["update"]["version"], "1.4.0");
             assert_eq!(answer["update"]["pid"], std::process::id());
+            let (reason, update) = ending(&mut conn).await;
+            assert_eq!(reason, UPDATE);
+            assert_eq!(update, Some(UpdateEnding::new("1.4.0", true)));
+        })
+        .await;
+    assert_eq!(ended.update, Some(UpdateEnding::new("1.4.0", true)));
+    assert!(containers(rig).is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_drain_after_a_reload_fixed_the_file_keeps_the_runners_stopped() {
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    let rig = &rig;
+    let (ended, ()) = rig
+        .drive(Launch::Running, |mut conn| async move {
+            let stopped = conn.until_state("stopped").await;
+            assert_eq!(stopped.agent.reason.unwrap().code, "no_configuration");
+            rig.write_toml(ONE_POOL_TOML);
+            let revision = conn.ok("config_read").await["revision"].clone();
+            conn.call("config_reload", json!({ "revision": revision }))
+                .await
+                .unwrap();
+            conn.client.subscribe().await.unwrap();
+            let answer = drain(&conn).await;
+            assert_eq!(answer["state"], "quitting");
             let (reason, update) = ending(&mut conn).await;
             assert_eq!(reason, UPDATE);
             assert_eq!(update, Some(UpdateEnding::new("1.4.0", true)));

@@ -16,6 +16,7 @@ use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::Clock;
 use crate::runtime::registration::Registrar;
+use crate::validate::Plan;
 use crate::windows_host::run_key::SignIn;
 
 use super::super::api::{ApiError, ApiResult, Method};
@@ -60,6 +61,33 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         self.sync_sign_in();
     }
 
+    /// puts in effect the `[lifecycle]` of the configuration an applied edit or reload
+    /// made the one in use, as Start all does, and ends a waiting resume when
+    /// `resume_after_stop` is now off; nothing on a host without the settings.
+    pub(super) fn take_applied_settings(&self, plan: &Plan) {
+        if !self.has_lifecycle() {
+            return;
+        }
+        let lifecycle = plan
+            .settings
+            .as_ref()
+            .map(|settings| settings.lifecycle)
+            .unwrap_or_default();
+        let settings = InEffect::windows(lifecycle);
+        self.take_settings(settings);
+        self.end_resume_when_off(settings);
+    }
+
+    /// cancels a waiting resume once `settings` turns `resume_after_stop` off.
+    fn end_resume_when_off(&self, settings: InEffect) {
+        if !settings.is_on(Setting::ResumeAfterStop) && self.resume_note.take().is_some() {
+            self.resume.borrow_mut().disarm();
+            self.log.info(
+                "resume_after_stop is off, so the runners will not start again on their own.",
+            );
+        }
+    }
+
     /// writes or removes the sign-in item as `start_at_login` says; nothing while no
     /// setting is in effect, or on a host without one.
     pub(super) fn sync_sign_in(&self) {
@@ -96,6 +124,12 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
                 "an edit of the configuration is being applied",
             ));
         }
+        if self.checking_image.get() {
+            return Err(ApiError::new(
+                ErrorCode::Busy,
+                "an edit of the configuration is waiting for the check of its image",
+            ));
+        }
         let Some(settings) = self.in_effect.get() else {
             return Err(ApiError::new(
                 ErrorCode::ConfigUnusable,
@@ -119,12 +153,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         *self.read_revision.borrow_mut() = Some(revision(&written));
         let settings = settings.with(setting, value);
         self.in_effect.set(settings);
-        if !settings.is_on(Setting::ResumeAfterStop) && self.resume_note.take().is_some() {
-            self.resume.borrow_mut().disarm();
-            self.log.info(
-                "resume_after_stop is off, so the runners will not start again on their own.",
-            );
-        }
+        self.end_resume_when_off(settings);
         self.log.info(&format!(
             "{} is now {}.",
             setting.name(),
