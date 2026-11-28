@@ -167,7 +167,14 @@ impl StoreTokens {
         let Some(store) = &self.store else {
             return Err(NO_TOKEN_STORE.to_string());
         };
-        match self.read_settled(store.as_ref(), key, log) {
+        let settled = self.read_settled(store.as_ref(), key, log);
+        // the typed failure is kept as a registration's read keeps it
+        if let Settled::Failed(error) = &settled {
+            self.errors.borrow_mut().insert(key.clone(), error.clone());
+        } else {
+            self.errors.borrow_mut().remove(key);
+        }
+        match settled {
             Settled::Found(token) => Ok(token),
             Settled::StoredButMissing => Err(STORED_UNREADABLE.to_string()),
             Settled::Missing => Err(NO_TOKEN.to_string()),
@@ -480,6 +487,27 @@ mod tests {
         store.fail_with(None);
         assert_eq!(admission(&fresh, &key()).0.unwrap_err(), NO_TOKEN);
         assert_eq!(store.reads_of(&key()), 4);
+    }
+
+    #[test]
+    fn an_admission_read_keeps_the_typed_store_failure_as_a_registrations_read_does() {
+        let (tokens, store) = tokens();
+        tokens.set(&key(), &secret()).unwrap();
+        store.fail_with(Some("the vault is locked"));
+        assert!(admission(&tokens, &key()).0.is_err());
+        assert_eq!(
+            tokens.error(&key()).unwrap().to_string(),
+            "the vault is locked"
+        );
+        store.fail_with(None);
+        assert!(admission(&tokens, &key()).0.is_ok());
+        assert!(tokens.error(&key()).is_none());
+        store.fail_with(Some("the vault is locked"));
+        assert!(admission(&tokens, &key()).0.is_err());
+        store.fail_with(None);
+        store.script_reads(&key(), &[MISS, MISS, MISS]);
+        assert_eq!(admission(&tokens, &key()).0.unwrap_err(), STORED_UNREADABLE);
+        assert!(tokens.error(&key()).is_none());
     }
 
     #[test]

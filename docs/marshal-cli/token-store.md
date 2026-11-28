@@ -93,12 +93,13 @@ committed edit, and Start all loads the configuration again.
 
 The store can answer "no entry" for a token it holds, as the Credential Manager of a
 hosted Windows runner did right after a write
-([#148](https://github.com/axross/runners/issues/148)). Admission, in every place a
-pool is admitted, and the presence check therefore read a miss again, up to 2 times,
-100 ms apart, and stop at the first read that finds the token. The rule is the agent's
-and the same on every platform with a store. Registration's read and the GitHub status
-check's read are single reads, which fail that attempt and read again at their next
-one.
+([#148](https://github.com/axross/runners/issues/148)). Admission, in every place a pool
+is admitted, and the presence check therefore read a miss again, up to 2 times, 100 ms
+apart, and stop at the first read that finds the token. The rule is the agent's and the
+same on every platform with a store. Pools of every kind, on-demand ones included, are
+admitted through the same read. Registration's read, which an on-demand pool's listener
+makes before each JIT registration too, and the GitHub status check's read are single
+reads, which fail that attempt and read again at their next one.
 
 For each key the agent keeps, for the life of the process and apart from the
 snapshot's `has_token`, what it has learned: unread, known stored, or read absent. A
