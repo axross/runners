@@ -8,8 +8,8 @@ description: Replace expiring signing certificates and verify the credentials us
 
 ## Renewing the Certificates
 
-This yearly work applies to the temporary CLI `sign-macos` and remains the
-contract for M2's and W4's later signing work after app restoration.
+This section is held for M2 and W4: no job signs from W1's installer pull request
+until M2's `sign-macos` returns, and this yearly work applies to it from then.
 
 The Developer ID certificates are expected to last one year, which the maintainer
 confirms from the certificates' dates, and renewing them is yearly work for the

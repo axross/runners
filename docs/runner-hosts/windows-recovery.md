@@ -73,10 +73,7 @@ description: "Diagnose startup, image and registration problems and decide wheth
 
 ## Rolling Back
 
-For a recovery CLI release, use the rollback procedure in
-[recovery CLI installation and rollback](../runner-recovery/install.md#installing-updating-and-rolling-back), not the app procedure below.
-
-Roll back when an app release misbehaves on the host. Rolling back means uninstalling the
+Roll back when a release misbehaves on the host. Rolling back means uninstalling the
 installed release and installing the previous one: it needs an earlier release to go
 back to, so a host on the first release has none, and a fault in it is fixed forward
 in a new release. Pick a quiet time, because quitting Marshal stops its runners and
@@ -84,10 +81,10 @@ a job in flight fails.
 
 1. Select the target release and verify that it supports this host's profile and
    configuration before uninstalling anything. If no compatible target is
-   verified, keep the installed app. For a recovery CLI target, open
-   `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`
-   now, replacing `<version>` with that published release's actual version without
-   the `v`. Use that tag’s install procedure.
+   verified, keep the installed app. When the last command-line release is the
+   target, open the guide at its tag now, as
+   [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
+   says. Use that tag’s install procedure.
    A retained diagnostic container survives the installation. If the target may handle
    it differently, [recover the marked containers](./windows-diagnostics.md#recover-before-disabling-diagnostics)
    with the installed release before uninstalling it.
@@ -95,9 +92,9 @@ a job in flight fails.
    [CLI](../marshal-cli/install-on-windows.md#updating-repairing-uninstalling-and-rolling-back): remove the tokens
    in the window only if you will not install Marshal again, quit Marshal, uninstall,
    then install the selected release's MSI, because the MSI refuses a lower version
-   while a newer one is installed. For a recovery CLI target, install with the
-   target-tag guide you opened in step 1, then follow the runtime procedures in
-   the fixed historical tree that guide identifies.
+   while a newer one is installed. For the last command-line release, install with the
+   guide you opened in step 1, then follow the runtime procedures in the program
+   tree that guide identifies.
    Keep the token files until
    the command line's runners work; the command line reads them, and the app's
    tokens stay in Credential Manager.

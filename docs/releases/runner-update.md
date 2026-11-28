@@ -51,13 +51,9 @@ an id other than `DOCKER_GROUP_ID`, which the golden VM's `docker` group has, so
 changes it also changes `DOCKER_GROUP_ID`, the Dockerfile and the smoke test
 together, and raises the golden VM version and the contract version.
 
-During temporary CLI recovery, runner bumps on main do not enter the fixed
-historical program input. Dispatching a recovery release does not deliver those
-bumps to a CLI host. The Temporary CLI Recovery section of
-[Security](../security/release-authority.md#temporary-cli-recovery) governs that bounded route, and
-[CLI Recovery](../runner-recovery/index.md) owns its operator procedure.
-Keep the pull request's `build(deps)` title when merging: it releases a patch,
-as [Version Rules](./versions.md#version-rules) describes. After app publication
-is restored, the maintainer dispatches a release and each host updates the app
-with the procedure in
+The CLI embeds the runner image's definition, so a host that runs the CLI builds the
+new runner only once it has a binary built after the bump. Keep the pull request's
+`build(deps)` title when merging: it releases a patch, as
+[Version Rules](./versions.md#version-rules) describes. After the bump merges, the
+maintainer dispatches a release, and each such host updates to it with the procedure in
 [CLI](../marshal-cli/install-on-windows.md#installing-updating-and-rolling-back).

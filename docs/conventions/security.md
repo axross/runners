@@ -28,14 +28,6 @@ Use the [security boundaries index](../security/index.md) to choose a control by
 
 [Release authority and signing boundaries](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
 
-### Temporary CLI Recovery
-
-[Release authority and signing boundaries](../security/release-authority.md#temporary-cli-recovery).
-
-### Retained App Release Baseline (Suspended)
-
-[Release authority and signing boundaries](../security/release-authority.md#retained-app-release-baseline-suspended).
-
 ## The Review Plugin Marketplace Is Not Pinned (Accepted Risk)
 
 [Permissions for workflows and automated review](../security/workflow-permissions.md#the-review-plugin-marketplace-is-not-pinned-accepted-risk).

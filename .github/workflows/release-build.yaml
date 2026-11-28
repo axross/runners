@@ -2,8 +2,8 @@ name: Release Build
 
 # builds the Windows app at the version its caller passes, packs it into an
 # unsigned per-user MSI, tests the MSI, and puts the app executable, the MSI and
-# SHA256SUMS in one artifact. merge-checks.yaml retains it as an app dry run;
-# it has no publish or attest step. see
+# SHA256SUMS in one artifact. merge-checks.yaml calls it as a dry run and
+# release.yaml for a release; it has no publish or attest step. see
 # docs/security/release-authority.md, which also says why only the callers declare
 # `concurrency`.
 

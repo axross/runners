@@ -14,7 +14,7 @@ channel and exit codes below describe that foreground process. In the app,
 the [resident agent](./resident-agent.md#the-agent) keeps its lock and accepts a
 build request while runners are stopped. Windows operators can follow the
 [Build image menu procedure](../runner-hosts/windows-image.md#building-the-runner-image).
-For the historical CLI executable, use the [recovery instructions to find the guide for the installed tag](../runner-recovery/install.md).
+For the command-line executable of the last command-line release, use the guide at that release's tag, as [The Last Command-Line Release](./release-artifacts.md#the-last-command-line-release) says.
 
 `build` builds the image the configuration names, from the definition embedded in
 the binary, and reads nothing from a checkout or the working directory. It does

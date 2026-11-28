@@ -419,35 +419,12 @@ description = "Check the update tools' scripts: the committed tauri-cli checksum
 run = "bash .github/scripts/tests/test-update-tools.sh"
 
 [tasks."check:release-shape"]
-description = "Check the temporary seven-stage CLI release boundary and retained unprivileged app dry run; only inline sign-macos reaches the release Environment"
+description = "Check that the release workflows keep the shape the release record describes: no job in an Environment or reading a signing secret, and each job's place in the chain"
 run = "node .github/scripts/check-release-shape.mjs"
 
 [tasks."test:release-shape"]
 description = "Run the release shape check against altered copies of the workflows, one change at a time, and expect each to fail"
 run = "bash .github/scripts/tests/test-release-shape.sh"
-
-[tasks."test:cli-recovery"]
-description = "Check historical source and version binding, legacy release tooling and the actual signed-output assembly and publication checks with stand-ins"
-run = '''
-bash .github/scripts/cli-recovery/tests/test-recovery.sh
-node --test .github/scripts/cli-recovery/tests/test-build-version.mjs
-bash .github/scripts/tests/test-cli-recovery-release.sh
-'''
-
-[tasks."test:sign-macos"]
-description = "Run the actual inline signing scripts against recording stand-ins, including secret masking, refusal and cleanup paths; no signing takes place"
-run = "bash .github/scripts/tests/test-sign-macos.sh"
-
-[tasks."test:signed-pkg-refusals"]
-description = "Exercise signed CLI/package verification and cleanup with stand-ins, including both designated-requirement forms and invalid signature or payload refusals"
-run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
-
-[tasks."test:cli-recovery-install-blocks"]
-description = "Run the recovery document's CLI install/check/migrate/uninstall/rollback blocks against stand-ins, not native hosts"
-run = '''
-bash .github/scripts/cli-recovery-install-tests/test-install-blocks.sh bash
-pwsh -NoProfile -File .github/scripts/cli-recovery-install-tests/test-install-blocks.ps1
-'''
 
 [tasks.check]
 description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, the update signing and feed tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
@@ -466,10 +443,6 @@ depends = [
   "test:update-tools",
   "check:release-shape",
   "test:release-shape",
-  "test:cli-recovery",
-  "test:sign-macos",
-  "test:signed-pkg-refusals",
-  "test:cli-recovery-install-blocks",
   "test:installer-version",
   "test:fetch-wix",
   "test:rust",
