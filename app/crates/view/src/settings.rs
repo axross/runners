@@ -497,13 +497,13 @@ fn row(
     let state = match (saving, on) {
         // the checkbox keeps the value chosen until the agent answers
         (Some(saving), _) => format!("Being saved as {}.", on_off(saving).to_lowercase()),
-        (None, Some(on)) if on == setting.windows_default() => {
+        (None, Some(on)) if on == setting.default_value() => {
             format!("{} (default).", on_off(on))
         }
         (None, Some(on)) => format!(
             "{} (default: {}).",
             on_off(on),
-            on_off(setting.windows_default()).to_lowercase()
+            on_off(setting.default_value()).to_lowercase()
         ),
         (None, None) if lifecycle.is_some() => "Not readable in config.toml.".to_string(),
         (None, None) => "Not known while config.toml cannot be read.".to_string(),

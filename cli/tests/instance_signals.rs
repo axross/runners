@@ -544,7 +544,7 @@ async fn an_instance_without_a_monitor_asks_for_no_signals() {
 
 /// the settings in effect with `keep_awake` set to `on`, the others at their defaults.
 fn keep_awake(on: bool) -> InEffect {
-    InEffect::windows(Lifecycle {
+    InEffect::new(Lifecycle {
         keep_awake: Some(on),
         ..Lifecycle::default()
     })

@@ -565,7 +565,7 @@ impl<'a, B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<
                 .as_ref()
                 .map(|settings| settings.lifecycle)
                 .unwrap_or_default();
-            self.take_settings(InEffect::windows(lifecycle));
+            self.take_settings(InEffect::new(lifecycle));
         } else if loaded.in_use.is_some() {
             // the settings in effect stay, and the sign-in item is still put in step
             self.sync_sign_in();

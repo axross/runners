@@ -52,9 +52,9 @@ impl Setting {
         Self::ALL.into_iter().find(|setting| setting.name() == name)
     }
 
-    /// the value an unset setting takes on Windows, which the Mac takes too.
+    /// the value an unset setting takes, on Windows and on the Mac alike.
     #[must_use]
-    pub fn windows_default(self) -> bool {
+    pub fn default_value(self) -> bool {
         match self {
             Self::StartAtLogin | Self::ResumeAfterStop => false,
             Self::StartRunnersOnLaunch | Self::KeepAwake | Self::StopOnNetworkChange => true,
@@ -103,7 +103,7 @@ pub struct InEffect {
 impl InEffect {
     /// the settings in effect for the table a configuration holds.
     #[must_use]
-    pub fn windows(lifecycle: Lifecycle) -> Self {
+    pub fn new(lifecycle: Lifecycle) -> Self {
         Self { lifecycle }
     }
 
@@ -116,7 +116,7 @@ impl InEffect {
                 defaulted: false,
             },
             None => Value {
-                on: setting.windows_default(),
+                on: setting.default_value(),
                 defaulted: true,
             },
         }
@@ -164,8 +164,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_unset_setting_takes_its_windows_default_and_says_so() {
-        let settings = InEffect::windows(Lifecycle::default());
+    fn an_unset_setting_takes_its_default_value_and_says_so() {
+        let settings = InEffect::new(Lifecycle::default());
         let defaults: Vec<(Setting, bool)> = Setting::ALL
             .iter()
             .map(|&setting| (setting, settings.get(setting).on))
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn a_set_value_wins_over_the_default_even_when_it_equals_it() {
-        let settings = InEffect::windows(Lifecycle {
+        let settings = InEffect::new(Lifecycle {
             start_at_login: Some(true),
             keep_awake: Some(true),
             stop_on_network_change: Some(false),
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn a_write_changes_only_its_setting_and_unsetting_returns_to_the_default() {
-        let settings = InEffect::windows(Lifecycle {
+        let settings = InEffect::new(Lifecycle {
             keep_awake: Some(false),
             resume_after_stop: Some(true),
             ..Lifecycle::default()

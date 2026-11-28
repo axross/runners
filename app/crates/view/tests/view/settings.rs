@@ -1,4 +1,4 @@
-//! the Settings tab: each setting's state against its Windows default, the notes the
+//! the Settings tab: each setting's state against its default, the notes the
 //! agent's state and a change's result put under a setting, the chip, and when no
 //! setting can be changed.
 
@@ -87,7 +87,7 @@ fn the_settings_are_in_two_groups_in_the_designs_order() {
 }
 
 #[test]
-fn each_state_is_read_against_the_windows_default_not_against_whether_the_file_sets_it() {
+fn each_state_is_read_against_its_default_not_against_whether_the_file_sets_it() {
     let view = view_of(&with_lifecycle(|_| {}));
     let tab = settings(&view);
     let states: Vec<(&str, Option<bool>, &str)> = tab
