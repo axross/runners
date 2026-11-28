@@ -59,7 +59,7 @@ version tells an app file from a command-line one.
 
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds them. It
 is a reusable workflow with `contents: read` and no publish or attest step, and its
-caller passes the version. One leg builds natively on `windows-latest`, with no
+caller passes the version. Its Windows leg builds natively on `windows-latest`, with no
 cross-compilation and no cache action, and:
 
 1. fails unless `rustc`'s host target is `x86_64-pc-windows-msvc`, so a change of
@@ -103,6 +103,18 @@ value, writes `SHA256SUMS` with a line for each in a fixed order, checks it with
 and a release's `assemble-signed` job starts from it and calls the same script, so
 one implementation writes every `SHA256SUMS`. `mise run test:assemble-release` tests
 it.
+
+A second job, `app-macos`, builds the unsigned Mac app on `macos-latest`. It holds
+`contents: read`, reads no secret and declares no Environment. It fails unless
+`rustc`'s host target is `aarch64-apple-darwin`, writes the version with
+`set-release-version.sh` before anything compiles, builds the app with
+`cargo tauri build --no-sign` at the installer version, packs it in a `ditto` archive,
+makes an unsigned disk image with `hdiutil`, and uploads both as `marshal-macos-app`,
+apart from `marshal-release` and so outside the unsigned set. The archive's SHA-256
+is the workflow output `app_sha256`. [Mac](../marshal/mac-app.md) owns the layout.
+The job runs in the dry run and, until M2's pull request 3 wires `sign-macos`, in a
+release dispatch too, where nothing reads its output and a failure of it blocks the
+release.
 
 Tauri links the Visual C++ runtime statically, so `marshal-app.exe` needs no Visual
 C++ redistributable on the host, and it uses the Universal C Runtime that Windows 11
@@ -213,11 +225,11 @@ with `MEASURED:`, and the installer logs are kept as the
 
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) calls the build
 workflow on every pull request and every push to the default branch, as the dry
-run, with the version `0.0.0-dryrun.<run number>`: the build leg and the assemble
-job run, the app must carry the product version `0.0.0-dryrun.<run number>`, the MSI
-is built and tested, and the `marshal-release` artifact, with all three files, is
-uploaded to the run, but nothing is attested or published, and no job references an
-Environment. The `Install Blocks` job then runs the documented install blocks against
+run, with the version `0.0.0-dryrun.<run number>`: the build leg, the Mac app job and
+the assemble job run, the app must carry the product version
+`0.0.0-dryrun.<run number>`, the MSI is built and tested, and the `marshal-release`
+artifact, with all three files, is uploaded to the run, as is `marshal-macos-app`,
+but nothing is attested or published, and no job references an Environment. The `Install Blocks` job then runs the documented install blocks against
 that artifact, as [What the Install Tests Cover](./install-on-windows.md#what-the-install-tests-cover)
 describes. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
 manual dispatch on main, in five jobs on the dispatched commit. Every job but `plan`
@@ -341,3 +353,14 @@ fails it too.
   script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means
   a `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
   reading it, as `cat` or `sha256sum -c` does, is not a write.
+- **The Mac app job.** `app-macos` in `release-build.yaml` runs on `macos-latest` with
+  a 45-minute timeout and uses no action but `actions/checkout` and
+  `actions/upload-artifact`. It uploads `marshal-macos-app` once and no other artifact,
+  and its `app_sha256` output is the workflow's. A step with no condition checks that
+  `rustc`'s host target is `aarch64-apple-darwin`, and another writes the version with
+  `set-release-version.sh "$VERSION"`, from `inputs.version`, before any step that runs
+  cargo. It builds with `--locked` and `cargo tauri build ... --no-sign`, and no step
+  runs `codesign` to sign, `security import`, `notarytool` or `stapler`. `assemble`
+  does not need it. Its `Check The Signing Tools` step has no condition, fails when a
+  tool is missing, measures `ditto` and `hdiutil`, looks up `notarytool` and `stapler`
+  with `xcrun --find`, and runs the openssl decode the staged jobs use.

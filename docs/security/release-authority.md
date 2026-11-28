@@ -13,7 +13,8 @@ The maintainer controls release dispatch and Environment approval. Use the recor
 [`release.yaml`](../../.github/workflows/release.yaml) releases the app with
 semantic-release, and
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the app
-executable and its MSI, and the unsigned Mac app and disk image; [CLI](../marshal-cli/release-artifacts.md#releases) owns the steps. This is the
+executable and its MSI, and the unsigned Mac app and disk image, which no release reads
+until M2's pull request 3, as the staged jobs' last bullet below records; [CLI](../marshal-cli/release-artifacts.md#releases) owns the steps. This is the
 record a change to either workflow, to the build call in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
 [`release/`](../../release), or to the scripts under
@@ -190,6 +191,14 @@ record a change to either workflow, to the build call in
     tool that moves on a new runner image should fail a pull request and not a
     release. Its `tauri-cli` install is the recorded exception under the
     [Pinning Convention](./dependency-pins.md#pinning-convention).
+  - **Until pull request 3, a release dispatch also runs `app-macos`.** The `build`
+    job of `release.yaml` calls `release-build.yaml`, so the dispatch runs the Mac app
+    job too. It builds the unsigned Mac app and disk image and keeps them apart as
+    `marshal-macos-app`. It holds `contents: read`, no secret and no Environment.
+    Nothing in the release reads its output, and the files are in neither the
+    unsigned nor the signed set. A failure of the job fails `build` and so blocks the
+    release. This lasts until pull request 3 wires `sign-macos`, which consumes the
+    output.
 - **The documented install blocks run against the dry run's installer on a hosted
   runner.** The `Install Blocks` job in
   [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
