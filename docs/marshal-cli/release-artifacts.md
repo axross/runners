@@ -1,28 +1,18 @@
 ---
 type: Architecture
 title: "Release artifacts and workflow boundaries"
-description: "Which artifacts and jobs belong to recovery and which belong to the suspended app workflow?"
+description: "Which artifacts and jobs does the release workflow build, check and publish?"
 ---
 
 # Release artifacts and workflow boundaries
 
 ## Releases
 
-The active dispatch route is temporarily the fixed historical CLI, not the app.
-The Temporary CLI Recovery section of [Security](../security/release-authority.md#temporary-cli-recovery)
-governs that release route. [CLI Recovery](../runner-recovery/index.md) owns its operator
-procedure, both source identities, actual-version CLI procedures and the
-successful native-evidence prerequisite for a separate app-path restoration.
-App source and normal builds remain. The app release descriptions below are the
-suspended baseline to reconcile on restoration, not a second active release
-graph. No recovery-code PR, dry run or app merge completes F0 or changes its
-dependency gates.
-
 A release is a `v<version>` tag on the default branch and the GitHub release that
 carries its files, such as `v0.1.0`. The maintainer starts one by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main, and semantic-release
 works out the version from the commits since the last `v*` tag. Releases are never
-prereleases. The suspended app baseline has five jobs, and none declares an Environment or
+prereleases. The run has five jobs, and none of them declares an Environment or
 reads a signing secret: from W1's installer pull request until the next signing job,
 M2's or W4's, joins the chain, the maintainer's dispatch is the only decision.
 [Development Workflow](../releases/publish.md#cutting-a-release) gives the
@@ -30,7 +20,7 @@ maintainer's steps and the version rules, and
 [Security](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
 records the controls around it.
 
-The suspended app baseline carries the Windows app, Marshal, and its
+Since W1's installer pull request a release carries the Windows app, Marshal, and its
 installer, and no command line and no macOS file. The releases before it carry the
 command line; [The Last Command-Line Release](#the-last-command-line-release) identifies
 where their procedures are.
@@ -77,8 +67,8 @@ cross-compilation and no cache action, and:
 2. writes the version with `set-release-version.sh`, and maps the installer's
    version, as [Installers](#installers) describes;
 3. runs the CLI's base-address, instance-roots, build-definition, release-overrides,
-   and agent-overrides tests and the app's mode-dispatch tests with `--release` and
-   `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
+   agent-overrides, and scale-set client tests and the app's mode-dispatch tests
+   with `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
    profile, on the target itself;
 4. installs `tauri-cli` with `cargo install tauri-cli --version =<pin> --locked`
    into a directory under `$RUNNER_TEMP`, with the pin read from
@@ -229,15 +219,16 @@ is built and tested, and the `marshal-release` artifact, with all three files, i
 uploaded to the run, but nothing is attested or published, and no job references an
 Environment. The `Install Blocks` job then runs the documented install blocks against
 that artifact, as [What the Install Tests Cover](./install-on-windows.md#what-the-install-tests-cover)
-describes. The [current CLI recovery release](../security/release-authority.md#temporary-cli-recovery) has its own signing and verification stages.
+describes. [`release.yaml`](../../.github/workflows/release.yaml) runs only on a
+manual dispatch on main, in five jobs on the dispatched commit. Every job but `plan`
+needs `plan` directly and runs only when the plan job handed out a version:
 
-The [suspended app publication workflow](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/workflows/release.yaml) ran on manual dispatch on main. Its five stages are retained here for restoration. Each job after `plan` depends on it directly and runs only when it produces a version:
-
-1. `plan` ran semantic-release as a dry run. The
-   [app publication configuration](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/release/.releaserc.json)
-   called the [app verifier](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/scripts/verify-release.sh)
-   through `@semantic-release/exec` to emit the next version. If no release was due,
-   it emitted no version and the remaining jobs were skipped.
+1. `plan` runs semantic-release as a dry run. Its gate,
+   [`.github/scripts/verify-release.sh`](../../.github/scripts/verify-release.sh),
+   which `@semantic-release/exec` runs from
+   [`release/.releaserc.json`](../../release/.releaserc.json), hands out the next
+   version. With nothing to release, it hands out none, and the other jobs are
+   skipped.
 2. `build` is the build workflow, which builds and assembles the unsigned files at
    that version into `marshal-release`.
 3. `assemble-signed`, where every file of the release meets, needs `plan` and
@@ -257,15 +248,11 @@ The [suspended app publication workflow](https://github.com/axross/runners/blob/
    uploads the three files, and publishes it. `mise run test:verify-release` tests
    the gate.
 
-In the suspended workflow, the publish job could tag a version only after the preceding jobs and its release verifier passed. The
-[app workflow shape check at that revision](https://github.com/axross/runners/blob/eada575bfc391d6053c63a90d86ade48bcba9a1b/.github/scripts/check-release-shape.mjs)
-checked the five jobs and their dependencies. The [W4 and M2 extension guidance](./release-extensions.md#extending-the-release-workflows)
-describes how roadmap [#72](https://github.com/axross/runners/issues/72) would extend that baseline after restoration.
-
-During CLI recovery, [`mise run check:release-shape`](../../.github/scripts/check-release-shape.mjs)
-checks the seven-stage CLI recovery workflow and the retained unsigned app dry run.
-The [active publication configuration](../../release/.releaserc.json) calls the
-[CLI recovery verifier](../../.github/scripts/cli-recovery/verify-release.sh) and publishes the five CLI release files.
+A failure of any job stops the run before any tag is pushed. The jobs and their
+`needs` chain are the contract that W4 and M2, other children of roadmap
+[#72](https://github.com/axross/runners/issues/72), extend
+([Extending the Release Workflows](./release-extensions.md#extending-the-release-workflows)), and
+`mise run check:release-shape` fails if they drift from it.
 
 The runner image's definition is embedded in the library (see [Build](./build-images.md#build)), so a
 change to it, such as a runner bump, reaches a host only through a new release and
@@ -273,18 +260,35 @@ an update.
 
 ### The Last Command-Line Release
 
-The required last CLI installer release did not precede W1's installer merge.
-That missed ordering is not satisfied by the app merges. The temporary recovery
-instead releases the fixed complete program tree at
-`dc8e1ebcc0722997206487f3dcca2ae7e519cf02`, W1's first parent, through main's
-current workflow. Semantic-release selects the actual version from main history;
-it is not a hard-coded next version. Its five files include the legacy CLI MSI
-and signed/notarized pkg, not an app or test helper.
+The last command-line release is the CLI recovery release. It was cut after W1's
+installer pull request merged, not before it as F0's plan required, and the app
+merges that followed do not satisfy that ordering. It releases the complete program
+tree at `dc8e1ebcc0722997206487f3dcca2ae7e519cf02`, W1's first parent, through
+the release workflow main had at the time. The version is the one semantic-release
+worked out from main's history, not a version this document fixes. Its five files
+are the Windows CLI executable, the CLI's MSI, the bare macOS CLI, the signed and
+notarized macOS package and `SHA256SUMS`, and none is an app or a test helper.
 
-Open `docs/operations/cli-recovery.md` at the recovery tag and follow its Windows or macOS installation route. The instructions at that tag distinguish the workflow commit from the historical program input and carry the verifier pins for that release. For an app release, use the [Windows app installation procedure](./install-on-windows.md#installing).
-The historical tree keeps the CLI runtime documentation and embedded inputs.
-No public recovery signing measurement or native outcome is implied by these
-instructions; the final record stays pending until the actual evidence exists.
+To find its version, open the [releases page](https://github.com/axross/runners/releases)
+and take the only release that carries a macOS `.pkg`,
+`marshal-<version>-macos-arm64.pkg`. `v0.1.0` has only bare binaries and
+`SHA256SUMS`, and an app release has no package. Its tag is `v<version>`.
+
+The tag's `docs/operations/cli-recovery.md` opens the command-line guide, which
+links to the procedures for installing and checking the command line on Windows and
+macOS, migrating from a manual install, updating it, uninstalling it and rolling
+back, at the same tag. Open that tag's document on GitHub, at
+`https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`,
+replacing `<version>` with the CLI recovery release's version without the `v`, and use
+the procedures there rather than the app's blocks in this document. The same form
+reaches any other file at that tag, such as
+`docs/marshal-cli/signing.md#reading-a-signature`, which holds the commands that
+read the command line's signed macOS package. The recovery guide
+distinguishes the release's workflow commit from the program commit it built and
+carries the optional check's pins for that release. Its program tree keeps the
+command line's runtime documentation and embedded inputs. The commit before W1's
+installer pull request on main, its first parent, holds the command line and
+everything that pull request removed.
 
 Moving a host from the command line to the app is that release's uninstall procedure
 for the command line, then [the Windows app installation procedure](./install-on-windows.md#installing). The command line's MSI and
@@ -294,10 +298,46 @@ Marshal's files, and `where.exe marshal` then finds nothing.
 
 ### What the Release Tests Cover
 
-[Testing](../conventions/testing.md) owns the release-check commands, their current
-coverage and CI routes for both the temporary CLI recovery and the retained app
-tooling. `mise run test:verify-release` tests the retained app publication gate;
-`mise run test:cli-recovery` checks the active five-file CLI publication globs in
-`release/.releaserc.json`. The shape check and its mutation tests cover the
-temporary seven-stage CLI route and the retained unsigned app builds. Signing
-stand-ins and unsigned dry runs are not real signing or native-host evidence.
+Each of these runs in `mise run check`, on Linux, with no signing identity and no
+secret:
+
+| Task                                | What it covers                                                                                                                                                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mise run check:release-shape`      | Reads the `.yaml` and `.yml` workflows and fails unless the rules listed under this table hold.                                                                                                                          |
+| `mise run test:release-shape`       | Runs that check against the unchanged workflows, then against copies altered one change at a time, and expects each to fail.                                                                                             |
+| `mise run test:assemble-release`    | Runs `assemble-release.sh` against temporary directories: the two lines in order, and a refusal for another file set or a changed file.                                                                                  |
+| `mise run test:verify-release`      | Runs the release gate against temporary directories, and checks that `.releaserc.json`'s asset globs match exactly the three files the gate passes.                                                                      |
+| `mise run test:set-release-version` | Runs the version stamp against copies of the CLI's and the app's manifests and lockfiles, and the committed ones: only the versions they own change, and a file that does not hold the placeholder is refused unchanged. |
+
+`mise run check:release-shape` enforces these rules. They apply to every `.yaml` and
+`.yml` workflow, unless a rule names a file or job. Each failure names its rule, and
+a workflow that cannot be read or a missing `release.yaml` or `release-build.yaml`
+fails it too.
+
+- **The Environment.** No job and no step declares an `environment`, until the next
+  signing job's pull request allows its own.
+- **Triggers.** `release.yaml` is triggered by `workflow_dispatch` alone. A workflow
+  that `pull_request` or `pull_request_target` triggers calls only local workflows
+  (`./.github/workflows/...`), so the rule above covers what it calls.
+- **The signing secrets.** No workflow reads one, whether by `secrets.APPLE_*`,
+  `secrets[...]`, `toJSON(secrets)` or `secrets: inherit`.
+- **The chain.** Every job of `release.yaml` but `plan` needs `plan` directly and
+  carries `if: github.ref == 'refs/heads/main' && needs.plan.outputs.version != ''`.
+  `assemble-signed` needs `plan` and `build`, `attest` needs `plan` and
+  `assemble-signed`, and `release` needs `plan` and `attest`.
+- **`assemble-signed`.** It runs on `ubuntu-latest`, holds exactly `contents: read`,
+  sets `timeout-minutes` to at most 10, checks out with `persist-credentials: false`,
+  calls `assemble-release.sh`, and no step of it carries an `if`.
+- **`attest` and `release`.** `attest` holds exactly `id-token: write` and
+  `attestations: write`. Each downloads exactly one artifact,
+  `marshal-release-signed`, and no step of `release` reads `needs.build`.
+- **No way past a failure.** No job or step of `release.yaml` sets
+  `continue-on-error`, and no job-level or step `if` uses `always()`, `failure()` or
+  `cancelled()`, whatever their case and inner spaces. A step condition of `attest`
+  or `release` that skips a step, such as `if: false`, is not seen.
+- **The environment of `release.yaml`.** None of `PATH`, `BASH_ENV` and `ENV` is an
+  `env:` key at any level.
+- **The dry run's `assemble`.** Its checkouts set `persist-credentials: false`, a
+  script calls `assemble-release.sh`, and none writes `SHA256SUMS` itself, which means
+  a `>` or `>>` redirection to it, `tee`, or `cp` or `mv` with it as the destination;
+  reading it, as `cat` or `sha256sum -c` does, is not a write.

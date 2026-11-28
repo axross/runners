@@ -14,15 +14,14 @@ host configuration, with the reference for every field, is under
 and the trust rules the host is reviewed against are in
 [Security](../security/index.md).
 
-**The command line.** W1's installer pull request removed `marshal` from main;
-the app release baseline carries Marshal and its per-user MSI. During bounded F0
-recovery, app publication is suspended and the temporary release route builds the
-fixed historical CLI instead. [recovery CLI installation and rollback](../runner-recovery/install.md#installing-updating-and-rolling-back) owns its
-actual-version installation lifecycle procedures, not the Marshal app installation.
+**The command line.** Since W1's installer pull request there is no command line: a
+release carries Marshal and its per-user MSI, and the app's menu and window are how a
+host is run. The axpc host still runs its pools with the last command-line release,
+`marshal`, until it moves to the app. The command line's installation procedures are
+in the guide at the last command-line release's tag, and the program tree that
+release identifies holds its commands, token files and `--config` path, as
 [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
-identifies the historical tree with the runtime commands, token files and
-`--config` path. The axpc host still runs the command line. Once an app release is
-available, a host moves to it with the CLI release's uninstall procedure, then
+says. A host moves from it to the app with that release's uninstall procedure, then
 [Installing Marshal](#installing-marshal). The host evidence that names a command
 was made with the command line; the app shares its runtime, image check and
 diagnostics, and its own run on axpc is recorded on
@@ -81,7 +80,7 @@ Run this host only on a network you would trust the listed repositories'
 workflows with. The [LAN egress policy](../security/pool-isolation.md#lan-egress-from-runner-containers-accepted-risk) records the accepted risk.
 
 The machine needs outbound HTTPS to `github.com` and `api.github.com`,
-`*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
+`actions.githubusercontent.com` and `*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
 pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
 image build, whenever Marshal builds the image, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
@@ -95,21 +94,21 @@ provisioning also needs HTTPS to
 GitHub release-asset storage. The Dockerfile itself needs no access to Docker
 Hub. No inbound port is needed.
 
+The resident on-demand listener also uses the returned Actions service host and
+`broker.actions.githubusercontent.com` for its long poll. This is outbound-only;
+it needs no inbound listener on the network. The on-demand outbound allowlist and
+credential rules are in
+[Security](../security/pool-isolation.md#on-demand-scale-sets-keep-repository-and-host-boundaries).
+
 ## Installing Marshal
 
-The following is the app install procedure for the suspended app release baseline.
-A recovery release's `marshal-<version>-windows-x64.msi` is the legacy CLI product,
-not the app MSI: it installs `marshal.exe` and adds its directory to the user
-`Path`, not a Start menu entry for `marshal-app.exe`. For that MSI, open the matching tag’s guide at
-`https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`, replacing `<version>` with the published version without its initial `v`. Follow the Windows install procedure at that tag. No recovery release
-version or native installer evidence is recorded yet. App source and normal builds
-remain; publication resumes only after successful public F0 evidence and a separate
-reviewed restoration.
-
-Install Marshal from an app release by opening its MSI, with the Windows procedure in
+Install Marshal from a release by opening its MSI, with the Windows procedure in
 [CLI](../marshal-cli/install-on-windows.md#installing-updating-and-rolling-back), never by building it on the
-host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
-choose, run the optional check block on it first; that block refuses a file whose
+host. Download `marshal-<version>-windows-x64.msi` from the release page. The last
+command-line release's MSI has the same name pattern but is the command-line product,
+not the app: it installs `marshal.exe` and adds its directory to the user `Path`. Install
+the app from a release after it. If you choose, run the optional check block on the
+file first; that block refuses a file whose
 checksum, commit on main, or attestation from `release.yaml` on main does not
 verify, or whose `marshal-app.exe` does not match the release's `SHA256SUMS` line
 for the app, and installs nothing. On a host that runs the command line, first
@@ -175,6 +174,10 @@ command line:
 
 Not yet verified on axpc, each for the reason given:
 
+- the resident agent's on-demand pools, including live job delivery, the cap,
+  stop/restart, crash cleanup and the window's added listener states; the earlier
+  scale-set probe establishes protocol feasibility, not product validation, and
+  WSL checks do not establish native-Windows behavior;
 - Marshal's MSI install, the optional check block with its extraction, the
   uninstall block, and the prompts an unsigned MSI from a browser download raises,
   which have not run on axpc. CI runs the blocks against the release dry run's MSI in

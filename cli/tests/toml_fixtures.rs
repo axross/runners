@@ -402,6 +402,83 @@ fn a_token_in_a_syntax_error_or_a_wrong_type_value_is_in_no_problem() {
     assert!(tested >= 8, "only {tested} token fixtures were tested");
 }
 
+/// the words of `text` shaped like a credential: a GitHub token, a JWT, or a long
+/// base64 run with digits and both cases of letters.
+///
+/// `other_credential_words` in `app/crates/view/tests/view/privacy.rs` repeats the non-GitHub
+/// shapes: a helper in a test target cannot be imported by another crate's tests, so a change to a
+/// shape belongs in both.
+fn credential_words(text: &str) -> Vec<&str> {
+    const PREFIXES: [&str; 6] = ["github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_"];
+    let words = |extra: &'static str| {
+        text.split(move |c: char| !(c.is_ascii_alphanumeric() || extra.contains(c)))
+    };
+    let mut found: Vec<&str> = words("_")
+        .filter(|word| {
+            PREFIXES.iter().any(|prefix| {
+                word.strip_prefix(prefix)
+                    .is_some_and(|rest| rest.len() >= 16)
+            })
+        })
+        .collect();
+    found.extend(words("_-").filter(|word| word.starts_with("eyJ") && word.len() >= 19));
+    found.extend(words("_-+/=").filter(|word| {
+        word.len() >= 40
+            && word.chars().any(|c| c.is_ascii_digit())
+            && word.chars().any(|c| c.is_ascii_uppercase())
+            && word.chars().any(|c| c.is_ascii_lowercase())
+    }));
+    found
+}
+
+#[test]
+fn no_host_configuration_fixture_holds_a_credential_but_the_one_fake_token() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/host-configuration");
+    let mut scanned = 0;
+    let mut fakes = 0;
+    let mut pending = vec![root];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let bytes = fs::read(&path).unwrap();
+            let text = String::from_utf8_lossy(&bytes);
+            scanned += 1;
+            for word in credential_words(&text) {
+                assert_eq!(word, TOKEN, "{path:?}");
+                fakes += 1;
+            }
+        }
+    }
+    assert!(scanned > 200, "only {scanned} fixture files were scanned");
+    assert!(fakes >= 8, "only {fakes} fake tokens were found");
+}
+
+#[test]
+fn the_credential_scan_sees_each_shape_and_only_those() {
+    let jwt = format!("eyJ{}", "a1".repeat(12));
+    let base64 = "aB3+".repeat(10);
+    for shaped in [
+        format!("x = \"ghp_{}\"", "Q".repeat(16)),
+        format!("x = \"github_pat_{}\"", "q1".repeat(8)),
+        format!("Bearer {jwt}"),
+        format!("config: {base64}"),
+    ] {
+        assert_eq!(credential_words(&shaped).len(), 1, "{shaped}");
+    }
+    for plain in [
+        "ghp_short".to_owned(),
+        format!("xghp_{}", "Q".repeat(16)),
+        "n".repeat(60),
+        "C:\\Users\\runner\\diagnostics\\build-hosts".to_owned(),
+    ] {
+        assert!(credential_words(&plain).is_empty(), "{plain}");
+    }
+}
+
 /// a document that is valid for Windows, with every kind of key and value in it.
 const WELL_FORMED: &str = r#"schema_version = 1
 routing_label = "build-hosts"
@@ -424,7 +501,33 @@ diagnostic_directory = "C:\\diagnostics\\alpha"
 [[pool.volumes]]
 suffix = "cache"
 mount_path = "/home/runner/.cache"
+
+[[pool]]
+name = "beta"
+repository = "octo/world"
+runners = 1
+scale_set = "build-hosts-beta"
 "#;
+
+#[test]
+fn the_well_formed_document_is_valid_for_windows_and_has_an_on_demand_pool() {
+    assert!(WELL_FORMED.contains("\nscale_set = "));
+    let plan = validate_toml(WELL_FORMED.as_bytes(), Profile::Axpc, None)
+        .outcome
+        .unwrap_or_else(|failure| panic!("{}", failure_text(&failure)));
+    assert!(
+        plan.entries
+            .iter()
+            .any(|entry| entry.scale_set.as_deref() == Some("build-hosts-beta"))
+    );
+}
+
+fn failure_text(failure: &Failure) -> String {
+    match failure {
+        Failure::Unreadable(problem) => problem.clone(),
+        Failure::Invalid(problems) => problems.join("\n"),
+    }
+}
 
 #[test]
 fn a_token_pasted_anywhere_in_a_document_is_echoed_only_as_an_unknown_key() {
@@ -455,6 +558,7 @@ fn a_token_pasted_anywhere_in_a_document_is_echoed_only_as_an_unknown_key() {
 fn a_token_as_the_value_of_every_key_is_in_no_problem() {
     for profile in [Profile::Axpc, Profile::Axmc] {
         let mut changed = 0;
+        let mut keys_rejected = BTreeSet::new();
         for (index, line) in WELL_FORMED.lines().enumerate() {
             let Some((key, _)) = line.split_once(" = ") else {
                 continue;
@@ -482,10 +586,15 @@ fn a_token_as_the_value_of_every_key_is_in_no_problem() {
                         Err(Failure::Invalid(problems)) => problems,
                     };
                 changed += 1;
+                keys_rejected.insert(key);
                 assert!(echoed(&found).is_empty(), "{key}: {found:?}");
             }
         }
         assert!(changed > 20, "only {changed} documents were rejected");
+        assert!(
+            keys_rejected.contains("scale_set"),
+            "no scale_set value was rejected for {profile:?}"
+        );
     }
 }
 
@@ -567,6 +676,178 @@ fn each_hosts_example_toml_is_valid_and_matches_its_json_example() {
             marshal_cli::convert::first_difference(&from_json, &from_toml),
             None,
             "{folder}"
+        );
+    }
+}
+
+#[test]
+fn on_demand_configuration_preserves_logical_identity_and_has_one_routing_label() {
+    let header = "schema_version = 1\nrouting_label = \"axpc\"\nimage_name = \"runner:1\"\n";
+    for (name, scale_set) in [("axpc-linux", "axpc-linux"), ("logical", "AXPC-Linux_1.2")] {
+        let source = format!(
+            "{header}[[pool]]\nname = \"{name}\"\nrepository = \"o/r\"\nrunners = 3\nscale_set = \"{scale_set}\"\nlabels = []\n"
+        );
+        let plan = validate_toml(source.as_bytes(), Profile::Axpc, None)
+            .outcome
+            .unwrap();
+        assert_eq!(plan.entries[0].name, name);
+        assert_eq!(plan.entries[0].scale_set.as_deref(), Some(scale_set));
+        assert_eq!(plan.entries[0].labels, [scale_set]);
+        assert_eq!(plan.entries[0].slots, 3);
+    }
+    let base = format!("{header}[[pool]]\nname = \"logical\"\nrepository = \"o/r\"\nrunners = 1\n");
+    let longest = format!("axpc-{}", "x".repeat(40));
+    assert!(
+        validate_toml(
+            format!("{base}scale_set = \"{longest}\"\n").as_bytes(),
+            Profile::Axpc,
+            None
+        )
+        .outcome
+        .is_ok()
+    );
+    for value in [
+        "\"\"".to_string(),
+        "\"axpc-\"".into(),
+        "\"other-linux\"".into(),
+        "\"axpc-a/b\"".into(),
+        "\"axpc-λ\"".into(),
+        format!("\"{longest}x\""),
+        "9".into(),
+    ] {
+        let found = problems(
+            format!("{base}scale_set = {value}\n").as_bytes(),
+            Profile::Axpc,
+        );
+        assert!(
+            found
+                .iter()
+                .any(|problem| problem.contains("pool[0].scale_set:")),
+            "{found:?}"
+        );
+    }
+    let found = problems(
+        format!("{base}scale_set = \"axpc-linux\"\nlabels = [\"dedicated\"]\n").as_bytes(),
+        Profile::Axpc,
+    );
+    assert!(
+        found
+            .iter()
+            .any(|problem| problem.contains("pool[0].labels:"))
+    );
+    // a routing label that is a valid label but outside the scale-set character set
+    // reaches the on-demand rule, and is reported once however many pools set the key
+    let second = "[[pool]]\nname = \"second\"\nrepository = \"o/other\"\nrunners = 1\nscale_set = \"axpc-other\"\n";
+    let found = problems(
+        format!("{base}scale_set = \"axpc-linux\"\n{second}")
+            .replace("routing_label = \"axpc\"", "routing_label = \"ax:pc\"")
+            .as_bytes(),
+        Profile::Axpc,
+    );
+    assert_eq!(
+        found,
+        [
+            "line 2: routing_label: must be ASCII letters, digits, hyphens, underscores or dots for on-demand pools"
+        ]
+    );
+    // an always-on pool beside it is unaffected, and a label the general shape rule
+    // refuses never reaches the on-demand rule
+    let always_on =
+        format!("{header}[[pool]]\nname = \"logical\"\nrepository = \"o/r\"\nrunners = 1\n")
+            .replace("routing_label = \"axpc\"", "routing_label = \"ax:pc\"");
+    assert!(
+        validate_toml(always_on.as_bytes(), Profile::Axpc, None)
+            .outcome
+            .is_ok()
+    );
+    let found = problems(
+        format!("{base}scale_set = \"axpc-linux\"\n")
+            .replace(
+                "routing_label = \"axpc\"",
+                "routing_label = \"host \u{3bb}\"",
+            )
+            .as_bytes(),
+        Profile::Axpc,
+    );
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].starts_with("line 2: routing_label: must be "),
+        "{found:?}"
+    );
+    assert!(!found[0].contains("on-demand"), "{found:?}");
+}
+
+#[test]
+fn scale_set_aliases_cannot_claim_another_pools_runtime_or_routing_identity() {
+    let header = "schema_version = 1\nrouting_label = \"axpc\"\nimage_name = \"runner:1\"\n";
+    let first = "[[pool]]\nname = \"axpc-app\"\nrepository = \"o/r\"\nrunners = 1\nscale_set = \"axpc-linux\"\n";
+    for other in [
+        "axpc-app",
+        "AXPC-App",
+        "axpc-app-extra",
+        "axpc-linux",
+        "axpc-linux-extra",
+    ] {
+        let second = format!(
+            "[[pool]]\nname = \"other\"\nrepository = \"o/elsewhere\"\nrunners = 1\nscale_set = \"{other}\"\n"
+        );
+        for pools in [format!("{first}{second}"), format!("{second}{first}")] {
+            let found = problems(format!("{header}{pools}").as_bytes(), Profile::Axpc);
+            assert!(
+                found.iter().any(|problem| problem
+                    .contains(".scale_set: scale-set routing or cleanup identity collides")),
+                "{found:?}"
+            );
+        }
+    }
+    let second = "[[pool]]\nname = \"other\"\nrepository = \"O/R\"\nrunners = 1\nlabels = [\"AXPC-LINUX\"]\n";
+    let found = problems(format!("{header}{first}{second}").as_bytes(), Profile::Axpc);
+    assert!(
+        found
+            .iter()
+            .any(|problem| problem.contains("pool[0].scale_set:"))
+    );
+    let separate = second.replace("O/R", "o/elsewhere");
+    assert!(
+        validate_toml(
+            format!("{header}{first}{separate}").as_bytes(),
+            Profile::Axpc,
+            None
+        )
+        .outcome
+        .is_ok()
+    );
+    let safe = second.replace("AXPC-LINUX", "axpc-linuxish");
+    assert!(
+        validate_toml(
+            format!("{header}{first}{safe}").as_bytes(),
+            Profile::Axpc,
+            None
+        )
+        .outcome
+        .is_ok()
+    );
+}
+
+#[test]
+fn the_windows_slice_rejects_mac_on_demand_but_keeps_native_always_on() {
+    let source = "schema_version = 1\nrouting_label = \"axmc\"\n[budget]\ncpus = 8\nmemory_gb = 16\ndisk_gb = 256\n[[pool]]\nname = \"native\"\nrepository = \"o/r\"\nos = \"macos\"\n";
+    assert!(
+        validate_toml(source.as_bytes(), Profile::Axmc, None)
+            .outcome
+            .is_ok()
+    );
+    for os in ["macos", "linux"] {
+        let source = source.replace(
+            "os = \"macos\"",
+            &format!("os = \"{os}\"\ndisk_gb = 64\nscale_set = \"axmc-linux\""),
+        );
+        let found = problems(source.as_bytes(), Profile::Axmc);
+        assert!(
+            found
+                .iter()
+                .any(|problem| problem.contains("pool[0].scale_set: must be absent on macOS")),
+            "{found:?}"
         );
     }
 }

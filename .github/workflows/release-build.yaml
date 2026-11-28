@@ -2,8 +2,8 @@ name: Release Build
 
 # builds the Windows app at the version its caller passes, packs it into an
 # unsigned per-user MSI, tests the MSI, and puts the app executable, the MSI and
-# SHA256SUMS in one artifact. merge-checks.yaml retains it as an app dry run;
-# it has no publish or attest step. see
+# SHA256SUMS in one artifact. merge-checks.yaml calls it as a dry run and
+# release.yaml for a release; it has no publish or attest step. see
 # docs/security/release-authority.md, which also says why only the callers declare
 # `concurrency`.
 
@@ -79,7 +79,7 @@ jobs:
         working-directory: cli
         env:
           MARSHAL_EXPECT_RELEASE: "1"
-        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides
+        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides --test scaleset_client
       # the three variables are set so that the test that a release build ignores
       # them fails if it does not, as in merge-checks.yaml's app-modes job.
       - name: Test That A Release Build Of The App Ignores The Debug-Only Variables

@@ -1,0 +1,52 @@
+{
+  "scale_sets": [
+    {
+      "pool": "app",
+      "repository": "owner/app",
+      "name": "axpc-linux",
+      "assigned": 0,
+      "running": 0,
+      "registered_idle": 0
+    },
+    {
+      "pool": "shared",
+      "repository": "owner/app",
+      "name": "axpc-shared",
+      "assigned": 8,
+      "running": 0,
+      "registered_idle": 0
+    },
+    {
+      "pool": "labels",
+      "repository": "owner/app",
+      "name": "axpc-labels",
+      "assigned": 8,
+      "running": 0,
+      "registered_idle": 0
+    },
+    {
+      "pool": "store",
+      "repository": "owner/app",
+      "name": "axpc-store",
+      "assigned": 8,
+      "running": 0,
+      "registered_idle": 0
+    },
+    {
+      "pool": "retry",
+      "repository": "owner/app",
+      "name": "axpc-retry",
+      "assigned": 8,
+      "running": 0,
+      "registered_idle": 0
+    },
+    {
+      "pool": "stopped",
+      "repository": "owner/app",
+      "name": "axpc-stopped",
+      "assigned": 8,
+      "running": 0,
+      "registered_idle": 0
+    }
+  ]
+}

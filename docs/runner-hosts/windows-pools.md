@@ -1,7 +1,7 @@
 ---
 type: Procedure
 title: "Configure Windows runner pools"
-description: "Set pool resources and routing, migrate a configuration and identify which cache volumes a repository may reuse."
+description: "Set pool resources and routing, set up an on-demand pool, migrate a configuration, delete an unwanted scale set and identify which cache volumes a repository may reuse."
 ---
 
 # Configure Windows runner pools
@@ -70,6 +70,67 @@ when it has one, which it keeps running on, as
 watch the file, so an edit applies at the next **Start all runners**: after every
 edit, **Stop all runners**, then **Start all runners**, and read the window. It does
 not check that a pool has a token; the Tokens tab shows which have none.
+
+### On-Demand Pools in the Resident Agent
+
+On-demand pools run in the resident agent of a Marshal that contains them, from its
+TOML configuration. No published release does yet: the last command-line release
+builds a program tree that predates on-demand pools
+([The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)),
+so these pools need a Marshal release that includes them. Build the runner image and meet the same Docker
+Desktop prerequisites before starting these pools.
+
+In `%LOCALAPPDATA%\marshal\config.toml`, add `scale_set` to the intended pool and
+leave `labels` absent or empty. For example, with `routing_label = "axpc"`, a pool
+without cache volumes can be written as:
+
+```toml
+[[pool]]
+name = "linux-jobs"
+repository = "<owner>/<repo>"
+runners = 1
+scale_set = "axpc-linux"
+```
+
+Replace the repository placeholder. Keep the file's required `schema_version`,
+`routing_label` and `image_name`; this pool is not a complete configuration. The
+schema chapter of [TOML configuration](../marshal-cli/toml-configuration.md#schema-version-1)
+gives name, collision and editor rules.
+`runners` is the concurrency cap, not an idle runner count, and a distinct `name`
+remains the pool's logical identity. Other pool settings, including each
+container's resource limits and the cache boundaries, keep their meanings.
+
+1. Enter the repository-scoped fine-grained token in the window's **Tokens** tab,
+   created as [The Fine-Grained Token](./registration.md#the-fine-grained-token) describes, with its
+   resource-owner and approval steps for an organisation-owned repository.
+   Use Administration: Read and write; Actions: read is optional for job names.
+   The agent imports no token file; [Token Files of the Command Line](./registration.md#token-files-of-the-command-line)
+   says why.
+2. Arrange a quiet window, use **Stop all runners** before editing a running agent's file,
+   and save the configuration. These controls stop every pool. A client using
+   `config_edit` or `config_reload` can instead apply the change to only the
+   affected pool, as [the configuration editing protocol](../marshal-cli/config-protocol.md#editing-the-configuration)
+   describes; changing `scale_set` stops that pool's jobs.
+3. Use **Start all runners** to reread the file. Invalid settings leave the last valid
+   configuration in use. Check the pool card for its scale-set name and
+   listener state. A listening pool with no demand has no registered runner or
+   job container after successful cleanup; an incomplete-cleanup report is not
+   a healthy zero-runner result.
+4. In the target repository's workflow, use `runs-on: axpc-linux` for this example,
+   not `[self-hosted, linux, x64, axpc]`. The scale-set name is the only label.
+   Workflows in this public runners repository still use GitHub-hosted runners.
+
+[On-demand pools](../marshal-cli/on-demand-pools.md#pool-local-failures) explains listener errors and recovery.
+**Stop all runners** closes the listener and stops its runners without deleting the scale
+set. A job queued while the pool is stopped can wait for **Start all runners**. Hiding the
+window stops display collection, not job listening. Token replacement applies to
+the next registration even before cached service credentials expire; removal or a
+store failure prevents it, while an already running job keeps its current JIT
+configuration.
+
+For `another_listener`, leave Marshal to retry with back-off; a crashed session
+can take time to expire. For `scale-set label mismatch`, follow
+[Retained Scale Sets and Label Mismatch](../marshal-cli/on-demand-pools.md#retained-scale-sets-and-label-mismatch).
 
 ### Split a repository into general and Android pools
 
@@ -286,3 +347,19 @@ Remove the pool from the configuration, then choose **Stop all runners** and
 containers stay until removed by hand with `docker volume rm` and `docker rm`. The
 isolation rules the host enforces between repositories are in
 [Per-Repository Isolation on a Runner Host](../security/pool-isolation.md#per-repository-isolation-on-a-runner-host).
+
+For a resident on-demand pool, use **Stop all runners**, remove the entry from `config.toml`
+and use **Start all runners**, or use a client's `config_edit` or `config_reload` method.
+Its scale set remains on GitHub, also after a rename.
+Stop workflows targeting an unwanted set and delete that exact scale set manually
+in the repository settings, following [Removing an Unwanted Scale Set](#removing-an-unwanted-scale-set).
+
+### Removing an Unwanted Scale Set
+
+Marshal retains a pool's scale set when the pool stops, is removed or changes its
+scale-set name, as [Retained Scale Sets and Label Mismatch](../marshal-cli/on-demand-pools.md#retained-scale-sets-and-label-mismatch)
+says. Stop the pool and workflows that target an unwanted set,
+then delete that exact scale set manually in the repository's **Settings, Actions,
+Runners**. Remove or change `scale_set` in the configuration before starting again
+if the set must stay deleted. For a label mismatch, the remedy is on the
+[on-demand pools page](../marshal-cli/on-demand-pools.md#retained-scale-sets-and-label-mismatch).

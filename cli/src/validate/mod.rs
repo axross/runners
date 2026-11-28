@@ -108,6 +108,9 @@ struct Context<'a> {
     at_sink: bool,
     errors: Errors,
     checkout_rule_skipped: bool,
+    /// the root's `routing_label` was already reported as unusable for on-demand
+    /// pools, which one problem covers however many pools set `scale_set`.
+    routing_label_reported: bool,
 }
 
 /// validates a configuration against a profile; `checkout` is the project checkout
@@ -183,6 +186,7 @@ fn validate_tree(
         at_sink,
         errors: Errors::default(),
         checkout_rule_skipped: false,
+        routing_label_reported: false,
     };
     let outcome = match read_root(root, &mut cx) {
         Some(plan) => Ok(plan),
@@ -369,7 +373,7 @@ mod tests {
             )
         );
         let mut entry = union(Profile::Axpc.entry_fields(), Profile::Axmc.entry_fields());
-        entry.extend(["organization", "runnerGroup"].map(String::from));
+        entry.extend(["organization", "runnerGroup", "scaleSet"].map(String::from));
         entry.sort();
         assert_eq!(field_names::<entry::EntryFields>(), entry);
         assert_eq!(

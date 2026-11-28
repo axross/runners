@@ -210,11 +210,11 @@ Both the reads and the POST keep the outbound limits and secret handling above.
 
 ### Names and the Slot Loop
 
-A runner is named `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC, and its container has
+An always-on runner is named `<pool>-<slot>-<yyyyMMddHHmmssfff>` in UTC, and its container has
 the same name. A name is recognised as a pool's own only when it is the
 pool's name, a hyphen, a slot number, a hyphen, and exactly 17 ASCII digits.
 
-A slot loops until it is asked to stop. Each attempt checks the image, then prepares
+An always-on slot loops until it is asked to stop. Each attempt checks the image, then prepares
 the job host, then probes the CPUs, then registers, then runs the container, then,
 for a diagnostics-enabled pool, exports it, and finally releases the host. An image
 that cannot run jobs, or a check Docker does not answer, registers nothing and goes

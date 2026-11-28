@@ -32,9 +32,9 @@ The `rust` job in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) runs format check,
 clippy, and tests on Linux, Windows, and macOS; the axpc checkout-rule cases that
 need drive-letter paths run only on Windows. Four more steps run on Linux only: the
-base-address, instance-roots, build-definition, release-overrides, and
-agent-overrides tests again with `--release` and `MARSHAL_EXPECT_RELEASE=1`, which
-makes each fail if built in the wrong profile;
+base-address, instance-roots, build-definition, release-overrides,
+agent-overrides, and scale-set client tests again with `--release` and
+`MARSHAL_EXPECT_RELEASE=1`, which makes each fail if built in the wrong profile;
 `docker build --target base` of
 [`images/actions-runner`](../../images/actions-runner), tagged and never pushed;
 the `real_docker` test with `--ignored`, pointed at that tag by

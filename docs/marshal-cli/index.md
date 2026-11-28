@@ -1,6 +1,6 @@
 # marshal-cli
 
-The [marshal-cli library](../../cli) supplies the agent in [Marshal](../marshal/index.md). The current workspace has no command-line target. Its foreground commands run through a test helper. During bounded F0 recovery, release automation builds a fixed historical CLI. [CLI Recovery](../runner-recovery/index.md) owns those installers and their operating procedures. Outside recovery, axmc awaits the [macOS app release](../runner-hosts/index.md#macos-with-tart).
+The [marshal-cli library](../../cli) supplies the agent in [Marshal](../marshal/index.md). The current workspace has no command-line target. Its foreground commands run through a test helper. The last command-line release, the CLI recovery release, keeps its installers and operating procedures at its own tag; [The Last Command-Line Release](./release-artifacts.md#the-last-command-line-release) identifies it. axmc awaits the [macOS app release](../runner-hosts/index.md#macos-with-tart).
 
 ## Entry points and configuration
 
@@ -26,6 +26,7 @@ The [marshal-cli library](../../cli) supplies the agent in [Marshal](../marshal/
 - [What do the test-only foreground commands do on startup, stop, signal or forced close?](./foreground-commands.md)
 - [How do host signals reach a foreground instance and prevent an unsafe resume?](./mac-signals.md)
 - [How does the resident agent serialize requests, maintain configuration and handle failure?](./resident-agent.md)
+- [How does an on-demand pool listen for GitHub demand, start runners, clean up and recover from a failure?](./on-demand-pools.md)
 - [Which lifecycle settings and drain conditions govern stopping, resuming or updating the agent?](./agent-lifecycle.md)
 - [Which credentials can the agent read, replace or remove on Windows and macOS?](./token-store.md)
 - [Which messages and snapshot fields can a client rely on, including when versions differ?](./agent-protocol.md)
@@ -36,7 +37,7 @@ The [marshal-cli library](../../cli) supplies the agent in [Marshal](../marshal/
 - [Which toolchain and CI gates exercise the library and app workspaces?](./toolchain.md)
 - [Which crates and licences are permitted, and where is an addition reviewed?](./dependencies.md)
 - [How should a contributor change the fixtures when validation changes?](./configuration-fixtures.md)
-- [Which artifacts and jobs belong to recovery and which belong to the suspended app workflow?](./release-artifacts.md)
+- [Which artifacts and jobs does the release workflow build, check and publish?](./release-artifacts.md)
 - [Which signatures and identities bind the CLI, package and planned app artifacts?](./signing.md)
 - [Which roadmap slice may extend the release graph, and what else must change with it?](./release-extensions.md)
 - [How does an operator verify, install, repair or remove an app release?](./install-on-windows.md)

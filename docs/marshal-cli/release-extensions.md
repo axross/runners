@@ -258,10 +258,12 @@ archive commands, and its `darwin-aarch64` feed entry follows W4's contract.
 
 ### Extending the Shape Check
 
-An extension MUST add its jobs or steps to `check-release-shape.mjs` and its
-mutation tests in the same pull request, under REVIEW.md's release lens and the
-maintainer's review. [CLI recovery release authority](../security/release-authority.md#temporary-cli-recovery) owns the active release
-boundary, including the permitted signing Environment. The check guards against
-mistakes, not a hostile pull request that edits the check itself. It does not see
-a write to `SHA256SUMS` in either build's `assemble` job other than by a
-redirection, `tee`, `cp` or `mv`.
+An extension adds its jobs or steps to `check-release-shape.mjs` and its test in its
+own pull request, under REVIEW.md's release lens and the maintainer's review, and
+allows its signing job the Environment there. The shape check guards against
+mistakes. A pull request can edit it, so it is not the control against a hostile
+one: what keeps pull requests away from the Environment is the maintainer's branch
+rule and that `release.yaml` runs only on a dispatch. It does not see a write to
+`SHA256SUMS` in `release-build.yaml`'s `assemble` job other than by a redirection,
+`tee`, `cp` or `mv`, or a step condition in `attest` or `release` that skips a step,
+such as `if: false`.
