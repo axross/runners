@@ -443,10 +443,15 @@ impl View<'_> {
         let warnings = macos_golden::findings(golden, &MACOS_BASE, self.now)
             .into_iter()
             .map(|finding| match finding {
-                MacosFreshness::RunnerOld { days } => ImageWarning {
+                MacosFreshness::RunnerMayBeNewer { version, days } => ImageWarning {
+                    code: "runner_may_be_newer".to_string(),
+                    days: Some(days),
+                    version: Some(version),
+                },
+                MacosFreshness::RunnerOld { version, days } => ImageWarning {
                     code: "runner_old".to_string(),
                     days: Some(days),
-                    version: None,
+                    version: Some(version),
                 },
                 MacosFreshness::RunnerAgeUnknown => ImageWarning {
                     code: "runner_age_unknown".to_string(),
@@ -495,7 +500,11 @@ impl View<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+    use crate::image::check::date_seconds;
+    use crate::image::runner::release;
     use crate::profile::Profile;
     use crate::validate::Plan;
 
@@ -602,6 +611,66 @@ mod tests {
         );
         let missing = snapshot(&board, Some(None)).images;
         assert_eq!(missing[0].lines[0].value, "missing");
+    }
+
+    /// the runner-age warnings of the golden macOS VM's entry in the snapshot of a
+    /// view whose clock is `days` after the release of runner 2.337.0, as
+    /// `(code, days, version)`; `None` is a check that found no golden macOS VM.
+    fn runner_age_warnings(
+        golden: Option<&str>,
+        days_after_release: u64,
+    ) -> Vec<(String, Option<u64>, Option<String>)> {
+        let released = date_seconds(release("2.337.0").unwrap().released).unwrap();
+        let now = UNIX_EPOCH + Duration::from_secs(released + days_after_release * 86_400);
+        let mut inner = Inner::new(Phase::Running);
+        inner.macos_golden = Some(golden.map(str::to_string));
+        let board = Board::default();
+        let retained = Retained::default();
+        let tokens = StoreTokens::new(None);
+        let snapshot = View {
+            version: "test",
+            inner: &inner,
+            config_path: "config.toml",
+            board: &board,
+            retained: &retained,
+            tokens: &tokens,
+            left: &[],
+            now,
+        }
+        .snapshot();
+        let [image] = snapshot.images.as_slice() else {
+            panic!("{:?}", snapshot.images)
+        };
+        assert_eq!(image.name, "golden macOS VM");
+        image
+            .warnings
+            .iter()
+            .filter(|warning| warning.code.starts_with("runner_"))
+            .map(|warning| (warning.code.clone(), warning.days, warning.version.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn the_golden_macos_vm_entry_warns_of_its_runner_in_the_linux_golden_vms_age_bands() {
+        let golden = Some("marshal-golden-macos-g1-r2.337.0-20260101000000");
+        let warnings = |days| runner_age_warnings(golden, days);
+        let warning =
+            |code: &str, days| (code.to_string(), Some(days), Some("2.337.0".to_string()));
+        assert_eq!(warnings(6), []);
+        assert_eq!(warnings(7), [warning("runner_may_be_newer", 7)]);
+        assert_eq!(warnings(10), [warning("runner_may_be_newer", 10)]);
+        assert_eq!(warnings(20), [warning("runner_may_be_newer", 20)]);
+        assert_eq!(warnings(21), [warning("runner_old", 21)]);
+    }
+
+    #[test]
+    fn an_unknown_runner_gives_only_an_unknown_age_and_a_missing_golden_macos_vm_no_runner_warning()
+    {
+        assert_eq!(
+            runner_age_warnings(Some("marshal-golden-macos-g1-r9.9.9-20260101000000"), 10),
+            [("runner_age_unknown".to_string(), None, None)]
+        );
+        assert_eq!(runner_age_warnings(None, 10), []);
     }
 
     #[test]
