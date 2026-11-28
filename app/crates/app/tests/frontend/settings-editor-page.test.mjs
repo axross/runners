@@ -497,6 +497,66 @@ test("a check or an apply does nothing while a setting is being saved", async ()
   assert.equal(model.saving, false);
 });
 
+/** a model holding an unapplied review of a draft, with every request it sends recorded. */
+async function reviewedModel() {
+  const requests = [];
+  const model = new ConfigEditor(
+    async (_command, args) => {
+      requests.push(args.request);
+      return args.request.kind === "read"
+        ? { kind: "read", value: { ...FILE, revision: "r" } }
+        : { kind: "change", value: CHANGE };
+    },
+    () => {},
+    () => {},
+  );
+  model.update({
+    stopped: false,
+    settings: [field("routing_label")],
+    pool: [field("name"), field("repository"), field("runners")],
+    volume: [],
+  });
+  model.loaded({ ...FILE, revision: "r" });
+  model.set(model.host, "routing_label", "other");
+  await model.check();
+  assert.ok(model.review, "the draft is under review");
+  requests.length = 0;
+  return { model, requests };
+}
+
+test("the editor is locked while a setting is being saved, and by nothing else", async () => {
+  const { model } = editorModel();
+  assert.equal(model.locked, false);
+  const call = hold();
+  const saving = model.whileSettingSaves(() => call.held);
+  assert.equal(model.locked, true);
+  assert.equal(model.lockReason, SAVING_REASON);
+  call.release();
+  await saving;
+  assert.equal(model.locked, false);
+});
+
+test("an apply of a reviewed draft sends nothing while a setting is being saved, and goes ahead once it is", async () => {
+  const { model, requests } = await reviewedModel();
+  const call = hold();
+  const saving = model.whileSettingSaves(() => call.held);
+  await model.apply();
+  assert.deepEqual(requests, []);
+  assert.ok(model.review, "the review is kept");
+  assert.equal(model.busy, false);
+  call.release();
+  await saving;
+  await model.apply();
+  assert.deepEqual(
+    requests.map((request) => [request.kind, request.check ?? null]),
+    [
+      ["edit", true],
+      ["edit", false],
+      ["read", null],
+    ],
+  );
+});
+
 test("two setting calls keep the editor held until both return", async () => {
   const { model } = editorModel();
   const first = hold();
