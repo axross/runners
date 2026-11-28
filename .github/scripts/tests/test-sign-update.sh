@@ -8,8 +8,8 @@
 # empty key or password. a two-file list signs both files, and corruption of
 # either refuses the whole list before any signer runs. merge-checks.yaml's
 # update-feed job runs the same scripts with the real signer and a throwaway key.
-# the step that lifts AppArmor's user namespace limit runs ahead of the signer, and
-# its sudo is a stand-in.
+# the step that lifts AppArmor's user namespace limit runs ahead of the signer, with
+# a stand-in sudo, against a limit file of 1, of 0 and absent: it calls sudo only for 1.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -127,18 +127,39 @@ else
   fi
 fi
 
-# the user namespace step calls sudo exactly when this host has the limit set.
+# the user namespace step calls sudo exactly when the limit file exists and holds
+# something other than 0. it reads a fixed /proc path, so each state runs a copy of
+# the extracted script with that path replaced by a file of the test's own.
 knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
 sysctl_call="sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
-if [[ -f "$knob" && "$(<"$knob")" != 0 ]]; then
-  want="$sysctl_call"
+userns_scripts=("${work}"/pass/run/scripts/*-userns.sh)
+userns_script="${userns_scripts[0]}"
+if [[ ${#userns_scripts[@]} -ne 1 || ! -f "$userns_script" ]]; then
+  fail "the runner extracted no single user namespace script: ${userns_scripts[*]}"
+elif [[ "$(grep -owF -- "$knob" "$userns_script" | wc -l)" != 1 ]]; then
+  fail "the user namespace script does not name ${knob} exactly once"
 else
-  want=""
-fi
-if [[ "$(cat "${work}/pass/record.sudo" 2>/dev/null)" != "$want" ]]; then
-  fail "the user namespace step called sudo as '$(cat "${work}/pass/record.sudo" 2>&1)', not '${want}'"
-else
-  echo "ok   the user namespace step calls sudo only where the limit is set"
+  # run_userns <state: the file's contents, or absent> <wanted sudo record>
+  run_userns() {
+    local state="$1" want="$2" dir="${work}/userns-${1}" calls
+    mkdir -p "$dir"
+    sed "s|${knob}|${dir}/knob|" "$userns_script" >"${dir}/userns.sh"
+    [[ "$state" == absent ]] || printf '%s\n' "$state" >"${dir}/knob"
+    echo "${dir}/record" >"${work}/record-path"
+    if ! env -i PATH=/usr/bin:/bin SYSTEM_BIN="$bin" bash --noprofile --norc -eo pipefail "${dir}/userns.sh" >"${dir}/output" 2>&1; then
+      fail "the user namespace step failed with the limit file ${state}: $(<"${dir}/output")"
+      return
+    fi
+    calls="$(cat "${dir}/record.sudo" 2>/dev/null || true)"
+    if [[ "$calls" != "$want" ]]; then
+      fail "the user namespace step called sudo as '${calls}' with the limit file ${state}, not '${want}'"
+    else
+      echo "ok   the user namespace step with the limit file ${state}"
+    fi
+  }
+  run_userns 1 "$sysctl_call"
+  run_userns 0 ""
+  run_userns absent ""
 fi
 
 extra=stand-in-update.archive
