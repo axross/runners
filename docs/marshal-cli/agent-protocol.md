@@ -171,26 +171,33 @@ from local state the agent already keeps; it reads nothing from Docker or GitHub
 never holds a token or a JIT configuration. Every field is optional for a reader, and
 a reader ignores one it does not know.
 
-| Field                                          | Holds                                                                                                                                                       |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`                                        | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
-| `agent.update`                                 | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
-| `agent.build`                                  | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
-| `configuration`                                | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
-| `configuration.last_apply`                     | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
-| `configuration.status`                         | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
-| `configuration.in_use`                         | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
-| `configuration.migration`                      | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
-| `runners_up`, `runners_wanted`                 | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
-| `repositories`                                 | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
-| `organizations`                                | Each organisation login in lower case, `has_token` and its pools                                                                                            |
-| `pools`                                        | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
-| `pools[].organization`, `pools[].runner_group` | Present only for an organisation pool, which has no `repository` field                                                                                      |
-| `pools[].runners`                              | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
-| `pools[].diagnostics`                          | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
-| `leftovers`                                    | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
-| `images`                                       | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
-| `omitted`                                      | How many `runners`, `problems`, `pools`, `repositories`, `organizations`, `leftovers` and `images` it left out                                              |
+| Field                                                    | Holds                                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent`                                                  | `version`, `state`, `reason` (`code`, `message`), `since`, `build`, `restart_due`, `update`                                                                 |
+| `agent.update`                                           | While a drain for an update runs: `version`, `waiting`, `deadline`, `pid`                                                                                   |
+| `agent.build`                                            | `started`, `outcome` (`building`, `ready`, `failed`, `cancelled`), `finished`, `message`                                                                    |
+| `configuration`                                          | `path`, `problems` (at most 100), `status`, `in_use`, `migration` and `last_apply`                                                                          |
+| `configuration.last_apply`                               | Absent until an edit applies; else `revision`, `at`, `outcome` (`applying`, `applied`, `abandoned`, `failed`) and `reason`                                  |
+| `configuration.status`                                   | What the latest read of `config.toml` found: `valid`, `invalid`, `missing` or `unreadable`                                                                  |
+| `configuration.in_use`                                   | Absent when none is in use; else `source` (`file`, `last_valid` or `json`) and `read_at`                                                                    |
+| `configuration.migration`                                | Absent when none applies; else `state` (`migrated`, `failed`, `pending`), `at` and `reason`                                                                 |
+| `runners_up`, `runners_wanted`                           | Totals over the listed pools, kept when rows are left out; 0 while `restart_due` is set                                                                     |
+| `repositories`                                           | Each repository (`owner/name` in lower case), `has_token` and its pools                                                                                     |
+| `organizations`                                          | Each organisation login in lower case, `has_token` and its pools                                                                                            |
+| `pools`                                                  | `name`, `repository`, `state`, `reason`, `has_token`, `runners_up`, `slots`, `runners`, `diagnostics`                                                       |
+| `pools[].organization`, `pools[].runner_group`           | Present only for an organisation pool, which has no `repository` field                                                                                      |
+| `pools[].runners`                                        | `slot`, `state`, `workload`, `workload_kind`, `reason`, `since`                                                                                             |
+| `pools[].diagnostics`                                    | `limit`, `written`, `in_sink`, `containers`, `findings`, `manual_recovery`                                                                                  |
+| `pools[].on_demand`                                      | On-demand pools only: `name`, `state`, `status`, `refused_host`, `reason`, `store_error_kind`, `store_error_code`, `cleanup_incomplete`, `registrations`    |
+| `pools[].on_demand.name`                                 | The configured scale-set name, not the logical pool name                                                                                                    |
+| `pools[].on_demand.state`                                | `listening`, `another_listener`, `rejected`, `store_error`, `backing_off` or `stopped`                                                                      |
+| `pools[].on_demand.status`, `refused_host`, `reason`     | Non-secret HTTP status, refused host or explanation where applicable; label mismatch has a reason, not a fabricated status                                  |
+| `pools[].on_demand.store_error_kind`, `store_error_code` | The store's `needs_user`, `access_refused` or `other` kind and platform code where supplied                                                                 |
+| `pools[].on_demand.cleanup_incomplete`                   | Boolean: some session or registration cleanup has not been confirmed; a stopped runtime does not clear it                                                   |
+| `pools[].on_demand.registrations[]`                      | Exact pending non-secret registration identity: `slot`, `runner_id` (null if unknown), `name`; no session credential or URL                                 |
+| `leftovers`                                              | What a stop could not remove (`kind` `container`), and on axmc each counted job VM of an unconfigured pool (`kind` `vm_unconfigured_pool`), with its `name` |
+| `images`                                                 | Each image the agent tracks (the runner image, and on axmc the golden macOS VM): `name`, `lines`, `warnings`                                                |
+| `omitted`                                                | How many `runners`, `problems`, `pools`, `repositories`, `organizations`, `leftovers` and `images` it left out                                              |
 
 When the runtime core fails, the agent starts it again after 10, 30 and 60 s for the
 first, second and third failure within 10 minutes, and stops for `restart_limit` at the

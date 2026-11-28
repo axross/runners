@@ -185,7 +185,10 @@ path; these are the properties it keeps.
 
 - The TOML format has no key for a token or a token file. `token_path` is an
   undefined key, and the conversion from JSON leaves `tokenPath` behind, so a file in
-  this format cannot name a token's location.
+  this format cannot name a token's location. A test,
+  `no_key_the_schema_defines_holds_a_credential` in
+  `cli/src/validate/toml_schema.rs`, fails when a key the schema defines is named for
+  a credential.
 - A syntax error and a wrong-type problem carry only the key path, the line, the
   column, and fixed text. The reader never uses the parser's display text, which
   quotes the source line, so a token pasted into a value, or on a line of its own, is

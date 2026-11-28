@@ -570,7 +570,16 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
                 rows.iter().any(|row| row.name.starts_with(&prefix))
             };
             inner.leaving.retain(|entry| {
-                has_rows(&entry.name) && !removed.iter().any(|new| new.name == entry.name)
+                (has_rows(&entry.name)
+                    || self
+                        .listeners
+                        .borrow()
+                        .get(&entry.name)
+                        .is_some_and(|listener| {
+                            listener.session_cleanup_incomplete
+                                || !listener.incomplete_registrations.is_empty()
+                        }))
+                    && !removed.iter().any(|new| new.name == entry.name)
             });
             inner.leaving.extend(removed);
             inner.applying = Some(Applying {

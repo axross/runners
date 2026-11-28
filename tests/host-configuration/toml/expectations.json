@@ -40,6 +40,29 @@
     ],
     "lacks": []
   },
+  "accepted/scale-set-label-in-same-named-repository-of-another-owner.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "pool[0]: name=alpha repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[axpc-demand] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[1]: name=beta repository=cat/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc-demand] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
+  "accepted/scale-set-near-misses.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axpc",
+      "pool[0]: name=axpc-app repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[AXPC-App] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[1]: name=other repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[axpc-appx] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[2]: name=third repository=octo/elsewhere runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc-appx] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
   "accepted/windows-empty-lifecycle.toml": {
     "profile": "axpc",
     "outcome": "accept",
@@ -93,6 +116,15 @@
     ],
     "lacks": []
   },
+  "accepted/windows-organization-beside-on-demand.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "pool[0]: name=alpha repository=Octo (runner group builders) runners=2"
+    ],
+    "lacks": []
+  },
   "accepted/windows-organization.toml": {
     "profile": "axpc",
     "outcome": "accept",
@@ -117,6 +149,20 @@
     ],
     "lacks": []
   },
+  "accepted/windows-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "accept",
+    "problems": [],
+    "contains": [
+      "schema_version: 1",
+      "routing_label: axpc",
+      "lifecycle: start_at_login=unset start_runners_on_launch=unset keep_awake=unset stop_on_network_change=unset resume_after_stop=unset",
+      "image_name: example-image:tag",
+      "pool[0]: name=alpha repository=octo/hello runners=2 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[axpc-linux] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none",
+      "pool[1]: name=beta repository=octo/hello runners=1 os=linux cpus=2 memory_gb=8 disk_gb=none labels=[self-hosted, linux, x64, axpc] volumes=[] diagnostics=false diagnostic_directory=none raw_records=false token_path=none"
+    ],
+    "lacks": []
+  },
   "rejected/empty.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -125,6 +171,16 @@
       "line 1: routing_label: required key is missing",
       "line 1: image_name: required key is missing",
       "line 1: pool: required key is missing"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/invalid-scale-set-reads-labels-as-always-on.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[1].scale_set: must be a scale-set name string",
+      "line 11: pool[1].labels: ambiguous same-repository routing; labels 'FAST' also appear at pool[0]"
     ],
     "contains": [],
     "lacks": []
@@ -273,6 +329,15 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/macos-scale-set.toml": {
+    "profile": "axmc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[0].scale_set: must be absent on macOS; on-demand pools are not supported yet"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/macos-volumes.toml": {
     "profile": "axmc",
     "outcome": "reject",
@@ -298,6 +363,30 @@
     "profile": "axpc",
     "outcome": "reject",
     "problems": ["line 1: pool: required key is missing"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/on-demand-problems-in-the-documented-order.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 10: pool[0].labels: must be absent or an empty array for an on-demand pool",
+      "line 8: pool[0].runners: must be an integer from 1 to 16",
+      "line 6: pool[0].name: must be lowercase letters, digits and hyphens, starting with a letter or digit",
+      "line 22: pool[2].scale_set: scale-set routing or cleanup identity collides with pool[1]; use a distinct scale-set name",
+      "line 16: pool[1].scale_set: scale-set routing or cleanup identity collides with pool[2]; use a distinct scale-set name",
+      "line 18: pool[2].name: name 'axpc-svc-two' collides with 'axpc-svc' at pool[1]; set a distinct name on one pool",
+      "line 30: pool[4].labels: ambiguous same-repository routing; labels 'FAST' also appear at pool[3]"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/on-demand-scale-set-is-organization-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 16: pool[1].scale_set: ambiguous routing for pools that may serve the same repository; this scale-set name is also a label at pool[0]; choose a scale-set name that no organization pool of the same owner uses as a label"
+    ],
     "contains": [],
     "lacks": []
   },
@@ -349,6 +438,15 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/organization-label-is-on-demand-scale-set-name.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 11: pool[1].labels: ambiguous routing for pools that may serve the same repository; labels 'AXPC-Demand' also appear at pool[0]; give each pool its own labels"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/organization-no-target.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -360,6 +458,16 @@
     "profile": "axpc",
     "outcome": "reject",
     "problems": ["line 5: pool[0].runner_group: required with organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/repository-organization-and-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 5: pool[0]: names both repository and organization",
+      "line 11: pool[0].scale_set: not allowed with organization"
+    ],
     "contains": [],
     "lacks": []
   },
@@ -545,6 +653,18 @@
     "contains": [],
     "lacks": []
   },
+  "rejected/routing-label-outside-scale-set-rule.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 7: pool[0].repository: must be \"owner/name\"",
+      "line 8: pool[0].os: a macos pool is not supported on Windows",
+      "line 2: routing_label: must be ASCII letters, digits, hyphens, underscores or dots for on-demand pools",
+      "line 9: pool[0].runners: must be an integer from 1 to 16"
+    ],
+    "contains": [],
+    "lacks": []
+  },
   "rejected/routing-label-platform-label.toml": {
     "profile": "axpc",
     "outcome": "reject",
@@ -578,6 +698,88 @@
     "profile": "axpc",
     "outcome": "reject",
     "problems": ["line 8: pool[0].runner_group: only with organization"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-before-labels-in-one-pool.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].scale_set: must be a scale-set name string",
+      "line 10: pool[0].labels: each label must be a string of letters, digits and . _ : / - starting with a letter or digit"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-collides-with-pool-name.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 14: pool[1].scale_set: scale-set routing or cleanup identity collides with pool[0]; use a distinct scale-set name"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-equals-later-peer-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].scale_set: scale-set routing or cleanup identity collides with pool[1]; use a distinct scale-set name"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-equals-other-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[1].scale_set: scale-set routing or cleanup identity collides with pool[0]; use a distinct scale-set name",
+      "line 9: pool[0].scale_set: scale-set routing or cleanup identity collides with pool[1]; use a distinct scale-set name"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-equals-peer-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[1].scale_set: scale-set routing or cleanup identity collides with pool[0]; use a distinct scale-set name"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-extends-other-scale-set.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 15: pool[1].scale_set: scale-set routing or cleanup identity collides with pool[0]; use a distinct scale-set name",
+      "line 9: pool[0].scale_set: scale-set routing or cleanup identity collides with pool[1]; use a distinct scale-set name"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-not-a-string.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": ["line 9: pool[0].scale_set: must be a scale-set name string"],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-with-labels.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 10: pool[0].labels: must be absent or an empty array for an on-demand pool"
+    ],
+    "contains": [],
+    "lacks": []
+  },
+  "rejected/scale-set-without-the-routing-label.toml": {
+    "profile": "axpc",
+    "outcome": "reject",
+    "problems": [
+      "line 9: pool[0].scale_set: must be 1 to 45 ASCII letters, digits, hyphens, underscores or dots, starting with routing_label, a hyphen and a nonempty suffix"
+    ],
     "contains": [],
     "lacks": []
   },

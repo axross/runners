@@ -64,7 +64,7 @@ For the order of registration, container startup and cleanup behind each reporte
 
 ## Health Checks
 
-- **GitHub:** a healthy host shows, under each repository's **Settings, Actions,
+- **Always-on pools on GitHub:** a healthy host shows, under each repository's **Settings, Actions,
   Runners**, the sum of its entries' `slots` runners, **Idle** when no job is queued and **Active** when
   one is running, because each slot registers a runner before it starts a
   container. Each registration carries exactly `self-hosted`, `linux`, `x64`, and
@@ -77,7 +77,7 @@ For the order of registration, container startup and cleanup behind each reporte
   image problem. A pool that did not start shows its reason. A footer warning about
   the image is a freshness warning; see
   [Rebuilding the Image](./windows-image.md#rebuilding-the-image-for-operating-system-updates).
-- **Machine:** `docker ps` shows `slots` running containers per entry, named
+- **Always-on pools on the machine:** `docker ps` shows `slots` running containers per entry, named
   `<name>-<index>-<timestamp>`, whether idle or busy, since an idle container is
   a runner waiting for a job. None means the same as above.
   `docker inspect` on a container shows its limits under `HostConfig`: `NanoCpus`
@@ -87,6 +87,13 @@ For the order of registration, container startup and cleanup behind each reporte
   agent's log has the guard's bounded `CPU affinity verified` line, which reports
   the kernel-granted set; the authorized real-host check also resolves the actual
   cgroup cpuset/quota layout.
+- **On-demand pools:** check the window's listener state, not a fixed idle runner
+  count. With no demand and successful cleanup, both the repository runner list
+  and `docker ps` have no runner/container for the pool. During a job, compare its
+  whole scale-set-based runner/container name with the logical pool and slot
+  shown in the window. Assigned, running and registered-idle counts come from
+  the existing session statistics; they add no display request. Pending exact
+  cleanup identities require recovery even when no container remains.
 - **Tokens:** the Tokens tab shows a token set for every repository a pool names.
 - **End to end:** for each pool, a workflow run whose `runs-on` matches that
   entry's routing label starts executing rather than sitting queued.

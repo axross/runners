@@ -27,6 +27,10 @@ configuration in use.
   key or a wrong-typed value appears only in `problems`, each a `path`, a `line` and a
   `message`, at most 100. `schema_version` and `lifecycle` are not sent. A result
   that would pass the message limit has `too_large` true and no values.
+- **`scale_set`** is an optional text setting in the same reader and editor.
+  Setting, changing or removing it uses the comment-preserving write path and
+  restarts only the affected pool under the effect rules below. A rejected value
+  leaves the last valid configuration running.
 - **`edits`** are the write path's operations as JSON, addressed by TOML key paths
   counted from 0, such as `pool[1].runners`: `{"op":"set","path","value"}`,
   `{"op":"remove","path"}`, `{"op":"add_entry","array","values"}` and

@@ -179,6 +179,7 @@ const FIXTURES: [&str; 40] = [
     "markup_invalid_configuration",
     "newer_agent",
     "newer_agent_stopped",
+    "on_demand",
     "packages_old",
     "quitting",
     "restarting",
@@ -328,4 +329,62 @@ fn no_recorded_state_shows_anything_token_shaped() {
         let json = serde_json::to_string(&view).expect("JSON");
         assert!(!has_token_shape(&json), "{name}");
     }
+}
+
+/// the words of `text` shaped like a credential that is not a GitHub token: a JWT, or a
+/// long base64 run with digits and both cases of letters.
+///
+/// `credential_words` in `cli/tests/toml_fixtures.rs` repeats these shapes: a helper in a test
+/// target cannot be imported by another crate's tests, so a change to a shape belongs in both.
+fn other_credential_words(text: &str) -> Vec<&str> {
+    let words = |extra: &'static str| {
+        text.split(move |c: char| !(c.is_ascii_alphanumeric() || extra.contains(c)))
+    };
+    let mut found: Vec<&str> = words("_-")
+        .filter(|word| word.starts_with("eyJ") && word.len() >= 19)
+        .collect();
+    found.extend(words("_-+/=").filter(|word| {
+        word.len() >= 40
+            && word.chars().any(|c| c.is_ascii_digit())
+            && word.chars().any(|c| c.is_ascii_uppercase())
+            && word.chars().any(|c| c.is_ascii_lowercase())
+    }));
+    found
+}
+
+#[test]
+fn no_stored_fixture_holds_anything_credential_shaped() {
+    let mut scanned = 0;
+    let mut pending = vec![std::path::PathBuf::from(format!(
+        "{}/tests/fixtures",
+        env!("CARGO_MANIFEST_DIR")
+    ))];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).expect("the fixtures") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("a UTF-8 fixture");
+            scanned += 1;
+            assert!(!has_token_shape(&text), "{path:?}");
+            assert!(other_credential_words(&text).is_empty(), "{path:?}");
+        }
+    }
+    assert!(
+        scanned > FIXTURES.len(),
+        "only {scanned} fixtures were scanned"
+    );
+}
+
+#[test]
+fn the_fixture_scan_sees_a_jwt_and_a_base64_run_and_not_plain_words() {
+    assert_eq!(
+        other_credential_words("a eyJhbGciOiJIUzI1NiJ9abc b").len(),
+        1
+    );
+    assert_eq!(other_credential_words(&"aB3+".repeat(10)).len(), 1);
+    assert!(other_credential_words(&"n".repeat(60)).is_empty());
+    assert!(other_credential_words("eyJshort").is_empty());
 }

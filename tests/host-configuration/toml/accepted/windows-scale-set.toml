@@ -1,0 +1,14 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "alpha"
+repository = "octo/hello"
+runners = 2
+scale_set = "axpc-linux"
+
+[[pool]]
+name = "beta"
+repository = "octo/hello"
+runners = 1

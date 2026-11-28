@@ -26,6 +26,7 @@ The [marshal-cli library](../../cli) supplies the agent in [Marshal](../marshal/
 - [What do the test-only foreground commands do on startup, stop, signal or forced close?](./foreground-commands.md)
 - [How do host signals reach a foreground instance and prevent an unsafe resume?](./mac-signals.md)
 - [How does the resident agent serialize requests, maintain configuration and handle failure?](./resident-agent.md)
+- [How does an on-demand pool listen for GitHub demand, start runners, clean up and recover from a failure?](./on-demand-pools.md)
 - [Which lifecycle settings and drain conditions govern stopping, resuming or updating the agent?](./agent-lifecycle.md)
 - [Which credentials can the agent read, replace or remove on Windows and macOS?](./token-store.md)
 - [Which messages and snapshot fields can a client rely on, including when versions differ?](./agent-protocol.md)

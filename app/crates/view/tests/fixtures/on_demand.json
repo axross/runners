@@ -1,0 +1,122 @@
+{
+  "agent": {
+    "version": "0.1.0",
+    "state": "running",
+    "since": 1793762100000
+  },
+  "configuration": {
+    "path": "C:\\Users\\<user>\\AppData\\Local\\marshal\\config.toml",
+    "problems": []
+  },
+  "runners_up": 1,
+  "runners_wanted": 7,
+  "repositories": [
+    {
+      "repository": "owner/app",
+      "has_token": true,
+      "pools": ["app", "shared", "labels", "store", "retry", "stopped"]
+    },
+    {
+      "repository": "owner/site",
+      "has_token": true,
+      "pools": ["site"]
+    }
+  ],
+  "pools": [
+    {
+      "name": "app",
+      "repository": "owner/app",
+      "state": "running",
+      "has_token": true,
+      "slots": 1,
+      "on_demand": { "name": "axpc-linux", "state": "listening" }
+    },
+    {
+      "name": "shared",
+      "repository": "owner/app",
+      "state": "running",
+      "has_token": true,
+      "slots": 1,
+      "on_demand": { "name": "axpc-shared", "state": "another_listener" }
+    },
+    {
+      "name": "labels",
+      "repository": "owner/app",
+      "state": "running",
+      "has_token": true,
+      "slots": 1,
+      "on_demand": {
+        "name": "axpc-labels",
+        "state": "rejected",
+        "reason": "scale-set label mismatch"
+      }
+    },
+    {
+      "name": "store",
+      "repository": "owner/app",
+      "state": "running",
+      "has_token": true,
+      "slots": 1,
+      "on_demand": {
+        "name": "axpc-store",
+        "state": "store_error",
+        "store_error_kind": "needs_user",
+        "store_error_code": 1312
+      }
+    },
+    {
+      "name": "retry",
+      "repository": "owner/app",
+      "state": "running",
+      "has_token": true,
+      "slots": 1,
+      "on_demand": {
+        "name": "axpc-retry",
+        "state": "backing_off",
+        "reason": "service could not be reached"
+      }
+    },
+    {
+      "name": "stopped",
+      "repository": "owner/app",
+      "state": "stopped",
+      "has_token": true,
+      "slots": 1,
+      "on_demand": {
+        "name": "axpc-stopped",
+        "state": "stopped",
+        "reason": "runner removal not confirmed",
+        "cleanup_incomplete": true,
+        "registrations": [
+          {
+            "slot": 1,
+            "runner_id": 42,
+            "name": "axpc-stopped-1-20261104031522114"
+          }
+        ]
+      }
+    },
+    {
+      "name": "site",
+      "repository": "owner/site",
+      "state": "running",
+      "has_token": true,
+      "runners_up": 1,
+      "slots": 1,
+      "runners": [
+        {
+          "slot": 1,
+          "state": "running",
+          "workload": "site-1-20261104033907412",
+          "since": 1793763547000
+        }
+      ]
+    }
+  ],
+  "images": [
+    {
+      "name": "actions-runner:local",
+      "lines": [{ "name": "image-contract", "value": "3" }]
+    }
+  ]
+}

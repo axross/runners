@@ -51,6 +51,32 @@ pub enum PoolTarget {
 }
 
 impl PoolTarget {
+    #[must_use]
+    pub fn repository(owner: impl Into<String>, repository: impl Into<String>) -> Self {
+        Self::Repository {
+            owner: owner.into(),
+            repository: repository.into(),
+        }
+    }
+
+    /// whether both targets are repositories with the same owner and name, in any case.
+    #[must_use]
+    pub fn same_repository(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Repository { owner, repository },
+                Self::Repository {
+                    owner: other_owner,
+                    repository: other_repository,
+                },
+            ) => {
+                owner.eq_ignore_ascii_case(other_owner)
+                    && repository.eq_ignore_ascii_case(other_repository)
+            }
+            _ => false,
+        }
+    }
+
     /// the resource owner as configured, before token-key normalisation.
     #[must_use]
     pub fn owner(&self) -> &str {
@@ -84,6 +110,9 @@ pub struct Entry {
     pub path: String,
     pub target: PoolTarget,
     pub name: String,
+    /// the routing and runner identity of an on-demand pool, distinct from its
+    /// logical name; absent pools keep the always-on registration labels.
+    pub scale_set: Option<String>,
     pub slots: u32,
     /// the token file's path, for a format that has one.
     pub token_path: Option<String>,
@@ -116,4 +145,32 @@ pub struct Budget {
 pub struct PlannedVolume {
     pub name: String,
     pub mount_path: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PoolTarget;
+
+    fn organization(organization: &str) -> PoolTarget {
+        PoolTarget::Organization {
+            organization: organization.to_owned(),
+            runner_group: "group".to_owned(),
+        }
+    }
+
+    #[test]
+    fn repositories_match_by_owner_and_name_in_any_case() {
+        let target = PoolTarget::repository("Owner", "Repo");
+        assert!(target.same_repository(&PoolTarget::repository("owner", "REPO")));
+        assert!(!target.same_repository(&PoolTarget::repository("other", "Repo")));
+        assert!(!target.same_repository(&PoolTarget::repository("Owner", "other")));
+    }
+
+    #[test]
+    fn an_organisation_is_never_the_same_repository() {
+        let target = PoolTarget::repository("owner", "repo");
+        assert!(!target.same_repository(&organization("owner")));
+        assert!(!organization("owner").same_repository(&target));
+        assert!(!organization("owner").same_repository(&organization("owner")));
+    }
 }

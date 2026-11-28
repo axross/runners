@@ -46,9 +46,22 @@ need CRLF build it from the stored text.
   rules, letter case, duplicates, wrong
   types including a date, nesting deeper than the parser allows, in an array, an
   inline table, a dotted key and a table header, each placed on its line, the
-  problem order, the lines, and a token-shaped value or key. Each expectation names the profile
-  (`axpc` for Windows, `axmc` for macOS), the outcome, the problems whole, with their
-  lines and in order, and `contains` and `lacks` strings checked against the problems
+  problem order, the lines, and a token-shaped value or key. They also pin the
+  on-demand rules: the scale-set name and the routing label's character set, each
+  kind of scale-set collision (an equal or hyphen-extended name, against another
+  scale-set name, a logical `name` or a same-repository label, in both orders and
+  ignoring case, and accepted for a same-named repository of another owner),
+  `scale_set` on an organisation pool being refused whatever its value, including
+  beside `repository` in one pool, an organisation pool beside an on-demand pool of
+  the same owner (accepted with the default `routing_label`, rejected when its labels
+  include the scale-set name, in both pool orders and ignoring case, at the
+  `labels` of a later organisation pool and at the `scale_set` of a later on-demand
+  pool), the Mac rejection, and the order and
+  lines of the problems, including
+  a pool's `scale_set` problem before its `labels` problem and a pool whose
+  `scale_set` is rejected joining the label collisions as an always-on pool. Each
+  expectation names the profile (`axpc` for Windows, `axmc` for macOS), the
+  outcome, the problems whole, with their lines and in order, and `contains` and `lacks` strings checked against the problems
   and, for an accepted file, a description of its plan. An unknown or misspelled key
   fails the read, and the test fails when a fixture has no expectation or an
   expectation has no fixture. Some inputs are built at run time because a stored file

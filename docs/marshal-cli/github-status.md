@@ -25,17 +25,29 @@ runner names are shown. Pools and groups of one organisation share a conditional
 paged read and check time, with the same 15 s minimum, budget, subscription and
 backoff rules as repositories. Group rows reflect configured pools, not detection
 of a runner moved in GitHub. Organisation tokens never trigger repository job
-lookups. Message cutting drops organisation runners, then repository runners, then
-organisation group rows; `omitted_runners` counts dropped runners and
-`omitted_organizations` counts dropped group rows.
+lookups. Message cutting drops, from the end of each list, organisation runners, then
+repository runners, then `scale_sets` entries, then organisation group rows, until the
+value fits: `omitted_runners` counts dropped runners, `omitted_scale_sets` dropped scale
+sets and `omitted_organizations` dropped group rows. A scale set holds only counts, while
+a group row says whether its organisation's token and runner list work.
 
-**Collection follows the subscription.** The agent reads GitHub only while at least
+**Display collection follows the subscription.** The agent reads GitHub for display only while at least
 one connection holds a `github` subscription that was subscribed or renewed in the
 last 90 s. When the last one ends, no new request starts after 1 s; one in flight
 finishes or times out and its answer is kept. The app holds that subscription on a
 connection of its own while its window is shown and not minimized, and renews it every
 30 s, so an app that hangs stops collection within 91 s. After collection stops the
 agent keeps each repository's last pages and their `ETag`s.
+
+An on-demand listener is independent of display collection and continues while the
+window is hidden. Its `scale_sets` counts come from the session's initial or latest
+message statistics, with no extra display request. A `202` retains the last counts.
+The counts are published only while the `github` subscription is held, including
+for a pool whose repository has no entry in `repositories`, and the entries are
+cleared when the subscription ends, so the next subscriber's first value carries no
+earlier counts. A listener that is not the pool's own, by pool, scale-set name and
+repository, gives null counts. The existing
+repository and budget fields keep their meanings.
 
 **The checks.** A repository is checked while one of its pools has a runner with a
 `workload` and the token store held its token at the last look; the token is read
@@ -114,14 +126,21 @@ Actions: read shows the next job's name without a restart.
 
 **The `github` value:**
 
-| Field                          | Meaning                                                                                                                |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `budget`                       | `null` until a display request is answered, then `limit`, `remaining`, `resets_at`, `seen_at` and `level`              |
-| `repositories`                 | Each repository with a registered runner and a stored token, by its key, with what the agent last learned of it        |
-| `repositories[]`               | `repository`, `checked_at`, `status`, `retry_at`, `job_names`, `job_names_cause`, `job_names_retry_at`, `runners`      |
-| `repositories[].runners`       | This host's runners GitHub lists: `name` (the snapshot's `workload`), `github` (`offline`, `idle` or `busy`) and `job` |
-| `repositories[].runners[].job` | `workflow`, `name`, `run_id` and `job_id`, once a busy runner's job is known                                           |
-| `omitted_runners`              | Runner entries left out from the end to keep the value within 64 KiB less the envelope                                 |
+| Field                                                 | Meaning                                                                                                                                                                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `budget`                                              | `null` until a display request is answered, then `limit`, `remaining`, `resets_at`, `seen_at` and `level`                                                                                 |
+| `repositories`                                        | Each repository with a registered runner and a stored token, by its key, with what the agent last learned of it                                                                           |
+| `repositories[]`                                      | `repository`, `checked_at`, `status`, `retry_at`, `job_names`, `job_names_cause`, `job_names_retry_at`, `runners`                                                                         |
+| `repositories[].runners`                              | This host's runners GitHub lists: `name` (the snapshot's `workload`), `github` (`offline`, `idle` or `busy`) and `job`                                                                    |
+| `repositories[].runners[].job`                        | `workflow`, `name`, `run_id` and `job_id`, once a busy runner's job is known                                                                                                              |
+| `organizations`                                       | One entry per configured organisation group, as the text above describes: `organization`, `runner_group`, `checked_at`, `status` and `runners`, each runner with `name` and `github` only |
+| `scale_sets`                                          | One entry per on-demand pool, independent of the repository display scope                                                                                                                 |
+| `scale_sets[]`                                        | `pool`, `repository`, `name`, `assigned`, `running`, `registered_idle`                                                                                                                    |
+| `scale_sets[].pool`, `repository`, `name`             | Logical pool name, repository key and configured scale-set name                                                                                                                           |
+| `scale_sets[].assigned`, `running`, `registered_idle` | GitHub's assigned-job, running-job and registered-idle-runner counts from the existing session statistics, not local slot counts; null before statistics are available                    |
+| `omitted_runners`                                     | Runner entries left out from the end to keep the value within 64 KiB less the envelope                                                                                                    |
+| `omitted_scale_sets`                                  | Scale-set entries left out from the end after all runner entries, before any organisation group row, when needed to keep the same message bound                                           |
+| `omitted_organizations`                               | Organisation group rows left out from the end after all runner and scale-set entries, when needed to keep the same message bound                                                          |
 
 Times are milliseconds since the Unix epoch. `status` is `ok` or the cause in the table
 above; `job_names` is `unknown` (no in-progress-runs request answered yet), `shown`,

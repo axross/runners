@@ -44,6 +44,61 @@ fn assert_refused_before_any_vm(host: &MacHost, finished: &Finished) {
     assert_eq!(host.vm_names().len(), 1, "only the golden VM exists");
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn the_resident_agent_runs_a_macos_and_a_linux_pool_and_a_quit_deletes_both_job_vms() {
+    let host = holding_host(&[macos("macone", 1), linux("linuxone", 1)]);
+    let linux_golden = host.vm_names()[0].clone();
+    host.tart_script(
+        "vms",
+        &format!("{linux_golden}\tstopped\tlocal\t\t\t\n{MACOS_GOLDEN}\tstopped\tlocal\t\t\t"),
+    );
+    host.tart_script("exec_stdout-marshal-probe", PROBE_50_GB);
+    host.tart_script("macos_hold", "");
+    let stub = github();
+    let agent = host.agent(&stub.address, &["macone", "linuxone"]);
+    let conn = support::agent::Conn::open(&agent.roots).await;
+    let snapshot = conn
+        .until("both runners", |snapshot| snapshot.runners_up == 2)
+        .await;
+    let workload = |pool: &str| {
+        let runner = &snapshot
+            .pools
+            .iter()
+            .find(|candidate| candidate.name == pool)
+            .unwrap()
+            .runners[0];
+        (runner.workload_kind.clone(), runner.workload.clone())
+    };
+    let (kind, vm) = workload("macone");
+    assert_eq!(kind.as_deref(), Some("vm"), "{snapshot:#?}");
+    assert!(
+        vm.unwrap().starts_with("marshal-job-macone-1-"),
+        "a macOS slot names its job VM"
+    );
+    let (kind, container) = workload("linuxone");
+    assert_ne!(kind.as_deref(), Some("vm"), "{snapshot:#?}");
+    assert!(
+        container.unwrap().starts_with("linuxone-1-"),
+        "a Linux slot names its job container"
+    );
+    host.wait_for_macos_run("marshal-job-macone-1-", RUNNING_WITHIN);
+    assert_eq!(
+        host.vm_names().len(),
+        4,
+        "a job VM per pool and both goldens"
+    );
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(
+        host.vm_names(),
+        [linux_golden, MACOS_GOLDEN.to_string()],
+        "only the golden VMs are left"
+    );
+    assert!(host.containers().is_empty(), "{:?}", host.containers());
+}
+
 #[test]
 fn a_linux_and_macos_configuration_runs_each_pool_in_a_vm_of_its_os() {
     let host = holding_host(&[macos("macone", 1), linux("linuxone", 1)]);

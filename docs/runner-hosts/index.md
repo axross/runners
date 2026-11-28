@@ -7,7 +7,7 @@ container. An Apple silicon Mac runs each job in a fresh Tart VM.
 
 - [Prepare Windows, Docker Desktop and Marshal and check which releases can run on axpc.](./windows-setup.md)
 - [Set GitHub repository approval requirements and issue a token for a repository or organisation pool.](./registration.md)
-- [Choose pool resources, cache volumes and routing labels, or migrate an existing configuration.](./windows-pools.md)
+- [Choose pool resources, cache volumes and routing labels, set up an on-demand pool, delete an unwanted scale set, or migrate an existing configuration.](./windows-pools.md)
 - [Build the runner image or decide whether a warning calls for an OS refresh or a new release.](./windows-image.md)
 - [Start or stop the runners and check their state on the machine and on GitHub.](./windows-running.md)
 - [Follow a slot through registration and disposal of its job container.](./windows-job.md)

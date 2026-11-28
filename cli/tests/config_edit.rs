@@ -59,6 +59,46 @@ const LF: &str = "\n";
 const CRLF: &str = "\r\n";
 const MARK: &str = "\u{feff}";
 
+#[test]
+fn scale_set_is_an_optional_editable_text_key_and_keeps_its_comment() {
+    let source = SAMPLE.replace(
+        "labels = [\"gpu\", \"fast\"] # picked by the workflows",
+        "scale_set = \"axpc-linux\" # picked by the workflows",
+    );
+    let changed = rewrite(
+        source.as_bytes(),
+        Profile::Axpc,
+        None,
+        &[set(pool(0, Key::ScaleSet), text("axpc-jobs"))],
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(changed.clone()).unwrap(),
+        source.replace("axpc-linux", "axpc-jobs")
+    );
+    let removed = rewrite(
+        &changed,
+        Profile::Axpc,
+        None,
+        &[Edit::Remove {
+            path: pool(0, Key::ScaleSet),
+        }],
+    )
+    .unwrap();
+    let restored = rewrite(
+        &removed,
+        Profile::Axpc,
+        None,
+        &[set(pool(0, Key::ScaleSet), text("axpc-linux"))],
+    )
+    .unwrap();
+    let plan = validate_toml(&restored, Profile::Axpc, None)
+        .outcome
+        .unwrap();
+    assert_eq!(plan.entries[0].scale_set.as_deref(), Some("axpc-linux"));
+    assert_eq!(plan.entries[1].scale_set, None);
+}
+
 fn with_ending(text: &str, ending: &str) -> String {
     text.replace('\n', ending)
 }
@@ -605,6 +645,41 @@ fn the_host_decides_which_result_is_valid() {
     .unwrap_err();
     assert!(matches!(error, EditError::Invalid(_)), "{error:?}");
     assert_eq!(config.read(), SAMPLE);
+}
+
+#[test]
+fn a_scale_set_on_the_mac_is_refused_with_its_path_and_the_file_stays() {
+    let before = "\
+schema_version = 1
+routing_label = \"axmc\"
+
+[budget]
+cpus = 4
+memory_gb = 16
+disk_gb = 100
+
+[[pool]]
+name = \"alpha\"
+repository = \"octo/hello\"
+runners = 1
+disk_gb = 40
+";
+    let config = Config::new(before);
+    let error = edit_config(
+        &config.path,
+        Profile::Axmc,
+        None,
+        &[set(pool(0, Key::ScaleSet), text("axmc-jobs"))],
+    )
+    .unwrap_err();
+    assert_eq!(
+        problems(error),
+        [
+            "line 14: pool[0].scale_set: must be absent on macOS; on-demand pools are not supported yet"
+        ]
+    );
+    assert_eq!(bytes_of(&config), before.as_bytes());
+    config.assert_nothing_left_beside_the_file();
 }
 
 #[test]
