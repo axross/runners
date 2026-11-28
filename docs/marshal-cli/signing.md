@@ -303,8 +303,6 @@ spctl --assess --type execute -vv /Applications/Marshal.app
   compares the team ID it shows with the one this document records once the first
   signed release has fixed it. Gatekeeper assesses only a file that carries the
   download mark, which a disk image fetched with `gh` or `curl` lacks.
-  [Security](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
-  records what it is expected to block and accept.
 - `spctl --assess --type open` is expected to print `accepted` with
   `source=Notarized Developer ID`, and `xcrun stapler validate` passes for a stapled
   image.
