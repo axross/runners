@@ -27,6 +27,36 @@ function Read-CpuSmoke {
     return $result
 }
 
+# the daemon can still be removing an ordinary container when its stop returns, so
+# that one is polled until it is gone; a diagnostic container is never removed, so
+# one check settles it.
+function Confirm-CpuSmokeRemoval {
+    param([string]$Name, [bool]$Diagnostic, [int]$BoundMilliseconds = 10000, [int]$IntervalMilliseconds = 250)
+
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $checkedAt = $clock.ElapsedMilliseconds
+        $listing = Invoke-Docker -Arguments @('ps', '-a', '--filter', "name=^${Name}$", '--format', '{{.Names}}|{{.State}}')
+        if ($listing.ExitCode -ne 0) { throw "docker ps for $Name failed with exit code $($listing.ExitCode)" }
+        $lines = @($listing.Output)
+        if ($lines.Count -gt 1 -or ($lines.Count -eq 1 -and -not $lines[0].StartsWith("$Name|", [StringComparison]::Ordinal))) {
+            throw "docker ps for $Name printed unexpected output: '$($lines -join "`n")'"
+        }
+        $state = $null
+        if ($lines.Count -eq 1) { $state = $lines[0].Substring($Name.Length + 1) }
+        if ($Diagnostic) {
+            if ($null -eq $state) { throw "diagnostic container $Name was removed after it stopped" }
+            return
+        }
+        if ($null -eq $state) {
+            Write-Information "CPU smoke: $Name waited $($clock.ElapsedMilliseconds) ms for removal" -InformationAction Continue
+            return
+        }
+        if ($checkedAt -ge $BoundMilliseconds) { throw "container $Name was not removed within $($BoundMilliseconds / 1000) s; docker ps last reported state $state" }
+        Start-Sleep -Milliseconds $IntervalMilliseconds
+    }
+}
+
 # detached fixtures stay alive only long enough to inspect their actual cgroups.
 function Invoke-CpuSmokeContainer {
     param([string]$Name, [string[]]$Arguments, [string]$ExpectedSet, [bool]$Diagnostic = $false)
@@ -49,8 +79,7 @@ function Invoke-CpuSmokeContainer {
     Write-Information "CPU smoke: requested=$ExpectedSet process=$($readback.process) child=$($readback.child) cgroup=$($readback.cpuset) quota=$($readback.quota)/$($readback.period) layout=$($readback.layout) nproc=$($readback.nproc) getconf=$($readback.getconf)" -InformationAction Continue
     $stop = Invoke-Docker -Arguments @('stop', '--time', '5', $Name)
     if ($stop.ExitCode -ne 0) { throw 'smoke fixture stop failed' }
-    $left = Invoke-Docker -Arguments @('ps', '-a', '--filter', "name=^${Name}$", '--format', '{{.Names}}')
-    if ($left.ExitCode -ne 0 -or (($left.Output -join '') -ne $(if ($Diagnostic) { $Name } else { '' }))) { throw 'ordinary/diagnostic removal contract changed' }
+    Confirm-CpuSmokeRemoval -Name $Name -Diagnostic $Diagnostic
     return $readback
 }
 

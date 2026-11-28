@@ -406,6 +406,10 @@ run = "bash .github/scripts/tests/test-installer-version.sh"
 description = "Check that the WiX fetch refuses a package whose SHA-256 differs from the pin"
 run = "bash .github/scripts/tests/test-fetch-wix.sh"
 
+[tasks."test:cpu-smoke-removal"]
+description = "Check the CPU smoke test's removal check against a stand-in docker: a bounded wait for an ordinary container, a strict check for a diagnostic one, and a separate failure for each way it can fail"
+run = "pwsh -NoProfile -File images/actions-runner/tests/test-cpu-smoke-removal.ps1"
+
 [tasks."test:assemble-release"]
 description = "Check the script that writes SHA256SUMS for the release's app executable and MSI and refuses another file set or a changed file"
 run = "bash .github/scripts/tests/test-assemble-release.sh"
@@ -419,7 +423,7 @@ description = "Run the release shape check against altered copies of the workflo
 run = "bash .github/scripts/tests/test-release-shape.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, installer version, WiX fetch and CPU smoke removal tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -435,6 +439,7 @@ depends = [
   "test:release-shape",
   "test:installer-version",
   "test:fetch-wix",
+  "test:cpu-smoke-removal",
   "test:rust",
   "deny:rust",
   "check:app-pins",

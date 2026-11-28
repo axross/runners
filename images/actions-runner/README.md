@@ -264,6 +264,7 @@ From the repository root:
 ```bash
 bash images/actions-runner/tests/diagnostics-test.sh
 bash images/actions-runner/tests/check-download.sh
+pwsh -NoProfile -File images/actions-runner/tests/test-cpu-smoke-removal.ps1
 docker build --tag actions-runner:test images/actions-runner
 bash images/actions-runner/tests/smoke-test.sh actions-runner:test
 ```
@@ -272,6 +273,9 @@ The standalone diagnostic test needs Linux `g++` (C++17), `timeout`, and an
 unprivileged user for permission fixtures, but no Docker daemon.
 It uses asymmetric cgroup fixtures, synthetic private markers,
 raw-file boundaries, bounded attach subprocesses, and real launcher children.
+The removal check test needs `pwsh` and `bash`, but no Docker daemon or image.
+It checks the CPU smoke test's wait for an ordinary container's removal against a
+stand-in `docker`.
 Run tests and builds alone and sequentially in an orb. The smoke command also
 runs these fixtures inside the actual image, followed by isolated diagnostic
 container lifecycle checks without production registration or networking. That
