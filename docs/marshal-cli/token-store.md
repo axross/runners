@@ -34,9 +34,10 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   established, and [#148](https://github.com/axross/runners/issues/148) holds the
   investigation and the probe's result. The tests themselves neither retry a read
   nor warm the Credential Manager up first, since either would hide a miss rather
-  than remove its cause. The agent they drive does re-read a miss, on admission and
-  in the presence check (see below), so a test that goes through the agent can pass
-  a miss that a read of its own would show.
+  than remove its cause. The agent they drive re-reads a miss, on admission and in
+  the presence check (see below), back to back because the agent tests set its pause
+  to no wait, so a test that goes through the agent can pass a miss that a read of
+  its own would show.
 - **macOS.** The user's login keychain, through `security-framework`, as one generic
   password per key with the service `app.axross.marshal`. A repository's item has the
   account `github.com/<owner>/<name>` and the label `Marshal: <owner>/<name>`, and an
@@ -114,9 +115,10 @@ and by what the agent does to the token itself:
 - A successful removal makes it read absent, since absence is then expected. A failed
   removal changes nothing.
 
-So a token that was never stored pauses the agent once per process, at its first
-read, which at launch is the presence check's, and every later read of it is a
-single one. A token deleted outside the agent stays known stored until the agent
+The presence check reads each key once per check, however many pools use it, and
+admission reads it once for each pool. So a token that was never stored pauses the
+agent once per process, at its first read, which at launch is the presence check's,
+and every later read of it is a single one. A token deleted outside the agent stays known stored until the agent
 restarts or the token is saved again.
 
 When a re-read finds the token, the pool is admitted or the presence answer is
