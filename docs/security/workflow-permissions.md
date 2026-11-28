@@ -198,8 +198,9 @@ executed.
   runner's temporary directory, and the home directory, with the repository name,
   the `gh` path and the other tools' paths fixed into the copy. The step finds each
   tool and the interpreter only in one tool search path that it declares in its own
-  environment, `/usr/bin:/bin`, the directories the copy trusts when it runs, and
-  never in the job's own search path. The copy's first
+  environment, `/usr/bin:/bin`, and fixes that same value into the copy as its own
+  search path, so the copy trusts when it runs the directories the step checked,
+  and never the job's own search path. The copy's first
   line names its interpreter by absolute path and starts it in privileged mode, so
   the caller's search path, startup-file variables, and exported functions do not
   reach it. The step accepts a tool or the interpreter only from a directory chain

@@ -133,12 +133,14 @@ unconfigured_source_refuses() {
 }
 check "the unconfigured source refuses to run" unconfigured_source_refuses
 
-script_trusts_declared_tool_path() {
-  local declared
-  declared="$(node "$guard" --print-copy-env READ_HEAD_TOOL_PATH "$workflow")"
-  grep -qx "PATH='${declared}'" "${scripts}/read-head.sh"
+# a copy whose repository is filled but whose search path is not is unconfigured too
+unfilled_search_path_refuses() {
+  local output status=0
+  sed 's|@REPOSITORY@|example/widgets|' "${scripts}/read-head.sh" >"${work}/half-filled.sh"
+  output="$(bash "${work}/half-filled.sh" 0123456789abcdef0123456789abcdef01234567 a.txt 2>&1)" || status=$?
+  [[ $status -eq 2 && $output == *unconfigured* ]]
 }
-check "the script's own search path is the tool search path the step declares" script_trusts_declared_tool_path
+check "a copy with an unfilled search path refuses to run" unfilled_search_path_refuses
 
 # --- the copy --------------------------------------------------------------------
 
@@ -269,6 +271,8 @@ real_destination_test() {
     pass "the shipped copy step passes at its real destination ${real_copy}"
     cat "${work}/step-real.log"
     check "the real copy is root-owned and mode 555" test "$(stat -c '%U:%G %a' "$real_copy")" = "root:root 555"
+    check "the real copy's search path is exactly the one the workflow declares" \
+      grep -qx "PATH='${real_tool_path}'" "$real_copy"
   else
     cat "${work}/step-real.log"
     flunk "the shipped copy step failed at its real destination"
@@ -292,9 +296,11 @@ check "the step prints the ownership chain" grep -q "root root read-head" "${wor
 copy_has_fixed_values() {
   grep -q "^repository='example/widgets'$" "$copy" \
     && grep -q "^gh='${parent}/stub-bin/gh'$" "$copy" \
-    && ! grep -q "@[A-Z0-9]*@" "$copy"
+    && ! grep -q "@[A-Z0-9_]*@" "$copy"
 }
 check "the copy has the repository and the stand-in gh fixed in" copy_has_fixed_values
+check "the copy's search path is exactly the one the step declares" \
+  grep -qx "PATH='${parent}/stub-bin:/usr/bin:/bin'" "$copy"
 
 # the job's user is tried, not inferred from modes: uid 65534 with gid 65534 and no
 # supplementary groups tries each way to change the installed copy or its directory, and
@@ -384,6 +390,10 @@ STEP_PATH="${parent}/tools-owned:${parent}/stub-bin:/usr/bin:/bin" expect_step_f
 STEP_PATH="${parent}/stub-bin" expect_step_failure "the step fails for a tool missing from the declared tool search path" \
   "jq is not in the tool search path" "${parent}/tools-check/read-head"
 STEP_PATH="${parent}/stub-bin:relative:/usr/bin" expect_step_failure "the step fails for a tool search path entry that is not absolute" \
+  "not an absolute, plain path" "${parent}/tools-check/read-head"
+STEP_PATH="${parent}/stub-bin:/usr/bin:" expect_step_failure "the step fails for a tool search path with a trailing colon" \
+  "not an absolute, plain path" "${parent}/tools-check/read-head"
+STEP_PATH=":/usr/bin" expect_step_failure "the step fails for a tool search path with a leading colon" \
   "not an absolute, plain path" "${parent}/tools-check/read-head"
 # the job's own search path is never read: a writable directory first on it, holding a
 # jq, changes nothing, where a lookup through it would have failed the step

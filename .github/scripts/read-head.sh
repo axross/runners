@@ -15,7 +15,8 @@ jq='@JQ@'
 base64='@BASE64@'
 sed='@SED@'
 wc='@WC@'
-PATH='/usr/bin:/bin'
+# shellcheck disable=SC2123 # the search path is the colon-separated list the workflow fills in.
+PATH='@TOOL_PATH@'
 
 usage='usage: read-head <40-character lowercase commit SHA> <path> [<first line> <last line>]'
 max_path_length=1024
@@ -34,9 +35,8 @@ fail() {
   exit 1
 }
 
-case $repository in
-  @*) refuse "this is the unconfigured source; run the copy the workflow installs" ;;
-esac
+# a placeholder left unfilled in either value means this is not a copy the workflow made
+[[ $repository != @* && $PATH != @* ]] || refuse "this is the unconfigured source; run the copy the workflow installs"
 
 [[ $# -eq 2 || $# -eq 4 ]] || refuse "$usage"
 sha=$1

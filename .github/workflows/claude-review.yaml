@@ -91,7 +91,6 @@ jobs:
           find_tool() {
             local directory
             for directory in "${tool_directories[@]}"; do
-              [[ $directory =~ ^/[A-Za-z0-9._/+-]*$ ]] || fail "the tool search path has an entry that is not an absolute, plain path"
               if [[ -f "${directory%/}/$1" && -x "${directory%/}/$1" ]]; then
                 printf '%s' "${directory%/}/$1"
                 return 0
@@ -112,6 +111,9 @@ jobs:
             require_root_chain "$canonical"
             printf '%s' "$found"
           }
+          # filled into the copy, so each entry must be an absolute, plain path; a stray colon
+          # would otherwise leave an empty entry, which means the working directory
+          [[ $READ_HEAD_TOOL_PATH =~ ^/[A-Za-z0-9._/+-]*(:/[A-Za-z0-9._/+-]*)*$ ]] || fail "the tool search path has an entry that is not an absolute, plain path"
           IFS=: read -r -a tool_directories <<<"$READ_HEAD_TOOL_PATH"
           [[ $READ_HEAD_REPOSITORY =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "the repository name is not owner/name"
           [[ $READ_HEAD_COPY =~ ^/[A-Za-z0-9._/+-]+$ ]] || fail "the copy path must be absolute, with plain characters"
@@ -123,6 +125,7 @@ jobs:
             body="${body//"@$1@"/$2}"
           }
           fill REPOSITORY "$READ_HEAD_REPOSITORY"
+          fill TOOL_PATH "$READ_HEAD_TOOL_PATH"
           for tool in gh jq base64 sed wc; do
             tool_path="$(resolve "$tool")"
             echo "$tool is $tool_path"
