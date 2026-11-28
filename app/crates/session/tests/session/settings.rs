@@ -2,7 +2,7 @@
 //! settings wait until it is answered, and what came of it is shown under the setting
 //! and announced.
 
-use marshal_cli::agent::config::{ConfigChange, Problem};
+use marshal_cli::agent::config::{ConfigChange, ConfigRead, Problem};
 use marshal_session::{ConfigAnswer, ConfigRequest, Failure};
 use serde_json::json;
 
@@ -363,19 +363,28 @@ async fn a_check_a_refusal_a_failure_and_a_timeout_leave_the_notes() {
 
 #[tokio::test(start_paused = true)]
 async fn a_read_and_a_token_removal_remove_no_note() {
-    let (agent, session) = connected_with_three().await;
-    with_a_saved_a_refused_and_an_unanswered_setting(&agent, &session).await;
-    let before = note(&session, "keep_awake");
-    agent.answer_config(Ok(ConfigAnswer::TokenRemoved));
-    session
-        .handle
-        .config(ConfigRequest::RemoveReleasedToken {
-            repository: "owner/released".to_string(),
-        })
-        .await
-        .unwrap();
-    session.settle().await;
-    assert_eq!(note(&session, "keep_awake"), before);
+    let read: ConfigRead = serde_json::from_value(json!({
+        "revision": "r1",
+        "status": "valid",
+        "settings": {},
+        "pools": [],
+    }))
+    .unwrap();
+    let removal = ConfigRequest::RemoveReleasedToken {
+        repository: "owner/released".to_string(),
+    };
+    for (request, answer) in [
+        (ConfigRequest::Read, ConfigAnswer::Read(read)),
+        (removal, ConfigAnswer::TokenRemoved),
+    ] {
+        let (agent, session) = connected_with_three().await;
+        with_a_saved_a_refused_and_an_unanswered_setting(&agent, &session).await;
+        let before = note(&session, "keep_awake");
+        agent.answer_config(Ok(answer));
+        session.handle.config(request.clone()).await.unwrap();
+        session.settle().await;
+        assert_eq!(note(&session, "keep_awake"), before, "{request:?}");
+    }
 }
 
 async fn refused_with_the_agent(
