@@ -79,8 +79,8 @@ alter() {
 copy_path="/usr/local/libexec/claude-review/read-head"
 alter "an added allowlist entry fails the guard" \
   "Bash(gh pr view:*)," "Bash(gh pr view:*),Bash(gh api:*)," "extra: [Bash(gh api:*)]"
-alter "a restored git prefix entry fails the guard" \
-  "Bash(${copy_path}:*)" "Bash(${copy_path}:*),Bash(git log:*)" "extra: [Bash(git log:*)]"
+alter "a second command prefix entry fails the guard" \
+  "Bash(${copy_path}:*)" "Bash(${copy_path}:*),Bash(ls:*)" "extra: [Bash(ls:*)]"
 alter "a dropped allowlist entry fails the guard" \
   "Bash(gh pr diff:*)," "" "missing: [Bash(gh pr diff:*)]"
 alter "a dropped git deny rule fails the guard" \
