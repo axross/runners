@@ -2,11 +2,11 @@
 //! settings wait until it is answered, and what came of it is shown under the setting
 //! and announced.
 
-use marshal_cli::agent::config::Problem;
-use marshal_session::Failure;
+use marshal_cli::agent::config::{ConfigChange, Problem};
+use marshal_session::{ConfigAnswer, ConfigRequest, Failure};
 use serde_json::json;
 
-use crate::support::{Agent, Answer, Called, Running, World, patched, start};
+use crate::support::{Agent, Answer, Called, Running, World, patched, secs, start};
 
 async fn connected() -> (Agent, Running) {
     let (agent, link) = Agent::new();
@@ -207,6 +207,177 @@ async fn a_refusal_for_problems_keeps_them_as_the_snapshot_words_them() {
         ),
         "{shown}"
     );
+}
+
+// the notes under the settings after an edit or a reload ---------------------------
+
+/// a running agent whose lifecycle part holds three settings.
+async fn connected_with_three() -> (Agent, Running) {
+    let (agent, link) = Agent::new();
+    let world = World::default();
+    world.then(Answer::Agent(link));
+    let session = start(world);
+    agent.push(patched("running", |value| {
+        value["configuration"]["status"] = json!("valid");
+        value["lifecycle"] = json!({
+            "settings": {
+                "keep_awake": { "on": true, "defaulted": true },
+                "stop_on_network_change": { "on": true, "defaulted": true },
+                "resume_after_stop": { "on": false, "defaulted": true }
+            },
+            "keep_awake": "held"
+        });
+    }));
+    session.settle().await;
+    (agent, session)
+}
+
+fn checked(session: &Running, key: &str) -> Option<bool> {
+    settings(session)
+        .groups
+        .iter()
+        .flat_map(|group| &group.rows)
+        .find(|row| row.key == key)
+        .and_then(|row| row.checked)
+}
+
+/// puts a saved value under `resume_after_stop`, a refusal under `keep_awake` and an
+/// unanswered change under `stop_on_network_change`.
+async fn with_a_saved_a_refused_and_an_unanswered_setting(agent: &Agent, session: &Running) {
+    session
+        .handle
+        .set_setting("resume_after_stop".to_string(), true)
+        .await
+        .unwrap();
+    agent.answer(
+        "lifecycle_set",
+        Err(Failure::Config {
+            code: "config_changed".to_string(),
+            message: "config.toml changed after the agent read it".to_string(),
+            problems: Vec::new(),
+        }),
+    );
+    session
+        .handle
+        .set_setting("keep_awake".to_string(), false)
+        .await
+        .unwrap();
+    let gate = agent.hold("lifecycle_set");
+    let handle = session.handle.clone();
+    let call = tokio::spawn(async move {
+        handle
+            .set_setting("stop_on_network_change".to_string(), false)
+            .await
+    });
+    session.wait(secs(11)).await;
+    call.await.unwrap().unwrap();
+    drop(gate);
+    session.settle().await;
+    assert!(note(session, "keep_awake").is_some());
+    assert!(note(session, "stop_on_network_change").is_some());
+    assert_eq!(checked(session, "resume_after_stop"), Some(true));
+}
+
+fn change() -> ConfigChange {
+    serde_json::from_value(json!({ "revision": "r2", "effects": [], "applies": false })).unwrap()
+}
+
+fn reload(check: bool) -> ConfigRequest {
+    ConfigRequest::Reload {
+        revision: "r1".to_string(),
+        check,
+    }
+}
+
+fn edit(check: bool) -> ConfigRequest {
+    ConfigRequest::Edit {
+        revision: "r1".to_string(),
+        edits: json!([{"op": "set", "path": "pool[0].runners", "value": 2}]),
+        check,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_applied_reload_or_edit_removes_the_refusal_and_the_unanswered_notes_and_keeps_a_saved_value()
+ {
+    for request in [reload(false), edit(false)] {
+        let (agent, session) = connected_with_three().await;
+        with_a_saved_a_refused_and_an_unanswered_setting(&agent, &session).await;
+        agent.answer_config(Ok(ConfigAnswer::Change(change())));
+        session.handle.config(request.clone()).await.unwrap();
+        session.settle().await;
+        assert_eq!(note(&session, "keep_awake"), None, "{request:?}");
+        assert_eq!(
+            note(&session, "stop_on_network_change"),
+            None,
+            "{request:?}"
+        );
+        // a saved value still holds its checkbox, until the snapshot shows it
+        assert_eq!(checked(&session, "resume_after_stop"), Some(true));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_check_a_refusal_a_failure_and_a_timeout_leave_the_notes() {
+    let (agent, session) = connected_with_three().await;
+    with_a_saved_a_refused_and_an_unanswered_setting(&agent, &session).await;
+    let notes = |session: &Running| {
+        (
+            note(session, "keep_awake"),
+            note(session, "stop_on_network_change"),
+        )
+    };
+    let before = notes(&session);
+
+    // a check writes nothing
+    for request in [reload(true), edit(true)] {
+        agent.answer_config(Ok(ConfigAnswer::Change(change())));
+        session.handle.config(request).await.unwrap();
+        session.settle().await;
+        assert_eq!(notes(&session), before);
+    }
+    // a refusal and a failure
+    for failure in [
+        Failure::Config {
+            code: "config_changed".into(),
+            message: "config.toml changed after it was read".into(),
+            problems: Vec::new(),
+        },
+        Failure::Refused("the agent is stopping".into()),
+        Failure::Busy("the agent is busy".into()),
+    ] {
+        agent.answer_config(Err(failure.clone()));
+        assert_eq!(session.handle.config(reload(false)).await, Err(failure));
+        session.settle().await;
+        assert_eq!(notes(&session), before);
+    }
+    // an answer that does not come in time
+    let gate = agent.hold("config");
+    let handle = session.handle.clone();
+    let call = tokio::spawn(async move { handle.config(reload(false)).await });
+    session.settle().await;
+    session.wait(secs(41)).await;
+    assert_eq!(call.await.unwrap(), Err(Failure::TimedOut));
+    session.settle().await;
+    assert_eq!(notes(&session), before);
+    drop(gate);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_read_and_a_token_removal_remove_no_note() {
+    let (agent, session) = connected_with_three().await;
+    with_a_saved_a_refused_and_an_unanswered_setting(&agent, &session).await;
+    let before = note(&session, "keep_awake");
+    agent.answer_config(Ok(ConfigAnswer::TokenRemoved));
+    session
+        .handle
+        .config(ConfigRequest::RemoveReleasedToken {
+            repository: "owner/released".to_string(),
+        })
+        .await
+        .unwrap();
+    session.settle().await;
+    assert_eq!(note(&session, "keep_awake"), before);
 }
 
 // the next step a refused setting names ---------------------------------------------

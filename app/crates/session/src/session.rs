@@ -349,6 +349,8 @@ enum Internal<L> {
         outcome: Result<(), Failure>,
         reply: Reply<()>,
     },
+    /// the agent answered an edit or a reload as written or applied.
+    ConfigWritten,
     QuitAnswered(Result<(), Failure>),
     /// what a check of the update feed found.
     Checked(Result<Option<Box<dyn Verified>>, String>),
@@ -1268,6 +1270,15 @@ impl<D: Dial> Session<D> {
         marshal_view::next_step(&input)
     }
 
+    /// removes the notes an edit or a reload has made obsolete; a saved value keeps
+    /// holding its checkbox until the snapshot shows it.
+    fn config_written(&mut self) {
+        self.settings
+            .results
+            .retain(|_, result| matches!(result, SettingResult::Saved { .. }));
+        self.refresh();
+    }
+
     fn setting_answered(&mut self, key: &str, on: bool, outcome: Result<(), Failure>) {
         self.settings.writing = None;
         let result = match outcome {
@@ -1332,6 +1343,11 @@ impl<D: Dial> Session<D> {
             CALL_WITHIN
         };
         let log = Arc::clone(&self.log);
+        let report = self.report.clone();
+        let writes = matches!(
+            &request,
+            ConfigRequest::Edit { check: false, .. } | ConfigRequest::Reload { check: false, .. }
+        );
         tokio::spawn(async move {
             let answer = tokio::time::timeout(within, link.config(request))
                 .await
@@ -1344,6 +1360,9 @@ impl<D: Dial> Session<D> {
                     }
                     Err(Failure::TimedOut)
                 });
+            if writes && matches!(answer, Ok(ConfigAnswer::Change(_))) {
+                let _ = report.send(Internal::ConfigWritten);
+            }
             let _ = reply.send(answer);
         });
     }
@@ -1596,6 +1615,7 @@ impl<D: Dial> Session<D> {
                 self.setting_answered(&key, on, outcome);
                 let _ = reply.send(Ok(()));
             }
+            Internal::ConfigWritten => self.config_written(),
             Internal::QuitAnswered(outcome) => self.quit_answered(outcome),
             Internal::Checked(outcome) => self.checked(outcome),
             Internal::DrainAnswered(outcome) => self.drain_answered(outcome),
