@@ -134,11 +134,9 @@ instance.
   with a job. A VM left after a stop is a leftover.
 - **The log:** `~/Library/Logs/marshal/marshal-<time>-<pid>.log` keeps the newest ten
   runs. `Using Tart <v> and Softnet <v>.` records the versions in use.
-- **A stuck Linux runner:** a runner that keeps retrying its connection, or jobs on it
-  that fail to resolve names, is not yet a case for a `restart`, which deletes the VM
-  that holds the evidence. Follow
+- **A stuck Linux runner:** see
   [Observe a Linux job VM whose network overlaps Docker's bridge](./mac-overlap-observation.md)
-  first.
+  before a `restart`.
 
 ### Adding Actions: read for Job Names
 

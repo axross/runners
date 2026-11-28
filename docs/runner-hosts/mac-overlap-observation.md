@@ -16,7 +16,9 @@ private ranges and avoids only the Mac's own interfaces, which
 records and no other page states.
 
 This procedure makes the limited, read-only observation the maintainer approved there
-(option B) at the next recurrence. It changes nothing. A matching result confirms the
+(option B) at the next recurrence. Every command reads or looks something up, and none
+changes a setting, a rule or a counter. The only file the procedure creates is your
+private notes file on the Mac. A matching result confirms the
 mechanism for that case only, and it does not prove the cause of the first incident.
 It is not continuous monitoring and it grants no access to axmc.
 
@@ -79,8 +81,8 @@ happens:
   runner and deletes every VM; see
   [Sleep, Wake, and Network Changes](./mac-resume.md#sleep-wake-and-network-changes).
 - Stop or restart the instance, update or quit the Mac app, or kill or start the
-  command line. A stop and a restart delete every VM within 30 s, and a dying CLI
-  has each VM's shim delete its VM within 15 s. The next `start` deletes leftovers.
+  command line. A stop and a restart run the stop sequence, which deletes every VM
+  within 30 s, and a dying CLI has each VM's shim delete its VM within 15 s. The next `start` deletes leftovers.
   See [Starting, watching and stopping](./mac-pools.md#starting-watching-and-stopping).
 - Let the runner container exit. The slot then deletes the VM when the job ends; see
   the slot's cycle in [The Golden VM Contract](./linux-vm.md#the-golden-vm-contract).
@@ -106,19 +108,38 @@ itself.
 
 - The job VM is gone before or during the observation: stop, and report on #124 what
   you collected and when the VM went.
-- `tart exec` fails, or the guest agent does not answer: stop. End a hung `tart exec`
-  client with Ctrl+C, and report what you collected.
+- `tart exec` itself cannot reach the guest, or the guest agent does not answer: stop.
+  End a hung `tart exec` client with Ctrl+C, and report what you collected. A command
+  that runs in the guest and exits non-zero, such as a missing file or status 127 for
+  a missing tool, is not a stop: its exit status is in the record, so continue.
 - A step would need a forbidden action, a `sudo` that `sudo -n true` refused, or a tool
   that is missing: skip that step and record why.
 
 ### 1. Prepare the shell
 
-The helpers print a UTC time and the command before its output and the exit status
-after it, so the record is complete as you copy it into a notes file that only you can read.
-Exit status 124 from `timeout` means the limit ended the command.
+Run the whole procedure in one `bash` session. macOS's default shell is zsh, so start
+`bash` first, before you define anything below, because a new shell drops the helpers
+and the variables. Then create a notes file that only you can read, which is the
+`<evidence-file>` that [Post the Evidence](#post-the-evidence) scans:
 
 ```bash
-obs() { printf '== %s UTC: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; "$@"; printf 'exit status: %s\n' "$?"; }
+umask 077
+EVIDENCE='<evidence-file>'
+: >>"$EVIDENCE"
+```
+
+The helpers print a UTC time and the command before its output and the exit status
+after it, and append all of it to that file as well as the terminal. Exit status 124
+from `timeout` means the limit ended the command.
+
+```bash
+obs() {
+  {
+    printf '== %s UTC: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+    "$@"
+    printf 'exit status: %s\n' "$?"
+  } 2>&1 | tee -a "$EVIDENCE"
+}
 vm() { obs tart exec "$VM" "$@"; }
 ctr() { obs tart exec "$VM" docker exec "$CTR" "$@"; }
 ```
@@ -127,14 +148,15 @@ ctr() { obs tart exec "$VM" docker exec "$CTR" "$@"; }
 
 Read the status as [Starting, watching and stopping](./mac-pools.md#starting-watching-and-stopping)
 describes, and record the instance's `state:` line and the affected slot's line, such
-as `running container <name>`. Then record the time, the VM list and the log lines for
-that slot. The log's time stamps are UTC, in the same form as the VM and container
-names, so convert only times that come from elsewhere, such as GitHub's pages.
+as `running container <name>`. Then record the VM list and the log lines for that slot.
+The VM list names the VMs of other pools too, so the scrub in
+[Post the Evidence](#post-the-evidence) covers it. The log's time stamps are UTC, in
+the same form as the VM and container names, so convert only times that come from
+elsewhere, such as GitHub's pages.
 
 ```bash
-date -u +%Y-%m-%dT%H:%M:%SZ
-tart list --source local
-grep -hF -e '<pool> slot <slot>: booting job VM' -e '<pool> slot <slot>: starting container' ~/Library/Logs/marshal/*.log | tail -n 2
+obs tart list --source local
+obs sh -c 'grep -hF -e "<pool> slot <slot>: booting job VM" -e "<pool> slot <slot>: starting container" ~/Library/Logs/marshal/*.log | tail -n 2'
 ```
 
 The two lines name the VM the slot booted and the container it started. If the VM is
@@ -154,9 +176,12 @@ Network tools in the VM and the container are optional. Nothing here installs on
 a step whose tool is missing is skipped, and a missing `timeout` skips every step that
 waits on the network in that VM or container. The guest agent's `PATH` is not
 recorded, so a tool reported missing may only be off that path; skip it all the same.
+`nft` and `iptables` sit in `/usr/sbin`, which that path may lack, and `sudo` uses its
+own path. If both are reported missing, step 8 still tries its command once, and its
+"command not found" answer is the record.
 
 ```bash
-vm sh -c 'for t in ip tcpdump dig curl timeout getent grep bash; do command -v "$t" >/dev/null || echo "missing: $t"; done'
+vm sh -c 'for t in ip tcpdump dig curl timeout getent grep bash nft iptables; do command -v "$t" >/dev/null || echo "missing: $t"; done'
 ctr sh -c 'for t in ip dig curl timeout getent bash; do command -v "$t" >/dev/null || echo "missing: $t"; done'
 vm sudo -n true
 ```
@@ -182,7 +207,8 @@ ctr sh -c 'for f in /sys/class/net/*/iflink; do printf "%s %s\n" "$f" "$(cat "$f
 Set `DNS` to the non-loopback `nameserver` address in the resolver file. The route
 lookup for that address shows which route the container uses to reach it. With `ip` in
 the container, ask for it, and for its policy rules. Otherwise work it out from the route table with the helper
-below, which you paste into a `bash` prompt on the Mac.
+below, which you paste into the same `bash` session, since it uses `ctr` and the
+variables from step 1.
 
 ```bash
 DNS='<dns-address>'
@@ -197,7 +223,6 @@ route_lookup() {
   want=$(( (d << 24) | (c << 16) | (b << 8) | a ))
   hex_ip() { printf '%d.%d.%d.%d' "0x${1:6:2}" "0x${1:4:2}" "0x${1:2:2}" "0x${1:0:2}"; }
   while read -r line; do
-    printf '%s\n' "$line"
     read -r iface dest gw _ _ _ metric mask _ <<<"$line"
     [[ $dest =~ ^[0-9A-F]{8}$ && $mask =~ ^[0-9A-F]{8}$ ]] || continue
     (( (want & 16#$mask) == 16#$dest )) || continue
@@ -208,7 +233,7 @@ route_lookup() {
   echo '-- routes that match; the longest prefix wins, then the lowest metric --'
   printf '%s' "$matches" | sort -k1,1nr -k2,2n
 }
-ctr cat /proc/net/route | route_lookup "$DNS"
+ctr cat /proc/net/route | route_lookup "$DNS" | tee -a "$EVIDENCE"
 ```
 
 The kernel prints each address in `/proc/net/route` as four bytes in hexadecimal,
@@ -297,15 +322,20 @@ counters of step 8, when `sudo -n true` succeeded, skip step 9, and go to
 
 ### 8. Read the firewall and NAT counters
 
-Only when `sudo -n true` succeeded. Use `nft` when the VM has it, and otherwise
-`iptables`. Read the rules twice, about 10 s apart with `sleep 10`, so the rules whose
+Only when `sudo -n true` succeeded. Use `nft` when step 3 found it, and otherwise
+`iptables`. Read the rules twice, the second time after `sleep 10`, so the rules whose
 counters move stand out. Never change a rule or reset a counter.
 
 ```bash
 vm sudo -n timeout 10 nft list ruleset
+sleep 10
+vm sudo -n timeout 10 nft list ruleset
 ```
 
 ```bash
+vm sudo -n timeout 10 iptables -w 5 -t nat -L -n -v -x
+vm sudo -n timeout 10 iptables -w 5 -t filter -L -n -v -x
+sleep 10
 vm sudo -n timeout 10 iptables -w 5 -t nat -L -n -v -x
 vm sudo -n timeout 10 iptables -w 5 -t filter -L -n -v -x
 ```
@@ -332,7 +362,10 @@ vm sudo -n timeout 15 tcpdump -p -nn -c 20 -i '<interface>' 'arp or port 53'
 
 Each capture ends after 15 s or 20 packets. While it runs, repeat the container's
 lookup from step 6 in a second terminal that has the same helpers, so that packets
-appear. That is a lookup, not a fault.
+appear. That is a lookup, not a fault. The capture prints every name queried on that
+interface, including the runner-specific GitHub host and any name a job looks up, such
+as a private registry. All of it falls under the scrub in
+[Post the Evidence](#post-the-evidence).
 
 ## Reading the Result
 
@@ -355,23 +388,26 @@ Report what you saw, and do not claim a cause for the first incident.
 Post one comment on #124 with these:
 
 - the UTC times, the VM and container names, and each command with its output, as
-  `obs` printed them;
-- the commands you skipped and why, including the runner-specific GitHub host, which
-  was not read, and Softnet's flow table.
+  `obs` printed them, which is the notes file, since every command above goes through
+  `obs`;
+- the commands you skipped and why, including Softnet's flow table, and that no
+  command here reads the runner-specific GitHub host, which a packet capture may still
+  show.
 
-Post nothing else from the log or the machine. Before you post, read the whole text and
+Post nothing else from the log or the machine than the two log lines of step 2. Before you post, read the whole text and
 check that no token, environment variable or JIT configuration appears. A search over
 the text you saved finds only the obvious cases:
 
 ```bash
-grep -n -i -E 'token|secret|jit|ghp_|ghs_|github_pat_|authorization|bearer|password|environ' <evidence-file>
+grep -n -i -E 'token|secret|jit|ghp_|ghs_|github_pat_|authorization|bearer|password|environ|AWS_|ACTIONS_RUNNER_INPUT' "$EVIDENCE"
 ```
 
 Because #124 is public, replace these with placeholders, as
 [the disclosure rule](../security/disclosure.md#nothing-identifying-or-secret-is-committed)
 does for committed files:
 
-- the pool segment of the VM and container names;
+- the pool segment of the VM and container names, and the VMs of other pools that
+  `tart list` printed;
 - owner, repository, image, job, workflow, volume and network names;
 - resolver search domains, and the VM's host name;
 - MAC addresses, home-directory paths and the Mac's account name;

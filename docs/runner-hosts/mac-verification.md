@@ -133,7 +133,7 @@ of an Apple tool as the source prints it, and not on a run:
 - [The overlap observation](./mac-overlap-observation.md) works on a job VM: its
   `tart exec` commands run as `admin`, `sudo -n` works in a job VM for the firewall,
   NAT and `tcpdump` commands, and the tools and files it reads exist. Record which of
-  `ip`, `tcpdump`, `dig`, `curl`, `timeout`, `getent`, `grep` and `bash` the VM has, which of
+  `ip`, `tcpdump`, `dig`, `curl`, `timeout`, `getent`, `grep`, `bash`, `nft` and `iptables` the VM has, which of
   `ip`, `dig`, `curl`, `timeout`, `getent` and `bash` the runner container has, whether
   the guest agent's `PATH` finds them, whether systemd-resolved's upstream file
   exists, and that the `/proc/net`, `/proc/sys/net/ipv4` and `/sys/class/net` reads
