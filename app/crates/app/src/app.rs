@@ -133,13 +133,13 @@ fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processe
 }
 
 /// on macOS, the login item the app keeps in step with `start_at_login`, with its record
-/// beside the update's; elsewhere the agent keeps the sign-in item.
+/// beside the update's; elsewhere the agent keeps the sign-in item. It reads the
+/// executable's path and the home folder as `may_control_agent` does, so the two places
+/// that ask whether the bundle is in Applications cannot disagree.
 #[cfg(target_os = "macos")]
 fn login_item(roots: &Roots) -> Result<Option<LoginItem>, String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("the app's own executable cannot be found: {error}"))?;
-    // a bundle reached through a symbolic link counts where its files are
-    let executable = std::fs::canonicalize(&executable).unwrap_or(executable);
     let record = marshal_session::LoginItemRecordFile::new(
         roots
             .config_directory()
@@ -149,7 +149,9 @@ fn login_item(roots: &Roots) -> Result<Option<LoginItem>, String> {
         Arc::new(crate::login_item::MainApp),
         Arc::new(record),
         &executable,
-        std::env::home_dir().as_deref(),
+        std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .as_deref(),
     )))
 }
 

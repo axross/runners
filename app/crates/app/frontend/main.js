@@ -5,7 +5,6 @@ import { askConfirmation, cancelDialog, dialogOpen } from "./dialog.js";
 import { keyOf } from "./controls.js";
 import { ConfigEditor } from "./config-editor.js";
 import { say } from "./live.js";
-import "./platform.js";
 import { renderWindow } from "./render.js";
 import { newestFirst } from "./revision.js";
 import { clearTypedTokens, tokenKey, tokenRows } from "./tokens.js";
