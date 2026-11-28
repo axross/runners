@@ -162,10 +162,18 @@ A bullet that gestures at a fact — announcing that one exists without saying w
 
 **Guidelines:**
 
-- MUST state the condition that makes each reference relevant.
+- MUST name a condition the assigned actor can recognize before the dependent decision, including the affected surface when a required element may be missing. A reviewer can see a new public type even when its required documentation is absent.
 - MUST state the fact a routing bullet points at, not that a fact exists — name the flag, limit, file, or rule, rather than writing "the flag", "the limit", or "the rules that apply".
 - MUST NOT use empty labels such as "details" or "more information" as the only routing clue.
-- SHOULD make triggers narrow enough that the agent can skip irrelevant references.
+- SHOULD check the route against a concrete task that can skip the reference and one that would miss a needed rule without it.
+
+**Transfer example:** A reviewer must judge whether a test detects a missing retry.
+A test that only asserts that the faked request function was called would still
+pass after the retry is removed. The assertion-design route applies even when
+the change adds no new assertion. The expected finding is the missing check for
+the retried outcome. A developer who already has that assertion and needs the
+installed runner's fake-timer API can go directly to the runner-specific
+mechanism. If both questions arise, both owners apply.
 
 ## Anti-Patterns
 

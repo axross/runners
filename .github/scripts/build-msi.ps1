@@ -3,7 +3,7 @@
 # installed unchanged as marshal-app.exe, and <Notices> the app's licence notices
 # for Windows, installed as THIRD-PARTY-NOTICES.txt. <Version> is the installer's
 # own X.Y.Z as installer-version.sh prints it, which is where the MSI limits are
-# enforced. docs/operations/cli.md describes the installer.
+# enforced. docs/marshal-cli/release-artifacts.md describes the installer.
 param(
   [Parameter(Mandatory = $true)][string]$App,
   [Parameter(Mandatory = $true)][string]$Notices,

@@ -1,101 +1,83 @@
 # Validators
 
-Apply this reference when running the bundled checks, wiring them into a
-project's own gate, or judging whether a proposed check belongs here.
+## Check the whole documentation root
 
-## Three Commands, Three Questions
+Run `check-docs.mjs` on first adoption, during migration and after editing a
+bundle. It inventories visible Markdown even if every living page is untyped.
+In a populated directory without a root index it reports the missing
+`index.md` and continues checking the available pages and links.
 
-Each command answers one question, tied to one kind of change the author just
-made. None is a general "check the docs" pass, because a general pass makes an
-author who touched one spec read findings about everything else.
+### Prepare the installed skill
 
-| Run it after                  | Command                | Reports                                  |
-| ----------------------------- | ---------------------- | ---------------------------------------- |
-| Adding or removing a document | `check-index.mjs`      | a document not listed in `index.md`      |
-| Editing any document          | `check-references.mjs` | a relative link that does not resolve    |
-| Adding or renaming a spec     | `check-glossary.mjs`   | a spec with no matching glossary heading |
+Set `skill_dir` to the installed skill directory. Use Node, npm and a Python 3
+environment with PyYAML. For example, from the project root on a POSIX shell:
 
 ```bash
-node <skill>/scripts/check-references.mjs           # defaults to ./docs
-node <skill>/scripts/check-references.mjs app/docs  # or name the docs directory
-node <skill>/scripts/check-references.mjs --help    # names the other two
+skill_dir=.agents/skills/living-project-documentation
+npm ci --prefix "$skill_dir/scripts" --ignore-scripts
+python3 -m venv .venv-okf
+. .venv-okf/bin/activate
+python3 -m pip install PyYAML==6.0.3
+validator="$VIRTUAL_ENV/validate-okf-v0.3.py"
+curl -fsSL https://raw.githubusercontent.com/open-knowledge-format/open-knowledge-format/527e81aff55992be21507e97004286789126f88c/skills/okf-generate/scripts/validate.py -o "$validator"
 ```
 
-Each exits **0** when it passes or has nothing to check, **1** on findings, and
-**2** on a bad invocation.
+The command verifies the pinned validator's SHA-256 before invoking Python.
+After setup the check runs offline. You can also point `--validator` at the
+same file in a local [OKF v0.3 checkout](https://github.com/open-knowledge-format/open-knowledge-format/blob/527e81aff55992be21507e97004286789126f88c/skills/okf-generate/scripts/validate.py).
 
-**There is no run-all script.** Adding one restores the bundled command the
-split exists to remove, and it is the shell's job anyway:
+### Run and interpret the check
 
 ```bash
-for check in <skill>/scripts/check-*.mjs; do node "$check" || failed=1; done
+node "$skill_dir/scripts/check-docs.mjs" --validator "$validator" docs
+```
+
+The exit status is **0** when the required checks pass, **1** for findings
+that require a fix, and **2** when a setup, invocation or execution problem
+prevents a complete check. Use the diagnostics to locate each finding:
+
+- **Required by OKF.** A format error such as frontmatter on a nested `index.md` (`E004`) or on a `log.md` (`E006`) fails the check.
+- **Required by this skill.** A living page needs a nonempty string `type`, a route from the root index and resolvable local links and fragments. OKF permits untyped Markdown and emits `W120`. The engineering check determines the type using the YAML 1.2 core schema. For example, an unquoted `type: On` is a string under that schema. The pinned Python parser can still emit `W120` for it. Quoting `"On"` makes both parsers read the same type.
+- **Recommendations.** Upstream warnings remain visible. For example, a root index without a version declaration can receive `W125`. Check for an accompanying required finding before deciding what to fix.
+- **Editorial review.** The report lists typed pages on both passing and failing runs. For each page, use its reader's question and the claim it owns to [review the declared type](./documentation-structure.md#review-the-declared-type). Root reachability and fragment resolution can pass even when a subject index omits a decision, a valid heading answers another question or a runbook sends a reader through an unrelated guide. [Trace each affected reader's route](./consulting-and-upkeep.md#verify-a-readers-route) to judge the answer and its limits.
+
+For checkout links to neighboring files, add `--source-root .` from the
+repository root. For immutable Markdown evidence, name each original by its
+exact bundle-relative path. A reachable companion can cite the source in its
+body or a local `sources[].resource` field.
+
+```bash
+node "$skill_dir/scripts/check-docs.mjs" --validator "$validator" --source-root . \
+  --evidence evidence/accepted.md --evidence evidence/incident.md docs
 ```
 
 **Guidelines:**
 
-- MUST run every command whose subject a change touched, and fix what they
-  report before calling the change done.
-- SHOULD wire all three into the project's own merge gate. They are offline and
-  deterministic, which is what a gate needs.
+- MUST run the whole-root check when determining whether a tree meets the required format and engineering rules.
+- MUST verify each named source against its companion and original bytes. Its expected `W120` stays in the report. An additional untyped living page or a separate error on the named source still fails.
 
-## The Two-Level Opt-In
+## Focused checks
 
-`index.md` is the marker that a project has adopted `docs/` at all. Without it
-every command exits 0 and reports nothing — installing this skill must never
-turn red a `docs/` directory that holds something else entirely. Within an
-adopted `docs/`, each command additionally does nothing when its own subject is
-absent: no `specs/` leaves the glossary pairing with nothing to pair.
+The individual Node commands default to `./docs` and accept another directory
+as a positional argument. They retain their existing root-index and OKF
+detection for callers using them during a targeted edit.
 
-**Guidelines:**
+| Command                | Question                                                                                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check-index.mjs`      | Can a reader reach every page from the root index? An OKF route may pass through nested indexes. The legacy layout lists pages directly.           |
+| `check-references.mjs` | Do local Markdown links, fragments and OKF path fields resolve? The local checker also checks rendered HTML links and images for export usability. |
+| `check-glossary.mjs`   | Does each legacy flat spec have a matching glossary heading? OKF type names do not imply a glossary pairing.                                       |
 
-- MUST create `index.md` as the deliberate act of adopting `docs/`; until it
-  exists the checks are inert by design, not misconfigured.
-- MUST NOT make a command fail on an absent subject. A project whose `docs/`
-  holds no `specs/` yet has not failed a check; it has not written one.
-- MUST treat a document under `conventions/` or `operations/` as in scope for
-  `check-index.mjs` exactly as a spec — see
-  [conventions-and-operations.md](./conventions-and-operations.md#what-the-validators-see)
-  for the full picture across all three commands.
+## Check the export independently
 
-## Why No Defect Is Reported Twice
-
-Two boundaries were drawn deliberately, and a change to these commands must
-preserve them:
-
-- **Resolution versus listing.** `check-references.mjs` owns whether a link
-  resolves — including `index.md`'s own entries. `check-index.mjs` owns whether
-  an existing file is listed. A missing target is a broken link; an unlisted
-  file is an orphan; neither command reports the other's finding.
-- **Pairing versus listing.** `check-glossary.mjs` owns whether a spec has a
-  vocabulary heading. Whether either file is reachable from `index.md` is
-  `check-index.mjs`'s question, and neither command answers the other's.
-
-## What These Deliberately Do Not Check
-
-A check earns its place when the defect it finds is **not visible in the text
-its author just wrote** — because it spans files, because it counts, or because
-it compares bytes. Four things fail that test and are left to a reader:
-
-| Not checked                                   | Why                                                                                  |
-| --------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Whether a document matches the implementation | Undecidable. A checker that guessed would be trusted and wrong                       |
-| Whether a glossary entry is self-sufficient   | A judgment about a reader, not a property of the text                                |
-| Whether a term's words compose to its entry   | A reading of ordinary English, not a property of the text                            |
-| A duplicated glossary heading                 | An ambiguity for a human; it corrupts no other check, since both headings still pair |
-| Whether a constraint states why it holds      | No checker can tell prose that explains a rule from prose that merely sits beside it |
-
-The last row is the one worth naming rather than leaving implied. Every rule
-under `docs/` is supposed to carry its own reasoning — that is what this tree
-has instead of a separate body of rationale — and the only thing that can see
-whether a given rule does is a reader.
+Run the whole-root command on the exported directory outside the checkout.
+Leave out `--source-root` so the check sees only the files a recipient gets.
+Pass the same evidence paths used for the checkout.
 
 **Guidelines:**
 
-- MUST NOT add a check for a defect visible in the file its author just wrote,
-  unless it guards another check's input or a reference stability `docs/`
-  depends on — and MUST state which, where the check is defined.
-- MUST NOT add a check that compares documentation against implementation. The
-  comparison is undecidable, and a confident wrong answer is worse than no
-  answer.
-- MUST NOT introduce a warning severity. A warning that fires routinely is one
-  people stop reading, which costs more than the finding was worth.
+- MUST run project gates in the checkout and the whole-root check on both source and export.
+- MUST include all distributed evidence and linked assets in the export and compare their hashes with the originals.
+- MUST trace an index route and a moved fragment offline, and resolve each external source against its published location or pinned revision.
+- MUST report checkout and export results separately, naming the validator revision, expected warning paths and reasons, and any unresolved sources or routes.
+- SHOULD exercise the example or compare the claim with its implementation when checking runtime behavior.

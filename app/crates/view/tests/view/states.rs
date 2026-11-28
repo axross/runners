@@ -2,8 +2,8 @@
 //! drawn and not drawn.
 
 use marshal_view::{
-    Action, BannerKind, Body, Cause, Connection, IconState, Input, Look, Mark, Pending,
-    PendingKind, Tone, build,
+    Action, BannerKind, Body, Cause, Connection, IconState, Input, Look, MACOS, Mark, Pending,
+    PendingKind, Tone, WINDOWS, build,
 };
 
 use crate::support::*;
@@ -440,7 +440,7 @@ fn old_packages_and_an_image_not_built_by_marshal_are_worded_without_a_command()
         view.window.footer.warnings,
         [
             "Warning: the image's operating-system packages are 30 days old; build the image again.",
-            "Warning: runner 2.330.0 was released 40 days ago, so each job's runner likely updates itself at start; update Marshal to get a newer runner, then build the image again.",
+            "Warning: runner 2.330.0 was released 40 days ago and never updates itself; update Marshal to get a newer runner, then build the image again before GitHub stops sending jobs to it.",
             "Warning: the image was not built by Marshal, so its build age is unknown."
         ]
     );
@@ -564,6 +564,60 @@ fn no_pool_could_start_for_want_of_tokens_says_so() {
         list.header.tokens_chip.as_deref(),
         Some("3 repositories need attention")
     );
+}
+
+#[test]
+fn no_pool_could_start_for_want_of_organisation_tokens_points_to_the_tokens_tab() {
+    for words in [WINDOWS, MACOS] {
+        let repository_snapshot = load("stopped_no_pool_started");
+        let repository_view = build(
+            &Input::new(Connection::Connected, Some(&repository_snapshot), now()).words(words),
+        );
+        let repository_banner = first_banner(&repository_view);
+        assert_eq!(
+            repository_banner.lines,
+            [
+                "Every pool was skipped because its repository has no token. Set a token for each repository, then choose Start All."
+            ]
+        );
+        assert_eq!(
+            repository_banner.announcement,
+            "Stopped: no pool could start. Every pool was skipped because its repository has no token."
+        );
+        for mixed in [false, true] {
+            let snapshot = patched("stopped_no_pool_started", |value| {
+                let pools = value["pools"].as_array_mut().expect("pools");
+                pools.truncate(if mixed { 2 } else { 1 });
+                pools[0].as_object_mut().expect("pool").remove("repository");
+                pools[0]["organization"] = "owner".into();
+                pools[0]["runner_group"] = "selected".into();
+                pools[0]["reason"] = "pool[0]: no token.".into();
+                value["repositories"] = if mixed {
+                    serde_json::json!([{"repository":"owner/site","has_token":false,"pools":["site"]}])
+                } else {
+                    serde_json::json!([])
+                };
+                value["organizations"] = serde_json::json!([
+                    {"organization":"owner","has_token":false,"pools":["app"]}
+                ]);
+            });
+            let view =
+                build(&Input::new(Connection::Connected, Some(&snapshot), now()).words(words));
+            let banner = first_banner(&view);
+            assert_eq!(banner.heading, "Stopped: no pool could start");
+            assert_eq!(
+                banner.lines,
+                [
+                    "Every pool was skipped because it has no token. Set the tokens in the Tokens tab, then choose Start All."
+                ]
+            );
+            assert_eq!(
+                banner.announcement,
+                "Stopped: no pool could start. Every pool was skipped because it has no token."
+            );
+            assert_eq!(view.banners().len(), 1);
+        }
+    }
 }
 
 #[test]
@@ -777,20 +831,33 @@ fn every_runner_backing_off_otherwise_points_to_the_rows() {
 
 #[test]
 fn a_snapshot_too_large_to_send_whole_says_how_much_it_leaves_out() {
-    let snapshot = load("truncated");
-    let view = view_of(&snapshot);
-    let banner = view
-        .banners()
-        .iter()
-        .find(|banner| banner.kind == BannerKind::Truncated)
-        .expect("a notice");
-    assert_eq!(banner.heading, "Part of the list is left out");
-    assert_eq!(
-        banner.lines,
-        [
-            "The agent's list was too large to send whole. Not shown: 12 runners, 1 pool and 3 configuration problems."
-        ]
-    );
+    for (organizations, expected) in [
+        (0, "12 runners, 1 pool and 3 configuration problems"),
+        (
+            1,
+            "12 runners, 1 pool, 3 configuration problems and 1 organisation",
+        ),
+        (
+            3,
+            "12 runners, 1 pool, 3 configuration problems and 3 organisations",
+        ),
+    ] {
+        let mut snapshot = load("truncated");
+        snapshot.omitted.organizations = organizations;
+        let view = view_of(&snapshot);
+        let banner = view
+            .banners()
+            .iter()
+            .find(|banner| banner.kind == BannerKind::Truncated)
+            .expect("a notice");
+        assert_eq!(banner.heading, "Part of the list is left out");
+        assert_eq!(
+            banner.lines,
+            [format!(
+                "The agent's list was too large to send whole. Not shown: {expected}."
+            )]
+        );
+    }
 }
 
 #[test]

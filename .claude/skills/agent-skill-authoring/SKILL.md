@@ -14,7 +14,7 @@ Skills authored here follow the agentskills.io format. For the host project's ac
 
 - MUST run the bundled validator that owns what a change touched — `scripts/check-skill-frontmatter.mjs` after editing frontmatter, `scripts/check-skill-body.mjs` after editing prose, `scripts/check-skill-references.mjs` after adding, moving, or renaming a reference file — and all three when unsure; together they are the enforcement path for the frontmatter, naming, discovery length-cap, and reference-linkage rules this skill states nowhere else (see [audit-checklist.md](./references/audit-checklist.md)).
 - SHOULD propose or implement a skill update when any task exposes a reusable convention, outdated guidance, a recurring review issue, or a missing project rule — skill maintenance happens when work reveals durable learning, not after every narrow fix.
-- SHOULD skip skill maintenance when the work produced no generalizable learning, and state that it was skipped.
+- SHOULD skip skill maintenance when the work produced no generalizable learning, and state that it was skipped, including in the skill-maintenance report where the project's skill-management practices require one.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html).
 
@@ -89,7 +89,7 @@ See [progressive-disclosure.md](./references/progressive-disclosure.md) for:
 - the load-bearing test's full sorting table and the selection conditions a reference's routing names
 - the size thresholds that signal a skill or reference file has grown too large
 - using the descriptive-only parent routing-section format when splitting a skill or restructuring its reference layout
-- wording reference-selection conditions narrowly enough to skip irrelevant references
+- naming the decision that needs a reference, including a missing required element, and a task that can skip it
 - stating the fact a routing bullet points at — the flag, limit, or rule by name — instead of announcing that one exists
 - keeping parent routing bullets free of RFC-2119-style requirement keywords so they remain routing cues, not duplicated rules
 - deciding where a body-resident rule belongs relative to a routing list
@@ -117,7 +117,7 @@ See [skill-adoption-evaluation.md](./references/skill-adoption-evaluation.md) fo
 
 - designing a skill-adoption evaluation or comparing intentional rule revisions before execution
 - freezing task, treatment, scorer, opportunity, and claim-scope contracts while keeping scorer answers out of actor material
-- separating natural tasks from boundary controls and retaining incomplete and zero-applicable populations
+- comparing unnecessary reads and missed rules by actor and checkpoint, with natural tasks, boundary controls and incomplete or zero-applicable populations kept distinct
 - distinguishing synthetic report checks from live qualification, routing evidence sufficiency only to scope-covering QA practices, and retaining the review limitation otherwise
 
 ## Auditing and Validation
@@ -128,7 +128,7 @@ See [audit-checklist.md](./references/audit-checklist.md) for:
 - running the three bundled structure validators — `check-skill-frontmatter.mjs`, `check-skill-body.mjs`, and `check-skill-references.mjs` — and which kind of edit each one answers for
 - running the bundled link-freshness audit (`scripts/link-freshness/check.mjs`) on a schedule to catch a cited vendor URL that has gone 404, why only a confirmed-dead link fails it, and why a `pull_request` trigger on it is a request-forgery primitive
 - checking inventory, skill discovery, section anatomy, RFC-2119 bullets, topic-based cross-skill references, and relative links
-- identifying overlap, stale assumptions, orphan references, and missing source-of-truth links
+- auditing a changed route against a needed and a skippable case, its observed site and revision, and checking for overlap, stale assumptions or orphan references
 - applying the ownership and portability checklist without expanding a bounded change into a library-wide migration
 
 ## Protected Markdownlint Execution

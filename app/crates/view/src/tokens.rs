@@ -16,31 +16,44 @@ use crate::text::{capitalised, counted, list_of, plain};
 const TOKEN_MAX: &str = "a token is at most 1,280 characters";
 const ENTER_AGAIN: &str = "The field is empty; enter the token again.";
 
-/// a repository the configuration names.
+/// token ownership is independent of a pool: several pools may use one stored key.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Repository {
-    /// `owner/name` in lower case.
+pub(crate) struct TokenOwner {
     pub key: String,
+    pub organization: bool,
     pub has_token: bool,
     pub pools: Vec<String>,
 }
 
-/// the repositories of the snapshot, with any pool's repository the list left out.
-pub fn repositories(context: &Context<'_>) -> Vec<Repository> {
+/// the owner lists can be cut by the snapshot's size bound; the remaining pools
+/// still need token rows, even when their owner's list entry was cut.
+pub(crate) fn token_owners(context: &Context<'_>) -> Vec<TokenOwner> {
     let Some(snapshot) = context.snapshot else {
         return Vec::new();
     };
-    let mut found: Vec<Repository> = snapshot
+    let mut found: Vec<TokenOwner> = snapshot
         .repositories
         .iter()
-        .map(|repository| Repository {
+        .map(|repository| TokenOwner {
             key: plain(&repository.repository),
+            organization: false,
             has_token: repository.has_token,
             pools: repository.pools.iter().map(|pool| plain(pool)).collect(),
         })
         .collect();
+    found.extend(
+        snapshot
+            .organizations
+            .iter()
+            .map(|organization| TokenOwner {
+                key: plain(&organization.organization),
+                organization: true,
+                has_token: organization.has_token,
+                pools: organization.pools.iter().map(|pool| plain(pool)).collect(),
+            }),
+    );
     for pool in &snapshot.pools {
-        let key = plain(&pool.repository);
+        let key = pool_key(pool);
         match found.iter_mut().find(|known| known.key == key) {
             Some(known) => {
                 let name = plain(&pool.name);
@@ -48,14 +61,19 @@ pub fn repositories(context: &Context<'_>) -> Vec<Repository> {
                     known.pools.push(name);
                 }
             }
-            None => found.push(Repository {
+            None => found.push(TokenOwner {
                 key,
+                organization: pool.organization.is_some(),
                 has_token: pool.has_token,
                 pools: vec![plain(&pool.name)],
             }),
         }
     }
     found
+}
+
+fn pool_key(pool: &PoolInfo) -> String {
+    plain(pool.organization.as_deref().unwrap_or(&pool.repository))
 }
 
 /// why the agent skipped a pool, without the configuration path it puts first: a
@@ -80,16 +98,16 @@ pub(crate) fn store_problem(context: &Context<'_>, repository: &str) -> Option<S
     context
         .pools
         .iter()
-        .filter(|pool| plain(&pool.repository) == repository)
+        .filter(|pool| pool_key(pool) == repository)
         .filter_map(|pool| pool.reason.as_deref().map(skip_cause))
         .find(|cause| cause.starts_with(STORE_FAILED) || *cause == NO_TOKEN_STORE)
         .map(|cause| format!("{}.", capitalised(&plain(cause))))
 }
 
-/// the pools a save for `repository`, as the view keys it, starts at once: those
+/// the pools a save for a repository or organization key starts at once: those
 /// skipped for want of a token, while the agent runs. The app reads them before it sends the token.
 #[must_use]
-pub fn pools_started_by(snapshot: &Snapshot, repository: &str) -> Vec<String> {
+pub fn pools_started_by(snapshot: &Snapshot, key: &str) -> Vec<String> {
     if snapshot.agent.state != "running" {
         return Vec::new();
     }
@@ -97,8 +115,10 @@ pub fn pools_started_by(snapshot: &Snapshot, repository: &str) -> Vec<String> {
         .pools
         .iter()
         .filter(|pool| {
-            plain(&pool.repository) == repository
-                && pool.state == "skipped"
+            pool.organization.as_deref().map_or_else(
+                || plain(&pool.repository) == key,
+                |organization| plain(organization) == key,
+            ) && pool.state == "skipped"
                 && skipped_for_no_token(pool)
         })
         .map(|pool| plain(&pool.name))
@@ -121,7 +141,7 @@ fn rejection(context: &Context<'_>, repository: &str) -> Option<String> {
     let reason = context
         .pools
         .iter()
-        .filter(|pool| plain(&pool.repository) == repository)
+        .filter(|pool| pool_key(pool) == repository)
         .flat_map(|pool| &pool.runners)
         .filter(|runner| runner.kind() == RunnerState::BackingOff)
         .filter_map(|runner| runner.reason.as_deref())
@@ -141,7 +161,7 @@ pub enum TokenState {
     Rejected,
 }
 
-fn state_of(context: &Context<'_>, repository: &Repository) -> (TokenState, String) {
+fn state_of(context: &Context<'_>, repository: &TokenOwner) -> (TokenState, String) {
     if !repository.has_token {
         let text =
             store_problem(context, &repository.key).unwrap_or_else(|| "No token".to_string());
@@ -161,7 +181,7 @@ fn runners_up_in(context: &Context<'_>, pools: &[String]) -> bool {
         .any(|pool| pools.contains(&plain(&pool.name)) && pool.runners_up > 0)
 }
 
-fn removal_question(context: &Context<'_>, repository: &Repository) -> Confirmation {
+fn removal_question(context: &Context<'_>, repository: &TokenOwner) -> Confirmation {
     let pools = if repository.pools.len() == 1 {
         format!("Pool {} stops", list_of(&repository.pools))
     } else {
@@ -182,14 +202,14 @@ fn removal_question(context: &Context<'_>, repository: &Repository) -> Confirmat
 
 /// the text and the pill a pool's card adds for its repository's token, or `None`
 /// where the card is as it was.
-pub fn pool_note(
+pub(crate) fn pool_note(
     context: &Context<'_>,
-    repositories: &[Repository],
+    repositories: &[TokenOwner],
     pool: &PoolInfo,
 ) -> Option<(String, Control)> {
     let repository = repositories
         .iter()
-        .find(|repository| repository.key == plain(&pool.repository))?;
+        .find(|repository| repository.key == pool_key(pool))?;
     let key = repository.key.clone();
     match state_of(context, repository) {
         (TokenState::Set, _) => None,
@@ -253,6 +273,7 @@ pub struct TokenForm {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TokenRow {
     pub repository: String,
+    pub organization: Option<String>,
     /// "Used by pool app", "Used by pools docs and docs-arm".
     pub pools: String,
     pub state: TokenState,
@@ -271,28 +292,42 @@ pub struct TokenRow {
 pub struct TokensTab {
     pub intro: String,
     pub rows: Vec<TokenRow>,
+    pub organizations: Vec<TokenRow>,
     /// "3 repositories need attention", on the tab while some repository has no usable
     /// token.
     pub chip: Option<String>,
 }
 
-fn intro(words: &HostWords) -> String {
+fn intro(words: &HostWords, organizations: bool) -> String {
     let store = words.store;
+    if organizations {
+        return format!(
+            "Each repository has one token, used by its pools, and each organisation one token, used by its organisation pools. \
+Marshal keeps tokens in {store} and never shows one."
+        );
+    }
     format!(
         "Each repository has one token, and every pool on that repository uses it. \
 Marshal keeps tokens in {store} and never shows one."
     )
 }
 
-fn hint(repository: &str, words: &HostWords) -> String {
+fn hint(repository: &TokenOwner, words: &HostWords) -> String {
     let store = words.store;
+    let key = &repository.key;
+    if repository.organization {
+        return format!(
+            "A fine-grained token created by an owner of {key}, with the organisation permission Self-hosted runners: read and write, \
+and no repository permission; repository access, public repositories only. Marshal keeps it in {store} and never shows it again."
+        );
+    }
     format!(
-        "A fine-grained personal access token with Administration: read and write for {repository} only. \
+        "A fine-grained personal access token with Administration: read and write for {key} only. \
 Marshal keeps it in {store} and never shows it again."
     )
 }
 
-fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
+fn row(context: &Context<'_>, repository: &TokenOwner) -> TokenRow {
     let (state, state_text) = state_of(context, repository);
     let key = &repository.key;
     let pools = if repository.pools.len() == 1 {
@@ -333,8 +368,17 @@ fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
         _ => None,
     });
     TokenRow {
-        repository: key.clone(),
-        pools,
+        repository: if repository.organization {
+            String::new()
+        } else {
+            key.clone()
+        },
+        organization: repository.organization.then(|| key.clone()),
+        pools: if repository.organization {
+            format!("Organisation runners. {pools}")
+        } else {
+            pools
+        },
         state,
         state_text,
         status: match result {
@@ -345,7 +389,7 @@ fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
         controls,
         form: editing.then(|| TokenForm {
             label: format!("Token for {key}"),
-            hint: hint(key, &context.input.words),
+            hint: hint(repository, &context.input.words),
             save: "Save".to_string(),
             cancel: "Cancel".to_string(),
             save_reason_when_empty: "Unavailable: the field is empty.".to_string(),
@@ -357,24 +401,38 @@ fn row(context: &Context<'_>, repository: &Repository) -> TokenRow {
 
 /// whether no repository has a token, so the window opens on the Tokens tab.
 pub fn none_has_a_token(context: &Context<'_>) -> bool {
-    let repositories = repositories(context);
+    let repositories = token_owners(context);
     !repositories.is_empty() && repositories.iter().all(|repository| !repository.has_token)
 }
 
 pub fn tab(context: &Context<'_>) -> TokensTab {
-    let rows: Vec<TokenRow> = repositories(context)
+    let owners = token_owners(context);
+    let rows: Vec<TokenRow> = owners
         .iter()
+        .filter(|owner| !owner.organization)
         .map(|repository| row(context, repository))
+        .collect();
+    let organizations: Vec<TokenRow> = owners
+        .iter()
+        .filter(|owner| owner.organization)
+        .map(|organization| row(context, organization))
         .collect();
     let attention = rows
         .iter()
+        .chain(&organizations)
         .filter(|row| row.state != TokenState::Set)
         .count();
     let attention = u32::try_from(attention).unwrap_or(u32::MAX);
     TokensTab {
-        intro: intro(&context.input.words),
+        intro: intro(&context.input.words, !organizations.is_empty()),
         chip: (attention > 0).then(|| {
-            if attention == 1 {
+            if !organizations.is_empty() {
+                if attention == 1 {
+                    "1 token needs attention".to_string()
+                } else {
+                    format!("{attention} tokens need attention")
+                }
+            } else if attention == 1 {
                 "1 repository needs attention".to_string()
             } else {
                 format!(
@@ -384,6 +442,7 @@ pub fn tab(context: &Context<'_>) -> TokensTab {
             }
         }),
         rows,
+        organizations,
     }
 }
 

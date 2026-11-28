@@ -1,6 +1,6 @@
 //! the settings of `[lifecycle]` as the agent applies them: each setting's value in
 //! effect, its default when the file leaves it unset, and the write of one
-//! setting through the configuration's write path. `docs/operations/cli.md`
+//! setting through the configuration's write path. `docs/marshal-cli/agent-lifecycle.md`
 //! describes what each setting does.
 
 pub mod write;

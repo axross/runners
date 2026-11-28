@@ -1,6 +1,6 @@
 //! what `status` and the agent's snapshot say about the golden macOS VM: its name,
 //! golden VM version and runner, the pinned base's publication, and the warnings
-//! about the runner's and the base's ages; see `docs/operations/cli.md`.
+//! about the runner's and the base's ages; see `docs/marshal-cli/macos-pools.md`.
 
 use std::time::SystemTime;
 

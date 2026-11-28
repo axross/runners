@@ -3,7 +3,7 @@
 //! setting can be changed.
 
 use marshal_view::{
-    Cause, Connection, Input, LoginItemState, NEEDS_ATTENTION, NoteTone, OPEN_LOGIN_ITEMS,
+    Cause, Connection, Input, LoginItemState, MACOS, NEEDS_ATTENTION, NoteTone, OPEN_LOGIN_ITEMS,
     Platform, SettingResult, SettingRow, SettingsTab, SettingsUi, build, setting_label,
 };
 use serde_json::{Value, json};
@@ -305,6 +305,7 @@ fn while_a_setting_is_saved_no_other_can_be_changed_and_it_shows_the_value_chose
     assert_eq!(saving.state, "Being saved as off.");
     let other = rows.iter().find(|row| row.key == "start_at_login").unwrap();
     assert_ne!(other.state, "Being saved as off.");
+    assert!(!tab.reason_in_intro);
 }
 
 #[test]
@@ -315,6 +316,7 @@ fn with_config_toml_invalid_at_launch_the_values_are_unknown_and_the_tab_needs_a
     let invalid = "Settings cannot be changed while config.toml has problems. Fix the file, then choose Start All.";
     assert_eq!(tab.unavailable.as_deref(), Some(invalid));
     assert_eq!(tab.intro, invalid);
+    assert!(tab.reason_in_intro);
     assert!(
         tab.groups
             .iter()
@@ -334,6 +336,7 @@ fn a_problem_naming_one_setting_leaves_only_that_one_unknown() {
     });
     let view = view_of(&snapshot);
     let tab = settings(&view);
+    assert!(tab.reason_in_intro);
     assert_eq!(row(tab, "keep_awake").checked, None);
     assert_eq!(row(tab, "keep_awake").state, "Not readable in config.toml.");
     assert_eq!(row(tab, "stop_on_network_change").checked, Some(false));
@@ -345,6 +348,19 @@ fn a_problem_naming_one_setting_leaves_only_that_one_unknown() {
              choose Stop All and Start All."
         )
     );
+}
+
+#[test]
+fn a_problem_on_a_key_that_only_starts_like_a_setting_leaves_that_setting_readable() {
+    let snapshot = with_lifecycle(|value| {
+        value["configuration"]["status"] = json!("invalid");
+        value["configuration"]["problems"] =
+            json!(["line 14: lifecycle.keep_awake_x: unknown key"]);
+    });
+    let view = view_of(&snapshot);
+    let tab = settings(&view);
+    assert_eq!(row(tab, "keep_awake").checked, Some(true));
+    assert_eq!(row(tab, "keep_awake").state, "On (default).");
 }
 
 #[test]
@@ -363,6 +379,76 @@ fn under_lost_contact_the_last_values_stay_and_nothing_can_be_changed() {
         Some("Settings cannot be changed while Marshal's agent does not answer.")
     );
     assert_eq!(row(tab, "start_at_login").checked, Some(true));
+    assert!(!tab.reason_in_intro);
+}
+
+#[test]
+fn the_intro_gives_the_reason_only_when_it_is_that_the_file_has_problems() {
+    let missing = with_lifecycle(|value| value["configuration"]["status"] = json!("missing"));
+    let view = view_of(&missing);
+    let tab = settings(&view);
+    assert_eq!(
+        tab.unavailable.as_deref(),
+        Some("Settings cannot be changed until config.toml exists.")
+    );
+    assert!(tab.intro.starts_with("Saved in config.toml"));
+    assert!(!tab.reason_in_intro);
+
+    // the intro still names the problems, but the reason shown is the lost contact
+    let invalid = with_lifecycle(|value| value["configuration"]["status"] = json!("invalid"));
+    let view = view_in(
+        Connection::LostContact {
+            last_heard_ms: now().now_ms,
+            cause: Cause::Dropped,
+        },
+        Some(&invalid),
+    );
+    let tab = settings(&view);
+    assert!(tab.intro.contains("has problems"));
+    assert_eq!(
+        tab.unavailable.as_deref(),
+        Some("Settings cannot be changed while Marshal's agent does not answer.")
+    );
+    assert!(!tab.reason_in_intro);
+}
+
+#[test]
+fn the_macs_agent_reporting_no_settings_leaves_every_setting_unavailable_without_the_chip() {
+    let snapshot = patched("running", |value| {
+        value["configuration"]["status"] = json!("valid");
+    });
+    assert!(snapshot.lifecycle.is_none());
+    let view = build(&Input::new(Connection::Connected, Some(&snapshot), now()).words(MACOS));
+    let tab = settings(&view);
+    assert_eq!(
+        tab.unavailable.as_deref(),
+        Some("Settings cannot be changed: the agent did not report them.")
+    );
+    let rows: Vec<_> = tab.groups.iter().flat_map(|group| &group.rows).collect();
+    let keys: Vec<&str> = rows.iter().map(|row| row.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "start_at_login",
+            "start_runners_on_launch",
+            "keep_awake",
+            "stop_on_network_change",
+            "resume_after_stop"
+        ]
+    );
+    for row in rows {
+        assert!(!row.label.is_empty(), "{row:?}");
+        assert_eq!(row.checked, None, "{row:?}");
+        assert_eq!(row.state, "Not known while config.toml cannot be read.");
+        assert_eq!(row.note, None, "{row:?}");
+    }
+    assert_eq!(
+        row(tab, "start_at_login").label,
+        "Start Marshal when I sign in"
+    );
+    assert!(!tab.reason_in_intro);
+    assert_eq!(tab.chip, None);
+    assert_eq!(list(&view).header.settings_chip, None);
 }
 
 // ---- the Mac

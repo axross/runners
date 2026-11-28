@@ -190,6 +190,8 @@ pub struct Input<'a> {
     pub platform: Platform,
     /// on macOS, the login item's state, `None` until the app has learned it.
     pub login_item: Option<LoginItemState>,
+    /// the agent lists all three configuration methods.
+    pub editor: bool,
 }
 
 impl<'a> Input<'a> {
@@ -209,6 +211,7 @@ impl<'a> Input<'a> {
             after_moved: false,
             platform: Platform::Windows,
             login_item: None,
+            editor: false,
         }
     }
 
@@ -268,6 +271,13 @@ impl<'a> Input<'a> {
     #[must_use]
     pub fn after_moved(mut self, after_moved: bool) -> Self {
         self.after_moved = after_moved;
+        self
+    }
+
+    /// the agent's welcome, not its version, determines whether an editor is offered.
+    #[must_use]
+    pub fn editor(mut self, supported: bool) -> Self {
+        self.editor = supported;
         self
     }
 }

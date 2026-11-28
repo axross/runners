@@ -28,7 +28,7 @@ fi
 # at once with a line naming this script; output goes to stderr, not the context.
 export PATH="$HOME/.cargo/bin:$PATH"
 if [ -x .agents/install-rust ]; then
-  .agents/install-rust >&2 || echo "warning: .agents/install-rust failed, so the Rust gates are unavailable until it succeeds (see docs/operations/agent-sessions.md)" >&2
+  .agents/install-rust >&2 || echo "warning: .agents/install-rust failed, so the Rust gates are unavailable until it succeeds (see docs/agent-work/session-setup.md)" >&2
 fi
 if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -Fq '.cargo/bin' "$CLAUDE_ENV_FILE" 2>/dev/null; then
   # shellcheck disable=SC2016 # the line is written literally and expanded when the env file is sourced
@@ -38,5 +38,3 @@ fi
 if [ -f .claude/settings.local-example.json ]; then
   cp -f .claude/settings.local-example.json .claude/settings.local.json
 fi
-
-echo "REMINDER: read AGENTS.md and follow its Response Approach for every task."

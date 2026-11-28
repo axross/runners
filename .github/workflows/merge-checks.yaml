@@ -4,7 +4,7 @@ name: Merge Checks
 # Linux, Windows, and macOS, the app's build on Windows and its mode dispatch on
 # macOS, the image build and smoke test on amd64 and arm64, the release dry run,
 # and the documented install blocks against the dry run's MSI. GitHub-hosted
-# runners only, because this repository is public; see docs/conventions/security.md.
+# runners only, because this repository is public; see docs/security/workflow-permissions.md.
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -35,7 +35,7 @@ jobs:
         with:
           version: 2026.9.17
           # SHA-256 of the extracted mise binary, not of the archive the action
-          # downloads. update with the version; see docs/operations/agent-sessions.md.
+          # downloads. update with the version; see docs/agent-work/session-setup.md.
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
       # rustup is on the hosted runner; naming no toolchain installs the one
       # cli/rust-toolchain.toml pins. a rustup older than 1.28 cannot do that
@@ -43,8 +43,24 @@ jobs:
       - name: Install Pinned Rust Toolchain
         working-directory: cli
         run: rustup show active-toolchain || rustup toolchain install
+      - name: Prepare The Editor Renderer
+        run: mise run prepare:app-render
+      - name: Install Chromium OS Libraries On This Disposable Runner
+        run: mise exec -- node app/crates/app/tests/render/node_modules/playwright-core/cli.js install-deps chromium
       - name: Run Checks
         run: mise run check
+      - name: Render The Editor
+        run: mise run test:app-render
+      - name: Keep Editor Renders And Measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: editor-renders
+          path: |
+            app/target/render/output/*.png
+            app/target/render/output/results.json
+          retention-days: 14
+          if-no-files-found: warn
 
   # no cache action: a cache would be a trust boundary for a job that builds
   # code, and the build is small.
@@ -157,7 +173,7 @@ jobs:
   # the app's whole workspace, which needs the Windows web view and so cannot run in
   # mise run check. `tauri-cli` is installed from source at the pin in
   # app/tauri-cli.version, the one place the pin is set, so it compiles on every run.
-  # no cache action, for the reason the rust job gives. docs/operations/app.md records
+  # no cache action, for the reason the rust job gives. docs/marshal/building.md records
   # how the timeout was set.
   app:
     name: Build App On Windows
@@ -209,7 +225,7 @@ jobs:
 
   # the app's whole workspace on macOS, and the Mac app M2 adds: its tests, the
   # unsigned Marshal.app at bundle version 0.0.0, and an unsigned disk image of it with
-  # the layout docs/operations/app.md gives, both kept for the Mac run. `tauri-cli` is
+  # the layout docs/marshal/mac-app.md gives, both kept for the Mac run. `tauri-cli` is
   # installed as in the Windows job, from source at the pin with --locked; nothing is
   # signed, notarized or published here. no cache action, for the reason the rust job
   # gives.
@@ -292,8 +308,7 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-  # the same reusable workflow release.yaml calls, at a dry-run version; it
-  # publishes and attests nothing.
+  # keep the app build exercised while the temporary CLI recovery owns releases.
   release-build:
     name: Release Build Dry Run
     uses: ./.github/workflows/release-build.yaml
@@ -302,7 +317,75 @@ jobs:
     with:
       version: 0.0.0-dryrun.${{ github.run_number }}
 
-  # the install, check, and uninstall blocks of docs/operations/cli.md, extracted
+  cli-recovery-build:
+    name: CLI Recovery Build Dry Run
+    uses: ./.github/workflows/cli-recovery-build.yaml
+    permissions:
+      contents: read
+    with:
+      version: 0.0.0-dryrun.${{ github.run_number }}
+
+  cli-recovery-install-blocks:
+    name: CLI Recovery Install Blocks On ${{ matrix.os }}
+    needs: cli-recovery-build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    env:
+      RELEASE_VERSION: 0.0.0-dryrun.${{ github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download The Unsigned CLI Recovery Files
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.cli-recovery-build.outputs.artifact }}
+          path: ${{ runner.temp }}/release
+      - name: Run The macOS Blocks Against Stand-Ins Under zsh
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks.sh zsh
+      - name: Run The macOS Blocks Against Stand-Ins Under The System bash
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks.sh /bin/bash
+      - name: Run The macOS Blocks Against The Unsigned Package Under zsh
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks-real.sh zsh "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
+      - name: Run The macOS Blocks Against The Unsigned Package Under The System bash
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks-real.sh /bin/bash "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
+      - name: Run The Windows Blocks Against Stand-Ins Under Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\.github\scripts\cli-recovery-install-tests\test-install-blocks.ps1
+      - name: Run The Windows Blocks Against Stand-Ins Under PowerShell 7
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/cli-recovery-install-tests/test-install-blocks.ps1
+      - name: Run The Windows Blocks Against The CLI MSI
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\.github\scripts\cli-recovery-install-tests\test-install-blocks-real.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION -LogDirectory (Join-Path $env:RUNNER_TEMP 'cli-recovery-install-block-logs')
+      - name: Run The Check Block And CLI Install As A Standard User
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\.github\scripts\cli-recovery-install-tests\test-msi-standard-user.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION
+      - name: Upload The CLI Install Block Logs
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-recovery-install-block-logs-windows
+          path: ${{ runner.temp }}/cli-recovery-install-block-logs
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # the install, check, and uninstall blocks of docs/marshal-cli/install-on-windows.md, extracted
   # from the document: first against stand-ins, then against the dry run's real
   # MSI with only gh stubbed. it downloads the dry run's artifact and holds
   # contents: read; nothing is attested or published.

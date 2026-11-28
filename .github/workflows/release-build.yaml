@@ -2,9 +2,9 @@ name: Release Build
 
 # builds the Windows app at the version its caller passes, packs it into an
 # unsigned per-user MSI, tests the MSI, and puts the app executable, the MSI and
-# SHA256SUMS in one artifact. merge-checks.yaml calls it as a dry run and
-# release.yaml for a release; it has no publish or attest step. see
-# docs/conventions/security.md, which also says why only the callers declare
+# SHA256SUMS in one artifact. merge-checks.yaml retains it as an app dry run;
+# it has no publish or attest step. see
+# docs/security/release-authority.md, which also says why only the callers declare
 # `concurrency`.
 
 on:
@@ -29,7 +29,7 @@ jobs:
     name: Build windows-x64
     runs-on: windows-latest
     # twice the leg's 22 min 56 s in its first successful dry run, rounded
-    # up to whole 5 minutes; see docs/operations/cli.md.
+    # up to whole 5 minutes; see docs/marshal-cli/release-artifacts.md.
     timeout-minutes: 50
     outputs:
       windows_x64_sha256: ${{ steps.hash.outputs.windows_x64_sha256 }}
@@ -154,7 +154,7 @@ jobs:
           Write-Host 'The app imports no vcruntime DLL.'
       # WiX is the one tool fetched as a package at build time. the script refuses
       # it unless its SHA-256 matches the pin and installs it from that package
-      # alone; see docs/conventions/security.md.
+      # alone; see docs/security/dependency-pins.md#pinning-convention.
       - name: Fetch WiX
         env:
           WIX_DIRECTORY: ${{ runner.temp }}\wix

@@ -82,6 +82,7 @@ function shown(runners, { announce = [], notes = [] } = {}) {
           settings: {
             intro: "Settings.",
             unavailable: null,
+            reason_in_intro: false,
             groups: [],
             chip: null,
           },

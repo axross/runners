@@ -15,6 +15,7 @@
 //! - `--github-feed <unavailable|for-now>`: an agent without the topic, or one with no
 //!   room for the subscription.
 //! - `--ended <pool>`: the pool whose Open run found its job ended.
+//! - `--editor-profile <axpc|axmc>`: include the editor fields of that profile.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -107,6 +108,7 @@ fn main() -> Result<(), Failure> {
     let mut github: Option<Option<GithubStatus>> = None;
     let mut feed_word: Option<String> = None;
     let mut ended = BTreeMap::new();
+    let mut editor_profile = None;
     while let Some(flag) = arguments.next() {
         if flag == "--keep-snapshot" {
             keep_snapshot = true;
@@ -132,6 +134,13 @@ fn main() -> Result<(), Failure> {
             "--github-feed" => feed_word = Some(value),
             "--ended" => {
                 ended.insert(value, NOW_MS);
+            }
+            "--editor-profile" => {
+                editor_profile = Some(match value.as_str() {
+                    "axpc" => marshal_cli::profile::Profile::Axpc,
+                    "axmc" => marshal_cli::profile::Profile::Axmc,
+                    other => return Err(format!("unknown editor profile {other}").into()),
+                });
             }
             other => return Err(format!("unknown option {other}").into()),
         }
@@ -160,6 +169,10 @@ fn main() -> Result<(), Failure> {
     if let Some(count) = settled {
         input = input.settled(count);
     }
-    println!("{}", serde_json::to_string_pretty(&build(&input))?);
+    let mut view = build(&input);
+    if let Some(profile) = editor_profile {
+        view.window.editor = Some(marshal_view::editor_access(profile, connected, shown));
+    }
+    println!("{}", serde_json::to_string_pretty(&view)?);
     Ok(())
 }

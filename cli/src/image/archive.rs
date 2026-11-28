@@ -1,6 +1,6 @@
 //! the build context `build` streams to `docker build -`: a minimal ustar archive
 //! of the definition's files, with fixed mode, owner and time so the same files give
-//! the same bytes; see `docs/operations/cli.md`.
+//! the same bytes; see `docs/marshal-cli/runner-images.md`.
 
 use super::definition::DefinitionFile;
 

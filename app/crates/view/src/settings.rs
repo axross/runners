@@ -4,6 +4,7 @@
 //! shows what it came to.
 
 use marshal_cli::agent::StopReason;
+use marshal_cli::agent::config::problem;
 use marshal_cli::agent::machine::{RESUME_NO_GATEWAY, RESUME_WAITING};
 use marshal_cli::agent::snapshot::LifecycleInfo;
 use marshal_cli::lifecycle_settings::Setting;
@@ -215,6 +216,9 @@ pub struct SettingsTab {
     /// why no setting can be changed now; the page makes it every checkbox's
     /// description, and the checkboxes stay focusable and do not toggle.
     pub unavailable: Option<String>,
+    /// whether the intro already says `unavailable`, so the page points the checkboxes
+    /// at it and adds no paragraph of its own.
+    pub reason_in_intro: bool,
     pub groups: Vec<SettingGroup>,
     /// [`NEEDS_ATTENTION`] while something on the tab needs the user.
     pub chip: Option<String>,
@@ -226,28 +230,74 @@ fn lifecycle<'a>(context: &Context<'a>) -> Option<&'a LifecycleInfo> {
         .and_then(|snapshot| snapshot.lifecycle.as_ref())
 }
 
+/// why the configuration file cannot be edited.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Unusable {
+    Missing,
+    /// unreadable or with problems.
+    Invalid,
+    /// the same, while the runners run on the configuration read before the file changed.
+    InvalidRunning,
+}
+
+impl Unusable {
+    fn words(self) -> &'static str {
+        match self {
+            Self::Missing => MISSING,
+            Self::Invalid => INVALID,
+            Self::InvalidRunning => INVALID_RUNNING,
+        }
+    }
+
+    fn has_problems(self) -> bool {
+        self != Self::Missing
+    }
+}
+
+/// why no setting can be changed now, and whether the intro says it.
+struct Reason {
+    words: &'static str,
+    in_intro: bool,
+}
+
+impl Reason {
+    fn elsewhere(words: &'static str) -> Self {
+        Self {
+            words,
+            in_intro: false,
+        }
+    }
+
+    fn file(file: Unusable) -> Self {
+        Self {
+            words: file.words(),
+            in_intro: file.has_problems(),
+        }
+    }
+}
+
 /// whether the configuration file cannot be edited: missing, unreadable or with problems.
-fn file_unusable(context: &Context<'_>) -> Option<&'static str> {
+fn file_unusable(context: &Context<'_>) -> Option<Unusable> {
     match &context.resident {
-        Resident::Stopped(Stop::NoConfiguration) => return Some(MISSING),
-        Resident::Stopped(Stop::InvalidConfiguration) => return Some(INVALID),
+        Resident::Stopped(Stop::NoConfiguration) => return Some(Unusable::Missing),
+        Resident::Stopped(Stop::InvalidConfiguration) => return Some(Unusable::Invalid),
         _ => {}
     }
     let status = context
         .snapshot
         .map_or("", |snapshot| snapshot.configuration.status.as_str());
     match status {
-        "missing" => Some(MISSING),
+        "missing" => Some(Unusable::Missing),
         "invalid" | "unreadable" => Some(match context.resident {
-            Resident::Running | Resident::Resuming => INVALID_RUNNING,
-            _ => INVALID,
+            Resident::Running | Resident::Resuming => Unusable::InvalidRunning,
+            _ => Unusable::Invalid,
         }),
         _ => None,
     }
 }
 
-fn unavailable(context: &Context<'_>) -> Option<String> {
-    let why = match &context.resident {
+fn unavailable(context: &Context<'_>) -> Option<Reason> {
+    match &context.resident {
         Resident::LostContact { .. } => {
             Some("Settings cannot be changed while Marshal's agent does not answer.")
         }
@@ -257,20 +307,20 @@ fn unavailable(context: &Context<'_>) -> Option<String> {
         ),
         _ => None,
     }
-    .or_else(|| file_unusable(context))
+    .map(Reason::elsewhere)
+    .or_else(|| file_unusable(context).map(Reason::file))
     .or_else(|| {
         context
             .input
             .settings
             .and_then(|ui| ui.writing.as_ref())
-            .map(|_| "Settings cannot be changed while a setting is being saved.")
+            .map(|_| Reason::elsewhere("Settings cannot be changed while a setting is being saved."))
     })
     .or_else(|| {
         lifecycle(context)
             .is_none()
-            .then_some("Settings cannot be changed: the agent did not report them.")
-    });
-    why.map(str::to_string)
+            .then_some(Reason::elsewhere("Settings cannot be changed: the agent did not report them."))
+    })
 }
 
 fn on_off(on: bool) -> &'static str {
@@ -409,7 +459,8 @@ fn state_note(
     }
 }
 
-/// whether the configuration's problems name `setting`, so its value cannot be read.
+/// whether the configuration's problems name `setting` by exactly its key path, so its
+/// value cannot be read.
 fn unreadable(context: &Context<'_>, setting: Setting) -> bool {
     let named = format!("lifecycle.{}", setting.name());
     context.snapshot.is_some_and(|snapshot| {
@@ -417,7 +468,7 @@ fn unreadable(context: &Context<'_>, setting: Setting) -> bool {
             .configuration
             .problems
             .iter()
-            .any(|problem| problem.contains(&named))
+            .any(|text| problem(text).path.as_deref() == Some(named.as_str()))
     })
 }
 
@@ -498,7 +549,7 @@ fn row(
 pub fn tab(context: &Context<'_>) -> SettingsTab {
     let lifecycle = lifecycle(context);
     let unavailable = unavailable(context);
-    let invalid = file_unusable(context).filter(|why| [INVALID, INVALID_RUNNING].contains(why));
+    let invalid = file_unusable(context).filter(|file| file.has_problems());
     let mut attention = invalid.is_some();
     let mut groups: Vec<SettingGroup> = Vec::new();
     for (group, setting, windows, macos) in SETTINGS {
@@ -514,12 +565,9 @@ pub fn tab(context: &Context<'_>) -> SettingsTab {
         }
     }
     SettingsTab {
-        intro: if let Some(why) = invalid {
-            why.to_string()
-        } else {
-            INTRO.to_string()
-        },
-        unavailable,
+        intro: invalid.map_or(INTRO, Unusable::words).to_string(),
+        reason_in_intro: unavailable.as_ref().is_some_and(|reason| reason.in_intro),
+        unavailable: unavailable.map(|reason| reason.words.to_string()),
         groups,
         chip: attention.then(|| NEEDS_ATTENTION.to_string()),
     }

@@ -1,5 +1,5 @@
 //! the container backend, which runs the `docker` command line client and never
-//! trusts a client's output to be short or valid text; `docs/operations/cli.md`
+//! trusts a client's output to be short or valid text; `docs/marshal-cli/docker-backend.md`
 //! describes the argument lists, budgets and the shim.
 
 use std::cell::{Cell, RefCell};

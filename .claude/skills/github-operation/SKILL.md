@@ -47,6 +47,7 @@ See [identity-and-targets.md](./references/identity-and-targets.md) for:
 - top-level review-comment IDs for REST replies versus thread node IDs for GraphQL resolution
 - matching conversation closure to the actual thread and current substantive discussion
 - assignment identity and silently ignored assignees
+- assigning the authenticated operator to a created issue or pull request, and the override for different ownership
 
 ## Body Integrity
 
@@ -70,4 +71,5 @@ See [publication-and-recovery.md](./references/publication-and-recovery.md) for:
 - verifying disposition replies and conversation closure as separate effects
 - the agent's own draft-to-ready transition where the project's change-loop practices define a ready gate
 - COMMENT-type reviews, API-authored pull requests, and append-only branch history
+- the prohibitions on pushing to the default branch and on merging, with a project naming the branch and the merging human
 - publishing a write, retrying an operation, or reporting its outcome

@@ -2,7 +2,7 @@
 //! definition embedded in this binary, as an instance in its own `building` state that
 //! holds the instance lock throughout, so it is refused while any instance exists and
 //! so is a `start` during it. On axmc the image is built inside the golden VM and
-//! `build` makes that VM; see `docs/operations/cli.md`.
+//! `build` makes that VM; see `docs/marshal-cli/build-images.md`.
 
 mod arguments;
 mod build_vm;

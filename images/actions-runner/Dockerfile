@@ -191,7 +191,7 @@ USER runner
 
 # the image contract labels: the CLI embeds this file and reads its contract
 # version from them. a runner bump in the FROM line above edits both runner
-# labels by hand; see docs/operations/cli.md.
+# labels by hand; see docs/marshal-cli/runner-images.md.
 LABEL com.github.axross.runners.contract="2" \
       com.github.axross.runners.runner-version="2.337.0" \
       com.github.axross.runners.runner-released="2026-08-26"
