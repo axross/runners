@@ -1,7 +1,9 @@
 # Runner hosts
 
 Choose the machine that runs the pools. A Windows host runs each job in a Docker
-container. An Apple silicon Mac runs each job in a fresh Tart VM.
+container. An Apple silicon Mac runs each job in a fresh Tart VM. For both
+hosts, the [recovery CLI](../runner-recovery/index.md) has a separate
+release and installation procedure.
 
 ## Windows with Docker Desktop
 

@@ -8,12 +8,12 @@ description: Prepare signing, check the planned release version, dispatch from m
 
 ## Cutting a Release
 
-The maintainer releases the app by dispatching
+During the bounded F0 recovery, the maintainer releases the historical CLI by dispatching
 [`release.yaml`](../../.github/workflows/release.yaml) on main. semantic-release
 works out the version from the commits, as [Version Rules](./versions.md#version-rules) describes.
-[Release artifacts and workflow boundaries](../marshal-cli/release-artifacts.md#releases) describes what the workflow builds, and the
-[release policy](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
-records why each control is there. The maintainer takes every step in this
+Before the F0 recovery dispatch, the maintainer pushes the base tag `v0.1.1`,
+which [Version Rules](./versions.md#version-rules) also describes.
+Use the [fixed-source release procedure](../runner-recovery/release.md#release-the-fixed-cli) to verify the pinned program and collect the public release, signing and native-host evidence required before restoration. For a host installation, use the [actual-version CLI procedure](../runner-recovery/install.md#installing-updating-and-rolling-back). App builds remain active. Restoring publication requires a separate reviewed change that reconciles the [suspended app workflow](../marshal-cli/release-artifacts.md#releases) with then-current main. The [release policy](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main) records the authority for each control. The maintainer takes every step in this
 section. The [standing delivery grant](../agent-work/delivery-grant.md#authorizing-delivery-operations) lets an explicit human instruction cover release,
 deployment, and settings effects, but the release rule in Security is stricter: an
 agent never dispatches `release.yaml`, never approves a deployment of it, never
@@ -23,13 +23,11 @@ agent relays it.
 
 ### Before the First Release
 
-The `release` Environment's part of this section, step 2, is held for M2 and W4: from
-W1's installer pull request until M2's or W4's signing job returns, no job declares
-the Environment, and the Environment, its secrets and its variable are kept for that
-job, which then needs them as this step sets them. The other steps were the first
-dispatch's prerequisites. Step 3 records how the base tag `v0.0.0` was pushed for the
-first release. The CLI recovery release had its own base tag, `v0.1.1`, which
-[Version Rules](./versions.md#version-rules) describes.
+The temporary CLI signing job uses the `release` Environment under step 2's
+existing contract. Recheck those prerequisites before a recovery dispatch;
+do not assume the held app-signing gap means an unprotected release. Step 3
+records how the base tag `v0.0.0` was pushed for the first release. The recovery
+release has its own base tag, `v0.1.1`, which [Version Rules](./versions.md#version-rules) describes.
 
 Do these once, before the first dispatch:
 
@@ -141,15 +139,14 @@ Do these once, before the first dispatch:
    other jobs are skipped. The run is green and releases nothing.
 4. When there is something to release, read the version in the plan job's log
    ("The next release is <version>."). If [Version Rules](./versions.md#version-rules) does not expect
-   it, cancel the run before the release job tags it. Otherwise the run builds,
-   assembles, attests and releases without waiting for an approval: from W1's
-   installer pull request until M2's or W4's signing job returns, no job declares
-   the `release` Environment, so step 1's check at the dispatch is the only one. The
-   signing job that returns brings back an approval here, with its own checks. A
-   failure in `build`, `assemble-signed` or `attest` stops the run before any tag is
-   pushed; fix it in a pull request and dispatch again.
-5. After a green run, check that the release exists and carries exactly the app
-   executable, the MSI and `SHA256SUMS`:
+   it, cancel the run instead. Otherwise approve `sign-macos`'s deployment
+   yourself. It signs and notarizes the fixed-source CLI and pkg. `verify-macos`
+   checks the signed outputs outside the Environment before `assemble-signed`,
+   `attest` and `release`. A failure prevents tagging; fix it in a pull request
+   before another maintainer dispatch. Unsigned dry runs and stand-ins are not
+   signing evidence.
+5. After a green run, check that the release exists and carries exactly the
+   Windows bare CLI and MSI, macOS bare CLI and signed/notarized pkg, and `SHA256SUMS`:
 
    ```bash
    gh release view v<version> --repo axross/runners --json isDraft,assets --jq '{isDraft, assets: [.assets[].name]}'
@@ -163,18 +160,16 @@ Do these once, before the first dispatch:
    after the plan job, the release job logs the same line and ends without a tag or
    a release. Either way, run step 1 again and dispatch again.
 
-6. Check the release with the optional check block in
-   [Checking and installing the Windows app MSI](../marshal-cli/install-on-windows.md#installing-updating-and-rolling-back) before opening its
-   installer on a host. This is the maintainer's release verification, not a step
-   an operator must take. The first release of the app is also the first run of
-   `gh attestation verify` against its MSI and of the check block's comparison of the
-   extracted `marshal-app.exe` with its `SHA256SUMS` line, so for that release run
-   the check block before opening the MSI on a host. A failure there is a release
-   defect, and it leaves the check unusable for that release. The WiX pin is
-   recorded under [Pinning Convention](../security/dependency-pins.md#pinning-convention).
-   The MSI and the app are not signed, as
-   [Security](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
-   records.
+6. Run the actual-version optional download check in CLI Recovery before opening
+   either installer. Publish the workflow/tag commit and historical program
+   identity separately, plus every successful F0 release/signing and native-host
+   outcome. An unknown or failed item blocks restoration. WSL and hosted CI do
+   not replace the native Windows11 or Mac evidence. Neither a recovery-code
+   merge nor a release alone closes F0 or waives a downstream dependency.
+
+Only after that public evidence may the separate recovery-restoration PR remove
+the temporary path and restore the then-current app release contract. The later
+F0 measured signing-record PR remains documents-only and separate.
 
 ### Cleaning Up a Partial Release
 

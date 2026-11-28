@@ -20,6 +20,7 @@ Apple silicon Macs with Tart. Start with the job you are doing. The
 
 - [Run a Windows host](./runner-hosts/index.md#windows-with-docker-desktop) to configure pools, start runners, and recover a failed installation.
 - [Run a Mac host](./runner-hosts/index.md#macos-with-tart) to prepare Tart and Softnet, build a golden VM, and diagnose a job VM.
+- [Recover the historical CLI](./runner-recovery/index.md) for the bounded release procedure, its evidence requirements, and the conditions for restoring app publication.
 
 ## Understand Marshal
 

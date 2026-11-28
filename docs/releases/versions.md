@@ -1,7 +1,7 @@
 ---
 type: Specification
 title: Release version selection
-description: Determine the version from tags and commit subjects, including the base tag that keeps releases on 0.x.
+description: Determine the version from tags and commit subjects, including the fixed-source recovery release.
 ---
 
 # Release version selection
@@ -20,8 +20,10 @@ that subject, so the title decides the release:
 - `build(deps)` releases a patch, through the `releaseRules` in
   [`release/.releaserc.json`](../../release/.releaserc.json). That is the subject
   Dependabot writes for the runner image, the CLI's crates and the toolchain, so
-  such a bump reaches hosts in a release. Its notes list it under Dependencies,
-  through the notes generator's `presetConfig.types` in the same file. Dependabot's
+  such a bump raises the release version. During CLI recovery, the fixed
+  historical program excludes main's dependency updates. Release notes list the
+  bump under Dependencies through the notes generator's `presetConfig.types` in
+  the same file. Dependabot's
   entry for the app's crates writes the same subject, so until the release carries
   the app, a bump of a crate only the app links releases a patch that changes
   nothing in the released `marshal`.
@@ -58,7 +60,8 @@ of the command-line files.
 The breaking-marker rule is unchanged. A breaking change merged after `v0.1.1` makes
 a later plan job print `1.0.0`, and until the recovery release is published, so can
 a `v0.1.1` that is missing or on another commit. When a plan job prints a version
-the maintainer did not expect, the maintainer cancels the run, which is before any job pushes a tag, and decides then how to proceed.
+the maintainer did not expect, the maintainer cancels the run before approving
+`sign-macos`, which is before any job pushes a tag, and decides then how to proceed.
 A release rule that maps a breaking change to a minor, and a version input on the
 dispatch, are not in place: the base tag changes no release configuration or
 workflow, and the release configuration keeps the default mapping. How a later

@@ -124,4 +124,4 @@ The command line read each token from a file at the pool's `tokenPath`, which it
 own access control step restricted. Marshal reads no token file and imports none:
 enter each repository's token in the window once, as [The Fine-Grained Token](#the-fine-grained-token) describes. Keep the old token files
 until the app's runners work, because rolling back to the command line reads them,
-then delete them. The last command-line release's [program tree](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/windows-runner-host.md#restricting-a-token-file) gives the access-control steps for those files.
+then delete them. The [historical Windows host guide](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/windows-runner-host.md#restricting-a-token-file) gives the access-control steps for those files.

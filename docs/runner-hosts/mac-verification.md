@@ -28,13 +28,11 @@ the run goes in this order:
 1. Confirm that no Docker Desktop is installed, and record the macOS version, the
    literal output of `tart --version` and `softnet --version`, and Softnet's SUID bit
    as [Setting Up Softnet](./mac-setup.md#setting-up-softnet) lists it.
-2. Install the last command-line release's macOS binary with the macOS procedure at
-   its tag, since no later build carries one. Open that guide as
-   [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
-   says. Record its version, the commit of its tag and the
-   program commit it was built from.
+2. Install the CLI with the actual-version macOS procedure in the recovery tag’s guide. Open
+   `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`, replacing `<version>` with the published version without its initial `v`. Record its version and both the
+   workflow/tag commit and the fixed historical program commit.
 3. Build the golden VM, then start the pools, with that release's `build` and
-   `start`, as its [program tree’s host procedure](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/macos-runner-host.md#starting-watching-and-stopping) describes, with the
+   `start`, as the [fixed tree’s host procedure](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/macos-runner-host.md#starting-watching-and-stopping) describes, with the
    sizing of [the example configuration](../../hosts/macos/runner-host.example.json).
    Record the golden VM's and Tart's cache's disk use.
 4. Run a job with `runs-on: [axmc, linux]` and a step that uses `docker run`, and
