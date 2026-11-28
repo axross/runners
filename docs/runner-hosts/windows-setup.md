@@ -81,7 +81,7 @@ Run this host only on a network you would trust the listed repositories'
 workflows with. The [LAN egress policy](../security/pool-isolation.md#lan-egress-from-runner-containers-accepted-risk) records the accepted risk.
 
 The machine needs outbound HTTPS to `github.com` and `api.github.com`,
-`*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
+`actions.githubusercontent.com` and `*.actions.githubusercontent.com`, `ghcr.io` and its blob storage (the base image
 pull), and whatever each repository's jobs reach on a GitHub-hosted runner. The
 image build, whenever Marshal builds the image, also reaches the Ubuntu package archives
 that the base image's apt sources name, over port 80 or 443 (by default
@@ -94,6 +94,12 @@ provisioning also needs HTTPS to
 `services.gradle.org` for the Gradle distribution, including its redirects to
 GitHub release-asset storage. The Dockerfile itself needs no access to Docker
 Hub. No inbound port is needed.
+
+The resident on-demand listener also uses the returned Actions service host and
+`broker.actions.githubusercontent.com` for its long poll. This is outbound-only;
+it needs no inbound listener on the network. The on-demand outbound allowlist and
+credential rules are in
+[Security](../security/pool-isolation.md#on-demand-scale-sets-keep-repository-and-host-boundaries).
 
 ## Installing Marshal
 
@@ -175,6 +181,10 @@ command line:
 
 Not yet verified on axpc, each for the reason given:
 
+- the resident agent's on-demand pools, including live job delivery, the cap,
+  stop/restart, crash cleanup and the window's added listener states; the earlier
+  scale-set probe establishes protocol feasibility, not product validation, and
+  WSL checks do not establish native-Windows behavior;
 - Marshal's MSI install, the optional check block with its extraction, the
   uninstall block, and the prompts an unsigned MSI from a browser download raises,
   which have not run on axpc. CI runs the blocks against the release dry run's MSI in

@@ -68,7 +68,9 @@ applies to the next job in every slot with no restart. Rotate a token with
 A pool configured with `organization` uses an organisation token, not any of that
 organisation's repository tokens. Before starting one, satisfy the Organisation
 Pools Share a Runner Group's Trust Boundary section of
-[Security](../security/pool-isolation.md#organisation-pools-share-a-runner-groups-trust-boundary). [TOML Configuration](../marshal-cli/toml-configuration.md#the-toml-configuration) describes `organization` and `runner_group`.
+[Security](../security/pool-isolation.md#organisation-pools-share-a-runner-groups-trust-boundary). [TOML Configuration](../marshal-cli/toml-configuration.md#the-toml-configuration) describes `organization` and `runner_group`. An organisation pool is
+never on-demand: `scale_set` is refused on it, and an on-demand pool for a repository
+the organisation owns is a repository pool with that repository's token.
 
 Create the token while signed in as an owner of the organisation:
 

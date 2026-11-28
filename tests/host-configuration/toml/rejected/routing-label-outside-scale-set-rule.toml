@@ -1,0 +1,16 @@
+schema_version = 1
+routing_label = "ax:pc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "alpha"
+repository = "octo"
+os = "macos"
+runners = 0
+scale_set = "ax:pc-linux"
+
+[[pool]]
+name = "beta"
+repository = "octo/hello"
+runners = 1
+scale_set = "ax:pc-other"

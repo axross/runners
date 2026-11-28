@@ -1,0 +1,34 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "Bad Name"
+repository = "octo/hello"
+runners = 0
+scale_set = "axpc-first"
+labels = ["gpu"]
+
+[[pool]]
+name = "axpc-svc"
+repository = "octo/hello"
+runners = 1
+scale_set = "axpc-svc"
+
+[[pool]]
+name = "axpc-svc-two"
+repository = "octo/hello"
+runners = 1
+scale_set = "AXPC-SVC"
+
+[[pool]]
+name = "fast-one"
+repository = "octo/hello"
+runners = 1
+labels = ["fast"]
+
+[[pool]]
+name = "fast-two"
+repository = "octo/hello"
+runners = 1
+labels = ["FAST"]

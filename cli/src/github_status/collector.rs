@@ -13,6 +13,7 @@ use serde::Deserialize;
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep_until};
 
+use crate::agent::on_demand::View as ListenerView;
 use crate::agent::snapshot::Snapshot;
 use crate::runtime::log::Log;
 use crate::runtime::secret::Secret;
@@ -23,7 +24,8 @@ use super::budget::{Level, Tracker};
 use super::clean;
 use super::http::{Fetch, Get, next_page, page_id};
 use super::{
-    GithubStatus, Job, OrganizationRunnerStatus, OrganizationStatus, RepositoryStatus, RunnerStatus,
+    GithubStatus, Job, OrganizationRunnerStatus, OrganizationStatus, RepositoryStatus,
+    RunnerStatus, ScaleSetStatus,
 };
 use crate::runtime::scrub::replace_secret;
 
@@ -256,6 +258,37 @@ pub fn wanted(snapshot: &Snapshot) -> BTreeMap<TokenKey, BTreeSet<String>> {
     wanted
 }
 
+/// the `github` topic's scale-set scope: an entry for each on-demand pool, with the counts of
+/// its listener's latest statistics, and none while the listener is not the pool's own (another
+/// scale set or repository, or no listener) or has no statistics yet.
+fn scale_set_statuses(
+    snapshot: &Snapshot,
+    listeners: Option<&BTreeMap<String, ListenerView>>,
+) -> Vec<ScaleSetStatus> {
+    snapshot
+        .pools
+        .iter()
+        .filter_map(|pool| {
+            let info = pool.on_demand.as_ref()?;
+            let statistics = listeners
+                .and_then(|listeners| listeners.get(&pool.name))
+                .filter(|view| {
+                    view.scale_set == info.name
+                        && TokenKey::for_pool(&view.target()).as_str() == pool.repository
+                })
+                .and_then(|view| view.statistics);
+            Some(ScaleSetStatus {
+                pool: pool.name.clone(),
+                repository: pool.repository.clone(),
+                name: info.name.clone(),
+                assigned: statistics.map(|statistics| statistics.total_assigned_jobs),
+                running: statistics.map(|statistics| statistics.total_running_jobs),
+                registered_idle: statistics.map(|statistics| statistics.total_idle_runners),
+            })
+        })
+        .collect()
+}
+
 type OrganizationGroups = BTreeMap<TokenKey, BTreeMap<String, BTreeSet<String>>>;
 
 /// projects a shared organisation read onto configured groups; group membership
@@ -314,6 +347,8 @@ pub struct Collector<'a, F: Fetch> {
     shown: BTreeSet<TokenKey>,
     shown_organizations: OrganizationGroups,
     active: watch::Receiver<bool>,
+    listeners: Option<watch::Receiver<BTreeMap<String, ListenerView>>>,
+    scale_sets: Vec<ScaleSetStatus>,
 }
 
 impl<'a, F: Fetch> Collector<'a, F> {
@@ -340,7 +375,17 @@ impl<'a, F: Fetch> Collector<'a, F> {
             shown: BTreeSet::new(),
             shown_organizations: BTreeMap::new(),
             active,
+            listeners: None,
+            scale_sets: Vec::new(),
         }
+    }
+
+    pub(crate) fn with_listeners(
+        mut self,
+        listeners: watch::Receiver<BTreeMap<String, ListenerView>>,
+    ) -> Self {
+        self.listeners = Some(listeners);
+        self
     }
 
     fn is_active(&self) -> bool {
@@ -353,6 +398,18 @@ impl<'a, F: Fetch> Collector<'a, F> {
         loop {
             let snapshot = Arc::clone(&snapshots.borrow_and_update());
             let wanted = wanted(&snapshot);
+            if self.is_active() {
+                self.scale_sets = {
+                    let listeners = self.listeners.as_ref().map(|listeners| listeners.borrow());
+                    scale_set_statuses(&snapshot, listeners.as_deref())
+                };
+                self.publish();
+            } else if !self.scale_sets.is_empty() {
+                // the counts are published only while subscribed, so a later
+                // subscriber's first value never carries an earlier one's
+                self.scale_sets.clear();
+                self.publish();
+            }
             self.show(&wanted, organization_groups(&snapshot));
             let next = if self.is_active() {
                 self.next(&wanted)
@@ -373,6 +430,12 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 () = async { match at { Some(at) => sleep_until(at).await, None => pending().await } } => {}
                 changed = snapshots.changed() => if changed.is_err() { return },
                 changed = active.changed() => if changed.is_err() { return },
+                changed = async {
+                    match self.listeners.as_mut() {
+                        Some(listeners) => listeners.changed().await,
+                        None => pending().await,
+                    }
+                } => if changed.is_err() { self.listeners = None; },
             }
         }
     }
@@ -470,6 +533,8 @@ impl<'a, F: Fetch> Collector<'a, F> {
                 .collect(),
             omitted_organizations: 0,
             omitted_runners: 0,
+            scale_sets: self.scale_sets.clone(),
+            omitted_scale_sets: 0,
         };
         status.fit(MAX_STATUS_BYTES);
         self.published.send_if_modified(|current| {
@@ -1005,5 +1070,241 @@ fn describe(key: &TokenKey, cause: Cause) -> &'static str {
         Cause::Unreachable => "GitHub could not be reached",
         Cause::Error => "GitHub answered with an error",
         Cause::TokenUnreadable => "the token cannot be read",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::time::Duration;
+
+    use tokio::time::sleep;
+
+    use crate::agent::on_demand::ListenerState;
+    use crate::runtime::fake::MemoryLog;
+    use crate::scaleset::Statistics;
+    use crate::token_store::MemoryTokenStore;
+
+    use super::*;
+
+    const ON_DEMAND: &str = r#"{"name":"app","repository":"owner/app","state":"running",
+        "has_token":true,"runners":[],"on_demand":{"name":"axpc-app","state":"listening"}}"#;
+    const ALWAYS_ON: &str = r#"{"name":"plain","repository":"owner/plain","state":"running","has_token":true,"runners":[]}"#;
+
+    fn snapshot(pools: &[&str]) -> Arc<Snapshot> {
+        let text = format!(r#"{{"repositories":[],"pools":[{}]}}"#, pools.join(","));
+        Arc::new(serde_json::from_str(&text).unwrap())
+    }
+
+    fn statistics(assigned: u64, running: u64, idle: u64) -> Statistics {
+        Statistics {
+            total_assigned_jobs: assigned,
+            total_running_jobs: running,
+            total_idle_runners: idle,
+            ..Statistics::default()
+        }
+    }
+
+    fn listener(
+        scale_set: &str,
+        repository: (&str, &str),
+        counts: Option<Statistics>,
+    ) -> ListenerView {
+        ListenerView {
+            logical_name: "app".to_string(),
+            owner: repository.0.to_string(),
+            repository: repository.1.to_string(),
+            scale_set: scale_set.to_string(),
+            state: ListenerState::Listening,
+            status: None,
+            refused_host: None,
+            reason: None,
+            statistics: counts,
+            active_reservations: 0,
+            occupied_capacity: 0,
+            incomplete_registrations: Vec::new(),
+            session_cleanup_incomplete: false,
+        }
+    }
+
+    fn listeners(view: ListenerView) -> BTreeMap<String, ListenerView> {
+        BTreeMap::from([("app".to_string(), view)])
+    }
+
+    fn entry(assigned: Option<u64>, running: Option<u64>, idle: Option<u64>) -> ScaleSetStatus {
+        ScaleSetStatus {
+            pool: "app".to_string(),
+            repository: "owner/app".to_string(),
+            name: "axpc-app".to_string(),
+            assigned,
+            running,
+            registered_idle: idle,
+        }
+    }
+
+    #[test]
+    fn an_entry_for_each_on_demand_pool_carries_its_listeners_counts() {
+        let snapshot = snapshot(&[ALWAYS_ON, ON_DEMAND]);
+        let map = listeners(listener(
+            "axpc-app",
+            ("owner", "app"),
+            Some(statistics(3, 1, 2)),
+        ));
+        assert_eq!(
+            scale_set_statuses(&snapshot, Some(&map)),
+            [entry(Some(3), Some(1), Some(2))],
+            "the always-on pool has none"
+        );
+        // repository keys are lower case in the snapshot, whatever case the listener holds
+        let map = listeners(listener(
+            "axpc-app",
+            ("Owner", "App"),
+            Some(statistics(0, 0, 0)),
+        ));
+        assert_eq!(
+            scale_set_statuses(&snapshot, Some(&map)),
+            [entry(Some(0), Some(0), Some(0))],
+            "a measured zero is not an unknown count"
+        );
+    }
+
+    #[test]
+    fn counts_are_unknown_unless_the_listener_is_this_pools_own_and_has_statistics() {
+        let snapshot = snapshot(&[ON_DEMAND]);
+        let unknown = [entry(None, None, None)];
+        let counts = Some(statistics(3, 1, 2));
+        for map in [
+            listeners(listener("axpc-other", ("owner", "app"), counts)),
+            listeners(listener("axpc-app", ("owner", "elsewhere"), counts)),
+            listeners(listener("axpc-app", ("someone", "app"), counts)),
+            listeners(listener("axpc-app", ("owner", "app"), None)),
+            BTreeMap::from([(
+                "another-pool".to_string(),
+                listener("axpc-app", ("owner", "app"), counts),
+            )]),
+            BTreeMap::new(),
+        ] {
+            assert_eq!(scale_set_statuses(&snapshot, Some(&map)), unknown);
+        }
+        assert_eq!(scale_set_statuses(&snapshot, None), unknown);
+    }
+
+    /// answers nothing, and counts what it was asked.
+    struct CountingFetch(Cell<u32>);
+
+    impl Fetch for CountingFetch {
+        async fn get(&self, _request: &Get<'_>) -> Result<Answer, Cause> {
+            self.0.set(self.0.get() + 1);
+            Err(Cause::Unreachable)
+        }
+
+        fn base_url(&self) -> &str {
+            "http://127.0.0.1:9"
+        }
+    }
+
+    /// an on-demand pool with a runner that has a workload, so its repository is checked.
+    const ON_DEMAND_WITH_RUNNER: &str = r#"{"name":"app","repository":"owner/app","state":"running",
+        "has_token":true,"runners":[{"slot":1,"state":"running","workload":"app-1"}],
+        "on_demand":{"name":"axpc-app","state":"listening"}}"#;
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn a_scale_set_entry_stands_without_a_repository_entry() {
+        let fetch = CountingFetch(Cell::new(0));
+        let log = MemoryLog::default();
+        let (published, status) = watch::channel(Arc::new(GithubStatus::default()));
+        let (_active_tx, active) = watch::channel(true);
+        let (_snapshot_tx, snapshots) = watch::channel(snapshot(&[ON_DEMAND]));
+        let (_listeners_tx, listeners_rx) = watch::channel(listeners(listener(
+            "axpc-app",
+            ("owner", "app"),
+            Some(statistics(2, 1, 0)),
+        )));
+        let collector = Collector::new(&fetch, None, &log, Box::new(|| 0), published, active)
+            .with_listeners(listeners_rx);
+        tokio::select! {
+            () = collector.run(snapshots) => panic!("the collector ended"),
+            () = sleep(Duration::from_secs(1)) => {}
+        }
+        let status = status.borrow();
+        assert_eq!(status.scale_sets, [entry(Some(2), Some(1), Some(0))]);
+        assert!(status.repositories.is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn counts_are_published_only_while_subscribed_from_the_listener_and_cost_no_request() {
+        let fetch = CountingFetch(Cell::new(0));
+        let log = MemoryLog::default();
+        let store = MemoryTokenStore::default();
+        store
+            .set(
+                &TokenKey::of("owner", "app"),
+                &Secret::new("ghp_fake_token".to_string()),
+            )
+            .unwrap();
+        let (published, status) = watch::channel(Arc::new(GithubStatus::default()));
+        let (active_tx, active) = watch::channel(false);
+        let (_snapshot_tx, snapshots) =
+            watch::channel(snapshot(&[ALWAYS_ON, ON_DEMAND_WITH_RUNNER]));
+        let first = listener("axpc-app", ("owner", "app"), Some(statistics(2, 1, 0)));
+        let (listeners_tx, listeners_rx) = watch::channel(listeners(first.clone()));
+        let collector = Collector::new(
+            &fetch,
+            Some(Arc::new(store)),
+            &log,
+            Box::new(|| 0),
+            published,
+            active,
+        )
+        .with_listeners(listeners_rx);
+        let scale_sets = || status.borrow().scale_sets.clone();
+        let script = async {
+            sleep(Duration::from_secs(60)).await;
+            assert!(scale_sets().is_empty(), "published while no one subscribes");
+            assert_eq!(fetch.0.get(), 0, "checked while no one subscribes");
+
+            active_tx.send_replace(true);
+            sleep(Duration::from_secs(1)).await;
+            let requested = fetch.0.get();
+            assert!(requested > 0, "the pool's repository is not checked");
+            assert_eq!(scale_sets(), [entry(Some(2), Some(1), Some(0))]);
+
+            // later statistics, then a change that leaves them as a 202 poll does
+            let mut later = first.clone();
+            later.statistics = Some(statistics(5, 2, 1));
+            listeners_tx.send_replace(listeners(later.clone()));
+            sleep(Duration::from_secs(1)).await;
+            assert_eq!(scale_sets(), [entry(Some(5), Some(2), Some(1))]);
+            later.state = ListenerState::BackingOff;
+            later.reason = Some("service could not be reached".to_string());
+            listeners_tx.send_replace(listeners(later));
+            sleep(Duration::from_secs(1)).await;
+            assert_eq!(
+                scale_sets(),
+                [entry(Some(5), Some(2), Some(1))],
+                "a poll that brings nothing keeps the last statistics"
+            );
+
+            active_tx.send_replace(false);
+            sleep(Duration::from_secs(1)).await;
+            assert!(
+                scale_sets().is_empty(),
+                "the next subscriber's first value carries no earlier counts"
+            );
+            active_tx.send_replace(true);
+            sleep(Duration::from_secs(1)).await;
+            assert_eq!(scale_sets(), [entry(Some(5), Some(2), Some(1))]);
+            // a failed check waits at least the 15 s interval, so only a request that
+            // publishing the counts made itself could raise the count in these few seconds
+            assert_eq!(
+                fetch.0.get(),
+                requested,
+                "the counts cost a display request"
+            );
+        };
+        tokio::select! {
+            () = collector.run(snapshots) => panic!("the collector ended"),
+            () = script => {}
+        }
     }
 }

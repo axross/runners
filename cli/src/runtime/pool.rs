@@ -27,8 +27,9 @@ const STALE_REMOVE_BUDGET: Duration = Duration::from_secs(120);
 pub struct PoolSpec {
     /// where the entry sits in the configuration file, such as `repositories[0]`.
     pub path: String,
-    /// the entry's name: the start of every container and runner name.
+    /// the configured logical identity, including volume and host ownership.
     pub name: String,
+    pub scale_set: Option<String>,
     pub target: PoolTarget,
     pub slots: u32,
     /// the token file the commands read; the agent reads the token store and gives
@@ -56,6 +57,7 @@ pub struct PoolSpec {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlotSpec {
     pub pool: String,
+    pub scale_set: Option<String>,
     pub target: PoolTarget,
     pub number: u32,
     pub token_path: Option<PathBuf>,
@@ -144,6 +146,7 @@ fn pool_from_entry(
     Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
+        scale_set: entry.scale_set.clone(),
         target: entry.target.clone(),
         slots: entry.slots,
         token_path: entry.token_path.as_ref().map(PathBuf::from),
@@ -169,6 +172,7 @@ fn vm_pool_from_entry(entry: &Entry, image: &str) -> Result<PoolSpec, PlanError>
     Ok(PoolSpec {
         path: entry.path.clone(),
         name: entry.name.clone(),
+        scale_set: entry.scale_set.clone(),
         target: entry.target.clone(),
         slots: entry.slots,
         token_path: entry.token_path.as_ref().map(PathBuf::from),
@@ -199,6 +203,7 @@ impl PoolSpec {
             .zip(&self.slot_offsets)
             .map(|(number, offset)| SlotSpec {
                 pool: self.name.clone(),
+                scale_set: self.scale_set.clone(),
                 target: self.target.clone(),
                 number,
                 token_path: self.token_path.clone(),
@@ -217,6 +222,12 @@ impl PoolSpec {
 }
 
 impl SlotSpec {
+    /// the runner and job container namespace; host and volume identity stays logical.
+    #[must_use]
+    pub fn runner_prefix(&self) -> &str {
+        self.scale_set.as_deref().unwrap_or(&self.pool)
+    }
+
     /// the name of the container that reads this slot's allowed CPUs.
     #[must_use]
     pub fn probe_name(&self) -> String {
@@ -347,17 +358,33 @@ async fn clear_stale_containers<B: Backend>(
     pool: &PoolSpec,
     log: &dyn Log,
 ) -> Result<(), String> {
-    let listing = backend
+    let mut listing = backend
         .list_pool_containers(&pool.name)
         .await
         .map_err(|error| error.to_string())?;
+    if let Some(alias) = pool
+        .scale_set
+        .as_deref()
+        .filter(|alias| *alias != pool.name)
+    {
+        let aliased = backend
+            .list_pool_containers(alias)
+            .await
+            .map_err(|error| error.to_string())?;
+        listing.names.extend(aliased.names);
+        listing.names.sort();
+        listing.names.dedup();
+        listing.diagnostic.extend(aliased.diagnostic);
+    }
     let mut left = Vec::new();
     let mut undeleted = Vec::new();
-    for name in listing
-        .names
-        .iter()
-        .filter(|name| backend.is_own_name(&pool.name, name))
-    {
+    for name in listing.names.iter().filter(|name| {
+        backend.is_own_name(&pool.name, name)
+            || pool
+                .scale_set
+                .as_deref()
+                .is_some_and(|alias| super::name::is_own_container_name(alias, name))
+    }) {
         if backend.deletes_leftovers_unexported() {
             if !delete_leftover_host(backend, pool, name, log).await {
                 undeleted.push(name.clone());

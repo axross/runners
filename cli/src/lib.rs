@@ -24,6 +24,7 @@ pub mod macos;
 pub mod private;
 pub mod profile;
 pub mod runtime;
+pub mod scaleset;
 #[cfg(unix)]
 pub mod shim;
 pub mod start;

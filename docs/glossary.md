@@ -23,13 +23,17 @@ explains how contributors choose new terms.
 
 **Host Configuration** — The machine-local configuration outside the repository. Its image and pools are validated for the host profile. The agent uses TOML; legacy hosts and migration also have a JSON representation. [TOML and legacy configuration](./marshal-cli/toml-configuration.md).
 
-**Execution Pool** — A configured group of **Slots** sharing a registration target, routing labels and a resource namespace. Each **Slot** is one concurrent runner position. When a job ends the slot starts a fresh runner. [Pool resources and slot lifecycle](./marshal-cli/pool-runtime.md#names-and-the-slot-loop).
+**Execution Pool** — A configured group of **Slots** sharing a registration target, routing labels and a resource namespace. Each **Slot** is one concurrent runner position. In an always-on pool, when a job ends the slot starts a fresh runner; in an **On-Demand Pool**, a slot starts a runner only for demand a **Runner Scale Set** reports, up to the pool's `runners`. [Pool resources and slot lifecycle](./marshal-cli/pool-runtime.md#names-and-the-slot-loop).
+
+**Runner Scale Set** — A repository-level GitHub Actions routing identity with a name and a message session that supplies job demand to an **On-Demand Pool**. [Listening and admission](./marshal-cli/on-demand-pools.md#listening-and-admission).
+
+**On-Demand Pool** — An **Execution Pool** with the optional TOML `scale_set` setting, whose **Resident Agent** starts **Ephemeral Runners** in response to demand from a **Runner Scale Set**. An **Organisation Pool** is never on-demand. [On-demand pool contract](./marshal-cli/on-demand-pools.md).
 
 **Target Repository** — The GitHub repository served by a repository pool. Its pools use the same repository-scoped token. Foreground configurations may name a token file; the resident agent uses the OS credential store. [Token scope](./security/pool-isolation.md#a-token-carries-only-its-pool-kinds-permissions).
 
 **Organisation Pool** — An execution pool whose TOML `organization` and `runner_group` select a **Runner Group**. This GitHub group admits repositories to runners. Marshal requires a selected-repositories, non-default, non-inherited group with public access disabled. Its pools use the organisation token and have no persistent volumes. [Runner group trust](./security/pool-isolation.md#organisation-pools-share-a-runner-groups-trust-boundary).
 
-**Routing Label** — A `runs-on` label selecting a pool. In JSON, missing or empty host `labels` falls back to the host label; an explicit list replaces it. TOML requires `routing_label`. A **Custom Label** adds a pool-specific choice alongside the runner’s platform labels. [Label selection](./marshal-cli/toml-configuration.md#schema-version-1).
+**Routing Label** — A `runs-on` label selecting a pool. For an always-on pool, in JSON, missing or empty host `labels` falls back to the host label; an explicit list replaces it. TOML requires `routing_label`. A **Custom Label** adds a pool-specific choice alongside the runner’s platform labels. [Label selection](./marshal-cli/toml-configuration.md#schema-version-1).
 
 **Runner Image** — The container image carrying the runner and job tools, built from a Dockerfile under `images/<name>/`. Its **Image Contract Version** is the positive integer in `com.github.axross.runners.contract`. The CLI compares it with the embedded Dockerfile’s contract before accepting the launcher, arguments and labels. [Image compatibility](./marshal-cli/runner-images.md#the-image-contract).
 

@@ -79,7 +79,7 @@ jobs:
         working-directory: cli
         env:
           MARSHAL_EXPECT_RELEASE: "1"
-        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides
+        run: cargo test --locked --release --test base_address --test instance_roots --test build_definition --test release_overrides --test agent_overrides --test scaleset_client
       # the three variables are set so that the test that a release build ignores
       # them fails if it does not, as in merge-checks.yaml's app-modes job.
       - name: Test That A Release Build Of The App Ignores The Debug-Only Variables

@@ -289,6 +289,7 @@ mod tests {
                 repository: String::new(),
             },
             name: String::new(),
+            scale_set: None,
             slots,
             token_path: None,
             labels: Vec::new(),

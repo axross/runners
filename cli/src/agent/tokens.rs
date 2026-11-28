@@ -29,6 +29,7 @@ pub struct StoreTokens {
     store: Option<Arc<dyn TokenStore>>,
     /// which keys had a token when the store was last asked.
     known: RefCell<BTreeMap<TokenKey, bool>>,
+    errors: RefCell<BTreeMap<TokenKey, StoreError>>,
     changed: watch::Sender<u64>,
 }
 
@@ -38,6 +39,7 @@ impl StoreTokens {
         Self {
             store,
             known: RefCell::new(BTreeMap::new()),
+            errors: RefCell::new(BTreeMap::new()),
             changed: watch::Sender::new(0),
         }
     }
@@ -89,10 +91,21 @@ impl StoreTokens {
             return Err(NO_TOKEN_STORE.to_string());
         };
         match store.get(key) {
-            Ok(Some(token)) => Ok(token),
-            Ok(None) => Err(NO_TOKEN.to_string()),
-            Err(error) => Err(format!("{STORE_FAILED}: {}", error.describe())),
+            Ok(token) => {
+                self.errors.borrow_mut().remove(key);
+                token.ok_or_else(|| NO_TOKEN.to_string())
+            }
+            Err(error) => {
+                let reason = format!("{STORE_FAILED}: {}", error.describe());
+                self.errors.borrow_mut().insert(key.clone(), error);
+                Err(reason)
+            }
         }
+    }
+
+    /// the typed failure from the latest registration read, without another store access.
+    pub(crate) fn error(&self, key: &TokenKey) -> Option<StoreError> {
+        self.errors.borrow().get(key).cloned()
     }
 }
 

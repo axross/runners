@@ -25,31 +25,32 @@ are problems at every level. A date or time is a wrong type, because no key hold
 one. Any TOML form that gives the same tree reads the same: dotted keys, inline
 tables, an inline array of tables, and hexadecimal integers.
 
-| Top-level key    | Type                                    | Rule                                                                                                                                                                                                                                                  |
-| ---------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema_version` | integer                                 | Required, and MUST be `1`.                                                                                                                                                                                                                            |
-| `routing_label`  | string                                  | Required, with no default. A pool that lists no labels carries it beside the platform labels, and a `labels` list replaces it. It follows the label pattern and is none of the platform labels of any host, and Labels applies to it as to a default. |
-| `image_name`     | string                                  | Windows: required. macOS: optional, as `imageName` is on axmc.                                                                                                                                                                                        |
-| `[budget]`       | table of `cpus`, `memory_gb`, `disk_gb` | macOS: required, under today's `budget` rules. Windows: an undefined key.                                                                                                                                                                             |
-| `[lifecycle]`    | table                                   | Optional. The five lifecycle keys are described below.                                                                                                                                                                                                |
-| `[[pool]]`       | array of tables                         | At least one. Each table is one entry of today's `repositories`.                                                                                                                                                                                      |
+| Top-level key    | Type                                    | Rule                                                                                                                                                                                                                                                                                                             |
+| ---------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version` | integer                                 | Required, and MUST be `1`.                                                                                                                                                                                                                                                                                       |
+| `routing_label`  | string                                  | Required, with no default. An always-on pool that lists no labels carries it beside the platform labels, and a `labels` list replaces it. It also prefixes each on-demand scale-set name. It follows the label pattern and is none of the platform labels of any host, and Labels applies to it as to a default. |
+| `image_name`     | string                                  | Windows: required. macOS: optional, as `imageName` is on axmc.                                                                                                                                                                                                                                                   |
+| `[budget]`       | table of `cpus`, `memory_gb`, `disk_gb` | macOS: required, under today's `budget` rules. Windows: an undefined key.                                                                                                                                                                                                                                        |
+| `[lifecycle]`    | table                                   | Optional. The five lifecycle keys are described below.                                                                                                                                                                                                                                                           |
+| `[[pool]]`       | array of tables                         | At least one. Each table is one entry of today's `repositories`.                                                                                                                                                                                                                                                 |
 
-| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                    |
-| ------------------------ | ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                   | string                              | `name`                           | Required.                                                                                                                               |
-| `repository`             | string                              | `owner` and `repository`         | Exactly one of this and `organization` is required. Its value is `"owner/name"`; each part follows the owner or repository rule.        |
-| `organization`           | string                              | none                             | The organisation's login, under the owner rule. TOML only.                                                                              |
-| `runner_group`           | string                              | none                             | Required with `organization`, rejected without it. The exact group name in GitHub, not blank and without control characters.            |
-| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool.                               |
-| `labels`                 | array of strings                    | `labels`                         | Optional. Absent or empty gives the platform labels plus `routing_label`.                                                               |
-| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`. |
-| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                        |
-| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                        |
-| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                |
-| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                             |
-| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                               |
-| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                    |
-| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                   |
+| `[[pool]]` key           | Type                                | Renames                          | Rule                                                                                                                                                                          |
+| ------------------------ | ----------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                   | string                              | `name`                           | Required.                                                                                                                                                                     |
+| `repository`             | string                              | `owner` and `repository`         | Exactly one of this and `organization` is required. Its value is `"owner/name"`; each part follows the owner or repository rule.                                              |
+| `organization`           | string                              | none                             | The organisation's login, under the owner rule. TOML only.                                                                                                                    |
+| `runner_group`           | string                              | none                             | Required with `organization`, rejected without it. The exact group name in GitHub, not blank and without control characters.                                                  |
+| `runners`                | integer                             | `slots`                          | Required on axpc. Optional on axmc, with the JSON key's default: 2 on a Linux pool and 1 on a macOS pool. For an on-demand pool, the maximum concurrent runners.              |
+| `scale_set`              | string                              | None                             | Optional, TOML only. Makes the pool on-demand; absent keeps it always-on. Windows resident agent only; rejected on macOS, and rejected with `organization`. Name rules below. |
+| `labels`                 | array of strings                    | `labels`                         | Optional. On an always-on pool, absent or empty gives the platform labels plus `routing_label`. On an on-demand pool it MUST be absent or empty.                              |
+| `os`                     | `"linux"`, `"macos"`                | `os`                             | Optional on both hosts, and a pool without it is a Linux pool. Windows accepts `"linux"`, which changes nothing, and rejects `"macos"`.                                       |
+| `cpus`                   | number                              | `cpus`                           | Optional, with the JSON key's default and range.                                                                                                                              |
+| `memory_gb`              | integer                             | `memoryGb`                       | Optional, with the JSON key's default and range.                                                                                                                              |
+| `disk_gb`                | integer                             | `diskGb`                         | macOS: required on a Linux pool and optional on a macOS pool, as `diskGb` is. Windows: an undefined key.                                                                      |
+| `diagnostics`            | boolean                             | `diagnostics`                    | Optional, false by default.                                                                                                                                                   |
+| `diagnostic_directory`   | string                              | `diagnosticDirectory`            | Required with `diagnostics`, invalid without it, under the checkout rule.                                                                                                     |
+| `diagnostic_raw_records` | boolean                             | `diagnosticRawRecords`           | Optional, false by default, invalid when true without `diagnostics`.                                                                                                          |
+| `[[pool.volumes]]`       | tables of `suffix` and `mount_path` | `volumes`, `suffix`, `mountPath` | Windows: optional, and a pool without them has none. macOS: rejected.                                                                                                         |
 
 Every key follows the rule of the JSON key it renames on the host's profile:
 whether it is required, its default, and its range. The shared rule set applies
@@ -62,15 +63,37 @@ changes:
   axpc. A TOML pool without them is a Linux pool without volumes.
 - **One `repository` key.** The owner is part of it, so a missing owner is a problem
   on `repository`.
+- **`scale_set` selects on-demand operation.** The name is 1 to 45 ASCII letters,
+  digits, hyphens, underscores or dots, starting with `routing_label`, a hyphen
+  and a nonempty suffix, such as `axpc-linux`. Comparisons ignore ASCII case.
+  A routing label outside that character set makes an on-demand configuration
+  invalid at `routing_label`. A scale-set name MUST NOT equal or extend another
+  pool's scale-set name or logical `name` by a hyphen, in either direction, on
+  the same host. It MUST NOT equal another pool's label in the same repository, and
+  an organisation pool of its owner MUST NOT list it as a label. Neither pair uses
+  `routing_label` or the platform labels, which an on-demand pool does not carry.
+  A pool may use its own logical name as its scale-set name or use a distinct,
+  non-colliding alias. The scale-set name is its only label; neither the platform
+  labels nor `routing_label` is added. Mac pools reject the key at
+  `pool[i].scale_set`, including Linux pools; native macOS always-on pools remain
+  supported. Invalid names and collisions also name `pool[i].scale_set`; nonempty
+  labels name `pool[i].labels`. Problems keep the existing line/column and
+  no-source-value rules.
 - **Organisation pools.** `organization` and `runner_group` select an organisation
   runner group instead of one repository. Such a pool rejects `volumes`, including an
-  empty list, with `not allowed with organization`. `scale_set` is not a known key of
-  this configuration, so it is reported as an undefined key, except on an organisation
-  pool, where it is reported as `not allowed with organization`. JSON gains no
-  organisation keys. With the same OS, an organisation pool must not share a
+  empty list, with `not allowed with organization`. `scale_set` is reported as
+  `pool[i].scale_set: not allowed with organization` on an organisation pool whatever
+  its value, so an organisation pool is never on-demand and a repository an organisation
+  owns uses a repository pool. JSON gains no organisation keys. With the same OS, an organisation pool must not share a
   non-platform label with another pool of that organisation or any of its repositories,
   comparing logins and labels without case. This includes the default `routing_label`,
-  so overlapping pools need distinct explicit labels. Repository-only files retain their
+  so overlapping pools need distinct explicit labels. An on-demand pool of one of that
+  organisation's repositories is compared by its scale-set name alone, its only label:
+  it clashes with an organisation pool only when that pool's labels include the name,
+  never through the default `routing_label` or the platform labels. When the
+  on-demand pool is the later one, the problem is at `pool[i].scale_set` and tells the
+  operator to choose a name no organisation pool of that owner uses as a label; when
+  the organisation pool is the later one, it stays at that pool's `labels`. Repository-only files retain their
   validation rules. A pool naming neither target reports
   `pool[i]: names neither repository nor organization`, and one naming both reports
   `pool[i]: names both repository and organization`. An organisation pool without
@@ -153,14 +176,46 @@ address-space limit. As for JSON, the 1 MiB limit is the only bound.
 5. `pool` itself: missing, not an array of tables, or empty.
 6. Each pool in file order, all of one pool's problems before the next pool's, in the
    order of the JSON keys they rename, after the pool's own unknown keys:
-   `repository`, `organization`, `runner_group`, `os`, `labels`, `volumes`,
-   `runners`, `name`, `cpus`, `memory_gb`, on macOS `disk_gb`, then `diagnostics` and `diagnostic_raw_records` when they are
-   not booleans, `diagnostic_directory`, and last `diagnostic_raw_records` when it
-   requires `diagnostics`.
+   `repository`, `organization`, `runner_group`, `os`, `scale_set`, `labels`,
+   `volumes`, `runners`, `name`, `cpus`, `memory_gb`, on macOS `disk_gb`, then
+   `diagnostics` and `diagnostic_raw_records` when they are not booleans,
+   `diagnostic_directory`, and last `diagnostic_raw_records` when it requires
+   `diagnostics`. A pool that sets `scale_set` has one of these problems at that
+   place, the first that applies:
+   - with `organization`, `not allowed with organization`, whatever the value or
+     the host;
+   - on macOS, the rejection of the key;
+   - on Windows, a `routing_label` that is valid but outside the scale-set name's
+     character set, reported at `routing_label`. It is reported once for the whole file, in the
+     step of the first pool that sets `scale_set`, and no later pool repeats it;
+   - a value that is not a string;
+   - a name that breaks the name rule.
+
+   A valid name makes the pool on-demand, and a `labels` that is not absent or empty
+   is then a problem at `pool[i].labels`. A pool whose `scale_set` is rejected reads
+   `labels` as an always-on pool does and joins step 7 as one.
+
 7. The checks across pools, for each pool after the first against each pool before
-   it: a colliding `name`, then an ambiguous routing label, which for an organisation
-   pool is the organisation routing overlap in the Organisation pools bullet. Then on
-   macOS the budget totals.
+   it, in this order:
+   1. The scale-set collisions. When the later pool has a `scale_set`, its collision
+      with the earlier pool, at the later pool's `scale_set`; then, when the earlier
+      pool has one, its collision with the later pool, at the earlier pool's
+      `scale_set`. A scale-set name collides with the other pool's `name` or
+      `scale_set` when the two are equal or one is the other followed by a hyphen,
+      ignoring ASCII case, and with a label of the other pool when both pools are in
+      the same repository and the two are equal, ignoring ASCII case. The same
+      repository is the same owner and the same repository name, compared without
+      case, so `a/x` and `b/x` are different repositories.
+   2. A colliding `name`, at the later pool's `name`.
+   3. An ambiguous routing label. For the same repository, a pair where either pool
+      is on-demand is not compared, because an on-demand pool's only label is its
+      scale-set name, which step 7.1 compares. For an organisation pool, it is the
+      organisation routing overlap in the Organisation pools bullet, which compares
+      an on-demand pool by its scale-set name. Where the later pool is the
+      on-demand one, the overlap is reported at that pool's `scale_set`, which is the
+      key it can change, instead of at its `labels`.
+
+   Then on macOS the budget totals.
 
 **Key paths and lines.** A key path is in TOML form, such as `pool[1].runners` or
 `pool[0].volumes[2].mount_path`, with pools and volumes counted from 0, as the JSON
@@ -170,7 +225,12 @@ no value to point at:
 - A missing key names the line where its table starts: a `[[pool]]` or
   `[[pool.volumes]]` header, `[budget]`, or line 1 for the top level.
 - A clash between pools, a name or a routing label, names the line where the later
-  pool starts.
+  pool starts, except that a later on-demand pool whose scale-set name is a label of
+  an organisation pool is reported at its `scale_set`, as a scale-set collision is.
+- A scale-set collision is not one of them: it names the line of the `scale_set`
+  value of the pool it is reported on. Two on-demand pools that collide get one
+  problem each, at their own `scale_set` lines. When the other pool is always-on,
+  only the on-demand pool gets one.
 - A budget total names the line where `[budget]` starts, which is its first dotted key
   when the table is written that way.
 
