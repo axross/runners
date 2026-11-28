@@ -102,13 +102,18 @@ request() {
 object_type=application/vnd.github.object+json
 raw_type=application/vnd.github.raw
 
-# a name or target is data from the repository, so a control character or a
-# backslash in it is written as \xNN: one entry cannot span lines, and an escape
-# cannot be mistaken for a literal backslash sequence
-escape='def escape:
+# a name or target is data from the repository, so a control character, a backslash, a
+# line or paragraph separator or a bidirectional control in it is written as an escape:
+# one entry cannot span lines, and an escape cannot be mistaken for a literal sequence
+escape='def hex_digit: "0123456789abcdef"[. : . + 1];
+def hex2: [(. / 16 | floor), (. % 16)] | map(hex_digit) | add;
+def hex4: ((. / 256 | floor) | hex2) + (. % 256 | hex2);
+def escape:
   explode
   | map(if . < 32 or . == 92 or (. >= 127 and . <= 159)
-      then ("\\x" + ("0123456789abcdef"[(. / 16 | floor):(. / 16 | floor) + 1] + "0123456789abcdef"[(. % 16):(. % 16) + 1]) | explode)
+      then ("\\x" + hex2 | explode)
+      elif . == 8232 or . == 8233 or (. >= 8234 and . <= 8238) or (. >= 8294 and . <= 8297)
+      then ("\\u" + hex4 | explode)
       else [.] end)
   | (add // [])
   | implode;'

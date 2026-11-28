@@ -74,8 +74,8 @@ jobs:
           }
           # a path is trusted when root owns it and neither its group nor others can write it
           require_root_only() {
-            [[ "$(stat -c %u "$1")" -eq 0 ]] || fail "$1 is not owned by root"
-            (( (8#$(stat -c %a "$1") & 8#022) == 0 )) || fail "$1 is writable by its group or others"
+            [[ "$(stat -L -c %u "$1")" -eq 0 ]] || fail "$1 is not owned by root"
+            (( (8#$(stat -L -c %a "$1") & 8#022) == 0 )) || fail "$1 is writable by its group or others"
           }
           require_root_chain() {
             local current="$1"
@@ -114,6 +114,11 @@ jobs:
             tool_path="$(resolve "$tool")"
             fill "${tool^^}" "$tool_path"
           done
+          # the copy starts under this interpreter, not whichever bash env finds first,
+          # and in privileged mode, which reads no startup file or exported function
+          interpreter="$(resolve bash)"
+          [[ $body == '#!/usr/bin/env bash'$'\n'* ]] || fail "the script does not start with its expected interpreter line"
+          body="#!${interpreter} -p"$'\n'"${body#*$'\n'}"
 
           directory="$(dirname "$READ_HEAD_COPY")"
           as_root install -d -o root -g root -m 0755 "$directory"

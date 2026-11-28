@@ -76,6 +76,23 @@ export function checkWorkflow(workflow) {
   if (typeof claudeArgs !== "string")
     return ["the Claude Review step has no claude_args"];
 
+  const permissionFlags = [
+    ...claudeArgs.matchAll(/--(?:allowed|disallowed)[-_]?tools/gi),
+  ].map((match) => match[0]);
+  for (const flag of ["--allowedTools", "--disallowedTools"]) {
+    const count = permissionFlags.filter((found) => found === flag).length;
+    if (count !== 1)
+      problems.push(
+        `${flag} must appear exactly once in claude_args, found ${count}`,
+      );
+  }
+  for (const flag of permissionFlags) {
+    if (flag !== "--allowedTools" && flag !== "--disallowedTools")
+      problems.push(
+        `claude_args spells a tool-permission flag ${flag}, which the guard does not parse`,
+      );
+  }
+
   const allowed = (argument(claudeArgs, "--allowedTools") ?? "").split(",");
   const denied = (argument(claudeArgs, "--disallowedTools") ?? "").split(",");
   const prompt = argument(claudeArgs, "--append-system-prompt") ?? "";
