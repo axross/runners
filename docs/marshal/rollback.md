@@ -8,8 +8,8 @@ description: "What does the MSI install, and when can a host safely return to a 
 
 ## Install Layout
 
-W1's app MSI, not the recovery CLI MSI, creates this layout, as [the app installer contract](../marshal-cli/release-artifacts.md#installers) describes. The retained app build's installer test
-measures it on every run; no host has it installed yet.
+W1's MSI creates this layout, as [the installer contract](../marshal-cli/release-artifacts.md#installers) describes, and the build
+leg's installer test measures it on every run; no host has it installed yet.
 
 | What                                  | Where                                                                                                               |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -31,11 +31,13 @@ one code object. The name `marshal-app.exe` never collides with a leftover
 Complete [step 1 of the Windows host rollback procedure](../runner-hosts/windows-recovery.md#rolling-back) before uninstalling Marshal. Keep the installed app if you cannot verify a compatible target. If the target might handle retained diagnostic containers differently, recover them with the installed version before continuing. For an app target, follow [Updating, Repairing, Uninstalling and Rolling Back](../marshal-cli/install-on-windows.md#updating-repairing-uninstalling-and-rolling-back).
 
 Before the first app release, the previous release is the last command-line
-release. For a recovery CLI target, open
+release. For that target, open
 `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`
-before uninstalling, replacing `<version>` with that published release's actual
-version without the `v`. Use that tag's guide for CLI installation and its
-identified fixed historical tree for runtime procedures.
+before uninstalling, replacing `<version>` with the CLI recovery release's version
+without the `v`, as
+[The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
+says. Use that tag's guide for the command line's installation and the program tree
+it identifies for the runtime procedures.
 
 The PowerShell host scripts are gone, so a rollback never restores
 them. Going back from the
