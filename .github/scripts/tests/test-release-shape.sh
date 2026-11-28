@@ -12,7 +12,9 @@
 # from a pull request; a signing secret read outside sign-macos, in any workflow;
 # a job without its guard, its runner or its place in the chain; a step condition
 # that could skip a signing or verification step; a write to SHA256SUMS in the
-# build's assemble job; and a way past a failed job, whatever the case of its
+# build's assemble job; a Mac app job that holds a secret, signs, uses a cache or
+# an action other than checkout and artifact upload, joins the unsigned set or
+# leaves a measured tool out; and a way past a failed job, whatever the case of its
 # status function. a change the test cannot find in the files fails the test, so
 # it cannot go stale and pass.
 # shellcheck disable=SC2016,SC1003 # the texts the changes find and replace are literal, not expansions.
@@ -655,6 +657,44 @@ for writing in 'sha256sum dist/* > dist/SHA256SUMS' 'sha256sum dist/* >> dist/SH
 done
 expect_fail "normal app assembly keeping checkout credentials" "release-build.yaml assemble: a checkout does not set persist-credentials: false" \
   "$app_build" $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n        with:\n          persist-credentials: false\n      - name: Download The Windows Files' $'    steps:\n      - name: Checkout\n        uses: actions/checkout@v7\n      - name: Download The Windows Files'
+
+echo "-- the Mac app job --"
+expect_fail "the Mac app job on a self-hosted runner" "app-macos job must run on macos-latest" \
+  "$app_build" $'    name: Build The Mac App\n    runs-on: macos-latest' $'    name: Build The Mac App\n    runs-on: self-hosted'
+expect_fail "the Mac app job with another time bound" "app-macos job must be bounded at 45 minutes" \
+  "$app_build" $'    name: Build The Mac App\n    runs-on: macos-latest\n    timeout-minutes: 45' $'    name: Build The Mac App\n    runs-on: macos-latest\n    timeout-minutes: 90'
+expect_fail "an Environment on the Mac app job" "release-build.yaml: job app-macos declares an environment" \
+  "$app_build" $'    name: Build The Mac App\n' $'    name: Build The Mac App\n    environment: release\n'
+expect_fail "a signing secret in the Mac app job" "only sign-macos may read a signing secret" \
+  "$app_build" $'    name: Build The Mac App\n' $'    name: Build The Mac App\n    env:\n      APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
+expect_fail "the Mac app job without its hash output" "must output app_sha256 from its hash step" \
+  "$app_build" $'      app_sha256: ${{ steps.hash.outputs.app_sha256 }}\n' ''
+expect_fail "a workflow that does not hand over the app hash" "must hand over the app-macos job's app_sha256" \
+  "$app_build" 'value: ${{ jobs.app-macos.outputs.app_sha256 }}' 'value: ${{ jobs.assemble.outputs.artifact }}'
+expect_fail "a cache action in the Mac app job" "app-macos job uses actions/cache" \
+  "$app_build" $'      - name: Install Pinned Rust Toolchain\n        run: rustup show active-toolchain || rustup toolchain install\n      # holds no secret.' $'      - name: Cache\n        uses: actions/cache@v4\n        with:\n          path: target\n          key: mac\n      - name: Install Pinned Rust Toolchain\n        run: rustup show active-toolchain || rustup toolchain install\n      # holds no secret.'
+expect_fail "the Mac app in the unsigned set's artifact" "must upload marshal-macos-app once and no other artifact" \
+  "$app_build" $'          name: marshal-macos-app\n' $'          name: marshal-release\n'
+expect_fail "a Mac app build that signs" "must build with \`cargo tauri build ... --no-sign\`" \
+  "$app_build" 'cargo tauri build --bundles app --no-sign' 'cargo tauri build --bundles app'
+expect_fail "a Mac app build installed without --locked" "must build with \`cargo tauri build ... --no-sign\`" \
+  "$app_build" '--version "=${tauri_cli_version}" --locked' '--version "=${tauri_cli_version}"'
+expect_fail "an unsigned set that waits for the Mac app" "assemble needs app-macos" \
+  "$app_build" $'  assemble:\n    name: Assemble The Release Files\n    needs: build\n' $'  assemble:\n    name: Assemble The Release Files\n    needs: [build, app-macos]\n'
+expect_fail "a measuring step that does not list hdiutil" "does not measure /usr/bin/hdiutil" \
+  "$app_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun ditto"'
+expect_fail "a measuring step that does not list ditto" "does not measure /usr/bin/ditto" \
+  "$app_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun hdiutil"'
+expect_fail "a measuring step that does not look for the xcrun tools" "does not look for notarytool and stapler with xcrun --find" \
+  "$app_build" 'for tool in notarytool stapler; do' 'for tool in notarytool; do'
+expect_fail "a measuring step that does not fail" "does not fail when a tool is missing" \
+  "$app_build" $'            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2\n            exit 1' $'            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2'
+expect_fail "a measuring step with a condition" "has a condition, which could skip it" \
+  "$app_build" $'      - name: Check The Signing Tools\n' $'      - name: Check The Signing Tools\n        if: github.event_name == \'workflow_dispatch\'\n'
+expect_fail "a measuring step that receives a signing value" "receives a signing value" \
+  "$app_build" $'      - name: Check The Signing Tools\n' $'      - name: Check The Signing Tools\n        env:\n          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
+expect_fail "a measuring step that does not print MEASURED" "has no step that prints the MEASURED: signing tools line" \
+  "$app_build" 'echo "MEASURED: signing tools:${found}"' 'echo "signing tools:${found}"'
 
 echo "-- a file the check cannot read --"
 expect_fail "a workflow in a syntax the check does not support" "cannot be read" \
