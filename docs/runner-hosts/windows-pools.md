@@ -129,11 +129,8 @@ store failure prevents it, while an already running job keeps its current JIT
 configuration.
 
 For `another_listener`, leave Marshal to retry with back-off; a crashed session
-can take time to expire. For `scale-set label mismatch`, choose an unused valid
-name or stop workflows that use the incompatible set before deleting it manually
-and using **Start all runners** to recreate it. Marshal does not repair or delete that set
-automatically. [Removing an Unwanted Scale Set](#removing-an-unwanted-scale-set)
-gives the manual deletion procedure.
+can take time to expire. For `scale-set label mismatch`, follow
+[Retained Scale Sets and Label Mismatch](../marshal-cli/on-demand-pools.md#retained-scale-sets-and-label-mismatch).
 
 ### Split a repository into general and Android pools
 
@@ -364,7 +361,5 @@ scale-set name, as [Retained Scale Sets and Label Mismatch](../marshal-cli/on-de
 says. Stop the pool and workflows that target an unwanted set,
 then delete that exact scale set manually in the repository's **Settings, Actions,
 Runners**. Remove or change `scale_set` in the configuration before starting again
-if the set must stay deleted. For a label mismatch, choose an unused valid
-scale-set name, or stop workflows using the incompatible set and delete it
-manually before **Start all runners** lets Marshal recreate it. Marshal never changes or
-deletes the incompatible set automatically.
+if the set must stay deleted. For a label mismatch, the remedy is on the
+[on-demand pools page](../marshal-cli/on-demand-pools.md#retained-scale-sets-and-label-mismatch).
