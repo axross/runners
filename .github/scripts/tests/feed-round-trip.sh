@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # the feed round trip that merge-checks.yaml's update-feed job runs on the
 # release dry run: the staged sign-update scripts sign the dry run's MSI with a
-# throwaway key made for this run, write-update-feed.sh writes the feed, and the feed check passes it against the throwaway public key. the feed
-# check must refuse, and say why, a changed MSI, another key's signature, a
-# signature for another version, and the throwaway signature against the
-# committed key. no line of this run's output may hold the throwaway key or its
-# password.
+# throwaway key made for this run, write-update-feed.sh writes the feed, and
+# the feed check passes it against the throwaway public key. the feed check
+# must refuse, and say why, a changed MSI, another key's signature, a signature
+# for another version, and the throwaway signature against the
+# release-verification key. no line of this run's output may hold the
+# throwaway key or its password.
 #
 #   feed-round-trip.sh <update tools> <dry run release files> <version> <output>
 #
@@ -48,10 +49,14 @@ password="$(head -c 24 /dev/urandom | base64 | tr -d '/+=')"
 key="$(<"${work}/update.key")"
 
 line="$(sha256sum "$signer")"
-signature="$(SIGN_VERSION="$version" SIGN_TAURI_CLI_SHA256="${line%% *}" \
+status=0
+SIGN_VERSION="$version" SIGN_TAURI_CLI_SHA256="${line%% *}" \
   SIGN_KEY="$key" SIGN_PASSWORD="$password" \
-  bash "${here}/run-sign-update.sh" "${work}/sign" "${release}/SHA256SUMS" "$signer" "${release}/${msi}" 2>&1 \
-  | tee -a "$log" | tail -n 1)"
+  bash "${here}/run-sign-update.sh" "${work}/sign" "${release}/SHA256SUMS" "$signer" "${release}/${msi}" \
+  >"${work}/sign.out" 2>&1 || status=$?
+tee -a "$log" <"${work}/sign.out"
+[[ $status -eq 0 ]] || refuse "sign-update's scripts refused with status ${status}"
+signature="$(tail -n 1 "${work}/sign.out")"
 [[ -f "$signature" ]] || refuse "sign-update's scripts left no signature"
 
 mkdir -p "$output"
@@ -107,7 +112,7 @@ refused "another key's signature" "the signature does not verify: The signature 
   "$version" "${release}/SHA256SUMS" "windows-x86_64=${output}/${msi}"
 refused "a signature for another version" "the signature names version 9.9.9, and the feed names ${version}" --public-key "${output}/update.pub" \
   "${output}/latest-another-version.json" "$version" "${release}/SHA256SUMS" "windows-x86_64=${output}/${msi}"
-refused "the throwaway signature against the committed key" "the signature does not verify: The signature was created with a different key" "${output}/latest.json" "$version" \
+refused "the throwaway signature against the release-verification key" "the signature does not verify: The signature was created with a different key" "${output}/latest.json" "$version" \
   "${release}/SHA256SUMS" "windows-x86_64=${output}/${msi}"
 
 if grep -qF -e "$key" -e "$password" "$log"; then
