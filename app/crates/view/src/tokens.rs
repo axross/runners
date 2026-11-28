@@ -3,7 +3,7 @@
 //! registration GitHub refused, and what the last save came to.
 
 use marshal_cli::agent::snapshot::{PoolInfo, RunnerState, Snapshot};
-use marshal_cli::agent::tokens::{NO_TOKEN, NO_TOKEN_STORE, STORE_FAILED};
+use marshal_cli::agent::tokens::{NO_TOKEN, NO_TOKEN_STORE, STORE_FAILED, STORED_UNREADABLE};
 use marshal_cli::runtime::registration::REJECTED_MARK;
 use serde::Serialize;
 
@@ -104,8 +104,15 @@ pub(crate) fn store_problem(context: &Context<'_>, repository: &str) -> Option<S
         .map(|cause| format!("{}.", capitalised(&plain(cause))))
 }
 
+/// whether a pool was skipped for a token the agent knows is stored but could not read,
+/// which a save of the token tries again.
+fn skipped_for_unreadable_token(pool: &PoolInfo) -> bool {
+    pool.reason.as_deref().map(skip_cause) == Some(STORED_UNREADABLE)
+}
+
 /// the pools a save for a repository or organization key starts at once: those
-/// skipped for want of a token, while the agent runs. The app reads them before it sends the token.
+/// skipped for want of a token, or for one the agent could not read, while the agent
+/// runs. The app reads them before it sends the token.
 #[must_use]
 pub fn pools_started_by(snapshot: &Snapshot, key: &str) -> Vec<String> {
     if snapshot.agent.state != "running" {
@@ -119,7 +126,7 @@ pub fn pools_started_by(snapshot: &Snapshot, key: &str) -> Vec<String> {
                 || plain(&pool.repository) == key,
                 |organization| plain(organization) == key,
             ) && pool.state == "skipped"
-                && skipped_for_no_token(pool)
+                && (skipped_for_no_token(pool) || skipped_for_unreadable_token(pool))
         })
         .map(|pool| plain(&pool.name))
         .collect()
