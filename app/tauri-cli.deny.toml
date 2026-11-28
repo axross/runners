@@ -20,4 +20,6 @@ ignore = [
   # brought in by the RPM packaging, the macOS signing and the mobile tooling, through rpm,
   # tauri-macos-sign and x509-certificate
   { id = "RUSTSEC-2026-0543", reason = "chrono 0.4.41 is unmaintained, through rpm, tauri-macos-sign and x509-certificate; the job runs only signer sign" },
+  # brought in by URL parsing across tauri-cli, the bundler and tauri-utils, through url
+  { id = "RUSTSEC-2026-0592", reason = "url 2.5.8 overflows the stack on nested blob: URLs in Url::origin, through tauri-cli, jsonrpsee-client-transport, tauri-bundler and tauri-utils; the job runs only signer sign" },
 ]
