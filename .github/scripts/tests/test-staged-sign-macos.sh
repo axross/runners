@@ -2,7 +2,8 @@
 # runs the `run:` scripts of the sign-macos job staged in
 # .github/staged/release-macos-app.yaml in order, against recording stand-ins of
 # the macOS signing tools, because no workflow runs the job and nothing before
-# merge can run it with real credentials. the scripts are extracted from the
+# merge can run it with real credentials. it also runs the hash step of the
+# staged verify-macos job, which no other test reaches. the scripts are extracted from the
 # staged file, not copied, and each runs with only the environment its own step declares, with
 # the secrets resolved to fake values, and with a PATH that holds no signing tool,
 # so a call that skips the SYSTEM_BIN prefix fails. the stand-ins record every
@@ -21,7 +22,11 @@
 #     injected at each stand-in call, and after a failure at the end of each step;
 #   - that no secret value and no line of the .p8 appears in the job's output;
 #   - that the notary log is where the upload step looks whenever a submission
-#     ID exists.
+#     ID exists;
+#   - verify-macos's hash step, which compares the app archive with the app job's
+#     hash and the disk image with sign-macos's before the repository script runs:
+#     a pass, an app archive that has another hash and a disk image that has
+#     another, each refused.
 # it also runs check-staged-macos-app.mjs, which checks that no workflow names the
 # staged file, that its hdiutil create arguments equal the app job's and that the
 # app job measures every tool it calls, and shows each of those checks fail on an
@@ -52,6 +57,8 @@ archive="marshal-${version}-macos-arm64-app.zip"
 image="marshal-${version}-macos-arm64.dmg"
 archive_content="app archive bytes"
 archive_sha256="$(printf '%s\n' "$archive_content" | sha256sum | cut -d' ' -f1)"
+image_content="signed disk image bytes"
+image_sha256="$(printf '%s\n' "$image_content" | sha256sum | cut -d' ' -f1)"
 
 node "${here}/check-staged-macos-app.mjs" "$repository"
 # shellcheck disable=SC2016 # the text the sed edits find is literal, not an expansion.
@@ -389,12 +396,14 @@ ${p8_two}
   s_team="$team"
   job_version="$version"
   job_app_sha256="$archive_sha256"
+  job_dmg_sha256="$image_sha256"
   scenario_lines=""
   missing_tools=""
   fail_after_step=""
   mutate_script=""
   mutate_expression=""
   fixture_change=""
+  verify_change=""
 }
 
 # resolve <expression>: the value of a `${{ ... }}` expression of a step's env.
@@ -411,6 +420,7 @@ resolve() {
     vars.APPLE_TEAM_ID) printf '%s' "$s_team" ;;
     needs.plan.outputs.version) printf '%s' "$job_version" ;;
     needs.build.outputs.app_sha256) printf '%s' "$job_app_sha256" ;;
+    needs.sign-macos.outputs.macos_dmg_sha256) printf '%s' "$job_dmg_sha256" ;;
     *)
       echo "error: the test does not know the expression ${expression}" >&2
       exit 1
@@ -915,8 +925,99 @@ reset_case
 scenario_lines="delete_fails=1"
 run_case "a keychain that security cannot delete" pass "security could not delete the keychain" some
 
+# --- verify-macos's hash step --------------------------------------------------
+
+node "${here}/extract-run-scripts.mjs" "$workflow" verify-macos "${work}/verify-scripts"
+verify_steps="${work}/verify-scripts/steps.json"
+
+# run_verify_hash <case name>: lays out the files the download steps would and runs
+# the hash step with the environment its step declares and the stand-in shasum, the
+# only tool it calls, behind SYSTEM_BIN. what verify_change names is the change
+# made to the files; the output is left in out and the result in job_status.
+run_verify_hash() {
+  case_dir="${work}/case-verify-${1//[^a-zA-Z0-9]/-}"
+  rm -rf "$case_dir"
+  mkdir -p "${case_dir}/ws/unsigned" "${case_dir}/ws/signed" "${case_dir}/bin"
+  out="${case_dir}/out"
+  record="${case_dir}/record"
+  : >"$out"
+  : >"$record"
+  : >"${case_dir}/scenario"
+  ln -s "${work}/standin" "${case_dir}/bin/shasum"
+  printf '%s\n' "$archive_content" >"${case_dir}/ws/unsigned/${archive}"
+  printf '%s\n' "$image_content" >"${case_dir}/ws/signed/${image}"
+  case "$verify_change" in
+    "") ;;
+    changed-archive) printf 'changed\n' >>"${case_dir}/ws/unsigned/${archive}" ;;
+    changed-image) printf 'changed\n' >>"${case_dir}/ws/signed/${image}" ;;
+    *)
+      echo "error: unknown verify change ${verify_change}" >&2
+      exit 1
+      ;;
+  esac
+  local env_args pair key resolved script
+  env_args=(
+    "PATH=${work}/base" "HOME=${case_dir}/home" "SYSTEM_BIN=${case_dir}/bin"
+    "SCENARIO=${case_dir}/scenario" "RECORD=${record}" "OUT=${out}" "STANDIN_STEP=hash"
+  )
+  while IFS= read -r pair; do
+    [[ -n "$pair" ]] || continue
+    key="${pair%%=*}"
+    resolved="$(resolve "${pair#*=}")"
+    env_args+=("${key}=${resolved}")
+  done < <(jq -r '.[] | select(.marker == "hash") | .env | to_entries[] | "\(.key)=\(.value)"' "$verify_steps")
+  script="$(jq -r '.[] | select(.marker == "hash") | .script' "$verify_steps")"
+  job_status=pass
+  (cd "${case_dir}/ws" && env -i "${env_args[@]}" "${work}/base/bash" --noprofile --norc -eo pipefail "${work}/verify-scripts/${script}") >>"$out" 2>&1 || job_status=fail
+}
+
+# the stand-in hashed both files, each by its path in the job's workspace.
+check_both_files_hashed() {
+  local expected
+  for expected in "shasum -a 256 unsigned/${archive}" "shasum -a 256 signed/${image}"; do
+    grep -q -F -e "$expected" "$record" || {
+      echo "the record has no call '${expected}'"
+      return
+    }
+  done
+}
+
+# run_verify_case <name> <pass|fail> <text the output must hold> [<extra check function>]
+run_verify_case() {
+  local name="$1" want="$2" text="$3" extra="${4:-}" problem=""
+  run_verify_hash "$name"
+  if [[ "$job_status" != "$want" ]]; then
+    problem="the step ended with ${job_status}, expected ${want}"
+  elif [[ -n "$text" ]] && ! grep -q -F -e "$text" "$out"; then
+    problem="the output does not hold '${text}'"
+  elif [[ -n "$extra" ]]; then
+    problem="$("$extra")"
+  fi
+  if [[ -n "$problem" ]]; then
+    failed_case "$name" "$problem"
+  else
+    echo "ok   ${name}"
+  fi
+}
+
+echo "-- verify-macos's hash step --"
+markers="$(jq -r '[.[] | select(.kind == "run") | .marker] | join(" ")' "$verify_steps")"
+if [[ "$markers" != "hash test" ]]; then
+  failed_case "the run steps of verify-macos" "their markers are '${markers}', not 'hash test'"
+else
+  echo "ok   the run steps of verify-macos are the hash step and the test step"
+fi
+reset_case
+run_verify_case "files that have the hashes of their jobs" pass "" check_both_files_hashed
+reset_case
+verify_change=changed-archive
+run_verify_case "an app archive that differs from the app job's hash" fail "not the ${archive_sha256} that the app job output"
+reset_case
+verify_change=changed-image
+run_verify_case "a disk image that differs from sign-macos's hash" fail "not the ${image_sha256} that sign-macos output"
+
 if [[ $failures -ne 0 ]]; then
-  echo "${failures} sign-macos case(s) failed." >&2
+  echo "${failures} staged job case(s) failed." >&2
   exit 1
 fi
-echo "All sign-macos cases passed."
+echo "All staged sign-macos and verify-macos cases passed."

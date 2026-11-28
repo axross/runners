@@ -419,7 +419,7 @@ description = "Run the release shape check against altered copies of the workflo
 run = "bash .github/scripts/tests/test-release-shape.sh"
 
 [tasks."test:staged-sign-macos"]
-description = "Run the staged Mac app signing steps in .github/staged/release-macos-app.yaml against recording stand-ins of the macOS signing tools: every refusal, the flags, hdiutil's retries, the clean-up, that no workflow names the file, and that its disk image arguments and tools match the app job's"
+description = "Run the staged Mac app signing steps in .github/staged/release-macos-app.yaml against recording stand-ins of the macOS signing tools: every refusal, the flags, hdiutil's retries, the clean-up, verify-macos's hash step, that no workflow names the file, and that its disk image arguments and tools match the app job's"
 run = "bash .github/scripts/tests/test-staged-sign-macos.sh"
 
 [tasks."test:staged-signed-dmg"]

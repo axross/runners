@@ -581,11 +581,13 @@ jobs:
           APP_SHA256: ${{ needs.build.outputs.app_sha256 }}
           MACOS_DMG_SHA256: ${{ needs.sign-macos.outputs.macos_dmg_sha256 }}
         run: |
+          # verify-macos: hash
           set -euo pipefail
+          : "${SYSTEM_BIN:=/usr/bin}"
           # check_hash <file> <hash it must have> <the job that output it>
           check_hash() {
             local line
-            line="$(/usr/bin/shasum -a 256 "$1")"
+            line="$("$SYSTEM_BIN/shasum" -a 256 "$1")"
             if [[ "${line%% *}" != "$2" ]]; then
               echo "error: $1 has SHA-256 ${line%% *}, not the ${2} that $3 output" >&2
               exit 1
@@ -602,4 +604,6 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
           TEAM_ID: ${{ needs.sign-macos.outputs.team_id }}
           SUBMISSION_ID: ${{ needs.sign-macos.outputs.submission_id }}
-        run: bash .github/scripts/tests/test-signed-dmg.sh "$VERSION" "unsigned/marshal-${VERSION}-macos-arm64-app.zip" "signed/marshal-${VERSION}-macos-arm64.dmg" notary/notary-log.json "$TEAM_ID" "$SUBMISSION_ID"
+        run: |
+          # verify-macos: test
+          bash .github/scripts/tests/test-signed-dmg.sh "$VERSION" "unsigned/marshal-${VERSION}-macos-arm64-app.zip" "signed/marshal-${VERSION}-macos-arm64.dmg" notary/notary-log.json "$TEAM_ID" "$SUBMISSION_ID"

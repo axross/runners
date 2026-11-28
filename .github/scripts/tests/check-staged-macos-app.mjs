@@ -138,7 +138,7 @@ for (const script of scripts) {
   )) {
     called.add(`${prefix === "BIN" ? "/usr/bin" : "/usr/sbin"}/${tool}`);
   }
-  // a tool called by its literal path, as verify-macos's hash step calls shasum.
+  // a tool called by its literal path, which skips the stand-ins but must still be measured.
   for (const [, directory, tool] of code(script).matchAll(
     /(?<![\w/$])\/usr\/(s?bin)\/([a-z]+)\b/g,
   )) {

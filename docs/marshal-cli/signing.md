@@ -263,9 +263,10 @@ maintainer compares that requirement with the one recorded for `marshal`.
 Nothing here has run with a real signing identity, and nothing runs it before pull
 request 3. The dry run builds the unsigned app, its archive and an unsigned disk image
 with the same `hdiutil create` arguments, and measures the tools.
-`test-staged-sign-macos.sh` runs the staged signing scripts against stand-ins, and
-checks that no workflow names the staged file, that its `hdiutil create` arguments
-equal the app job's and that the app job measures every tool the scripts call.
+`test-staged-sign-macos.sh` runs the staged signing scripts and `verify-macos`'s hash
+step against stand-ins, and checks that no workflow names the staged file, that its
+`hdiutil create` arguments equal the app job's and that the app job measures every
+tool the scripts call.
 `test-signed-dmg-refusals.sh` runs the checking script against stand-ins. The first
 signed release is therefore the first real run of `sign-macos` and `verify-macos`. A
 defect stops that release before its tag, and a later pull request fixes it.
