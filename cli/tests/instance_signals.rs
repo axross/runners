@@ -16,12 +16,14 @@ use std::rc::Rc;
 
 use marshal_cli::instance::lifecycle::{Instance, Monitor};
 use marshal_cli::instance::protocol::{Request, Response};
+use marshal_cli::lifecycle_settings::{Current, InEffect};
 use marshal_cli::macos::fake::FakeSignals;
 use marshal_cli::macos::gate::NetworkGate;
 use marshal_cli::macos::monitor::{Cadence, SignalMonitor};
 use marshal_cli::macos::network::{HardwareAddress, NetworkReading, PrimaryNetwork};
 use marshal_cli::runtime::backend::{JobHost, StopRequest};
 use marshal_cli::runtime::fake::{Call, HostCall};
+use marshal_cli::validate::Lifecycle;
 use support::instance::{Control, Rig, drive};
 
 const JOB: &str = "r-1-20240305060708009";
@@ -538,4 +540,86 @@ async fn an_instance_without_a_monitor_asks_for_no_signals() {
         })
         .await;
     assert_eq!(state, "running");
+}
+
+fn keep_awake(on: bool) -> InEffect {
+    InEffect::new(Lifecycle {
+        keep_awake: Some(on),
+        ..Lifecycle::default()
+    })
+}
+
+/// runs `maintain`, which never ends, beside 20 yields of the test task, then drops it. the
+/// fake clock's sleep returns at once, so the monitor ticks about once per yield.
+async fn ticks<M: Monitor>(monitor: &M) {
+    tokio::select! {
+        _ = monitor.maintain() => {}
+        () = async {
+            for _ in 0..20 {
+                tokio::task::yield_now().await;
+            }
+        } => {}
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn given_the_settings_the_hold_follows_keep_awake_at_each_tick() {
+    let setup = Signaled::new([wifi()]);
+    let settings = Current::default();
+    settings.set(keep_awake(false));
+    let monitor = setup.monitor().with_settings(&settings);
+    monitor.hold();
+    assert!(!setup.signals.is_held(), "no hold while keep_awake is off");
+    settings.set(keep_awake(true));
+    ticks(&monitor).await;
+    assert!(setup.signals.is_held(), "taken at a tick once it is on");
+    settings.set(keep_awake(false));
+    ticks(&monitor).await;
+    assert!(
+        !setup.signals.is_held(),
+        "released at a tick once it is off"
+    );
+    settings.set(keep_awake(true));
+    ticks(&monitor).await;
+    monitor.release();
+    assert!(!setup.signals.is_held(), "released when the instance stops");
+    ticks(&monitor).await;
+    assert!(
+        !setup.signals.is_held(),
+        "not taken again until the next hold"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_monitor_keeps_the_network_it_recorded_and_reads_the_next_one_for_a_resume() {
+    let setup = Signaled::new([wifi(), other_wifi()]);
+    let monitor = setup.monitor();
+    assert_eq!(monitor.recorded(), None);
+    tokio::select! {
+        _ = monitor.watch() => panic!("the watch stopped"),
+        () = armed(&setup) => {}
+    }
+    let NetworkReading::Primary(recorded) = wifi() else {
+        unreachable!()
+    };
+    assert_eq!(monitor.recorded(), Some(recorded));
+    assert_eq!(monitor.next_reading().await, other_wifi());
+    monitor.begin();
+    assert_eq!(monitor.recorded(), None, "a new run records afresh");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_monitor_keeps_a_hardware_address_that_a_later_reading_of_the_same_network_adds() {
+    let without = network("en0", [192, 0, 2, 1], None);
+    let setup = Signaled::new([without, wifi(), wifi(), wifi()]);
+    let monitor = setup.monitor();
+    tokio::select! {
+        _ = monitor.watch() => panic!("the watch stopped"),
+        () = after_reads(&setup.signals, 3) => {}
+    }
+    let recorded = monitor.recorded().expect("a network is recorded");
+    assert!(
+        recorded.hardware.is_some(),
+        "the router's hardware address read after the first reading is kept: {recorded:?}"
+    );
 }

@@ -134,6 +134,21 @@ pub async fn set_setting(state: State<'_, AppState>, key: String, on: bool) -> R
     state.handle.set_setting(key, on).await
 }
 
+/// opens Login Items & Extensions in System Settings, where the app's login item is
+/// approved or added back. only macOS has it.
+#[tauri::command]
+pub fn open_login_items() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::login_item::open_settings();
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Login Items are part of macOS only.".to_string())
+    }
+}
+
 #[tauri::command]
 pub async fn set_organization_token(
     state: State<'_, AppState>,
@@ -233,6 +248,7 @@ pub fn handler<R: Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync + 'stat
         set_organization_token,
         remove_organization_token,
         set_setting,
+        open_login_items,
         hide_window,
         read_confirmation,
         answer_confirmation,

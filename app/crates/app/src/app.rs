@@ -3,10 +3,13 @@ use std::sync::{Arc, Mutex};
 
 use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch};
 use marshal_cli::instance::roots::Roots;
+#[cfg(target_os = "macos")]
+use marshal_modes::{LaunchEvent, describe_launch_event};
 use marshal_modes::{Overrides, is_sign_in};
 use marshal_session::{
-    AppLog, Ended, Library, Log, MAX_FILE_BYTES, MOVED_FILE, MovedFile, OwnExecutable, Processes,
-    RECORD_FILE, RecordFile, Seams, Session, TimeSource, Updater, WallClock, may_control_agent,
+    AppLog, Ended, Library, Log, LoginItem, MAX_FILE_BYTES, MOVED_FILE, MovedFile, OwnExecutable,
+    Processes, RECORD_FILE, RecordFile, Seams, Session, TimeSource, Updater, WallClock,
+    may_control_agent,
 };
 use marshal_tray::{Look, SIZES, Watch, utc_offset_minutes};
 use marshal_view::{GlyphColour, IconState};
@@ -131,9 +134,46 @@ fn update_seams(_app: &AppHandle) -> (Option<Arc<dyn Updater>>, Arc<dyn Processe
     (None, Arc::new(marshal_session::NoUpdates))
 }
 
+/// on macOS, the login item the app keeps in step with `start_at_login`, with its record
+/// beside the update's; elsewhere the agent keeps the sign-in item. it reads the same raw
+/// executable path and `HOME` as `may_control_agent`, without that guard's debug-only
+/// `MARSHAL_TEST_ANY_LOCATION` override.
+#[cfg(target_os = "macos")]
+fn login_item(
+    roots: &Roots,
+    executable: &std::path::Path,
+    home: Option<&std::path::Path>,
+) -> Option<LoginItem> {
+    let record = marshal_session::LoginItemRecordFile::new(
+        roots
+            .config_directory()
+            .join(marshal_session::LOGIN_ITEM_RECORD_FILE),
+    );
+    Some(LoginItem::new(
+        Arc::new(crate::login_item::MainApp),
+        Arc::new(record),
+        executable,
+        home,
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn login_item(
+    _roots: &Roots,
+    _executable: &std::path::Path,
+    _home: Option<&std::path::Path>,
+) -> Option<LoginItem> {
+    None
+}
+
 /// connects the session to the agent and shows it on the icon and in the window; the
 /// app ends when the session does.
 fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    // macOS has the open-application event current only while it delivers it, from
+    // applicationDidFinishLaunching, which is where Tauri runs this setup hook, so the read
+    // has to happen here and not after the setup returns to the event loop
+    #[cfg(target_os = "macos")]
+    let launch_event = crate::login_item::launch_event();
     let roots = Roots::resolve(Overrides::from_environment().root.as_deref())?;
     let log: Arc<dyn Log> = match AppLog::open(roots.log_directory(), MAX_FILE_BYTES) {
         Ok(opened) => Arc::new(opened),
@@ -151,6 +191,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             executable.display()
         ));
     }
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let login_item = login_item(&roots, &executable, home.as_deref());
     let launcher = OwnExecutable::at(executable, Arc::clone(&log));
     let version = env!("CARGO_PKG_VERSION");
     let time = Arc::new(WallClock::new(utc_offset_minutes));
@@ -197,6 +239,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         record,
         launch,
         fresh,
+        words: marshal_view::HOST,
+        login_item,
     });
     let session = if !in_place {
         session.outside_applications()
@@ -207,9 +251,20 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         session
     };
     app.manage(AppState::new(handle, latest, Arc::clone(&log)));
-    // the window starts hidden, and a start from the sign-in item leaves it so
-    if is_sign_in(std::env::args_os()) {
-        log.info("Marshal started at sign-in, with its icon only.");
+    // the window starts hidden, and a start from the sign-in item or the login item leaves
+    // it so
+    let at_login = is_sign_in(std::env::args_os());
+    #[cfg(target_os = "macos")]
+    let at_login = {
+        log.info(&describe_launch_event(launch_event));
+        at_login || launch_event.is_some_and(LaunchEvent::is_login_launch)
+    };
+    if at_login {
+        log.info(if cfg!(target_os = "macos") {
+            "Marshal started at login, with its icon only."
+        } else {
+            "Marshal started at sign-in, with its icon only."
+        });
         tell_session_shown(app);
         in_dock(app, false);
     } else {

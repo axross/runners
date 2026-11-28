@@ -107,9 +107,9 @@ changes:
   `start_runners_on_launch`, `keep_awake`, `stop_on_network_change`, and
   `resume_after_stop`. Any other key in
   it is a problem, and an absent key means "not set". The rule set checks and keeps
-  the values. On axpc the agent applies them with their Windows defaults;
-  [The Agent's Signals](./agent-lifecycle.md#the-agents-signals) gives what each setting does and its
-  default. On macOS nothing acts on them until M4.
+  the values. The agent applies them on axpc and on axmc, with the same defaults on
+  both; [The Agent's Signals](./agent-lifecycle.md#the-agents-signals) gives what each
+  setting does and its default.
 - **Encoding and size.** A leading byte-order mark is ignored and moves no position.
   A file larger than 1 MiB (1048576 bytes) is refused before it is parsed, and a file
   that is not UTF-8 is refused before TOML sees it. The file may be exactly 1 MiB.

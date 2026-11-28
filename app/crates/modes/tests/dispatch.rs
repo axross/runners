@@ -2,7 +2,9 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use marshal_cli::agent::Launch;
-use marshal_modes::{Mode, Overrides, agent_arguments, is_sign_in, run};
+use marshal_modes::{
+    LaunchEvent, Mode, Overrides, agent_arguments, describe_launch_event, is_sign_in, run,
+};
 
 fn args(words: &[&str]) -> Vec<OsString> {
     words.iter().map(OsString::from).collect()
@@ -179,4 +181,60 @@ fn a_release_build_ignores_the_variables() {
         }
     }
     assert_eq!(Overrides::from_environment(), Overrides::default());
+}
+
+fn event(class: &[u8; 4], id: &[u8; 4], mark: Option<&[u8; 4]>) -> LaunchEvent {
+    LaunchEvent {
+        class: u32::from_be_bytes(*class),
+        id: u32::from_be_bytes(*id),
+        mark: mark.map(|code| u32::from_be_bytes(*code)),
+    }
+}
+
+#[test]
+fn the_open_application_event_marked_as_a_login_item_launches_at_login() {
+    assert!(event(b"aevt", b"oapp", Some(b"lgit")).is_login_launch());
+}
+
+#[test]
+fn an_open_application_event_with_no_mark_is_an_ordinary_launch() {
+    assert!(!event(b"aevt", b"oapp", None).is_login_launch());
+}
+
+#[test]
+fn another_mark_or_another_event_is_an_ordinary_launch() {
+    // a different mark on the open-application event
+    assert!(!event(b"aevt", b"oapp", Some(b"ofap")).is_login_launch());
+    // the mark on another event of the class, such as a reopen
+    assert!(!event(b"aevt", b"rapp", Some(b"lgit")).is_login_launch());
+    // the mark on an event of another class
+    assert!(!event(b"misc", b"oapp", Some(b"lgit")).is_login_launch());
+}
+
+#[test]
+fn the_launch_log_line_names_the_event_and_the_mark() {
+    assert_eq!(
+        describe_launch_event(Some(event(b"aevt", b"oapp", Some(b"lgit")))),
+        "The Apple Event current at launch is 'aevt'/'oapp' (an open-application event), \
+         with launch mark 'lgit'."
+    );
+    assert_eq!(
+        describe_launch_event(Some(event(b"aevt", b"rapp", None))),
+        "The Apple Event current at launch is 'aevt'/'rapp' (not an open-application event), \
+         with launch mark none."
+    );
+    assert_eq!(
+        describe_launch_event(None),
+        "No Apple Event was current at launch."
+    );
+}
+
+#[test]
+fn a_code_that_is_not_text_is_logged_in_hexadecimal() {
+    let unprintable = LaunchEvent {
+        class: u32::from_be_bytes(*b"aevt"),
+        id: u32::from_be_bytes(*b"oapp"),
+        mark: Some(0),
+    };
+    assert!(describe_launch_event(Some(unprintable)).ends_with("with launch mark 0x00000000."));
 }

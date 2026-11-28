@@ -18,11 +18,19 @@ mod support;
 
 use std::time::Duration;
 
+use marshal_cli::agent::Push;
+use marshal_cli::agent::machine::UPDATE;
+use marshal_cli::agent::snapshot::Snapshot;
+use marshal_cli::agent::wire::UpdateEnding;
+use serde_json::json;
+
+use support::agent::Conn;
 use support::axmc::{
     MacHost, OTHER_WIFI_NETWORK, RUNNING_WITHIN, VPN_NETWORK, WIFI_NETWORK, github, linux, running,
     running_jobs,
 };
-use support::host::texts;
+use support::host::{registered, texts};
+use support::stub::{Reply, Stub};
 
 const SLEPT: &str = "the Mac slept, so every runner was stopped";
 
@@ -263,15 +271,55 @@ fn a_sleep_while_the_instance_is_stopped_is_not_a_stop_at_the_resume() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn the_resident_agent_on_axmc_holds_the_mac_awake_and_a_wake_stops_its_runners() {
-    // the agent's axmc wiring passes M1's monitor to the machine: running holds the
-    // Mac awake, a wake stops every runner with the reason `slept`, and the stop has
-    // the time to delete the job VM, so the agent ends cleanly
+    // the agent's axmc wiring passes the Mac's signal monitor to the machine: running
+    // holds the Mac awake while `keep_awake` is on, a wake stops every runner with the
+    // reason `slept`, and the stop has the time to delete the job VM, so the agent ends
+    // cleanly
     let host = holding_host();
     let stub = github();
     let agent = host.agent(&stub.address, &["linuxone"]);
-    let conn = support::agent::Conn::open(&agent.roots).await;
-    conn.until_runner_runs().await;
+    let conn = Conn::open(&agent.roots).await;
+    let snapshot = conn.until_runner_runs().await;
     host.wait_for_keep_awake("held");
+
+    // the migrated file has no `[lifecycle]`, so each setting takes the Mac's default,
+    // and the agent keeps no sign-in item on the Mac
+    let lifecycle = snapshot.lifecycle.unwrap();
+    let defaults: Vec<(&str, bool, bool)> = lifecycle
+        .settings
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.on, value.defaulted))
+        .collect();
+    assert_eq!(
+        defaults,
+        [
+            ("keep_awake", true, true),
+            ("resume_after_stop", false, true),
+            ("start_at_login", false, true),
+            ("start_runners_on_launch", true, true),
+            ("stop_on_network_change", true, true),
+        ]
+    );
+    assert_eq!(lifecycle.sign_in, None);
+
+    // the hold follows `keep_awake` in the settings in effect while the runners run,
+    // and each write keeps the rest of the file, its comment included
+    let before = std::fs::read_to_string(host.state().join("config.toml")).unwrap();
+    assert!(
+        before.starts_with("# Converted from config.json"),
+        "{before}"
+    );
+    for (on, expected) in [(false, "released"), (true, "held")] {
+        conn.call("lifecycle_set", json!({ "key": "keep_awake", "value": on }))
+            .await
+            .unwrap();
+        host.wait_for_keep_awake(expected);
+    }
+    let after = std::fs::read_to_string(host.state().join("config.toml")).unwrap();
+    assert_eq!(
+        after.replace("[lifecycle]\nkeep_awake = true\n\n", ""),
+        before
+    );
 
     host.sleep();
     let snapshot = conn.until_state("stopped").await;
@@ -288,4 +336,237 @@ async fn the_resident_agent_on_axmc_holds_the_mac_awake_and_a_wake_stops_its_run
         Some(0),
         "the stop deleted the job VM in time: {stderr}"
     );
+}
+
+fn resume_of(snapshot: &Snapshot) -> (Option<String>, Option<String>) {
+    let lifecycle = snapshot.lifecycle.clone().unwrap();
+    (lifecycle.resume, lifecycle.resume_cause)
+}
+
+fn waiting_after(cause: &str) -> (Option<String>, Option<String>) {
+    (Some("waiting".into()), Some(cause.into()))
+}
+
+async fn set(conn: &Conn, key: &str, value: bool) {
+    conn.call("lifecycle_set", json!({ "key": key, "value": value }))
+        .await
+        .unwrap();
+}
+
+/// a sleep while the Mac moves to another network, which stops the runners for the
+/// sleep, so a resume waits for the network they ran on.
+async fn sleep_onto_another_network(host: &MacHost, conn: &Conn) -> Snapshot {
+    host.sleep();
+    host.set_network(OTHER_WIFI_NETWORK);
+    let stopped = conn.until_state("stopped").await;
+    assert_eq!(stopped.agent.reason.as_ref().unwrap().code, "slept");
+    stopped
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_a_network_change_stops_whatever_the_setting_says_and_resume_waits_for_the_network_the_runners_ran_on()
+ {
+    // the network read feeds the resume: a stop for another network waits until the Mac
+    // is back on the first one, and a sleep on the same network resumes after two
+    // matching readings; `stop_on_network_change` off changes nothing on the Mac
+    let host = holding_host();
+    let stub = github();
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    set(&conn, "stop_on_network_change", false).await;
+    set(&conn, "resume_after_stop", true).await;
+
+    host.set_network(OTHER_WIFI_NETWORK);
+    let stopped = conn.until_state("stopped").await;
+    let reason = stopped.agent.reason.clone().unwrap();
+    assert_eq!(reason.code, "network_changed");
+    assert_eq!(reason.message, changed("en0", "en0"));
+    assert_eq!(resume_of(&stopped), waiting_after("network_changed"));
+    assert_no_job_vm(&host);
+    // ten checks on the other network leave the runners stopped
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(conn.status().await.agent.state, "stopped");
+
+    host.set_network(WIFI_NETWORK);
+    let running = conn.until_state("running").await;
+    assert_eq!(resume_of(&running), (None, None));
+    conn.until_runner_runs().await;
+
+    host.sleep();
+    let stopped = conn.until_state("stopped").await;
+    assert_eq!(resume_of(&stopped), waiting_after("slept"));
+    conn.until_state("running").await;
+    conn.until_runner_runs().await;
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0), "{stderr}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_stop_all_and_turning_resume_off_cancel_a_waiting_resume() {
+    let host = holding_host();
+    let stub = github();
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    set(&conn, "resume_after_stop", true).await;
+
+    let stopped = sleep_onto_another_network(&host, &conn).await;
+    assert_eq!(resume_of(&stopped), waiting_after("slept"));
+    conn.ok("stop_all").await;
+    let snapshot = conn.status().await;
+    assert_eq!(snapshot.agent.reason.as_ref().unwrap().code, "by_you");
+    assert_eq!(resume_of(&snapshot), (None, None));
+    host.set_network(WIFI_NETWORK);
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(conn.status().await.agent.state, "stopped");
+
+    conn.ok("start_all").await;
+    conn.until_runner_runs().await;
+    let stopped = sleep_onto_another_network(&host, &conn).await;
+    assert_eq!(resume_of(&stopped), waiting_after("slept"));
+    set(&conn, "resume_after_stop", false).await;
+    host.set_network(WIFI_NETWORK);
+    std::thread::sleep(Duration::from_secs(1));
+    let snapshot = conn.status().await;
+    assert_eq!(snapshot.agent.state, "stopped");
+    assert_eq!(snapshot.agent.reason.as_ref().unwrap().code, "slept");
+    assert_eq!(resume_of(&snapshot), (None, None));
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0), "{stderr}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_a_network_without_the_routers_hardware_address_arms_no_resume() {
+    // a point-to-point VPN that holds the default route has no router to read
+    let host = holding_host();
+    host.set_network(VPN_NETWORK);
+    let stub = github();
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    set(&conn, "resume_after_stop", true).await;
+
+    host.sleep();
+    let stopped = conn.until_state("stopped").await;
+    assert_eq!(
+        resume_of(&stopped),
+        (Some("no_gateway".into()), Some("slept".into()))
+    );
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(conn.status().await.agent.state, "stopped");
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0), "{stderr}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_a_hardware_address_first_read_after_the_runners_started_still_arms_a_resume() {
+    // the router's address could not be read at the first reading and was read at a
+    // later one of the same network
+    let host = holding_host();
+    host.set_network("interface=en0\nrouter=192.0.2.1\n");
+    let stub = github();
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    host.set_network(WIFI_NETWORK);
+    // ten checks on the same network, now with its hardware address
+    std::thread::sleep(Duration::from_secs(1));
+    set(&conn, "resume_after_stop", true).await;
+
+    host.sleep();
+    let stopped = conn.until_state("stopped").await;
+    assert_eq!(resume_of(&stopped), waiting_after("slept"));
+    conn.until_state("running").await;
+    conn.until_runner_runs().await;
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0), "{stderr}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_the_sixth_signal_stop_within_an_hour_stops_with_resumed_too_often() {
+    let host = holding_host();
+    let stub = Stub::start((0..40).map(|_| registered()).collect::<Vec<Reply>>());
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    set(&conn, "resume_after_stop", true).await;
+    for _ in 0..5 {
+        conn.until_runner_runs().await;
+        host.sleep();
+        conn.until("the sleep's stop", |snapshot| {
+            snapshot.agent.state != "running"
+        })
+        .await;
+        conn.until_state("running").await;
+    }
+    conn.until_runner_runs().await;
+    host.sleep();
+    let stopped = conn
+        .until("resumed too often", |snapshot| {
+            snapshot
+                .agent
+                .reason
+                .as_ref()
+                .is_some_and(|reason| reason.code == "resumed_too_often")
+        })
+        .await;
+    let reason = stopped.agent.reason.clone().unwrap();
+    assert!(reason.message.starts_with(SLEPT), "{}", reason.message);
+    assert_eq!(resume_of(&stopped), (None, None));
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(conn.status().await.agent.state, "stopped");
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0), "{stderr}");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_a_sleep_during_a_drain_ends_the_agent_for_the_update_and_arms_no_resume() {
+    signal_during_a_drain(MacHost::sleep, "slept").await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn on_axmc_a_network_change_during_a_drain_ends_the_agent_for_the_update_and_arms_no_resume()
+{
+    signal_during_a_drain(
+        |host| host.set_network(OTHER_WIFI_NETWORK),
+        "network_changed",
+    )
+    .await;
+}
+
+/// the Tart backend reads no job activity here, so the drain waits for the runner, and
+/// the signal stop ends the agent for the update with its reason `code` kept, so the new
+/// app sends no `start_all`; the agent ends, so no resume is left armed.
+async fn signal_during_a_drain(signal: impl FnOnce(&MacHost), code: &str) {
+    let host = holding_host();
+    let stub = github();
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let mut conn = Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    set(&conn, "resume_after_stop", true).await;
+    conn.call("drain_for_update", json!({ "version": "1.4.0" }))
+        .await
+        .unwrap();
+    signal(&host);
+    loop {
+        if let Push::Ending { reason, update, .. } = conn.push().await {
+            assert_eq!(reason, UPDATE);
+            assert_eq!(update, Some(UpdateEnding::with_runners("1.4.0", code)));
+            break;
+        }
+    }
+    let (exit, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(exit, Some(0), "{stderr}");
+    assert_no_job_vm(&host);
 }

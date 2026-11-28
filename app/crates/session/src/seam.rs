@@ -1,7 +1,7 @@
 //! what the session needs from the world, as traits, so its tests run it against fakes
 //! and a clock that jumps: the connection to the agent, the start of the agent, the
-//! time, the log, the screen, and for updates the feed, the agent's process and the
-//! record kept across an update.
+//! time, the log, the screen, for updates the feed, the agent's process and the record
+//! kept across an update, and on macOS the login item and its record.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -306,6 +306,48 @@ impl Record for NoUpdates {
     }
 
     fn remove(&self) {}
+}
+
+/// what macOS reports of the app's login item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginStatus {
+    Enabled,
+    NotRegistered,
+    /// registered, and waiting for the maintainer's approval in Login Items, which macOS
+    /// also reports once that approval is withdrawn.
+    RequiresApproval,
+    /// what macOS 27 reports for a Marshal that has never registered; the app reads it as
+    /// not registered.
+    NotFound,
+}
+
+/// why macOS refused a change to the login item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginItemError {
+    /// `SMAppService`'s error code.
+    pub code: u32,
+    pub message: String,
+}
+
+impl std::fmt::Display for LoginItemError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{} (code {})", self.message, self.code)
+    }
+}
+
+/// the app's login item on macOS: `SMAppService`'s main-app item.
+pub trait LoginItemService: Send + Sync + 'static {
+    fn status(&self) -> LoginStatus;
+    fn register(&self) -> Result<(), LoginItemError>;
+    fn unregister(&self) -> Result<(), LoginItemError>;
+}
+
+/// the record that Marshal registered its login item itself.
+pub trait LoginItemRecord: Send + Sync + 'static {
+    fn exists(&self) -> bool;
+    fn write(&self) -> Result<(), String>;
+    /// removing a record that does not exist succeeds.
+    fn remove(&self) -> Result<(), String>;
 }
 
 /// the one-shot record of how the runners stood when the agent ended for an update.

@@ -1,6 +1,7 @@
 //! the Settings tab: the five `[lifecycle]` settings in two groups, each a checkbox with
-//! its description, its state against its Windows default, and a note when something
-//! about it needs saying. The agent writes a change; the view shows what it came to.
+//! its description, its state against its default, which macOS shares with Windows, and
+//! a note when something about it needs saying. the agent writes a change; the view
+//! shows what it came to.
 
 use marshal_cli::agent::StopReason;
 use marshal_cli::agent::config::problem;
@@ -9,7 +10,8 @@ use marshal_cli::agent::snapshot::LifecycleInfo;
 use marshal_cli::lifecycle_settings::Setting;
 use serde::Serialize;
 
-use crate::input::SettingResult;
+use crate::host::Platform;
+use crate::input::{LoginItemState, SettingResult};
 use crate::state::{Context, Resident, Stop};
 use crate::text::{capitalised, plain};
 
@@ -24,48 +26,165 @@ const MISSING: &str = "Settings cannot be changed until config.toml exists.";
 /// the chip the Settings tab carries while something there needs the user.
 pub const NEEDS_ATTENTION: &str = "Needs attention";
 
-/// each setting with its group, label and description, in the order the window shows
-/// them.
-const SETTINGS: [(&str, Setting, &str, &str); 5] = [
+/// why the network row cannot be changed on macOS.
+const NETWORK_FIXED_ON_MACOS: &str =
+    "macOS always stops the runners when the primary network changes.";
+
+const LOGIN_ITEMS_PATH: &str =
+    "System\u{a0}Settings >\u{a0}General >\u{a0}Login\u{a0}Items\u{a0}&\u{a0}Extensions";
+
+/// the button under the first setting while the login item differs from it, in either
+/// direction.
+pub const OPEN_LOGIN_ITEMS: &str = "Open Login Items Settings";
+
+/// a setting's label and description.
+type Words = (&'static str, &'static str);
+
+/// a setting's label and description on macOS, where `None` is the Windows word.
+type MacWords = (Option<&'static str>, Option<&'static str>);
+
+/// each setting with its group, and its words on Windows and on macOS, in the order the
+/// window shows them. a macOS word that is `None` reads as the Windows one.
+const SETTINGS: [(&str, Setting, Words, MacWords); 5] = [
     (
         "Starting Marshal",
         Setting::StartAtLogin,
-        "Start Marshal when I sign in",
-        "Marshal starts with only its icon in the notification area.",
+        (
+            "Start Marshal when I sign in",
+            "Marshal starts with only its icon in the notification area.",
+        ),
+        (
+            Some("Open Marshal when I log in"),
+            Some("Marshal opens with only its icon in the menu bar."),
+        ),
     ),
     (
         "Starting Marshal",
         Setting::StartRunnersOnLaunch,
-        "Start the runners when Marshal starts",
-        "Applies when you launch Marshal or sign in, not after an update.",
+        (
+            "Start the runners when Marshal starts",
+            "Applies when you launch Marshal or sign in, not after an update.",
+        ),
+        (
+            Some("Start the runners when Marshal opens"),
+            Some("Applies when you open Marshal or log in, not after an update."),
+        ),
     ),
     (
         "Sleep and network",
         Setting::KeepAwake,
-        "Keep the computer awake while runners run",
-        "Prevents idle sleep only. Closing the lid or choosing Sleep still sleeps.",
+        (
+            "Keep the computer awake while runners run",
+            "Prevents idle sleep only. Closing the lid or choosing Sleep still sleeps.",
+        ),
+        (Some("Keep the Mac awake while runners run"), None),
     ),
     (
         "Sleep and network",
         Setting::StopOnNetworkChange,
-        "Stop the runners when the network changes",
-        "A sleep or wake always stops them.",
+        (
+            "Stop the runners when the network changes",
+            "A sleep or wake always stops them.",
+        ),
+        (
+            None,
+            Some("A sleep, wake or network change always stops them on the Mac."),
+        ),
     ),
     (
         "Sleep and network",
         Setting::ResumeAfterStop,
-        "Start the runners again after a sleep or network stop",
-        "Only on the network they stopped on.",
+        (
+            "Start the runners again after a sleep or network stop",
+            "Only on the network they stopped on.",
+        ),
+        (None, None),
     ),
 ];
 
-/// the label of the setting `key` names, as the window shows it.
+/// the words on `platform`, with the Windows word where the macOS one is `None`.
+fn words(platform: Platform, windows: Words, macos: MacWords) -> Words {
+    match platform {
+        Platform::Windows => windows,
+        Platform::Macos => (macos.0.unwrap_or(windows.0), macos.1.unwrap_or(windows.1)),
+    }
+}
+
+/// the label of the setting `key` names, as the window on `platform` shows it.
 #[must_use]
-pub fn label(key: &str) -> Option<&'static str> {
+pub fn label(key: &str, platform: Platform) -> Option<&'static str> {
     SETTINGS
         .into_iter()
         .find(|(_, setting, _, _)| setting.name() == key)
-        .map(|(_, _, label, _)| label)
+        .map(|(_, _, windows, macos)| words(platform, windows, macos).0)
+}
+
+impl LoginItemState {
+    /// the state as "Login Items: <state>" names it.
+    #[must_use]
+    pub fn text(self) -> String {
+        match self {
+            Self::On => "On".to_string(),
+            Self::WaitingForApproval => "Waiting for approval".to_string(),
+            Self::Removed => "Removed from Open at Login".to_string(),
+            Self::NotAdded { code } => format!("Could not be added (code {code})"),
+            Self::NotRemoved { code } => format!("Could not be removed (code {code})"),
+            Self::Off => "Off".to_string(),
+        }
+    }
+
+    /// what the live region says when the state changes.
+    #[must_use]
+    pub fn announcement(self) -> String {
+        format!("Login Items: {}.", self.text())
+    }
+
+    /// what the window says under the setting while the state differs from the setting,
+    /// which is `on`.
+    fn note(self, on: bool) -> Option<SettingNote> {
+        let (text, tone) = match (on, self) {
+            (true, Self::WaitingForApproval) => (
+                format!(
+                    "macOS needs your approval before Marshal opens at login. Allow Marshal in \
+                     {LOGIN_ITEMS_PATH}."
+                ),
+                NoteTone::Warning,
+            ),
+            (true, Self::Removed) => (
+                format!(
+                    "Marshal was removed from Open at Login, so it does not open at login. To \
+                     have it open at login again, add Marshal under Open at Login in \
+                     {LOGIN_ITEMS_PATH}."
+                ),
+                NoteTone::Warning,
+            ),
+            (true, Self::NotAdded { .. }) => (
+                "Marshal could not add itself to Open at Login. It tries again at the next \
+                 launch or Start All, or when you change a setting."
+                    .to_string(),
+                NoteTone::Error,
+            ),
+            (false, Self::On | Self::WaitingForApproval) => (
+                format!(
+                    "Marshal is still in Open at Login, so it opens at login. To stop that, turn \
+                     Marshal off under Open at Login in {LOGIN_ITEMS_PATH}."
+                ),
+                NoteTone::Warning,
+            ),
+            (false, Self::NotRemoved { .. }) => (
+                format!(
+                    "Marshal could not remove itself from Open at Login, so it still opens at \
+                     login. It tries again at the next launch or Start All, or when you change \
+                     a setting. To stop that now, turn Marshal off under Open at Login in \
+                     {LOGIN_ITEMS_PATH}."
+                ),
+                NoteTone::Error,
+            ),
+            (true, Self::On | Self::NotRemoved { .. } | Self::Off)
+            | (false, Self::Removed | Self::NotAdded { .. } | Self::Off) => return None,
+        };
+        Some(SettingNote { text, tone })
+    }
 }
 
 /// how a note is drawn.
@@ -95,6 +214,13 @@ pub struct SettingRow {
     /// the checkbox's value, or `None` while it is not known.
     pub checked: Option<bool>,
     pub note: Option<SettingNote>,
+    /// why the setting cannot be changed on this system; the checkbox stays focusable
+    /// and does not toggle.
+    pub fixed: Option<String>,
+    /// on macOS, under the first setting, the state "Login Items: <state>" shows.
+    pub login_item: Option<String>,
+    /// [`OPEN_LOGIN_ITEMS`] while the login item differs from the setting.
+    pub open_login_items: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -292,6 +418,8 @@ fn state_note(
     let lifecycle = lifecycle?;
     let note = |text: String, tone| Some(SettingNote { text, tone });
     match setting {
+        // macOS's login item is the app's, and says its own note
+        Setting::StartAtLogin if context.input.words.platform == Platform::Macos => None,
         Setting::StartAtLogin => match lifecycle.sign_in.as_deref() {
             Some("turned_off") => note(
                 "Windows' Startup apps setting keeps Marshal from starting at sign-in. Turn \
@@ -384,17 +512,20 @@ fn row(
         Some(SettingResult::Saved { on }) => Some(*on),
         _ => None,
     };
-    let on = saved.or(value.map(|value| value.on));
+    let macos = context.input.words.platform == Platform::Macos;
+    let fixed = macos && setting == Setting::StopOnNetworkChange;
+    // macOS always stops the runners, whatever the file says, so the fixed row is on
+    let on = saved.or(value.map(|value| value.on)).map(|on| on || fixed);
     let state = match (saving, on) {
         // the checkbox keeps the value chosen until the agent answers
         (Some(saving), _) => format!("Being saved as {}.", on_off(saving).to_lowercase()),
-        (None, Some(on)) if on == setting.windows_default() => {
+        (None, Some(on)) if on == setting.default_value() => {
             format!("{} (default).", on_off(on))
         }
         (None, Some(on)) => format!(
             "{} (default: {}).",
             on_off(on),
-            on_off(setting.windows_default()).to_lowercase()
+            on_off(setting.default_value()).to_lowercase()
         ),
         (None, None) if lifecycle.is_some() => "Not readable in config.toml.".to_string(),
         (None, None) => "Not known while config.toml cannot be read.".to_string(),
@@ -403,7 +534,21 @@ fn row(
     let refused = result
         .as_ref()
         .is_some_and(|note| note.tone == NoteTone::Error);
-    let startup_off = lifecycle.and_then(|l| l.sign_in.as_deref()) == Some("turned_off")
+    let login_item = context
+        .input
+        .login_item
+        .filter(|_| macos && setting == Setting::StartAtLogin);
+    // the login item differs from the setting: waiting, removed or not added while it is
+    // on, still there or not removed while it is off
+    let login_note = login_item.zip(on).and_then(|(state, on)| state.note(on));
+    let login_attention = login_note.is_some()
+        && on == Some(true)
+        && matches!(
+            login_item,
+            Some(LoginItemState::WaitingForApproval | LoginItemState::Removed)
+        );
+    let startup_off = !macos
+        && lifecycle.and_then(|l| l.sign_in.as_deref()) == Some("turned_off")
         && setting == Setting::StartAtLogin;
     let row = SettingRow {
         key: key.to_string(),
@@ -411,9 +556,14 @@ fn row(
         description: description.to_string(),
         state,
         checked: saving.or(on),
-        note: result.or_else(|| state_note(context, lifecycle, setting)),
+        open_login_items: login_note.as_ref().map(|_| OPEN_LOGIN_ITEMS.to_string()),
+        note: result
+            .or(login_note)
+            .or_else(|| state_note(context, lifecycle, setting)),
+        fixed: fixed.then(|| NETWORK_FIXED_ON_MACOS.to_string()),
+        login_item: login_item.map(LoginItemState::text),
     };
-    (row, refused || startup_off)
+    (row, refused || startup_off || login_attention)
 }
 
 pub fn tab(context: &Context<'_>) -> SettingsTab {
@@ -422,7 +572,8 @@ pub fn tab(context: &Context<'_>) -> SettingsTab {
     let invalid = file_unusable(context).filter(|file| file.has_problems());
     let mut attention = invalid.is_some();
     let mut groups: Vec<SettingGroup> = Vec::new();
-    for (group, setting, label, description) in SETTINGS {
+    for (group, setting, windows, macos) in SETTINGS {
+        let (label, description) = words(context.input.words.platform, windows, macos);
         let (row, needs) = row(context, lifecycle, (setting, label, description));
         attention |= needs;
         match groups.last_mut().filter(|last| last.title == group) {

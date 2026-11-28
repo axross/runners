@@ -78,3 +78,44 @@ and each unavailable case from recorded snapshots,
 toggle and carries its reason and note in its description. Narrator, the contrast
 theme on a real Windows desktop and the keyboard-only use of the tab are W3's
 out-of-tree check on axpc.
+
+## The Settings Tab on the Mac
+
+M4 ([#90](https://github.com/axross/runners/issues/90)) owns this section: W3's tab
+in the Mac wording approved on #90, chosen by the platform that the Mac's
+`HostWords` carry, so the Mac's words and its tab always go together. The session gives
+the login item's state to `Input::login_item` where it keeps a login item, and the
+state is none until the app has learned it. Windows is unchanged.
+
+- **The network row is fixed.** It is checked, whatever `config.toml` holds for
+  `stop_on_network_change`, reports itself disabled, stays focusable, does not toggle
+  and is never dimmed; "macOS always stops the runners when the primary
+  network changes." shows in W3's balloon and stays on the page as hidden text in
+  the checkbox's description. The page never sends `lifecycle_set` for it.
+- **"Login Items: <state>"** sits under the first setting: On, Waiting for approval,
+  Removed from Open at Login, Could not be added (code N), Could not be removed (code
+  N), or Off, as the latest bringing in step, or reading when the window is shown, left
+  it. While the setting is on and the item is not, or the setting is off and the item
+  is still on, waiting for approval or not removed, W3's note and an Open Login Items
+  Settings button follow; the button calls `open_login_items`, which opens Login Items
+  & Extensions. With the setting off, the note says the item is still in Open at Login
+  and to turn it off there; after a failed removal it also says Marshal tries again.
+  Approval and removal with the setting on mark the tab "Needs attention"; a failure to
+  add or remove is an error note without the chip, and an item still there with the
+  setting off is a warning note without it. Each change after the first is said as "Login Items: <state>.". A
+  copy outside Applications shows no line.
+  [Login item on the Mac](./session.md#the-agent-and-the-apps-session) says when the
+  app registers and unregisters the item.
+- **A login launch shows only the menu bar icon.** The setting's description says
+  "Marshal opens with only its icon in the menu bar." and the app keeps it: the launch
+  is recognised by the open-application Apple Event's login-item mark, and the window
+  does not open. When macOS gives no mark, the launch opens the window like any launch.
+  The mark is confirmed on a real Mac at the overhaul's final verification; until
+  then the behaviour is unverified, and
+  [the session](./session.md#the-agent-and-the-apps-session) says how the app reads it.
+- **Increase Contrast** (`prefers-contrast: more`, under `data-platform="macos"`)
+  gives tabs and buttons a text-colour border, dividers and lists the text colour, and
+  the selected tab a 2 px accent-text border.
+
+The view, session and page tests cover each state; the approval and removal paths
+stay provisional until M4's Mac run.

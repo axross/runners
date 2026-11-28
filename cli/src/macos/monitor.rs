@@ -1,18 +1,21 @@
 //! the instance's signals on axmc: the sleep and network watch that stops every runner,
-//! and the keep-awake hold, driven by a [`SignalSource`] on a cadence. The Tart backend
+//! and the keep-awake hold, driven by a [`SignalSource`] on a cadence. the Tart backend
 //! waits at the [`NetworkGate`] this monitor keeps until a primary network is recorded.
+//! the resident agent gives it the settings in effect, so the hold follows `keep_awake`
+//! at each tick; the stops stay fixed whatever the settings say.
 
 use std::cell::Cell;
 use std::convert::Infallible;
 use std::time::Duration;
 
 use crate::instance::lifecycle::{Monitor, StopReason};
+use crate::instance::monitor_state::MonitorState;
+use crate::lifecycle_settings::Current;
 use crate::runtime::clock::Clock;
 use crate::runtime::log::Log;
 
 use super::gate::NetworkGate;
-use super::keep_awake::HoldEvent;
-use super::network::NetworkReading;
+use super::network::{NetworkReading, PrimaryNetwork};
 use super::signals::SignalSource;
 use super::sleep::SAMPLE_INTERVAL;
 use super::watch::{CHECK_INTERVAL, CHECKS_IN_A_ROW, NetworkWatch, WatchOutcome};
@@ -56,6 +59,39 @@ impl Cadence {
             real
         }
     }
+
+    /// one tick of the cadence on `clock`; it always yields, so a clock that does not
+    /// wait cannot starve the instance's other work.
+    pub async fn tick(&self, clock: &impl Clock) {
+        clock.sleep(self.sample).await;
+        tokio::task::yield_now().await;
+    }
+
+    /// the network `signals` reads once the ticks of a check have passed on `clock`.
+    pub async fn read_after_a_check(
+        &self,
+        clock: &impl Clock,
+        signals: &impl SignalSource,
+    ) -> NetworkReading {
+        for _ in 0..self.samples_per_check {
+            self.tick(clock).await;
+        }
+        signals.read_network().await
+    }
+
+    /// reconciles the hold with the settings on every tick of `clock`; it never ends.
+    pub async fn maintain(
+        &self,
+        clock: &impl Clock,
+        state: &MonitorState<'_>,
+        signals: &impl SignalSource,
+        log: &dyn Log,
+    ) -> Infallible {
+        loop {
+            self.tick(clock).await;
+            state.reconcile(signals, log);
+        }
+    }
 }
 
 /// clears the flag when the watch ends, however it ends.
@@ -74,6 +110,9 @@ pub struct SignalMonitor<'a, S, K> {
     gate: NetworkGate,
     cadence: Cadence,
     waiting: Cell<bool>,
+    /// the hold, the settings it follows and the network recorded; here the settings
+    /// are optional, and without them the hold always holds.
+    state: MonitorState<'a>,
 }
 
 impl<'a, S: SignalSource, K: Clock> SignalMonitor<'a, S, K> {
@@ -92,22 +131,17 @@ impl<'a, S: SignalSource, K: Clock> SignalMonitor<'a, S, K> {
             gate,
             cadence,
             waiting: Cell::new(false),
+            state: MonitorState::new(),
         }
     }
 
-    fn note(&self, event: HoldEvent) {
-        match event {
-            HoldEvent::Unchanged => {}
-            HoldEvent::Warned(text) => self.log.warn(&text),
-            HoldEvent::Recovered => self.log.info("Keep-awake is held again."),
+    /// this monitor with its hold following `keep_awake` in `settings`.
+    #[must_use]
+    pub fn with_settings(self, settings: &'a Current) -> Self {
+        Self {
+            state: self.state.with_settings(settings),
+            ..self
         }
-    }
-
-    /// one tick of the cadence; it always yields, so a clock that does not wait cannot
-    /// starve the instance's other work.
-    async fn tick(&self) {
-        self.clock.sleep(self.cadence.sample).await;
-        tokio::task::yield_now().await;
     }
 
     /// reads the network the instance has just begun to run on: a primary network is
@@ -115,6 +149,7 @@ impl<'a, S: SignalSource, K: Clock> SignalMonitor<'a, S, K> {
     /// held.
     async fn record(&self) -> NetworkWatch {
         let watch = NetworkWatch::begin(self.signals.read_network().await);
+        self.state.keep_record(watch.recorded());
         match watch.recorded() {
             Some(network) => {
                 self.waiting.set(false);
@@ -136,7 +171,9 @@ impl<'a, S: SignalSource, K: Clock> SignalMonitor<'a, S, K> {
     }
 
     fn observe(&self, watch: &mut NetworkWatch, reading: NetworkReading) -> Option<StopReason> {
-        match watch.observe(reading) {
+        let outcome = watch.observe(reading);
+        self.state.keep_record(watch.recorded());
+        match outcome {
             WatchOutcome::Steady | WatchOutcome::Waiting => None,
             WatchOutcome::Differing => {
                 self.log.warn(
@@ -163,6 +200,7 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
     fn begin(&self) {
         self.signals.rearm_sleep();
         self.gate.close();
+        self.state.forget_record();
     }
 
     async fn watch(&self) -> StopReason {
@@ -170,11 +208,11 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
         let mut network = self.record().await;
         let mut samples = 0_u32;
         loop {
-            self.tick().await;
+            self.cadence.tick(self.clock).await;
             if self.signals.sleep_detected() {
                 return StopReason::Slept;
             }
-            self.note(self.signals.poll_keep_awake());
+            self.state.reconcile(&self.signals, self.log);
             samples += 1;
             if samples < self.cadence.samples_per_check {
                 continue;
@@ -188,18 +226,17 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
     }
 
     async fn maintain(&self) -> Infallible {
-        loop {
-            self.tick().await;
-            self.note(self.signals.poll_keep_awake());
-        }
+        self.cadence
+            .maintain(self.clock, &self.state, &self.signals, self.log)
+            .await
     }
 
     fn hold(&self) {
-        self.note(self.signals.hold_keep_awake());
+        self.state.hold(&self.signals, self.log);
     }
 
     fn release(&self) {
-        self.signals.release_keep_awake();
+        self.state.release(&self.signals, self.log);
     }
 
     fn report(&self) -> Vec<(&'static str, String)> {
@@ -211,5 +248,15 @@ impl<S: SignalSource, K: Clock> Monitor for SignalMonitor<'_, S, K> {
             fields.push(("warning", warning));
         }
         fields
+    }
+
+    fn recorded(&self) -> Option<PrimaryNetwork> {
+        self.state.recorded()
+    }
+
+    async fn next_reading(&self) -> NetworkReading {
+        self.cadence
+            .read_after_a_check(self.clock, &self.signals)
+            .await
     }
 }

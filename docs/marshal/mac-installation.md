@@ -23,8 +23,7 @@ moved". The ending copy leaves an empty marker, `agent-ended-moved`, in
 
 To upgrade, quit Marshal, which stops the runners, replace it in Applications with
 the new version, and open it. The configuration, the logs, the golden VMs and the
-Keychain items are kept. Until M4, Marshal has no login item and no updates of its
-own.
+Keychain items are kept. Marshal has no updates of its own until M4 adds them.
 
 With the command line still running, the app shows that another Marshal holds the
 runner lock. Stop it with `marshal stop`, then remove the command line with the
@@ -43,6 +42,7 @@ each:
 | The web view's data                     | `rm -r ~/Library/WebKit/app.axross.marshal ~/Library/Caches/app.axross.marshal`                                                                                                                                                    |
 | The golden VMs                          | `tart delete <name>` for each `marshal-golden-linux-...` and, with a macOS pool, `marshal-golden-macos-...` that `tart list --source local` shows                                                                                  |
 | The bases in Tart's cache               | `tart delete <source>` for each `ghcr.io/cirruslabs/ubuntu` and `ghcr.io/cirruslabs/macos-tahoe-base` entry that `tart list --source oci` shows; the macOS base alone is a download of about 26 GB, and more once unpacked on disk |
+| The login item                          | Turn "Open Marshal when I log in" (`start_at_login`) off in the Settings tab before quitting, or remove Marshal in System Settings under General, Login Items & Extensions; a login item left behind shows there without its app   |
 | The instance lock                       | `rm /Users/Shared/.marshal-instance.lock`, once no Marshal, the app or the command line, runs on the Mac                                                                                                                           |
 | Each token                              | Remove in the Tokens tab before quitting, or `security delete-generic-password -s app.axross.marshal -a github.com/<owner>/<name>`                                                                                                 |
 

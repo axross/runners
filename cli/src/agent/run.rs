@@ -487,7 +487,8 @@ async fn run_on_host<K: Clock, R: Registrar, M: Monitor>(
             .with_network_gate(gate.clone());
             let signals = Signals::from_environment();
             let cadence = Cadence::for_source(signals.is_scripted());
-            let monitor = SignalMonitor::new(signals, &SystemClock, &*log, gate, cadence);
+            let monitor = SignalMonitor::new(signals, &SystemClock, &*log, gate, cadence)
+                .with_settings(resident.in_effect);
             let builder = GoldenImageBuilder {
                 tart,
                 launcher,

@@ -144,3 +144,81 @@ test("a note under a setting is part of its description", () => {
   assert.ok(noteElement, "the note is not among the checkbox's descriptions");
   assert.match(noteElement.getAttribute("class"), /\bbad\b/);
 });
+
+const REASON =
+  "macOS always stops the runners when the primary network changes.";
+
+test("a fixed checkbox keeps its reason on the page, does not toggle and sends nothing", () => {
+  const sent = [];
+  const fixed = { ...ROW, key: "stop_on_network_change", fixed: REASON };
+  const panel = settingsPanel(
+    tab({ groups: [{ title: "Sleep and network", rows: [fixed] }] }),
+    { setSetting: (key, on) => sent.push([key, on]) },
+  );
+  const box = checkbox(panel);
+  assert.equal(box.getAttribute("aria-disabled"), "true");
+  let prevented = false;
+  box.dispatchEvent({
+    type: "click",
+    preventDefault: () => (prevented = true),
+  });
+  assert.ok(prevented);
+  assert.equal(
+    box.parent.getAttribute("class"),
+    "tipwrap",
+    "the balloon's wrapper",
+  );
+  const reason = box
+    .getAttribute("aria-describedby")
+    .split(" ")
+    .map((id) => byId(panel, id))
+    .find((element) => element?.textContent === REASON);
+  assert.ok(reason, "the reason is not among the checkbox's descriptions");
+  assert.equal(reason.getAttribute("class"), "vh");
+  assert.deepEqual(sent, []);
+});
+
+test("the login item's line is part of the description and its button opens Login Items", () => {
+  let opened = 0;
+  const first = {
+    ...ROW,
+    key: "start_at_login",
+    login_item: "Waiting for approval",
+    note: { text: "macOS needs your approval.", tone: "warning" },
+    open_login_items: "Open Login Items Settings",
+  };
+  const panel = settingsPanel(
+    tab({ groups: [{ title: "Starting Marshal", rows: [first] }] }),
+    { openLoginItems: () => (opened += 1) },
+  );
+  const described = checkbox(panel)
+    .getAttribute("aria-describedby")
+    .split(" ")
+    .map((id) => byId(panel, id));
+  const line = described.find((element) =>
+    element?.getAttribute("class")?.includes("set-login"),
+  );
+  assert.ok(
+    line,
+    "the login item's line is not among the checkbox's descriptions",
+  );
+  assert.equal(line.find("b").textContent, "Waiting for approval");
+  const button = elements(panel).find((element) => element.tag === "button");
+  assert.equal(button.textContent, "Open Login Items Settings");
+  button.dispatchEvent({ type: "click" });
+  assert.equal(opened, 1);
+});
+
+test("a row without a login item has no line and no button", () => {
+  const panel = settingsPanel(tab(), {});
+  assert.equal(
+    elements(panel).find((element) => element.tag === "button"),
+    undefined,
+  );
+  assert.equal(
+    elements(panel).find((element) =>
+      element.getAttribute("class")?.includes("set-login"),
+    ),
+    undefined,
+  );
+});

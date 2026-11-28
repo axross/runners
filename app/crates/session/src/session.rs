@@ -30,7 +30,7 @@ use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
 use marshal_cli::github_status::GithubStatus;
 use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, SettingResult,
+    Cause, Connection, GithubFeed, HostWords, Input, NotSaved, Pending, PendingKind, SettingResult,
     SettingsUi, TokenResult, TokenUi, Tracker, Update, View, job_page, pools_started_by,
     setting_label,
 };
@@ -40,6 +40,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until};
 
 use crate::connect::{Attempt, Found, RETRY_EVERY, attempt};
+use crate::login_item::LoginItem;
 use crate::seam::{
     AgentInfo, ConfigAnswer, ConfigRequest, Connected, Dial, DialError, Failure, Launcher, Link,
     Log, Method, Present, Processes, Pushed, Record, Shown, TimeSource, Updater, Verified,
@@ -458,6 +459,12 @@ pub struct Seams<D> {
     /// a fresh launch: an agent the first attempt starts is sent `launch`, which starts
     /// the runners as `start_runners_on_launch` says.
     pub fresh: bool,
+    /// the words that name the operating system, which also choose the settings the
+    /// window draws: [`marshal_view::HOST`] in the app.
+    pub words: HostWords,
+    /// the login item kept in step with `start_at_login`; `None` where the agent keeps
+    /// the sign-in item itself.
+    pub login_item: Option<LoginItem>,
 }
 
 pub struct Session<D: Dial> {
@@ -528,6 +535,8 @@ pub struct Session<D: Dial> {
     ended_jobs: BTreeMap<String, u64>,
     /// whether this launch follows an agent that ended because Marshal was moved.
     after_moved: bool,
+    words: HostWords,
+    login_item: Option<LoginItem>,
 }
 
 impl<D: Dial> Session<D> {
@@ -602,6 +611,8 @@ impl<D: Dial> Session<D> {
             github: Github::new(),
             ended_jobs: BTreeMap::new(),
             after_moved: false,
+            words: seams.words,
+            login_item: seams.login_item,
         };
         (
             session,
@@ -684,8 +695,10 @@ impl<D: Dial> Session<D> {
                 status: self.github.status.as_ref(),
             },
         };
+        let login_item = self.login_item.as_ref().and_then(LoginItem::state);
         let input = Input::new(self.connection, self.snapshot.as_ref(), clock)
-            .words(marshal_view::HOST)
+            .words(self.words)
+            .login_item(login_item)
             .pending(self.pending)
             .tokens(&self.tokens)
             .settings(&self.settings)
@@ -897,6 +910,12 @@ impl<D: Dial> Session<D> {
                 if self.snapshot.as_ref().map(|old| &old.lifecycle) != Some(&snapshot.lifecycle) {
                     self.settings.results.clear();
                 }
+                let after_start_all = self.pending.is_some_and(|pending| {
+                    pending.kind == PendingKind::StartAll && shows(&snapshot, pending)
+                });
+                self.change_login_item(|login_item, log| {
+                    login_item.learn(snapshot.lifecycle.as_ref(), after_start_all, log);
+                });
                 self.snapshot = Some(*snapshot);
                 self.snapshot_for_drain();
                 self.refresh();
@@ -929,6 +948,22 @@ impl<D: Dial> Session<D> {
                 }
             }
             Pushed::Closed => self.closed(),
+        }
+    }
+
+    /// lets `change` act on the login item and announces the state it leaves, unless that
+    /// is the first one learned.
+    fn change_login_item(&mut self, change: impl FnOnce(&mut LoginItem, &dyn Log)) {
+        let Some(login_item) = &mut self.login_item else {
+            return;
+        };
+        let before = login_item.state();
+        change(login_item, self.log.as_ref());
+        let after = login_item.state();
+        if let (Some(_), Some(now)) = (before, after)
+            && before != after
+        {
+            self.announce.push(now.announcement());
         }
     }
 
@@ -1113,8 +1148,7 @@ impl<D: Dial> Session<D> {
     // ---- tokens
 
     fn record(&mut self, key: &str, result: TokenResult) {
-        self.announce
-            .push(result.announcement(key, &marshal_view::HOST));
+        self.announce.push(result.announcement(key, &self.words));
         self.tokens.results.insert(key.to_string(), result);
     }
 
@@ -1216,7 +1250,7 @@ impl<D: Dial> Session<D> {
     // ---- settings
 
     fn set_setting(&mut self, key: String, on: bool, reply: Reply<()>) {
-        let Some(label) = setting_label(&key) else {
+        let Some(label) = setting_label(&key, self.words.platform) else {
             let _ = reply.send(Err(format!(
                 "{} is not a setting.",
                 marshal_view::plain(&key)
@@ -1282,7 +1316,9 @@ impl<D: Dial> Session<D> {
                 words: other.words(),
             },
         };
-        let label = setting_label(key).unwrap_or(key).to_string();
+        let label = setting_label(key, self.words.platform)
+            .unwrap_or(key)
+            .to_string();
         if !matches!(result, SettingResult::Saved { .. }) {
             self.log.warn(&format!(
                 "{key} was not set {}: {}",
@@ -1347,6 +1383,7 @@ impl<D: Dial> Session<D> {
         }
         self.window_shown = shown;
         if shown {
+            self.change_login_item(|login_item, _| login_item.refresh());
             self.github_begin();
         } else {
             self.github.close();

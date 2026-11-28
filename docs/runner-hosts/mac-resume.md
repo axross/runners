@@ -8,18 +8,26 @@ description: "Interpret the stop reason, identify the current network and resume
 
 ## Sleep, Wake, and Network Changes
 
-While runners run, the runtime holds off the Mac's idle sleep. A sleep and its wake, or
+While runners run, the runtime holds off the Mac's idle sleep, unless the resident
+agent runs with `keep_awake` off. A sleep and its wake, or
 a change of the primary network, stops every runner, deletes every VM and moves the
 instance to stopped, with the reason in its status and its log. The runners are never left to carry on across a sleep or onto
 another network, because a VM that lived through either has a clock and a network
-that no longer match its job. Only a new start or a `restart` runs them again. This
+that no longer match its job. A new start or a `restart` runs them again, and so does
+the resident agent when `resume_after_stop` is on, as [Resuming](#resuming) says;
+nothing else does. This
 section applies to the axmc profile; the Windows host is not affected.
 
 ### Keeping the Mac Awake
 
 - While the instance is running or resuming, and while it is stopping until the last
   VM is deleted, the runtime runs `caffeinate -i -w <its own process ID>`. That stops
-  idle sleep, and ends with that process, even if it is killed hard.
+  idle sleep, and ends with that process, even if it is killed hard. `start` always
+  takes the hold. The resident agent takes it only while `keep_awake` is on, which it is
+  by default, and releases it within a sample of the setting turning off; a Mac that
+  then sleeps stops every runner at its wake, as [What Stops Every Runner](#what-stops-every-runner)
+  describes. [The Agent's Signals](../marshal-cli/agent-lifecycle.md#the-agents-signals)
+  owns the agent's settings.
 - Stopped, the instance holds nothing: the Mac may sleep when it is idle.
   `build` never holds it either; keep the Mac awake for a build as
   [Building the Golden VM](./golden-build.md#building-the-golden-vm) says.
@@ -89,11 +97,16 @@ stopped, the instance fails every running job, deletes every job VM within the s
 
 ### Resuming
 
-Nothing resumes on its own: a Mac that wakes, or a network that comes back, leaves
-the instance stopped. A new `start` with the same configuration, by the same user,
-or a `restart`, which the stopped instance
+Nothing resumes `marshal start`'s instance on its own: a Mac that wakes, or a network
+that comes back, leaves the instance stopped. A new `start` with the same
+configuration, by the same user, or a `restart`, which the stopped instance
 answers by reading the configuration again, checking Tart, Softnet and the golden VM,
-and starting every pool. The resume records the primary network and arms the sleep
+and starting every pool, resumes it. The resident agent resumes only with
+`resume_after_stop` on, and then by itself: once two readings of the network in a row
+match the network the runners ran on, with the router's hardware address read in both,
+it reads the configuration again as a `start_all` does, as
+[The Agent's Signals](../marshal-cli/agent-lifecycle.md#the-agents-signals)
+describes. Either resume records the primary network and arms the sleep
 check afresh, so the time spent stopped counts as neither a sleep nor a change. Do
 this only on a network you trust, because the signals only stop the runners; they
 never judge a network.

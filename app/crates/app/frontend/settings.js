@@ -2,9 +2,11 @@
 // label toggles it, with its description and state as its accessible description and
 // a note under it when the view gives one.
 //
-// A checkbox that cannot be changed stays focusable and is never dimmed: it reports
+// a checkbox that cannot be changed stays focusable and is never dimmed: it reports
 // itself disabled, the reason is part of its description and its balloon, and a click
-// does not toggle it. The agent writes a change, and the next view shows what it came to.
+// does not toggle it. the agent writes a change, and the next view shows what it came to.
+// on macOS the first setting also shows its login item's state, with a button to Login
+// Items while the state differs from the setting.
 
 import { nextId } from "./controls.js";
 import { h } from "./dom.js";
@@ -29,19 +31,25 @@ function settingRow(row, off, ctx) {
   const offId = off?.id;
   const checkId = nextId("setting");
   const descriptionId = nextId("setting-description");
+  const loginId = row.login_item ? nextId("setting-login") : null;
   const noteId = row.note ? nextId("setting-note") : null;
-  const describedBy = [descriptionId, noteId, offId].filter(Boolean).join(" ");
+  // the balloon is made and removed on hover, so the reason stays on the page as well
+  const fixedId = row.fixed ? nextId("setting-fixed") : null;
+  const describedBy = [descriptionId, loginId, noteId, fixedId, offId]
+    .filter(Boolean)
+    .join(" ");
+  const locked = Boolean(offId || fixedId);
   const box = h("input", {
     type: "checkbox",
     class: "check",
     id: checkId,
     checked: row.checked === true,
     "aria-describedby": describedBy,
-    "aria-disabled": offId ? "true" : null,
+    "aria-disabled": locked ? "true" : null,
     "data-key": `setting:${row.key}`,
     on: {
       click: (event) => {
-        if (offId || row.checked === null) {
+        if (locked || row.checked === null) {
           event.preventDefault();
         }
       },
@@ -50,9 +58,9 @@ function settingRow(row, off, ctx) {
   });
   // a value the view does not know shows neither on nor off
   box.indeterminate = row.checked === null;
-  const control = off ? h("span", { class: "tipwrap" }, box) : box;
-  if (off) {
-    attachTip(control, () => off.reason);
+  const control = locked ? h("span", { class: "tipwrap" }, box) : box;
+  if (locked) {
+    attachTip(control, () => (off ? off.reason : row.fixed));
   }
   return h(
     "div",
@@ -68,8 +76,26 @@ function settingRow(row, off, ctx) {
         `${row.description} `,
         h("span", { class: "set-state", text: row.state }),
       ),
+      fixedId ? h("span", { id: fixedId, class: "vh", text: row.fixed }) : null,
     ),
+    loginId
+      ? h(
+          "div",
+          { id: loginId, class: "set-login description wrap" },
+          "Login Items: ",
+          h("b", { text: row.login_item }),
+        )
+      : null,
     row.note ? note(row, noteId) : null,
+    row.open_login_items
+      ? h("button", {
+          type: "button",
+          class: "button neutral set-button",
+          "data-key": `setting:${row.key}:login-items`,
+          text: row.open_login_items,
+          on: { click: () => ctx.openLoginItems() },
+        })
+      : null,
   );
 }
 

@@ -365,6 +365,10 @@ function setSetting(key, on) {
   run("set_setting", { key, on });
 }
 
+function openLoginItems() {
+  run("open_login_items");
+}
+
 const context = {
   editor,
   get tab() {
@@ -382,6 +386,7 @@ const context = {
   cancelRemoval,
   removeToken,
   setSetting,
+  openLoginItems,
 };
 
 // ---- keys

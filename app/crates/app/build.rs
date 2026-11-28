@@ -6,7 +6,7 @@ use tauri_build::{AppManifest, Attributes};
 
 /// the commands the web view may call; each gets a permission, so a window can call
 /// it only when its capability grants it.
-const COMMANDS: [&str; 16] = [
+const COMMANDS: [&str; 17] = [
     "read_view",
     "configuration",
     "start_all",
@@ -19,6 +19,7 @@ const COMMANDS: [&str; 16] = [
     "set_organization_token",
     "remove_organization_token",
     "set_setting",
+    "open_login_items",
     "hide_window",
     "read_confirmation",
     "answer_confirmation",

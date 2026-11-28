@@ -1,5 +1,5 @@
 //! the settings of `[lifecycle]` as the agent applies them: each setting's value in
-//! effect, its Windows default when the file leaves it unset, and the write of one
+//! effect, its default when the file leaves it unset, and the write of one
 //! setting through the configuration's write path. `docs/marshal-cli/agent-lifecycle.md`
 //! describes what each setting does.
 
@@ -52,9 +52,9 @@ impl Setting {
         Self::ALL.into_iter().find(|setting| setting.name() == name)
     }
 
-    /// the value an unset setting takes on Windows.
+    /// the value an unset setting takes, on Windows and on the Mac alike.
     #[must_use]
-    pub fn windows_default(self) -> bool {
+    pub fn default_value(self) -> bool {
         match self {
             Self::StartAtLogin | Self::ResumeAfterStop => false,
             Self::StartRunnersOnLaunch | Self::KeepAwake | Self::StopOnNetworkChange => true,
@@ -93,8 +93,8 @@ pub struct Value {
     pub defaulted: bool,
 }
 
-/// the settings in effect on Windows: the values of one `[lifecycle]` table, with
-/// each unset one at its default.
+/// the settings in effect: the values of one `[lifecycle]` table, with each unset one
+/// at its default.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InEffect {
     lifecycle: Lifecycle,
@@ -103,7 +103,7 @@ pub struct InEffect {
 impl InEffect {
     /// the settings in effect for the table a configuration holds.
     #[must_use]
-    pub fn windows(lifecycle: Lifecycle) -> Self {
+    pub fn new(lifecycle: Lifecycle) -> Self {
         Self { lifecycle }
     }
 
@@ -116,7 +116,7 @@ impl InEffect {
                 defaulted: false,
             },
             None => Value {
-                on: setting.windows_default(),
+                on: setting.default_value(),
                 defaulted: true,
             },
         }
@@ -137,7 +137,7 @@ impl InEffect {
     }
 }
 
-/// the settings in effect as the agent keeps them, which the Windows monitor reads;
+/// the settings in effect as the agent keeps them, which its monitor reads;
 /// none while the agent has never held a valid configuration.
 #[derive(Debug, Default)]
 pub struct Current(Cell<Option<InEffect>>);
@@ -164,8 +164,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_unset_setting_takes_its_windows_default_and_says_so() {
-        let settings = InEffect::windows(Lifecycle::default());
+    fn an_unset_setting_takes_its_default_value_and_says_so() {
+        let settings = InEffect::new(Lifecycle::default());
         let defaults: Vec<(Setting, bool)> = Setting::ALL
             .iter()
             .map(|&setting| (setting, settings.get(setting).on))
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn a_set_value_wins_over_the_default_even_when_it_equals_it() {
-        let settings = InEffect::windows(Lifecycle {
+        let settings = InEffect::new(Lifecycle {
             start_at_login: Some(true),
             keep_awake: Some(true),
             stop_on_network_change: Some(false),
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn a_write_changes_only_its_setting_and_unsetting_returns_to_the_default() {
-        let settings = InEffect::windows(Lifecycle {
+        let settings = InEffect::new(Lifecycle {
             keep_awake: Some(false),
             resume_after_stop: Some(true),
             ..Lifecycle::default()

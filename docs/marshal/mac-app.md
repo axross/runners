@@ -26,7 +26,7 @@ owns the Keychain store.
 | Minimum system       | `LSMinimumSystemVersion` is `26.0`; the executable is arm64 only                                                                                                                                                                                                                                                                                 |
 | Menu bar app         | `LSUIElement` is `true`, so Marshal starts with no Dock icon; it becomes a regular app while its main window is open, and an accessory again when it closes                                                                                                                                                                                      |
 | Resources            | `icon.icns`, and the macOS licence notices as `THIRD-PARTY-NOTICES.txt`                                                                                                                                                                                                                                                                          |
-| Not in the bundle    | a command line, a helper, a login item, a framework, a plug-in, an installer package                                                                                                                                                                                                                                                             |
+| Not in the bundle    | a command line, a helper, a launch agent, a framework, a plug-in, an installer package; the login item is the app itself, which [the session](./session.md#the-agent-and-the-apps-session) registers with `SMAppService`                                                                                                                         |
 | Signature            | Planned for M2's pull request 2: Developer ID Application, hardened runtime, secure timestamp, no entitlements, signed inside-out without `--deep`; the app has no stapled ticket of its own, since notarizing the disk image notarizes it                                                                                                       |
 
 While its main window is open, Marshal shows its own menus in place of Tauri's
@@ -88,7 +88,9 @@ The window draws W1's states in the Mac's words: the login keychain for the stor
 the menu bar, Activity Monitor, the golden VM and VMs for the image and the
 containers, and "Waiting for Tart" where W1 waits for Docker. `marshal_view::HOST`
 picks the set at compile time; the view takes it from its input, so either set is
-drawn and tested on any operating system.
+drawn and tested on any operating system. Each set also names its platform, which is
+what chooses the Settings tab's wording, so a view never has one system's words and the
+other's settings.
 
 For macOS runners (M3, [#80](https://github.com/axross/runners/issues/80)), the
 window shows a slot waiting for the macOS VM limit or for a VM's deletion, the golden

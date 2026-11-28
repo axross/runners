@@ -12,7 +12,6 @@ use crate::instance::lifecycle::Monitor;
 use crate::instance::resume::{Armed, LIMIT};
 use crate::lifecycle_settings::{InEffect, Setting, write};
 use crate::macos::network::NetworkReading;
-use crate::profile::Profile;
 use crate::runtime::backend::Backend;
 use crate::runtime::clock::Clock;
 use crate::runtime::registration::Registrar;
@@ -37,11 +36,6 @@ pub const RESUME_WAITING: &str = "waiting";
 pub const RESUME_NO_GATEWAY: &str = "no_gateway";
 
 impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, B, K, R, D, M> {
-    /// whether this host has the `[lifecycle]` settings: on axmc they are M4's.
-    pub(super) fn has_lifecycle(&self) -> bool {
-        self.settings.profile == Profile::Axpc
-    }
-
     /// whether `launch` starts the runners: with `start_runners_on_launch` on, and
     /// while no setting is in effect, so Start all's path reports why.
     pub(super) fn starts_at_launch(&self) -> bool {
@@ -53,15 +47,12 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
     /// puts in effect the settings of a configuration just read, and keeps the
     /// sign-in item in step with them.
     pub(super) fn take_settings(&self, settings: InEffect) {
-        if !self.has_lifecycle() {
-            return;
-        }
         self.in_effect.set(settings);
         self.sync_sign_in();
     }
 
     /// writes or removes the sign-in item as `start_at_login` says; nothing while no
-    /// setting is in effect, or on a host without one.
+    /// setting is in effect, or on a host without one, such as the Mac.
     pub(super) fn sync_sign_in(&self) {
         let (Some(item), Some(settings)) = (self.sign_in, self.in_effect.get()) else {
             return;
@@ -84,12 +75,6 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
 
     /// answers `lifecycle_set`: writes `value` to `setting` and puts it in effect.
     pub(super) fn lifecycle_set(&self, setting: Setting, value: Option<bool>) -> ApiResult {
-        if !self.has_lifecycle() {
-            return Err(ApiError::new(
-                ErrorCode::Refused,
-                "this host has no [lifecycle] settings yet",
-            ));
-        }
         if self.inner.borrow().applying.is_some() {
             return Err(ApiError::new(
                 ErrorCode::Busy,

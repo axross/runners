@@ -93,7 +93,7 @@ web view.
   agent starts the runners as `start_runners_on_launch` says; an agent that does not
   list `launch` is sent `start_all`. A fresh launch that reaches an agent already
   running sends nothing. The window starts hidden and is shown unless the app was
-  started with `--sign-in`. The restart after a dropped connection starts the agent
+  started with `--sign-in` or, on the Mac, from its login item. The restart after a dropped connection starts the agent
   stopped when the last state the app heard was stopped by you, by a sleep, by a
   network change or by too many resumes, and running otherwise. It never starts
   an agent from a file that is missing, that it could not read when it started, or
@@ -103,6 +103,46 @@ web view.
   `--sign-in` (see [CLI](../marshal-cli/agent-lifecycle.md#the-agents-signals)). Signing in with
   it on is unverified on axpc until W3's out-of-tree check. The installer's uninstall
   removes the value, and an absent value is not an error.
+- **Login item on the Mac.** M4 ([#90](https://github.com/axross/runners/issues/90))
+  keeps the app's own bundle registered as its login item with `SMAppService` while
+  `start_at_login` is on in effect; the agent leaves the snapshot's sign-in item unset
+  on macOS. The app reconciles at launch, when a snapshot's settings in effect change,
+  and once after each Start all, whether or not that left the settings unchanged: it
+  registers when the setting is on and macOS reports Marshal not registered, or not
+  found, which is what macOS 27 reports for a Marshal that has never registered, and
+  unregisters when it is off and Marshal is registered or waiting for approval. Only a
+  Marshal in `/Applications` or `~/Applications` does either. It never registers over
+  "requires approval", and it keeps the empty file `login-item-registered-by-marshal`
+  in the configuration folder after registering, so a later "not registered" counts as
+  the maintainer turning Marshal off in Login Items; turning the setting off clears
+  it. The file is written only after Marshal registers itself. An item that is enabled
+  without it, because the maintainer added Marshal by hand with "+" in Login Items or
+  because writing the file failed, is not remembered as the maintainer's choice: a later
+  removal there is not recognised, and the next launch, Start all or change of a
+  setting registers Marshal again while the setting is on. Showing the window reads
+  macOS's status again, so a removal or an approval made
+  in Login Items while Marshal runs shows then; it registers and unregisters nothing,
+  and it keeps a failed registration's code until macOS reports another state, and a
+  failed unregistration's code while macOS still holds the item. A failed call is
+  logged with its code and tried again at the next launch, Start all or change of a
+  setting; a failed unregistration shows as "Could not be removed (code N)" with its
+  note and button. An item macOS still holds while the setting is off shows as On or
+  Waiting for approval, with a note and the same button. This is unverified on axmc
+  until M4's Mac run. Before removing Marshal, turn the setting off, or remove Marshal
+  in Login Items.
+- **A login launch on the Mac shows only the icon.** The login item passes no argument,
+  so the app tells the launch by the open-application Apple Event (`'aevt'`/`'oapp'`)
+  macOS sends at launch: when its `keyAEPropData` (`'prdt'`) parameter holds the enum
+  code `keyAELaunchedAsLogInItem` (`'lgit'`), the app starts as `--sign-in` does, with
+  its icon in the menu bar and no window or Dock icon. The pure decision is
+  `LaunchEvent::is_login_launch` in the `marshal-modes` crate, and `start` reads the
+  event first, before anything that can run the event loop. When macOS gives no mark,
+  or another one, the launch opens the window like any launch. The log records one
+  line at each Mac launch with the event's class and ID, whether it is an
+  open-application event, and its mark, and a login launch logs "Marshal started at
+  login, with its icon only." That macOS marks a login item's launch this way is
+  unverified until the maintainer's run on a real Mac at the overhaul's final
+  verification, which reads the line in the app's log.
 - **A dropped connection** that is not a quit keeps the last list, marked with its
   time, under a lost-contact banner. The app starts the agent again once and then
   offers Try Again.

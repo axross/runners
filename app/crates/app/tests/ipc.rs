@@ -129,6 +129,8 @@ fn app_asking(then: Then, log: Arc<dyn Log>) -> App<MockRuntime> {
         record: Arc::new(NoUpdates),
         launch: marshal_cli::agent::Launch::Running,
         fresh: false,
+        words: marshal_view::HOST,
+        login_item: None,
     });
     tauri::async_runtime::spawn(async move {
         session.run().await;
@@ -189,7 +191,7 @@ const APP_ORIGIN: &str = if cfg!(windows) {
     "tauri://localhost"
 };
 
-const MAIN_COMMANDS: [&str; 14] = [
+const MAIN_COMMANDS: [&str; 15] = [
     "read_view",
     "configuration",
     "start_all",
@@ -202,6 +204,7 @@ const MAIN_COMMANDS: [&str; 14] = [
     "set_organization_token",
     "remove_organization_token",
     "set_setting",
+    "open_login_items",
     "hide_window",
     "open_job",
 ];
@@ -224,10 +227,16 @@ fn arguments(command: &str) -> serde_json::Value {
 }
 
 #[test]
-fn the_main_window_calls_its_fourteen_commands() {
+fn the_main_window_calls_its_fifteen_commands() {
     let app = app();
     let main = window(&app, "main");
-    for command in MAIN_COMMANDS {
+    // on macOS it would open System Settings
+    let opens_settings =
+        |command: &&str| cfg!(target_os = "macos") && *command == "open_login_items";
+    for command in MAIN_COMMANDS
+        .iter()
+        .filter(|command| !opens_settings(command))
+    {
         let result = call(&main, command, arguments(command));
         assert!(!refused(&result), "{command}: {result:?}");
     }
@@ -354,6 +363,8 @@ fn closing_the_main_window_tells_the_page_and_hides_it_instead() {
         record: Arc::new(NoUpdates),
         launch: marshal_cli::agent::Launch::Running,
         fresh: false,
+        words: marshal_view::HOST,
+        login_item: None,
     });
     tauri::async_runtime::spawn(async move {
         session.run().await;
@@ -537,6 +548,8 @@ fn showing_the_main_window_opens_the_github_subscription_and_hiding_it_ends_it()
         record: Arc::new(NoUpdates),
         launch: marshal_cli::agent::Launch::Running,
         fresh: false,
+        words: marshal_view::HOST,
+        login_item: None,
     });
     tauri::async_runtime::spawn(async move {
         session.run().await;

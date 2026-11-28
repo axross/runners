@@ -78,6 +78,82 @@ pub fn is_sign_in(args: impl IntoIterator<Item = OsString>) -> bool {
         .any(|argument| argument == SIGN_IN_ARGUMENT)
 }
 
+/// the four-character code Apple's headers write as `'aevt'`: the class of the core events
+/// macOS sends an application, which the open-application event is one of.
+const CORE_EVENT_CLASS: u32 = u32::from_be_bytes(*b"aevt");
+
+/// the code of the open-application event, which macOS sends a launching app before
+/// anything else.
+const OPEN_APPLICATION: u32 = u32::from_be_bytes(*b"oapp");
+
+/// the code of the open-application event's `keyAEPropData` parameter, which carries how
+/// the app was launched.
+pub const LAUNCH_MARK_PARAMETER: u32 = u32::from_be_bytes(*b"prdt");
+
+/// the enum code that parameter holds when the login item launched the app.
+const LAUNCHED_AS_LOGIN_ITEM: u32 = u32::from_be_bytes(*b"lgit");
+
+/// the Apple Event macOS was delivering when the app started, as the four-character codes
+/// it carried; macOS only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LaunchEvent {
+    pub class: u32,
+    pub id: u32,
+    /// the enum code of the [`LAUNCH_MARK_PARAMETER`], when the event has that parameter.
+    pub mark: Option<u32>,
+}
+
+impl LaunchEvent {
+    #[must_use]
+    pub fn is_open_application(self) -> bool {
+        self.class == CORE_EVENT_CLASS && self.id == OPEN_APPLICATION
+    }
+
+    /// whether the login item started the app, with its icon and without its window: the
+    /// open-application event's launch mark says so. an event with no mark, or another one,
+    /// is an ordinary launch.
+    #[must_use]
+    pub fn is_login_launch(self) -> bool {
+        self.is_open_application() && self.mark == Some(LAUNCHED_AS_LOGIN_ITEM)
+    }
+}
+
+/// a line for the app's log of what macOS passed the launch, for the maintainer to read
+/// from the Mac's log; only codes, no token and no path.
+#[must_use]
+pub fn describe_launch_event(event: Option<LaunchEvent>) -> String {
+    let Some(event) = event else {
+        return "No Apple Event was current at launch.".to_string();
+    };
+    let kind = if event.is_open_application() {
+        "an open-application event"
+    } else {
+        "not an open-application event"
+    };
+    let mark = event
+        .mark
+        .map_or_else(|| "none".to_string(), four_character_code);
+    format!(
+        "The Apple Event current at launch is {}/{} ({kind}), with launch mark {mark}.",
+        four_character_code(event.class),
+        four_character_code(event.id),
+    )
+}
+
+/// a code as its four characters in quotes, or in hexadecimal when they are not printable
+/// ASCII.
+fn four_character_code(code: u32) -> String {
+    let bytes = code.to_be_bytes();
+    if bytes
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        format!("'{}'", String::from_utf8_lossy(&bytes))
+    } else {
+        format!("0x{code:08x}")
+    }
+}
+
 /// the arguments that start the agent from this executable.
 #[must_use]
 pub fn agent_arguments(launch: Launch) -> [&'static str; 2] {
