@@ -26,7 +26,8 @@
 # staged file, that its hdiutil create arguments equal the app job's and that the
 # app job measures every tool it calls, and shows each of those checks fail on an
 # altered copy. takes an optional staged file for the job cases; the default is
-# the staged file. runs on Linux and on macOS.
+# the staged file. needs GNU sed and sha256sum, so it runs on Linux (CI), not on
+# macOS.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -36,8 +36,9 @@ does not take a build for a host that has run it:
 - **Run on every pull request:** the checks of [The App Workspace](../marshal-cli/toolchain.md#the-app-workspace)
   on Linux, the Windows job's clippy, tests and `cargo tauri build --no-bundle`, and
   the mode dispatch on macOS, in the debug profile and then in the release profile,
-  and the macOS app job's clippy, tests, location rule in the release profile, and
-  unsigned `Marshal.app` and disk image.
+  the clippy and tests of the macOS app job of `merge-checks.yaml`, and the location
+  rule in the release profile and the unsigned `Marshal.app` and disk image of the
+  `app-macos` job of `release-build.yaml`.
   The Windows job runs the tests with `--no-fail-fast`, so one test executable that
   fails shows every other executable's result in the same run.
 - **Run by the Windows and macOS app jobs:** the app's whole workspace, including the
