@@ -134,7 +134,9 @@ one.
 
 - **Keep-awake follows the state.** `set_state` takes the hold on entering running
   and resuming, keeps it through stopping, and releases it on entering stopped and
-  when the instance ends. `build` neither holds it nor reacts to the signals. A
+  when the instance ends, and holds nothing while the monitor has settings with
+  `keep_awake` off, as the next point says. `build` neither holds it nor reacts to the
+  signals. A
   failed or lost hold warns once in the log, shows as a `warning` line in `status`,
   and is retried every 10 s; `Keep-awake is held again.` is logged when it recovers.
   The hold is checked every sample while running (inside the watch) and while
@@ -168,8 +170,10 @@ one.
   run within the stop sequence's 28 s exit deadline, with the state `stopping`. The instance then moves
   to `stopped` with the reason, which `status` shows as `reason:` and the `start`
   terminal as `The instance is stopped: <reason>.`. A `stop` that arrives during the
-  sequence ends the instance instead. The restart policy counts nothing, and only
-  `start` or `restart` resumes; nothing resumes on its own.
+  sequence ends the instance instead. The restart policy counts nothing, and on the
+  command line only `start` or `restart` resumes: nothing resumes on its own. The
+  resident agent resumes by itself with `resume_after_stop` on, reading the network
+  through the monitor ([The Agent's Signals](./agent-lifecycle.md#the-agents-signals)).
 - **No primary network.** `begin` closes the `NetworkGate` in `macos::gate`, and the
   first reading opens it when a primary network is recorded. The Tart backend waits
   at the gate in `prepare_job_host`, before the host prerequisites, so the boot that
