@@ -264,6 +264,7 @@ From the repository root:
 ```bash
 bash images/actions-runner/tests/diagnostics-test.sh
 bash images/actions-runner/tests/check-download.sh
+pwsh -NoProfile -File images/actions-runner/tests/test-cpu-smoke-removal.ps1
 docker build --tag actions-runner:test images/actions-runner
 bash images/actions-runner/tests/smoke-test.sh actions-runner:test
 ```
@@ -277,6 +278,11 @@ runs these fixtures inside the actual image, followed by isolated diagnostic
 container lifecycle checks without production registration or networking. That
 command needs PowerShell 7 (`pwsh`) on the Linux test host for the real private
 export path; the existing hosted image job supplies it.
+
+The removal check test needs `pwsh` and `bash` on Linux or macOS, but no Docker
+daemon or image. It checks the CPU smoke test's wait for an ordinary container's
+removal against a stand-in `docker`. CI runs it once, in the Check job through
+`mise run check`, not in the image jobs.
 
 CI runs these checks on every pull request without pushing the result, once on
 linux/amd64 and once on linux/arm64. The smoke test uses no network or mounts and
