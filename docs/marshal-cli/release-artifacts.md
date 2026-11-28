@@ -269,10 +269,15 @@ worked out from main's history, not a version this document fixes. Its five file
 are the Windows CLI executable, the CLI's MSI, the bare macOS CLI, the signed and
 notarized macOS package and `SHA256SUMS`, and none is an app or a test helper.
 
-The tag's `docs/operations/cli-recovery.md` holds every command-line procedure, with
-their blocks: installing and checking the command line on Windows and macOS,
-migrating from a manual install, updating it, uninstalling it and rolling back.
-Open that tag's document on GitHub, at
+To find its version, open the [releases page](https://github.com/axross/runners/releases)
+and take the only release that carries a macOS `.pkg`,
+`marshal-<version>-macos-arm64.pkg`. `v0.1.0` has only bare binaries and
+`SHA256SUMS`, and an app release has no package. Its tag is `v<version>`.
+
+The tag's `docs/operations/cli-recovery.md` opens the command-line guide, which
+links to the procedures for installing and checking the command line on Windows and
+macOS, migrating from a manual install, updating it, uninstalling it and rolling
+back, at the same tag. Open that tag's document on GitHub, at
 `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`,
 replacing `<version>` with the CLI recovery release's version without the `v`, and use
 the procedures there rather than the app's blocks in this document. That guide

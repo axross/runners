@@ -59,7 +59,11 @@ adds the configuration and the image around this one.
 
 1. Download `marshal-<version>-windows-x64.msi` from the
    [release page](https://github.com/axross/runners/releases). If the browser warns
-   that the file is uncommon or could be harmful, choose to keep it.
+   that the file is uncommon or could be harmful, choose to keep it. The last
+   command-line release's MSI has the same name pattern but is the command-line
+   product, not the app, and it installs `marshal.exe`; install the app from a release
+   after it, as [The Last Command-Line Release](./release-artifacts.md#the-last-command-line-release)
+   says.
 2. Optionally, and recommended, run the [check block](#checking-the-download) on
    the downloaded file before opening it.
 3. When updating, quit Marshal from its menu first, so that its runners stop.

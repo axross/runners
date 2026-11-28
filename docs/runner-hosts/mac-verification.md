@@ -30,7 +30,7 @@ the run goes in this order:
    as [Setting Up Softnet](./mac-setup.md#setting-up-softnet) lists it.
 2. Install the last command-line release's macOS binary with the macOS procedure at
    its tag, since no later build carries one. Open
-   `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`, replacing `<version>` with the CLI recovery release's version without its initial `v`. Record its version, the commit of its tag and the
+   `https://github.com/axross/runners/blob/v<version>/docs/operations/cli-recovery.md`, replacing `<version>` with the CLI recovery release's version without its initial `v`, as [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release) says. Record its version, the commit of its tag and the
    program commit it was built from.
 3. Build the golden VM, then start the pools, with that release's `build` and
    `start`, as its [program tree’s host procedure](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/macos-runner-host.md#starting-watching-and-stopping) describes, with the

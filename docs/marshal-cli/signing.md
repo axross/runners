@@ -129,5 +129,5 @@ the last command-line release's tag, at
 `https://github.com/axross/runners/blob/v<version>/docs/marshal-cli/signing.md#reading-a-signature`,
 where `<version>` is the CLI recovery release's version without the `v`; The Last
 Command-Line Release section of [Release artifacts](./release-artifacts.md#the-last-command-line-release)
-identifies that tag. M2's pull request brings this section back, rewritten for the app
+describes that tag and how to find its version. M2's pull request brings this section back, rewritten for the app
 and the disk image.

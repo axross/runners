@@ -98,8 +98,11 @@ Hub. No inbound port is needed.
 
 Install Marshal from a release by opening its MSI, with the Windows procedure in
 [CLI](../marshal-cli/install-on-windows.md#installing-updating-and-rolling-back), never by building it on the
-host. Download `marshal-<version>-windows-x64.msi` from the release page and, if you
-choose, run the optional check block on it first; that block refuses a file whose
+host. Download `marshal-<version>-windows-x64.msi` from the release page. The last
+command-line release's MSI has the same name pattern but is the command-line product,
+not the app: it installs `marshal.exe` and adds its directory to the user `Path`. Install
+the app from a release after it. If you choose, run the optional check block on the
+file first; that block refuses a file whose
 checksum, commit on main, or attestation from `release.yaml` on main does not
 verify, or whose `marshal-app.exe` does not match the release's `SHA256SUMS` line
 for the app, and installs nothing. On a host that runs the command line, first
