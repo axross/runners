@@ -17,7 +17,7 @@ use marshal_session::{
     LoginStatus, Method, Present, Process, Processes, Pushed, Record, Seams, Session, Shown,
     TimeSource, Updater, Verified,
 };
-use marshal_view::{Clock, View};
+use marshal_view::{Clock, HOST, MACOS, View};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -938,6 +938,8 @@ fn start_session(
     let screen = Arc::new(Screen::default());
     let log = Arc::new(MemoryLog::default());
     let started_at = Instant::now();
+    // only the Mac app keeps a login item, so a session that does is drawn in the Mac's words
+    let words = if login_item.is_some() { MACOS } else { HOST };
     let (session, handle) = Session::new(Seams {
         dial: world.clone(),
         launcher: Arc::new(world.clone()),
@@ -951,6 +953,7 @@ fn start_session(
         record: Arc::new(updates.clone()),
         launch,
         fresh,
+        words,
         login_item,
     });
     Running {

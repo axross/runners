@@ -30,7 +30,7 @@ use marshal_cli::agent::{EXECUTABLE_CHANGED, Launch, QUIT, StopReason};
 use marshal_cli::github_status::GithubStatus;
 use marshal_cli::token_store::{TokenKey, TokenRefusal, accepted_token};
 use marshal_view::{
-    Cause, Connection, GithubFeed, Input, NotSaved, Pending, PendingKind, Platform, SettingResult,
+    Cause, Connection, GithubFeed, HostWords, Input, NotSaved, Pending, PendingKind, SettingResult,
     SettingsUi, TokenResult, TokenUi, Tracker, Update, View, job_page, pools_started_by,
     setting_label,
 };
@@ -459,6 +459,9 @@ pub struct Seams<D> {
     /// a fresh launch: an agent the first attempt starts is sent `launch`, which starts
     /// the runners as `start_runners_on_launch` says.
     pub fresh: bool,
+    /// the words that name the operating system, which also choose the settings the
+    /// window draws: [`marshal_view::HOST`] in the app.
+    pub words: HostWords,
     /// the login item kept in step with `start_at_login`; `None` where the agent keeps
     /// the sign-in item itself.
     pub login_item: Option<LoginItem>,
@@ -532,6 +535,7 @@ pub struct Session<D: Dial> {
     ended_jobs: BTreeMap<String, u64>,
     /// whether this launch follows an agent that ended because Marshal was moved.
     after_moved: bool,
+    words: HostWords,
     login_item: Option<LoginItem>,
 }
 
@@ -607,6 +611,7 @@ impl<D: Dial> Session<D> {
             github: Github::new(),
             ended_jobs: BTreeMap::new(),
             after_moved: false,
+            words: seams.words,
             login_item: seams.login_item,
         };
         (
@@ -690,12 +695,10 @@ impl<D: Dial> Session<D> {
                 status: self.github.status.as_ref(),
             },
         };
-        let mut input =
-            Input::new(self.connection, self.snapshot.as_ref(), clock).words(marshal_view::HOST);
-        if let Some(login_item) = &self.login_item {
-            input = input.macos(login_item.state());
-        }
-        let input = input
+        let login_item = self.login_item.as_ref().and_then(LoginItem::state);
+        let input = Input::new(self.connection, self.snapshot.as_ref(), clock)
+            .words(self.words)
+            .login_item(login_item)
             .pending(self.pending)
             .tokens(&self.tokens)
             .settings(&self.settings)
@@ -1145,8 +1148,7 @@ impl<D: Dial> Session<D> {
     // ---- tokens
 
     fn record(&mut self, key: &str, result: TokenResult) {
-        self.announce
-            .push(result.announcement(key, &marshal_view::HOST));
+        self.announce.push(result.announcement(key, &self.words));
         self.tokens.results.insert(key.to_string(), result);
     }
 
@@ -1247,17 +1249,8 @@ impl<D: Dial> Session<D> {
 
     // ---- settings
 
-    /// macOS where the app keeps a login item, which only the Mac app does.
-    fn platform(&self) -> Platform {
-        if self.login_item.is_some() {
-            Platform::Macos
-        } else {
-            Platform::Windows
-        }
-    }
-
     fn set_setting(&mut self, key: String, on: bool, reply: Reply<()>) {
-        let Some(label) = setting_label(&key, self.platform()) else {
+        let Some(label) = setting_label(&key, self.words.platform) else {
             let _ = reply.send(Err(format!(
                 "{} is not a setting.",
                 marshal_view::plain(&key)
@@ -1323,7 +1316,7 @@ impl<D: Dial> Session<D> {
                 words: other.words(),
             },
         };
-        let label = setting_label(key, self.platform())
+        let label = setting_label(key, self.words.platform)
             .unwrap_or(key)
             .to_string();
         if !matches!(result, SettingResult::Saved { .. }) {

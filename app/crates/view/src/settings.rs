@@ -10,7 +10,8 @@ use marshal_cli::agent::snapshot::LifecycleInfo;
 use marshal_cli::lifecycle_settings::Setting;
 use serde::Serialize;
 
-use crate::input::{LoginItemState, Platform, SettingResult};
+use crate::host::Platform;
+use crate::input::{LoginItemState, SettingResult};
 use crate::state::{Context, Resident, Stop};
 use crate::text::{capitalised, plain};
 
@@ -418,7 +419,7 @@ fn state_note(
     let note = |text: String, tone| Some(SettingNote { text, tone });
     match setting {
         // macOS's login item is the app's, and says its own note
-        Setting::StartAtLogin if context.input.platform == Platform::Macos => None,
+        Setting::StartAtLogin if context.input.words.platform == Platform::Macos => None,
         Setting::StartAtLogin => match lifecycle.sign_in.as_deref() {
             Some("turned_off") => note(
                 "Windows' Startup apps setting keeps Marshal from starting at sign-in. Turn \
@@ -511,7 +512,7 @@ fn row(
         Some(SettingResult::Saved { on }) => Some(*on),
         _ => None,
     };
-    let macos = context.input.platform == Platform::Macos;
+    let macos = context.input.words.platform == Platform::Macos;
     let fixed = macos && setting == Setting::StopOnNetworkChange;
     // macOS always stops the runners, whatever the file says, so the fixed row is on
     let on = saved.or(value.map(|value| value.on)).map(|on| on || fixed);
@@ -572,7 +573,7 @@ pub fn tab(context: &Context<'_>) -> SettingsTab {
     let mut attention = invalid.is_some();
     let mut groups: Vec<SettingGroup> = Vec::new();
     for (group, setting, windows, macos) in SETTINGS {
-        let (label, description) = words(context.input.platform, windows, macos);
+        let (label, description) = words(context.input.words.platform, windows, macos);
         let (row, needs) = row(context, lifecycle, (setting, label, description));
         attention |= needs;
         match groups.last_mut().filter(|last| last.title == group) {

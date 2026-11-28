@@ -82,8 +82,10 @@ out-of-tree check on axpc.
 ## The Settings Tab on the Mac
 
 M4 ([#90](https://github.com/axross/runners/issues/90)) owns this section: W3's tab
-in the Mac wording approved on #90, chosen by `Input::macos`, which the session sets
-where it keeps a login item. Windows is unchanged.
+in the Mac wording approved on #90, chosen by the platform that the Mac's
+`HostWords` carry, so the Mac's words and its tab always go together. The session gives
+the login item's state to `Input::login_item` where it keeps a login item, and the
+state is none until the app has learned it. Windows is unchanged.
 
 - **The network row is fixed.** It is checked, whatever `config.toml` holds for
   `stop_on_network_change`, reports itself disabled, stays focusable, does not toggle

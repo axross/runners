@@ -4,9 +4,19 @@
 //! takes them from its input, which has W1's Windows words unless the app gives the
 //! host's, so every view can be drawn and tested in either set on any operating system.
 
+/// the system the window is drawn on, where its settings differ as well as its words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    Windows,
+    Macos,
+}
+
 /// one operating system's words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HostWords {
+    /// the system these words name, so a view never draws one system's words with the
+    /// other's settings.
+    pub platform: Platform,
     /// the store that keeps tokens.
     pub store: &'static str,
     /// the main window's footer note on closing it.
@@ -35,6 +45,7 @@ pub struct HostWords {
 }
 
 pub const WINDOWS: HostWords = HostWords {
+    platform: Platform::Windows,
     store: "Windows Credential Manager",
     close_note: "Closing this window keeps Marshal running in the notification area.",
     lock_held: "Another Marshal process holds the runner lock, and Marshal cannot tell which: one that is starting or ending, an older version, or another Windows user's. Marshal checks again every 5 s. If it stays, look in Task Manager for marshal.exe or marshal-app.exe, or sign the other user out.",
@@ -57,6 +68,7 @@ pub const WINDOWS: HostWords = HostWords {
 };
 
 pub const MACOS: HostWords = HostWords {
+    platform: Platform::Macos,
     store: "the login keychain",
     close_note: "Closing this window keeps Marshal running in the menu bar.",
     lock_held: "Another Marshal process holds the runner lock, and Marshal cannot tell which: one that is starting or ending, an older version such as the marshal command, or another user's. Marshal checks again every 5 s. If it stays, look in Activity Monitor for marshal or Marshal, or log the other user out.",
@@ -87,7 +99,13 @@ pub const HOST: HostWords = if cfg!(target_os = "macos") {
 
 #[cfg(test)]
 mod tests {
-    use super::{HOST, MACOS, WINDOWS};
+    use super::{HOST, MACOS, Platform, WINDOWS};
+
+    #[test]
+    fn each_set_of_words_names_its_own_platform() {
+        assert_eq!(WINDOWS.platform, Platform::Windows);
+        assert_eq!(MACOS.platform, Platform::Macos);
+    }
 
     #[test]
     fn the_hosts_words_are_this_targets() {

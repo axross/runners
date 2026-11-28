@@ -444,7 +444,7 @@ fn the_macs_agent_reporting_no_settings_leaves_every_setting_unavailable_without
     }
     assert_eq!(
         row(tab, "start_at_login").label,
-        "Start Marshal when I sign in"
+        "Open Marshal when I log in"
     );
     assert!(!tab.reason_in_intro);
     assert_eq!(tab.chip, None);
@@ -455,7 +455,11 @@ fn mac_view(
     snapshot: &marshal_cli::agent::snapshot::Snapshot,
     login: Option<LoginItemState>,
 ) -> marshal_view::View {
-    build(&Input::new(Connection::Connected, Some(snapshot), now()).macos(login))
+    build(
+        &Input::new(Connection::Connected, Some(snapshot), now())
+            .words(MACOS)
+            .login_item(login),
+    )
 }
 
 #[test]

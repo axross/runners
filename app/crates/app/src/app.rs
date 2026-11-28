@@ -239,6 +239,7 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         record,
         launch,
         fresh,
+        words: marshal_view::HOST,
         login_item,
     });
     let session = if !in_place {

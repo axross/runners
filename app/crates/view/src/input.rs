@@ -123,14 +123,6 @@ pub struct SettingsUi {
     pub results: BTreeMap<String, SettingResult>,
 }
 
-/// the system the window is drawn on, where its words or its settings differ.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Platform {
-    #[default]
-    Windows,
-    Macos,
-}
-
 /// the app's login item on macOS, as the app last learned it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginItemState {
@@ -192,7 +184,6 @@ pub struct Input<'a> {
     /// whether the agent before this launch ended because Marshal's executable was
     /// moved, renamed or replaced while it ran.
     pub after_moved: bool,
-    pub platform: Platform,
     /// on macOS, the login item's state, `None` until the app has learned it.
     pub login_item: Option<LoginItemState>,
     /// the agent lists all three configuration methods.
@@ -214,21 +205,20 @@ impl<'a> Input<'a> {
             ended_jobs: None,
             words: WINDOWS,
             after_moved: false,
-            platform: Platform::Windows,
             login_item: None,
             editor: false,
         }
     }
 
-    /// the window on macOS, with its login item's state as last learned.
+    /// the login item's state as last learned, which only the Mac window shows.
     #[must_use]
-    pub fn macos(mut self, login_item: Option<LoginItemState>) -> Self {
-        self.platform = Platform::Macos;
+    pub fn login_item(mut self, login_item: Option<LoginItemState>) -> Self {
         self.login_item = login_item;
         self
     }
 
-    /// names the operating system with `words`, such as [`crate::HOST`].
+    /// names the operating system with `words`, such as [`crate::HOST`]; they also say
+    /// which system's settings the window draws.
     #[must_use]
     pub fn words(mut self, words: HostWords) -> Self {
         self.words = words;

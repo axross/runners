@@ -129,6 +129,7 @@ fn app_asking(then: Then, log: Arc<dyn Log>) -> App<MockRuntime> {
         record: Arc::new(NoUpdates),
         launch: marshal_cli::agent::Launch::Running,
         fresh: false,
+        words: marshal_view::HOST,
         login_item: None,
     });
     tauri::async_runtime::spawn(async move {
@@ -362,6 +363,7 @@ fn closing_the_main_window_tells_the_page_and_hides_it_instead() {
         record: Arc::new(NoUpdates),
         launch: marshal_cli::agent::Launch::Running,
         fresh: false,
+        words: marshal_view::HOST,
         login_item: None,
     });
     tauri::async_runtime::spawn(async move {
@@ -546,6 +548,7 @@ fn showing_the_main_window_opens_the_github_subscription_and_hiding_it_ends_it()
         record: Arc::new(NoUpdates),
         launch: marshal_cli::agent::Launch::Running,
         fresh: false,
+        words: marshal_view::HOST,
         login_item: None,
     });
     tauri::async_runtime::spawn(async move {

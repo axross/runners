@@ -88,7 +88,9 @@ The window draws W1's states in the Mac's words: the login keychain for the stor
 the menu bar, Activity Monitor, the golden VM and VMs for the image and the
 containers, and "Waiting for Tart" where W1 waits for Docker. `marshal_view::HOST`
 picks the set at compile time; the view takes it from its input, so either set is
-drawn and tested on any operating system.
+drawn and tested on any operating system. Each set also names its platform, which is
+what chooses the Settings tab's wording, so a view never has one system's words and the
+other's settings.
 
 For macOS runners (M3, [#80](https://github.com/axross/runners/issues/80)), the
 window shows a slot waiting for the macOS VM limit or for a VM's deletion, the golden
