@@ -265,7 +265,9 @@ request 3. The dry run builds the unsigned app, its archive and an unsigned disk
 with the same `hdiutil create` arguments, and measures the tools.
 `test-staged-sign-macos.sh` runs the staged signing scripts and `verify-macos`'s hash
 step against stand-ins, and checks that no workflow names the staged file, that its
-`hdiutil create` arguments equal the app job's and that the app job measures every
+`hdiutil create` arguments equal the app job's, that its designated requirement forms,
+normalizer and clause splitter equal `test-signed-dmg.sh`'s, so that `verify-macos`
+accepts exactly the forms `sign-macos` accepts, and that the app job measures every
 tool the scripts call.
 `test-signed-dmg-refusals.sh` runs the checking script against stand-ins. The first
 signed release is therefore the first real run of `sign-macos` and `verify-macos`. A

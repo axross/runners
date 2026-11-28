@@ -9,6 +9,9 @@
 //   - the staged verify-macos runs test-signed-dmg.sh, which
 //     test-signed-dmg-refusals.sh tests;
 //   - the staged `hdiutil create` arguments equal release-build.yaml's app job's;
+//   - the staged sign-macos's two designated requirement forms, its normalizer and
+//     its clause splitter equal test-signed-dmg.sh's, so that verify-macos accepts
+//     exactly the requirements sign-macos accepts;
 //   - every tool the staged jobs and test-signed-dmg.sh call, through SYSTEM_BIN or
 //     SYSTEM_SBIN or by a literal /usr/bin or /usr/sbin path, is in the lists of
 //     the app job's measured-tools step.
@@ -98,6 +101,78 @@ if (stagedImaging.length !== 1) {
   );
 }
 
+// the two jobs run no common file, so the staged sign step carries its own copy of
+// what test-signed-dmg.sh, which verify-macos runs, uses to accept a designated
+// requirement. the copies must not drift: a requirement one accepts and the other
+// refuses would fail a release after signing. the names differ, and the team ID
+// is a variable of the staged step: they map as
+//   form_a, form_b           the same names in both;
+//   ${APPLE_TEAM_ID}         ${team};
+//   normalized()             normalized_requirement();
+//   clauses()                requirement_clauses();
+// and each function's body, with its whitespace collapsed, must be the same text,
+// which holds its sed expressions, its awk program and its sort.
+const signedDmgTest = readFileSync(
+  join(root, ".github/scripts/tests/test-signed-dmg.sh"),
+  "utf8",
+);
+const stagedScripts = Object.values(stagedJobs)
+  .flatMap(runScripts)
+  .map(({ script }) => code(script));
+const collapsed = (text) => text.replace(/\s+/g, " ").trim();
+
+// the one `name="..."` assignment in the scripts, or null unless there is exactly
+// one.
+function assignment(name, texts) {
+  const found = texts.flatMap((text) => [
+    ...text.matchAll(new RegExp(`^\\s*${name}="(.*)"\\s*$`, "gm")),
+  ]);
+  return found.length === 1 ? found[0][1] : null;
+}
+
+// the body of the one shell function `name() { ... }` in the scripts, whitespace
+// collapsed, or null unless there is exactly one. a function body here has no line
+// that holds only a brace.
+function functionBody(name, texts) {
+  const found = texts.flatMap((text) => [
+    ...text.matchAll(
+      new RegExp(`^\\s*${name}\\(\\)\\s*\\{\\n([\\s\\S]*?)^\\s*\\}\\s*$`, "gm"),
+    ),
+  ]);
+  return found.length === 1 ? collapsed(found[0][1]) : null;
+}
+
+const testCode = [code(signedDmgTest)];
+for (const form of ["form_a", "form_b"]) {
+  const staged = assignment(form, stagedScripts);
+  const tested = assignment(form, testCode);
+  if (staged === null || tested === null) {
+    problems.push(
+      `${form} is not assigned exactly once in the staged scripts and in test-signed-dmg.sh`,
+    );
+  } else if (staged.replaceAll("${APPLE_TEAM_ID}", "${team}") !== tested) {
+    problems.push(
+      `${form} differs between the staged sign step and test-signed-dmg.sh:\n    ${staged}\n    ${tested}`,
+    );
+  }
+}
+for (const [staged, tested] of [
+  ["normalized", "normalized_requirement"],
+  ["clauses", "requirement_clauses"],
+]) {
+  const stagedBody = functionBody(staged, stagedScripts);
+  const testedBody = functionBody(tested, testCode);
+  if (stagedBody === null || testedBody === null) {
+    problems.push(
+      `${staged}() and ${tested}() are not each defined exactly once in the staged scripts and test-signed-dmg.sh`,
+    );
+  } else if (stagedBody !== testedBody) {
+    problems.push(
+      `${staged}() differs from ${tested}() in test-signed-dmg.sh:\n    ${stagedBody}\n    ${testedBody}`,
+    );
+  }
+}
+
 // the tools the app job measures: its two lists and the xcrun tools it looks up.
 const measuring = runScripts(appJob).find(
   ({ name }) => name === "Check The Signing Tools",
@@ -129,7 +204,7 @@ const scripts = [
   ...Object.values(stagedJobs)
     .flatMap(runScripts)
     .map(({ script }) => script),
-  readFileSync(join(root, ".github/scripts/tests/test-signed-dmg.sh"), "utf8"),
+  signedDmgTest,
 ];
 const called = new Set();
 for (const script of scripts) {
@@ -167,6 +242,9 @@ console.log("ok   no workflow names the staged file");
 console.log("ok   the staged file names no Installer secret");
 console.log("ok   the staged verify-macos runs test-signed-dmg.sh");
 console.log("ok   the staged hdiutil create arguments equal the app job's");
+console.log(
+  "ok   the staged requirement forms, normalizer and clause splitter equal test-signed-dmg.sh's",
+);
 console.log(
   `ok   the app job measures all ${called.size} tools the staged scripts call`,
 );

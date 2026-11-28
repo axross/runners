@@ -28,11 +28,12 @@
 #     a pass, an app archive that has another hash and a disk image that has
 #     another, each refused.
 # it also runs check-staged-macos-app.mjs, which checks that no workflow names the
-# staged file, that its hdiutil create arguments equal the app job's and that the
-# app job measures every tool it calls, and shows each of those checks fail on an
-# altered copy. takes an optional staged file for the job cases; the default is
-# the staged file. needs GNU sed and sha256sum, so it runs on Linux (CI), not on
-# macOS.
+# staged file, that its hdiutil create arguments equal the app job's, that its
+# designated requirement forms, normalizer and clause splitter equal
+# test-signed-dmg.sh's and that the app job measures every tool it calls, and shows
+# each of those checks fail on an altered copy. takes an optional staged file for
+# the job cases; the default is the staged file. needs GNU sed and sha256sum, so it
+# runs on Linux (CI), not on macOS.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -62,7 +63,7 @@ image_sha256="$(printf '%s\n' "$image_content" | sha256sum | cut -d' ' -f1)"
 
 node "${here}/check-staged-macos-app.mjs" "$repository"
 # shellcheck disable=SC2016 # the text the sed edits find is literal, not an expansion.
-for check in hdiutil-arguments unmeasured-tool unmeasured-literal-tool unmeasured-literal-xcrun-tool workflow-names-file; do
+for check in hdiutil-arguments requirement-form-a requirement-form-b requirement-normalizer requirement-clauses unmeasured-tool unmeasured-literal-tool unmeasured-literal-xcrun-tool workflow-names-file; do
   altered="${work}/altered-${check}"
   mkdir -p "${altered}/.github/staged" "${altered}/.github/workflows" "${altered}/.github/scripts/tests"
   cp "${repository}/.github/staged/release-macos-app.yaml" "${altered}/.github/staged/"
@@ -70,6 +71,10 @@ for check in hdiutil-arguments unmeasured-tool unmeasured-literal-tool unmeasure
   cp "${repository}/.github/scripts/tests/test-signed-dmg.sh" "${altered}/.github/scripts/tests/"
   case "$check" in
     hdiutil-arguments) sed -i 's/-format UDZO -ov "\$image"; do/-format UDBZ -ov "$image"; do/' "${altered}/.github/staged/release-macos-app.yaml" ;;
+    requirement-form-a) sed -i '/^ *form_a=/s/6\.2\.6/6.2.7/' "${altered}/.github/staged/release-macos-app.yaml" ;;
+    requirement-form-b) sed -i '/^ *form_b=/s/6\.1\.9\]/6.1.8]/' "${altered}/.github/staged/release-macos-app.yaml" ;;
+    requirement-normalizer) sed -i "s| -e 's/^ //'||" "${altered}/.github/staged/release-macos-app.yaml" ;;
+    requirement-clauses) sed -i 's|split(\$0, parts, / and /)|split($0, parts, / or /)|' "${altered}/.github/staged/release-macos-app.yaml" ;;
     unmeasured-tool) sed -i 's/bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"/bin_tools="security codesign openssl plutil shasum xcrun ditto"/' "${altered}/.github/workflows/release-build.yaml" ;;
     unmeasured-literal-tool) sed -i '/check_hash "unsigned\//a\          /usr/bin/stat -f %z x' "${altered}/.github/staged/release-macos-app.yaml" ;;
     unmeasured-literal-xcrun-tool)
