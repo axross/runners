@@ -21,5 +21,6 @@ container. An Apple silicon Mac runs each job in a fresh Tart VM.
 - [Build or replace the golden Linux VM and recover from an interrupted build.](./golden-build.md)
 - [Configure pools, check workflow routing, monitor runners and remove a retired pool's VMs.](./mac-pools.md)
 - [Interpret a stopped instance after sleep or a network change and decide when to resume.](./mac-resume.md)
+- [Observe, read-only and before anything restarts it, a stuck Linux job VM whose network overlaps Docker's bridge.](./mac-overlap-observation.md)
 - [Size macOS guests, update their base and diagnose the two-guest limit.](./macos-vm.md)
 - [Verify behavior on Mac hardware and find out which claims have native evidence.](./mac-verification.md)
