@@ -30,9 +30,11 @@ units, which keeps it inside the Credential Manager's 2560 bytes.
   a non-ASCII, non-BMP one, and sends a `token_set` through an agent whose store is
   the Credential Manager to a registration; only the Windows CI job runs it. Its tests
   take turns at the Credential Manager, as a precaution, because the crate's upstream
-  reports it losing updates under concurrent use; the cause of the CI misses is not
-  established, and [#148](https://github.com/axross/runners/issues/148) holds the
-  investigation and the probe's result. The tests neither retry a read nor warm the
+  reports it losing updates under concurrent use. The Windows CI job has intermittently
+  seen a miss, where a read right after a successful write returned no value or the
+  earlier one; the cause is not established, and
+  [#148](https://github.com/axross/runners/issues/148) holds the investigation and the
+  probe's result. The tests neither retry a read nor warm the
   Credential Manager up first, since either would hide a miss rather than remove
   its cause.
 - **macOS.** The user's login keychain, through `security-framework`, as one generic
