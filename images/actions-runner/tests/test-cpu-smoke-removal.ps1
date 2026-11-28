@@ -16,7 +16,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'smoke-docker-commands.ps1')
 
 $smokeScript = Join-Path $PSScriptRoot 'cpu-affinity-smoke.ps1'
-$tree = [Management.Automation.Language.Parser]::ParseFile($smokeScript, [ref]$null, [ref]$null)
+$parseErrors = $null
+$tree = [Management.Automation.Language.Parser]::ParseFile($smokeScript, [ref]$null, [ref]$parseErrors)
+if ($parseErrors.Count -gt 0) { throw "$smokeScript does not parse: $($parseErrors[0].Message)" }
 $definition = $tree.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Confirm-CpuSmokeRemoval' }, $true)
 if ($null -eq $definition) { throw "Confirm-CpuSmokeRemoval is not defined in $smokeScript" }
 . ([scriptblock]::Create($definition.Extent.Text))
