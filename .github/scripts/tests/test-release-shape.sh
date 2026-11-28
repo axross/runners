@@ -7,9 +7,9 @@
 # dispatch; a job without its guard, its runner, its permissions or its place in
 # the chain; a step condition that could skip assemble-signed's check; a write to
 # SHA256SUMS in the build's assemble job; a Mac app job that holds a secret, signs,
-# uses a cache or an action other than checkout and artifact upload, does not write
-# the release version before it compiles, joins the unsigned set or leaves a
-# measured tool out; PATH, BASH_ENV or ENV set in release.yaml; and a way past a
+# uses a cache or an action other than checkout and artifact upload, does not check
+# the compiler's host target or write the release version before it compiles, joins
+# the unsigned set or leaves a measured tool out; PATH, BASH_ENV or ENV set in release.yaml; and a way past a
 # failed job, whatever the case of its status function. a change the test cannot
 # find in the files fails the test, so it cannot go stale and pass.
 # shellcheck disable=SC2016 # the texts the changes find and replace are literal, not expansions.
@@ -306,6 +306,17 @@ expect_fail "a release version step that only mentions the script in a comment" 
   "$release_build" "$stamp_step" $'          # bash ../.github/scripts/set-release-version.sh "$VERSION"\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
 expect_fail "a release version step whose VERSION is not the input" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
   "$release_build" $'        env:\n          VERSION: ${{ inputs.version }}\n        run: |\n          bash ../.github/scripts/set-release-version.sh "$VERSION"' $'        env:\n          VERSION: 9.9.9\n        run: |\n          bash ../.github/scripts/set-release-version.sh "$VERSION"'
+expect_fail "a release version step that ignores the script's failure" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$release_build" "$stamp_step" $'          bash ../.github/scripts/set-release-version.sh "$VERSION" || true\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a release version step that gives the script another argument" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$release_build" "$stamp_step" $'          bash ../.github/scripts/set-release-version.sh "$VERSION" "$RUNNER_TEMP"\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+host_block=$'      # the build is native, so a change of runner image fails here instead of\n      # shipping an executable of the wrong architecture.\n      - name: Check The Compiler\'s Host Target\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple-darwin" ]]; then\n            echo "error: rustc\'s host target is \'${host}\', not aarch64-apple-darwin; this runner image builds the wrong architecture" >&2\n            exit 1\n          fi\n          echo "rustc\'s host target is ${host}."\n'
+expect_fail "a Mac app job that does not check the compiler's host target" "must fail unless rustc's host target is aarch64-apple-darwin" \
+  "$release_build" "$host_block" ''
+expect_fail "a Mac app job that checks for another host target" "must fail unless rustc's host target is aarch64-apple-darwin" \
+  "$release_build" '[[ "$host" != "aarch64-apple-darwin" ]]' '[[ "$host" != "x86_64-apple-darwin" ]]'
+expect_fail "a host target check with a condition" "must fail unless rustc's host target is aarch64-apple-darwin" \
+  "$release_build" $'      - name: Check The Compiler\'s Host Target\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple' $'      - name: Check The Compiler\'s Host Target\n        if: github.event_name == \'workflow_dispatch\'\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple'
 signing_anchor='          test -f "${app}/Contents/Resources/icon.icns"'
 for signing in '/usr/bin/codesign --force --sign - "$app"' '/usr/bin/codesign -s - "$app"' '/usr/bin/codesign -fs - "$app"' '/usr/bin/security import cert.p12 -k login.keychain' '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
   expect_fail "the Mac app job running ${signing}" "signs, imports a certificate, notarizes or staples" \
@@ -315,6 +326,10 @@ expect_fail "the measuring step's marker in a comment of another step" "signs, i
   "$release_build" "$signing_anchor" "${signing_anchor}"$'\n          # MEASURED: signing tools\n          /usr/bin/xcrun notarytool submit app.zip'
 expect_fail "a measuring step that does not run the openssl decode" "does not run /usr/bin/openssl enc -base64 -d -A" \
   "$release_build" "printf 'dGVzdA==' | /usr/bin/openssl enc -base64 -d -A" "printf 'dGVzdA==' | /usr/bin/openssl version"
+for operation in '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
+  expect_fail "the measuring step running ${operation}" "signs, imports a certificate, notarizes or staples" \
+    "$release_build" '          echo "MEASURED: signing tools:${found}"' $'          echo "MEASURED: signing tools:${found}"\n          '"${operation}"
+done
 expect_fail "a measuring step that does not list hdiutil" "does not measure /usr/bin/hdiutil" \
   "$release_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun ditto"'
 expect_fail "a measuring step that does not list ditto" "does not measure /usr/bin/ditto" \

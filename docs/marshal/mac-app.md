@@ -49,7 +49,9 @@ finds `softnet`, on it, as
 [macOS Runner Host](../runner-hosts/mac-setup.md#installing-tart-and-softnet) says. The `app-macos` job of
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the app with
 `--no-sign` at the release's `X.Y.Z`, or `0.0.0` in a dry run, and checks its layout.
-Before anything compiles it writes the release version into the CLI's and the app's
+Before anything compiles it fails unless the compiler's host target is
+`aarch64-apple-darwin`, so a change of runner image cannot ship another architecture,
+and it writes the release version into the CLI's and the app's
 manifests and lockfiles with `set-release-version.sh`, as the Windows app's build does, so the
 executable's own product version is the release's and not the placeholder `0.0.0-dev`.
 It packs the app in a `ditto` archive, whose SHA-256 is the workflow's `app_sha256`

@@ -164,9 +164,9 @@ release-profile tests, checks that the app's product version is the stamped vers
 and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
 the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
 artifact of the run. Its `app-macos` job, on a macOS hosted runner with `contents: read`
-and a 45-minute timeout, installs `tauri-cli` the same way, runs the location rule's
-tests in the release profile, bundles the unsigned `Marshal.app` at bundle version
-`0.0.0`, writes the release version into the CLI's and the app's manifests and lockfiles
+and a 45-minute timeout, checks that the compiler's host target is `aarch64-apple-darwin`, installs `tauri-cli`
+the same way, runs the location rule's tests in the release profile, bundles the
+unsigned `Marshal.app` at bundle version `0.0.0`, writes the release version into the CLI's and the app's manifests and lockfiles
 before it compiles, so the executable carries it as the Windows app's does, fails as the `app` job
 does if the build changed a tracked file beyond that, checks the
 bundle's layout, and builds an unsigned disk image with `hdiutil`. It keeps the app's

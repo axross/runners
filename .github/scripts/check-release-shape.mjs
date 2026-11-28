@@ -298,13 +298,15 @@ const MAC_APP_MEASURED = ["ditto", "hdiutil"];
 // the xcrun tools the measuring step looks up with xcrun --find.
 const MAC_APP_XCRUN_TOOLS = ["notarytool", "stapler"];
 const MAC_APP_MEASURING_STEP = "Check The Signing Tools";
+const MAC_APP_HOST = "aarch64-apple-darwin";
 
 /**
  * records a Mac app job that holds a secret, uses an action other than checkout
  * and artifact upload, signs, does not hand over its archive's hash, does not
- * write the release version before it compiles or writes a fixed one, mixes its
- * files into the unsigned set, or leaves a measured tool out of its signing
- * tools step in problems, without running its scripts.
+ * write the release version before it compiles or writes a fixed one, does not
+ * check that it builds for arm64, mixes its files into the unsigned set, or leaves
+ * a measured tool out of its signing tools step in problems, without running its
+ * scripts.
  */
 function checkMacAppJob() {
   const file = "release-build.yaml";
@@ -363,15 +365,34 @@ function checkMacAppJob() {
         `${file}'s ${MAC_APP_JOB} job must write the release version before any step that runs cargo`,
       );
     if (
-      !/\bset-release-version\.sh\s+"\$VERSION"/.test(code(scripts[stamp])) ||
+      !/^\s*bash\s+\S*set-release-version\.sh\s+"\$VERSION"\s*$/m.test(
+        code(scripts[stamp]),
+      ) ||
       text(scripts[stamp].env?.VERSION) !== "${{ inputs.version }}"
     )
       problem(
         `${file}'s ${MAC_APP_JOB} job must pass set-release-version.sh "$VERSION", set from inputs.version, and no fixed version`,
       );
   }
-  // only the measuring step, found by its name, names notarytool and stapler to
-  // look them up, so only it is left out of the scan for them.
+  const hostCheck = scripts.findIndex(
+    (step) =>
+      /\brustc\s+-vV\b/.test(code(step)) &&
+      new RegExp(String.raw`!=\s*"?${MAC_APP_HOST}"?\s*\]\]`).test(
+        code(step),
+      ) &&
+      /\bexit 1\b/.test(code(step)),
+  );
+  if (hostCheck === -1 || "if" in scripts[hostCheck])
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must fail unless rustc's host target is ${MAC_APP_HOST}, in a step with no condition`,
+    );
+  else if (firstCargo !== -1 && hostCheck >= firstCargo)
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must check rustc's host target before any step that runs cargo`,
+    );
+  // only the measuring step, found by its name, looks notarytool and stapler up
+  // with `xcrun --find`; any other mention of them, and an operation of either in
+  // the measuring step, is a finding.
   const measuringStep = scripts.find(
     (step) => text(step.name) === MAC_APP_MEASURING_STEP,
   );
@@ -379,7 +400,9 @@ function checkMacAppJob() {
     const found = [
       /\bcodesign\b[^\n]*\s(?:--sign\b|-[A-Za-z]*s[A-Za-z]*\b)/,
       /\bsecurity\s+import\b/,
-      step === measuringStep ? null : /\b(?:notarytool|stapler)\b/,
+      step === measuringStep
+        ? /\bxcrun"?\s+(?:notarytool|stapler)\b/
+        : /\b(?:notarytool|stapler)\b/,
     ].find((pattern) => pattern?.test(code(step)));
     if (found)
       problem(

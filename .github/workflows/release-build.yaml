@@ -251,6 +251,16 @@ jobs:
           persist-credentials: false
       - name: Install Pinned Rust Toolchain
         run: rustup show active-toolchain || rustup toolchain install
+      # the build is native, so a change of runner image fails here instead of
+      # shipping an executable of the wrong architecture.
+      - name: Check The Compiler's Host Target
+        run: |
+          host="$(rustc -vV | tr -d '\r' | sed -n 's/^host: //p')"
+          if [[ "$host" != "aarch64-apple-darwin" ]]; then
+            echo "error: rustc's host target is '${host}', not aarch64-apple-darwin; this runner image builds the wrong architecture" >&2
+            exit 1
+          fi
+          echo "rustc's host target is ${host}."
       # before anything compiles, so `--locked` fails if a manifest and its lockfile
       # disagree, and the app's product version is the input's. the diff of the
       # stamped tree is kept for the check after the build.
