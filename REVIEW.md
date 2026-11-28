@@ -330,7 +330,10 @@ Apply the lens for each kind of file in the diff.
   code or a component code, a download that is none of the pinned WiX package, the
   recorded Rust toolchain exception, the recorded `tauri-cli` exception installed at
   the pin `tauri-cli-version.sh` reads, the `tauri-cli` crate archive that the staged
-  `update-tool` refuses unless it matches `app/tauri-cli.crate.sha256`, or the Node that
+  `update-tool` refuses unless it matches `app/tauri-cli.crate.sha256`, the pinned
+  `cargo-deny` that the pinned `jdx/mise-action` installs in `update-tool`, with
+  `install_args: cargo-deny` and `cache: false` (recorded under Security's release
+  authority), or the Node that
   `actions/setup-node` installs (recorded under Security's Pinning Convention), or a departure from the record that
   the change does not also make to the record, is a finding. Install-time
   verification is optional for the installer, so a document or comment that presents
