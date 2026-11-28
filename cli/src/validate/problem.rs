@@ -34,6 +34,7 @@ pub enum Key {
     /// the keys below exist only in a format whose file carries settings of its own.
     SchemaVersion,
     RoutingLabel,
+    ScaleSet,
     Lifecycle,
     StartAtLogin,
     StartRunnersOnLaunch,
@@ -43,7 +44,7 @@ pub enum Key {
 }
 
 impl Key {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::ImageName,
         Self::Repositories,
         Self::Budget,
@@ -67,6 +68,7 @@ impl Key {
         Self::MountPath,
         Self::SchemaVersion,
         Self::RoutingLabel,
+        Self::ScaleSet,
         Self::Lifecycle,
         Self::StartAtLogin,
         Self::StartRunnersOnLaunch,
@@ -84,6 +86,7 @@ impl Key {
                 | Self::RunnerGroup
                 | Self::SchemaVersion
                 | Self::RoutingLabel
+                | Self::ScaleSet
                 | Self::Lifecycle
                 | Self::StartAtLogin
                 | Self::StartRunnersOnLaunch
@@ -191,6 +194,9 @@ pub enum Kind {
         os: Option<Os>,
     },
     DuplicateLabel(String),
+    ScaleSetCollision {
+        other: usize,
+    },
     VolumesUnsupported,
     /// a pool whose operating system the host cannot run.
     OsUnsupported(Os),
@@ -228,6 +234,11 @@ pub enum Kind {
         other: usize,
         /// whether the shared labels include the file's `routing_label`.
         routing_label_shared: bool,
+    },
+    /// the later, on-demand pool's scale-set name is a label of an earlier
+    /// organisation pool of its owner, so the name is the key to change.
+    ScaleSetOrganizationLabel {
+        other: usize,
     },
     MacosVmsOverLimit {
         total: u32,
@@ -346,6 +357,10 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
             "'{label}' is a platform label that a {os} pool on {host} cannot provide, so list only non-platform labels"
         ),
         Kind::DuplicateLabel(label) => format!("duplicate label '{label}'"),
+        Kind::ScaleSetCollision { other } => format!(
+            "scale-set routing or cleanup identity collides with {}; use a distinct scale-set name",
+            entry_path(*other)
+        ),
         Kind::VolumesUnsupported => {
             format!("not supported on {host}, because VM pools keep no volumes")
         }
@@ -378,6 +393,10 @@ pub fn rule_text<'k>(kind: &'k Kind, wording: &Wording) -> RuleText<'k> {
                 entry_path(*other)
             )
         }
+        Kind::ScaleSetOrganizationLabel { other } => format!(
+            "ambiguous routing for pools that may serve the same repository; this scale-set name is also a label at {}; choose a scale-set name that no organization pool of the same owner uses as a label",
+            entry_path(*other)
+        ),
         Kind::MacosVmsOverLimit { total, limit } => format!(
             "macOS pools total {total} VMs (the sum of their {per_pool}), above the limit of {limit}"
         ),

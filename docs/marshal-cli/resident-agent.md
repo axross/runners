@@ -34,6 +34,8 @@ shows both halves and runs again in the release profile in CI.
 | ------------------- | ----------------------------------------------------------------------------------- |
 | `agent::machine`    | The agent's state, and what each request, failure and changed executable does to it |
 | `agent::core`       | The pools' slots, with each token read from the store and late pools started        |
+| `agent::on_demand`  | Each on-demand pool's listener, demand, admission and owned registration cleanup    |
+| `scaleset`          | The bounded HTTPS client for repository scale sets and their runner lifecycle       |
 | `agent::state`      | Where the agent is, why it is stopped, and what it knows of its configuration       |
 | `agent::tokens`     | The pools' token source, read from the store, and the changes that start late pools |
 | `agent::view`       | The snapshot, built from the state, the board, the retained record and the tokens   |
@@ -264,7 +266,15 @@ the fake `docker` and a GitHub stub, a second agent refused, and the log continu
 with ten files kept. `tests/agent_drain.rs` covers the update drain: idle, busy and
 unknown runners, the bound, the reachable rows of its state table, a cancelled drain,
 a backing-off slot, a pool waiting for a token, a core failure, and diagnostic
-finalisation.
+finalisation. `tests/agent_on_demand.rs` runs on-demand pools against a loopback
+scale-set service: demand against capacity, a stop's exact cleanup, edits and
+reloads with cleanup still open, recovery of an unknown registration or session,
+the update drain beside a failed job or cleanup, the store, status and
+refused-host failures of a pool, and that no credential reaches a connection or
+the log. `tests/scaleset_client.rs` covers the scale-set client against the same
+kind of service: the protocol's payloads and progress, the typed statuses and rate
+limits, the bounded sizes, redirects and timeouts, the registration exchange's
+retries, and the headers each request sends.
 
 The Windows CI step `tests/ci/control-pipe-security.ps1` runs its checks against
 the `serve` mode of the helper and against `serve-agent`, which opens the agent's

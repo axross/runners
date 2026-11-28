@@ -18,6 +18,7 @@ static OWNER: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9][A-Za-z0-
 static REPOSITORY: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9_.-]+\z"));
 static IMAGE_NAME: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/@-]*\z"));
 static LABEL: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*\z"));
+static SCALE_SET_CHARACTERS: LazyLock<Regex> = LazyLock::new(|| compile(r"^[A-Za-z0-9_.-]+\z"));
 static MOUNT_PATH: LazyLock<Regex> = LazyLock::new(|| compile(r"^/[A-Za-z0-9_./-]+\z"));
 // a drive letter and a backslash, or a UNC path; a path that is only rooted, such
 // as C:name or \name, resolves against a directory or drive the host does not control.
@@ -50,6 +51,19 @@ pub fn is_label(text: &str) -> bool {
     LABEL.is_match(text)
 }
 
+const MAX_SCALE_SET_NAME_BYTES: usize = 45;
+
+/// whether `text` is nonempty and made only of the characters a scale-set name allows.
+#[must_use]
+pub fn has_scale_set_characters(text: &str) -> bool {
+    SCALE_SET_CHARACTERS.is_match(text)
+}
+
+#[must_use]
+pub fn is_scale_set_name(text: &str) -> bool {
+    text.len() <= MAX_SCALE_SET_NAME_BYTES && has_scale_set_characters(text)
+}
+
 #[must_use]
 pub fn is_mount_path(text: &str) -> bool {
     MOUNT_PATH.is_match(text)
@@ -77,6 +91,7 @@ mod tests {
             is_repository("a"),
             is_image_name("a"),
             is_label("a"),
+            is_scale_set_name("a"),
             is_mount_path("/a"),
             is_windows_token_path("C:\\a"),
             is_windows_directory("C:\\a"),
@@ -90,8 +105,24 @@ mod tests {
         assert!(!is_repository("abc\n"));
         assert!(!is_image_name("abc\n"));
         assert!(!is_label("abc\n"));
+        assert!(!is_scale_set_name("abc\n"));
+        assert!(!has_scale_set_characters("abc\n"));
         assert!(!is_mount_path("/abc\n"));
         assert!(!is_windows_directory("C:\\abc\n"));
+    }
+
+    #[test]
+    fn a_scale_set_name_is_one_to_forty_five_ascii_letters_digits_hyphens_underscores_or_dots() {
+        let longest = "a".repeat(MAX_SCALE_SET_NAME_BYTES);
+        assert!(is_scale_set_name(&longest));
+        assert!(!is_scale_set_name(&format!("{longest}a")));
+        assert!(!is_scale_set_name(""));
+        assert!(is_scale_set_name("Axpc-linux_1.x"));
+        assert!(!is_scale_set_name("axpc linux"));
+        assert!(!is_scale_set_name("axpc/linux"));
+        assert!(!is_scale_set_name("axpc-\u{e9}"));
+        assert!(has_scale_set_characters(&format!("{longest}a")));
+        assert!(!has_scale_set_characters(""));
     }
 
     #[test]

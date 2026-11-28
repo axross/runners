@@ -67,8 +67,8 @@ cross-compilation and no cache action, and:
 2. writes the version with `set-release-version.sh`, and maps the installer's
    version, as [Installers](#installers) describes;
 3. runs the CLI's base-address, instance-roots, build-definition, release-overrides,
-   and agent-overrides tests and the app's mode-dispatch tests with `--release` and
-   `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
+   agent-overrides, and scale-set client tests and the app's mode-dispatch tests
+   with `--release` and `MARSHAL_EXPECT_RELEASE=1`, the same tests the merge checks run in the release
    profile, on the target itself;
 4. installs `tauri-cli` with `cargo install tauri-cli --version =<pin> --locked`
    into a directory under `$RUNNER_TEMP`, with the pin read from

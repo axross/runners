@@ -82,6 +82,11 @@ impl std::error::Error for RegistrationError {}
 
 /// something that can turn a request into a JIT configuration.
 pub trait Registrar {
+    /// shares the same debug-only fake endpoint with scale-set registrations.
+    fn base_override(&self) -> Option<&str> {
+        None
+    }
+
     fn request_jit(
         &self,
         request: &JitRequest<'_>,
@@ -286,6 +291,10 @@ impl GitHubRegistrar {
 }
 
 impl Registrar for GitHubRegistrar {
+    fn base_override(&self) -> Option<&str> {
+        (self.base_url != GITHUB_API).then_some(self.base_url.as_str())
+    }
+
     async fn request_jit(&self, request: &JitRequest<'_>) -> Result<Secret, RegistrationError> {
         self.send(request)
             .await
@@ -298,7 +307,7 @@ fn too_large(cap: usize) -> String {
 }
 
 /// the error's own text and every cause's, in order.
-fn error_chain(error: &dyn std::error::Error) -> String {
+pub(crate) fn error_chain(error: &dyn std::error::Error) -> String {
     let mut text = error.to_string();
     let mut source = error.source();
     while let Some(cause) = source {

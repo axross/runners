@@ -12,6 +12,7 @@ mod core;
 pub mod executable;
 pub mod log;
 pub mod machine;
+pub(crate) mod on_demand;
 pub mod run;
 pub mod server;
 pub mod snapshot;

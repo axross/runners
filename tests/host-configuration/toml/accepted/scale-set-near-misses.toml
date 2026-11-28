@@ -1,0 +1,21 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "axpc-app"
+repository = "octo/hello"
+runners = 1
+scale_set = "AXPC-App"
+
+[[pool]]
+name = "other"
+repository = "octo/hello"
+runners = 1
+scale_set = "axpc-appx"
+
+[[pool]]
+name = "third"
+repository = "octo/elsewhere"
+runners = 1
+labels = ["axpc-appx"]
