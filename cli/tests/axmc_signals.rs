@@ -467,6 +467,32 @@ async fn on_axmc_a_network_without_the_routers_hardware_address_arms_no_resume()
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn on_axmc_a_hardware_address_first_read_after_the_runners_started_still_arms_a_resume() {
+    // the router's address could not be read at the first reading and was read at a
+    // later one of the same network
+    let host = holding_host();
+    host.set_network("interface=en0\nrouter=192.0.2.1\n");
+    let stub = github();
+    let agent = host.agent(&stub.address, &["linuxone"]);
+    let conn = Conn::open(&agent.roots).await;
+    conn.until_runner_runs().await;
+    host.set_network(WIFI_NETWORK);
+    // ten checks on the same network, now with its hardware address
+    std::thread::sleep(Duration::from_secs(1));
+    set(&conn, "resume_after_stop", true).await;
+
+    host.sleep();
+    let stopped = conn.until_state("stopped").await;
+    assert_eq!(resume_of(&stopped), waiting_after("slept"));
+    conn.until_state("running").await;
+    conn.until_runner_runs().await;
+
+    conn.ok("quit").await;
+    let (code, stderr) = agent.finish(Duration::from_secs(30)).await;
+    assert_eq!(code, Some(0), "{stderr}");
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn on_axmc_the_sixth_signal_stop_within_an_hour_stops_with_resumed_too_often() {
     let host = holding_host();
     let stub = Stub::start((0..40).map(|_| registered()).collect::<Vec<Reply>>());

@@ -177,7 +177,9 @@ impl<'a, S: SignalSource, K: Clock> SignalMonitor<'a, S, K> {
     }
 
     fn observe(&self, watch: &mut NetworkWatch, reading: NetworkReading) -> Option<StopReason> {
-        match watch.observe(reading) {
+        let outcome = watch.observe(reading);
+        self.keep_record(watch);
+        match outcome {
             WatchOutcome::Steady | WatchOutcome::Waiting => None,
             WatchOutcome::Differing => {
                 self.log.warn(
@@ -187,7 +189,6 @@ impl<'a, S: SignalSource, K: Clock> SignalMonitor<'a, S, K> {
                 None
             }
             WatchOutcome::Recorded(network) => {
-                *self.recorded.borrow_mut() = Some(network.clone());
                 self.waiting.set(false);
                 self.gate.open();
                 self.log.info(&format!(

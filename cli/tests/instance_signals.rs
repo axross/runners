@@ -607,3 +607,19 @@ async fn the_monitor_keeps_the_network_it_recorded_and_reads_the_next_one_for_a_
     monitor.begin();
     assert_eq!(monitor.recorded(), None, "a new run records afresh");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_monitor_keeps_a_hardware_address_that_a_later_reading_of_the_same_network_adds() {
+    let without = network("en0", [192, 0, 2, 1], None);
+    let setup = Signaled::new([without, wifi(), wifi(), wifi()]);
+    let monitor = setup.monitor();
+    tokio::select! {
+        _ = monitor.watch() => panic!("the watch stopped"),
+        () = after_reads(&setup.signals, 3) => {}
+    }
+    let recorded = monitor.recorded().expect("a network is recorded");
+    assert!(
+        recorded.hardware.is_some(),
+        "the router's hardware address read after the first reading is kept: {recorded:?}"
+    );
+}
