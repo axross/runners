@@ -29,7 +29,11 @@ The same content can reach a human directly or travel through a parent. A parent
 
 A runtime's **dedicated question mechanism** presents a decision for the human to answer, through choices or free-form input. It may return the human's answer during the call, or acknowledge a submission and deliver a reply in a later turn. A submission receipt establishes acceptance by the mechanism, not client rendering or human receipt. Keeping those observations separate prevents an unanswered decision from becoming permission to proceed.
 
-The route is chosen by what the session exposes and permits for this question, never by what a host is assumed to provide. Invocation conditions and turn sequencing belong to the actual host contract; this reference requires no particular tool, project-specific adapter, or universal end-of-turn rule. Independent work follows the host's instructions while a required answer is pending. A missing or failed route changes how a question is returned, never who owns the decision.
+The route is chosen by what the session exposes and permits for this question, never by what a host is assumed to provide. Invocation conditions and turn sequencing belong to the actual host contract; this reference requires no particular tool, project-specific adapter, or universal end-of-turn rule. Independent work follows the host's instructions while a required answer is pending. A missing or failed route changes how a question is returned, never who owns the decision. The launcher is whoever started the run: a parent agent, or the human or automation that wrote its launch prompt. A launch-prompt instruction to communicate through the launcher does not replace asking the human through an eligible mechanism, because eligibility stays with the tool contract; an explicit prohibition on asking the human directly is a conflict that the host's actual instruction hierarchy resolves.
+
+**Launcher Example:**
+
+> "Send questions to me" still means asking the human through an eligible mechanism; "never ask the human yourself" is a conflict for the host's actual instruction hierarchy to resolve.
 
 **Recovery Example:**
 

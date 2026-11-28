@@ -1,6 +1,6 @@
 # reads back the security descriptor of a live control pipe that the debug
 # helper opens, and fails unless it grants the current user alone;
-# docs/operations/cli.md describes the test. CI runs it under PowerShell 7 on
+# docs/marshal-cli/foreground-instance.md describes the test. CI runs it under PowerShell 7 on
 # the Windows hosted runner.
 param(
     [Parameter(Mandatory = $true)]

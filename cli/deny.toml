@@ -1,6 +1,6 @@
 # cargo-deny policy for the CLI. `mise run deny:rust` runs the bans, licenses and
 # sources checks, which need no advisory database; the advisory check runs in
-# .github/workflows/rust-advisories.yaml. docs/operations/cli.md records why
+# .github/workflows/rust-advisories.yaml. docs/marshal-cli/dependencies.md records why
 # each crate and licence is accepted.
 
 [graph]

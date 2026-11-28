@@ -1,5 +1,5 @@
 //! `start`: runs the host's pools in the foreground as the machine's one instance,
-//! or asks a stopped instance to resume; see `docs/operations/cli.md`.
+//! or asks a stopped instance to resume; see `docs/marshal-cli/foreground-commands.md`.
 
 use std::convert::Infallible;
 use std::ffi::{OsStr, OsString};
@@ -471,7 +471,7 @@ fn on_signal(
 /// on Windows, waits for the console to close or the user to log off or the machine
 /// to shut down; the runtime's handler does not return to the operating system for
 /// these, so the process lives until `start` has stopped the instance within
-/// [`CLOSE_REMOVE_BUDGET`], see `docs/operations/cli.md`.
+/// [`CLOSE_REMOVE_BUDGET`], see `docs/marshal-cli/foreground-commands.md`.
 #[cfg(windows)]
 async fn console_closed(log: &dyn Log) {
     use tokio::signal::windows::{ctrl_close, ctrl_logoff, ctrl_shutdown};
@@ -498,7 +498,7 @@ async fn console_closed(_log: &dyn Log) {
 
 /// puts this process in a Job Object with kill-on-close and never closes its handle,
 /// so the operating system closes it when the process ends; see
-/// `docs/operations/cli.md`.
+/// `docs/marshal-cli/foreground-commands.md`.
 #[cfg(windows)]
 pub(crate) fn contain() -> Result<JobLauncher, String> {
     use win32job::{ExtendedLimitInfo, Job};

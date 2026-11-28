@@ -2,7 +2,7 @@
 //! that names no operating system, an in-memory store for tests, an adapter over a
 //! `keyring-core` store, which the Windows Credential Manager provides, and the Mac's
 //! Keychain store; the agent is the only caller, one call at a time;
-//! `docs/operations/cli.md` describes the keys, the Windows entries and the Keychain
+//! `docs/marshal-cli/token-store.md` describes the keys, the Windows entries and the Keychain
 //! items.
 
 mod keyring;

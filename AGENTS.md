@@ -14,19 +14,27 @@ steps. [README.md](./README.md) introduces the project and its current status;
 [Testing](./docs/conventions/testing.md) owns the check commands, and
 [Directory Structure](./docs/conventions/directory-structure.md) owns the layout
 and the technologies, including the toolchain and the format and lint tools.
-[docs/index.md](./docs/index.md) indexes conventions, operations, and the
-glossary.
+[The engineering index](./docs/index.md) groups the documentation by subject.
+Use [the placement convention](./docs/conventions/documentation.md#choose-the-owning-subject)
+when adding or moving a claim.
 
 This repository is public, so its GitHub Actions CI and review jobs run on
 GitHub-hosted runners only, never on a self-hosted one.
 
-This project's fixed agent-comment marker is `<!-- ai-agent -->`. Never push to
-the default branch. Choose a working branch under
-[Branches and Merging](./docs/operations/development-workflow.md#branches-and-merging)
+This project's fixed agent-comment marker is `<!-- ai-agent -->`;
+`<!-- agent -->` is a retired marker, recognized in history and never written.
+Never push to the default branch. Choose a working branch under
+[Branches and Merging](./docs/agent-work/branches.md#branches-and-merging)
 as adopted on the default branch, not an unmerged amendment. Leave merging to
 the maintainer, `@axross`.
 
 ## Response Approach
+
+For a code or documentation change, enter the intended runners checkout and read
+its scoped AGENTS.md. Follow the prerequisites and Loop Engineering route below
+before planning, delegating, or editing, including when the request names a
+skill or asks to continue an issue. For launch examples, see
+[Agent Sessions](./docs/agent-work/session-setup.md#starting-codex-in-the-intended-checkout).
 
 For each requested runners change, the first progress update MUST precede the
 first implementation edit and report:
@@ -35,6 +43,14 @@ first implementation edit and report:
 - The tracking issue or its absence
 - The plan-approval state
 
+Report tracking or approval as unknown while checking it. For a named issue,
+follow [Retrieve state on resume](./docs/agent-work/run-state.md#retrieve-state-on-resume)
+to recover the canonical plan revision, human approval, pending phase, and
+existing work. If the request expands scope, preserve existing edits and obtain
+approval for the revised plan before implementing or delegating the expansion.
+For unchanged approved scope, resume at the pending phase, check the grant and
+host conditions for each effect, and hold an uncovered effect.
+
 The existing Development Workflow remains the owner of the gates.
 
 After loading Professional Behavior, use
@@ -42,18 +58,17 @@ After loading Professional Behavior, use
 project changes, including small code or document edits. Establish the current
 phase before planning or implementation. Standalone read-only work stays outside
 the change gates. This agreement is the maintainer's explicit request that every
-change run deliver through its required verification and the independent review
-selected by
-[Development Workflow](./docs/operations/development-workflow.md), then reach
+change run deliver through its required verification and the
+[post-push review selected for its host](./docs/agent-work/independent-review.md), then reach
 ready or a reported stop naming an unmet gate, without a further prompt.
 That workflow owns the delivery sequence and handoff boundary. Where a host
 still requires a per-session confirmation, the run obtains it at the plan gate,
 before the first action that needs it in a run without one, or when a new
 session resumes the run, and never by stopping after push;
 Agent Sessions describes
-[Claude Code's confirmation](./docs/operations/agent-sessions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
+[Claude Code's confirmation](./docs/agent-work/host-permissions.md#confirming-delivery-at-the-plan-gate-in-claude-code)
 and
-[Amp's plan-gate archive confirmation](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
+[Amp's plan-gate archive confirmation](./docs/agent-work/host-permissions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp).
 Current host instructions and tool usage conditions still apply; for Amp and
 Codex, see the delivery-authorization guidance under Host and delivery routing
 below; for Claude Code, see [Claude Code entry guidance](./CLAUDE.md). Load
@@ -70,7 +85,7 @@ capabilities by task instead of applying every change gate to read-only work:
   before a comment or a doc-comment is written or kept, rather than relying
   on the skill's own trigger words to fire for a session that is only
   writing a comment.
-- MUST read [Development Workflow](./docs/operations/development-workflow.md)
+- MUST read [Development Workflow](./docs/agent-work/change-delivery.md)
   for project changes or tracking issue management, including integration
   reports. For code or document changes, MUST load
   [Loop Engineering](./.claude/skills/loop-engineering/SKILL.md) before planning
@@ -94,17 +109,19 @@ capabilities by task instead of applying every change gate to read-only work:
   and report or to send the options to the launcher, assigns a duty to report to
   the launcher; it MUST NOT be read as replacing the question.
 - MUST read
-  [Asking the Maintainer](./docs/operations/agent-sessions.md#asking-the-maintainer)
+  [Asking the Maintainer](./docs/agent-work/maintainer-decisions.md#asking-the-maintainer)
   when a session holds a maintainer decision, was launched by another session, or
   launches one.
-- MUST delegate investigation, implementation, and advisory pre-flight review
+- MUST delegate investigation, implementation, and pre-push review
   to the qualifying subagents configured in
-  [Agent sessions](./docs/operations/agent-sessions.md#subagents) when the host
+  [Agent sessions](./docs/agent-work/delegate.md#subagents) when the host
   permits them. This agreement is the standing request for those roles; record
-  when no qualifying agent is available or the host refuses the spawn. The
-  `reviewer`'s independent-review use is authorized by the standing delivery
-  grant and the plan-gate review item, not by this request, and its advisory
-  pre-flight use never counts as that review.
+  when no qualifying agent is available or the host refuses the spawn. On
+  Claude Code, a missing or refused `reviewer` leaves only the pre-push
+  review unavailable, under the draft-delivery exception in
+  [Development Workflow](./docs/agent-work/change-delivery.md#deliver-a-draft-when-pre-push-review-is-unavailable);
+  the post-push review does not depend on it, and the `reviewer`'s pre-push
+  review use never counts as that review.
 
 ## Host and delivery routing
 
@@ -113,25 +130,25 @@ Choose guidance from the actual session and changed surface:
 - **Amp:** follow the runtime's current tool contracts. Before any delivery
   effect, and whenever a task arrives framed as "make changes, commit, and
   push", MUST follow
-  [Amp delivery authorization](./docs/operations/agent-sessions.md#amp-delivery-authorization).
-  Consult [Agent sessions](./docs/operations/agent-sessions.md#amp-quality-hooks)
+  [Amp delivery authorization](./docs/agent-work/host-permissions.md#amp-delivery-authorization).
+  Consult [Agent sessions](./docs/agent-work/quality-hooks.md#amp-quality-hooks)
   for the quality-hooks plugin,
-  [the plan-gate confirmation for archiving review child threads](./docs/operations/agent-sessions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp),
+  [the plan-gate confirmation for archiving review child threads](./docs/agent-work/host-permissions.md#confirming-review-thread-cleanup-at-the-plan-gate-in-amp),
   and
-  [its environment provisioning](./docs/operations/agent-sessions.md#amp-environment-provisioning)
+  [its environment provisioning](./docs/agent-work/session-setup.md#amp-environment-provisioning)
   for the `.agents/setup` script.
 - **Codex:** follow the runtime's current tool contracts. Before any delivery
   effect, and whenever a task arrives framed as "make changes, commit, and
   push", MUST follow
-  [Codex delivery authorization](./docs/operations/agent-sessions.md#codex-delivery-authorization).
+  [Codex delivery authorization](./docs/agent-work/host-permissions.md#codex-delivery-authorization).
 - **Claude Code:** consult
-  [Agent sessions](./docs/operations/agent-sessions.md) for startup, hooks, the
-  plan-gate delivery confirmation, subagents, and telemetry.
+  [Agent work](./docs/agent-work/index.md) for session setup, quality hooks,
+  delivery confirmation, delegation, and telemetry.
 - **GitHub:** load
   [GitHub Operation](./.claude/skills/github-operation/SKILL.md) for reads and
-  writes. [Development Workflow](./docs/operations/development-workflow.md)
-  owns this project's delivery path, branch policy, and independent-review
-  route.
+  writes. Follow [change delivery](./docs/agent-work/change-delivery.md),
+  [branch policy](./docs/agent-work/branches.md), and the
+  [post-push review route](./docs/agent-work/independent-review.md).
 - **Reviews:** load [Code Review](./.claude/skills/code-review/SKILL.md) for
   review methodology; the Code Review Rules section below routes the
   project-specific policy. Changes to review or CI infrastructure, runner
@@ -153,7 +170,7 @@ Ownership is part of this project's agent-delivery contract:
 
 Apply [GitHub Operation](./.claude/skills/github-operation/SKILL.md) for
 identity resolution, assignment, read-back, and partial-outcome recovery.
-[Development Workflow](./docs/operations/development-workflow.md#authorizing-delivery-operations)
+[Development Workflow](./docs/agent-work/delivery-grant.md#authorizing-delivery-operations)
 owns the scoped operation grant and its adoption and host boundaries.
 
 ## Code Review Rules
@@ -162,51 +179,52 @@ For every review, MUST read and apply [REVIEW.md](./REVIEW.md) for project check
 and adopted posted-report arrangements, and load
 [Code Review](./.claude/skills/code-review/SKILL.md) for methodology. REVIEW.md
 governs where posted-report instructions differ. Consult
-[Development Workflow](./docs/operations/development-workflow.md) for provider
+[Post-push review](./docs/agent-work/independent-review.md) for provider
 invocation and completion evidence; routing alone does not establish provider
 consumption or review completion.
 
-For mandatory independent review after opening the draft pull request, use the
+For mandatory post-push review after opening the draft pull request, use the
 route selected for the authoring host:
 
-- **Claude Code:** spawn a new, non-fork `reviewer` subagent instance with
-  `isolation: worktree` for each round, never resuming one, assign it as that
-  round's independent review, and ask it to review the pull request and publish
-  its review directly there.
+- **Claude Code:** the Claude CI review: post the Claude review trigger phrase
+  in exactly one top-level pull request comment for each round, never while a
+  previous round is pending, and read its result back from the workflow run and
+  the comments it posts.
 - **Amp:** start a fresh Amp review child thread for each round, never reusing
   one, and ask it to review the pull request and publish its review directly
   there.
 - **Codex, and changes made without an agent:** the Codex review.
 
-The Amp child thread and the Claude Code review subagent MUST each have a fresh
-non-author context, not a fork of the author's conversation or a resumed or
-reused instance, and each Claude Code review subagent MUST be assigned as the
-round's independent review and carry no advisory pre-flight findings. The actor
-assigned an independent review reviews and posts its review itself and does not
-delegate; the subagent-delegation rule above does not apply to it. Advisory
-pre-flight remains a separate checkpoint and does not satisfy independent
-review, and neither do phase-deliverable reviewers or the author's own checks.
-The Independent Review lists every exclusion. Follow
-[The Independent Review](./docs/operations/development-workflow.md#the-independent-review)
+The Amp child thread MUST have a fresh non-author context, not a fork of the
+author's conversation or a resumed or reused thread, and carry no pre-push
+findings. The actor assigned a post-push review reviews and posts
+its review itself and does not delegate; the subagent-delegation rule above does
+not apply to it. Pre-push review remains a separate checkpoint and does not
+satisfy post-push review, and neither do plan reviewers or the
+author's own checks. The Post-Push Review lists every exclusion. Follow
+[The Post-Push Review](./docs/agent-work/independent-review.md#the-post-push-review)
 for qualification, review rounds, publication verification, how a round's
-reviewer is ended or handed over, and the comment-triggered Claude CI review the
-maintainer can select instead.
+reviewer is ended or handed over, and the Claude CI review's request, result, and
+failure rules.
 Current host and tool restrictions still apply; an unavailable selected route
-leaves the independent-review gate unmet rather than authorizing a substitute.
+leaves the post-push review gate unmet rather than authorizing a substitute.
 
 ## Skill maintenance
 
 Every directory under `.claude/skills/` is an installed copy from
-[`axross/skills`](https://github.com/axross/skills), selected and pinned by
-[`skills-lock.json`](./skills-lock.json). Never hand-edit an installed copy.
+[`axross/skills`](https://github.com/axross/skills), selected by
+[`skills-lock.json`](./skills-lock.json), which records the installed set and
+each copy's upstream commit and content hash. A manual refresh selects the
+latest upstream revision and updates the lockfile. Never hand-edit an installed
+copy.
 For refreshes, inventory changes, loading diagnostics, or an upstream gap,
 load
 [Agent Skill Management](./.claude/skills/agent-skill-management/SKILL.md) and
-follow [Agent Skills](./docs/operations/agent-skills.md). For content or
+follow [Agent Skills](./docs/agent-work/skill-installation.md). For content or
 metadata work, also load
 [Agent Skill Authoring](./.claude/skills/agent-skill-authoring/SKILL.md).
 Skill source, installed copies, and active loading have distinct evidence;
-their layout belongs to [Agent Skills](./docs/operations/agent-skills.md).
+their layout belongs to [Agent Skills](./docs/agent-work/skill-installation.md).
 
 At completion, MUST report whether skill maintenance was performed, skipped,
 or blocked. Loop Engineering's

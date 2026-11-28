@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# runs the documented macOS install blocks of docs/operations/cli-recovery.md against the
+# runs the documented macOS install blocks of docs/runner-recovery/install.md against the
 # release dry run's real package, under the shell named by the first argument
 # (zsh, or /bin/bash).
 #
@@ -33,7 +33,7 @@ release_directory="$(cd "$2" && pwd)"
 version="$3"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-document="$(cd "${here}/../../.." && pwd)/docs/operations/cli-recovery.md"
+document="$(cd "${here}/../../.." && pwd)/docs/runner-recovery/install.md"
 extract="${here}/extract-install-block.sh"
 package_name="marshal-${version}-macos-arm64.pkg"
 bare_name="marshal-${version}-macos-arm64"

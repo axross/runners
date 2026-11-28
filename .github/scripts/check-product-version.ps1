@@ -1,7 +1,7 @@
 # fails unless the product version in the version resource of <Executable> is
 # <Version>, the version the release build stamped. release-build.yaml runs it on
 # the built marshal-app.exe, in dry runs too, and once more with a version that
-# differs, which must fail. docs/operations/cli.md describes it.
+# differs, which must fail. docs/marshal-cli/release-artifacts.md describes it.
 param(
   [Parameter(Mandatory = $true)][string]$Executable,
   [Parameter(Mandatory = $true)][string]$Version

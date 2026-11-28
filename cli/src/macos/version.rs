@@ -49,7 +49,7 @@ fn number(text: &str) -> Option<u32> {
     text.parse().ok()
 }
 
-/// the Tart version the host runs are tested with; `docs/operations/cli.md` and the
+/// the Tart version the host runs are tested with; `docs/marshal-cli/tart-backend.md` and the
 /// host document record it too.
 pub const TESTED_TART: Version = Version::new(2, 41, 1);
 

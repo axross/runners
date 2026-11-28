@@ -2,7 +2,7 @@
 //! whose descriptor grants only that user and rejects remote clients, or a Unix
 //! socket of mode `0600` in a `0700` directory, with each peer's user ID checked; only
 //! the holder of the instance lock can open the server, so a leftover socket file
-//! proves no other instance owns it and is replaced; `docs/operations/cli.md`
+//! proves no other instance owns it and is replaced; `docs/marshal-cli/foreground-instance.md`
 //! describes the pipe and the socket.
 
 mod client;

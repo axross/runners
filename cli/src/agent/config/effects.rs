@@ -1,5 +1,5 @@
 //! what a new configuration does to the pools of the one in use, under the rules of
-//! `docs/operations/cli.md`: pools are matched by name; a pool whose only change is
+//! `docs/marshal-cli/config-protocol.md`: pools are matched by name; a pool whose only change is
 //! its runner count gains or loses its highest-numbered slots; any other change of a
 //! pool, of the image or of the budget restarts it. a pool that lists no labels
 //! carries the routing label, so a new routing label restarts those pools only.

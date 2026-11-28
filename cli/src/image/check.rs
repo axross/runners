@@ -1,7 +1,7 @@
 //! the check of a built image: its labels, the four outcomes they sort into, and
 //! the freshness warnings and `status` lines they give; the backend reads the
 //! labels and this module only interprets them, so the same rules apply whichever
-//! backend reads them and however the clock is injected; see `docs/operations/cli.md`.
+//! backend reads them and however the clock is injected; see `docs/marshal-cli/runner-images.md`.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

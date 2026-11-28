@@ -35,7 +35,7 @@ Closes #
 <!--
 copy diff-verifiable and designated out-of-tree criteria verbatim with status,
 evidence links, plan revision, and omitted-criterion accounting, per
-docs/operations/development-workflow.md. Keep this section; the reviewer uses
+docs/agent-work/acceptance-evidence.md. Keep this section; the reviewer uses
 it without opening the tracking issue.
 -->
 

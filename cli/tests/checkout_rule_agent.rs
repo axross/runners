@@ -1,7 +1,7 @@
 //! the checkout rule for the agent: its configuration lives outside any checkout, so
 //! the checkout a `diagnosticDirectory` must lie outside is found from the directory
 //! itself, while `start`'s rule, the checkout above the configuration file, is
-//! unchanged. `docs/operations/cli.md` describes both.
+//! unchanged. `docs/marshal-cli/json-validation.md` describes both.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,

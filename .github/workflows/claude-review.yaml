@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 30
     # the action posts with a Claude GitHub App token it gets by exchanging this
     # job's OIDC token, so the job needs no write scope; see
-    # docs/conventions/security.md.
+    # docs/security/workflow-permissions.md.
     permissions:
       contents: read # actions/checkout reads the default branch
       id-token: write # the OIDC token the action exchanges for the app token
@@ -60,7 +60,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "claude[bot]"
-          # unpinned by necessity; see docs/conventions/security.md.
+          # unpinned by necessity; see docs/security/workflow-permissions.md.
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
           prompt: "/code-review:code-review https://github.com/${{ github.repository }}/pull/${{ github.event.issue.number }} --comment"

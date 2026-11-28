@@ -1,5 +1,5 @@
 //! the container backend, registration and the slot loop that run a host's pools;
-//! `docs/operations/cli.md` describes the layer.
+//! `docs/marshal-cli/pool-runtime.md` describes the layer.
 
 pub mod backend;
 pub mod board;

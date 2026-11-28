@@ -2,7 +2,7 @@
 //! through the configuration's write path and puts it in effect at once, the sign-in
 //! item kept in step with `start_at_login`, the resume after a signal stop, and the
 //! snapshot's `lifecycle` part.
-//! `docs/operations/cli.md` describes them.
+//! `docs/marshal-cli/agent-lifecycle.md` describes them.
 
 use std::time::Instant;
 

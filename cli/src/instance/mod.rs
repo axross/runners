@@ -1,6 +1,6 @@
 //! what makes `start` one instance per machine: its state, the lock, the control
 //! channel, the runtime core it supervises and the log file;
-//! `docs/operations/cli.md` describes the layer.
+//! `docs/marshal-cli/foreground-instance.md` describes the layer.
 
 pub mod channel;
 #[cfg(any(debug_assertions, test))]

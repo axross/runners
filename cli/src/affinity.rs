@@ -1,5 +1,5 @@
 //! where each slot's CPUs start, shared by the plan summary and the backend, and which
-//! allowed CPUs it takes; see `docs/operations/cli.md`.
+//! allowed CPUs it takes; see `docs/marshal-cli/pool-runtime.md`.
 
 use std::fmt;
 

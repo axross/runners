@@ -1,10 +1,15 @@
+---
+type: Procedure
+title: "Selecting verification commands"
+description: "Select the repository checks for a changed surface and identify their host requirements."
+---
+
 # Testing
 
 This project's verification commands: what each `mise` task checks, which of
-them CI runs, and what a test does when the kernel does not refuse the access it
-relies on. [Development Setup](../operations/development-setup.md) installs
+them CI runs, and how to select the checks for a change. [Development Setup](../operations/development-setup.md) installs
 the pinned tools these commands use, and
-[Documentation](./documentation.md) covers the checks for a documentation change.
+[Documentation validation](./documentation.md#checking-a-documentation-change) covers the checks for a documentation change.
 
 ## Check Commands
 
@@ -25,8 +30,9 @@ Run from the repository root.
 | `mise run lint:actions`             | actionlint over `.github/workflows/`                                                                                                                                                                                                                                                                                                                           |
 | `mise run lint:powershell`          | PSScriptAnalyzer over `*.ps1`, `*.psm1`, and `*.psd1` files, flagging syntax Windows PowerShell 5.1 rejects, after checking that its settings still flag PowerShell 7-only syntax; passes when there are none                                                                                                                                                  |
 | `mise run check:links`              | Resolve relative links in `docs/`, `images/`, `hosts/`, `.claude/agents/`, and the root Markdown files                                                                                                                                                                                                                                                         |
-| `mise run check:docs`               | Run the `docs/` structural validators                                                                                                                                                                                                                                                                                                                          |
+| `mise run check:docs`               | Validate the full OKF documentation bundle, metadata, navigation, links and local fragments                                                                                                                                                                                                                                                                    |
 | `mise run check:amp`                | Run the Amp quality-hooks plugin's smoke test (`node --test`, no install needed)                                                                                                                                                                                                                                                                               |
+| `mise run check:claude`             | Exercise the registered Claude SessionStart reminder and bootstrap in disposable checkouts with isolated provisioning inputs                                                                                                                                                                                                                                   |
 | `mise run check:skills`             | Check that `skills-lock.json` and `.claude/skills/` list the same skills                                                                                                                                                                                                                                                                                       |
 | `mise run lint:rust`                | clippy over the CLI, all targets, warnings as errors                                                                                                                                                                                                                                                                                                           |
 | `mise run test:set-release-version` | Run the version write script, `.github/scripts/set-release-version.sh`, against temporary copies of the CLI's and the app's `Cargo.toml` and `Cargo.lock`: a release and a prerelease version, invalid versions, a missing placeholder or package, a duplicate entry, and CRLF files                                                                           |
@@ -56,8 +62,7 @@ it installs and needs. `mise run test:app-render` runs the browser gate alone.
 `mise run check` does not include it, so a checkout without the browser, and any
 host other than Linux x64, can still run `check`. The Check job prepares the gate
 and runs it as its own step after `mise run check`;
-[Development Workflow](../operations/development-workflow.md) says what else that
-job does. [App](../operations/app.md#the-configuration-editor) describes the
+The [merge workflow](../../.github/workflows/merge-checks.yaml) lists the remaining steps. [App](../marshal/configuration.md#the-configuration-editor) describes the
 checks and their limits.
 
 The temporary recovery adds these checks to `mise run check`, without replacing
@@ -78,42 +83,9 @@ current app dry run and app install-block job remain separate. No hosted check,
 unsigned artifact or stand-in satisfies F0's maintainer-owned native evidence.
 
 The installed copies under `.claude/skills/` are generated and are excluded from
-formatting and linting. [Agent Skills](../operations/agent-skills.md) owns
+formatting and linting. [Agent Skills](../agent-work/skill-installation.md) owns
 refreshing them and the upstream comparison that `check:skills` does not do.
 
 ## Tests That Rely on a Refused Write
 
-A test that needs the kernel to refuse access because of permission bits, such
-as a write into a read-only folder, MUST first try that access. The kernel does
-not refuse it for every process: root with `CAP_DAC_OVERRIDE` writes into a
-read-only folder, and Claude Code cloud sessions run as root with that
-capability. A test that assumes the refusal fails there, and `mise run check`,
-which the opt-in `Stop` hook runs, fails with it.
-
-When the access succeeds, the test MUST do one of two things:
-
-- It keeps asserting what still holds and leaves the strict check to a CI step
-  that runs as a non-root user, as the lock-file test in
-  `cli/tests/instance_lock.rs` does with its step that runs the helper as
-  `nobody`.
-- It skips only the dependent step and prints a note that says why, as the
-  read-only-folder step of the agent configuration test in
-  `cli/tests/agent_config.rs` does. Every other step still runs.
-
-On GitHub Actions, where `GITHUB_ACTIONS` is `true`, the test MUST fail instead
-of skipping. CI runs as a non-root user, so a skip there would mean the kernel's
-refusal is no longer exercised and CI would pass without it. The note of a
-passing test is captured, so it shows only with `--nocapture`.
-
-The test MUST try the access instead of reading the user ID, because the user ID
-does not say what the process may do: a root process that has dropped
-`CAP_DAC_OVERRIDE` is refused, and a non-root process can hold it. An attempt
-that would change the file system if it succeeded, such as creating, replacing,
-or removing a file, MUST run in a folder the test creates for it, never in one
-the code under test reads, and MUST remove that folder afterwards: under root
-the attempt succeeds, and its change would appear where the code under test is
-reading.
-
-The `Stop` hook does not drop `CAP_DAC_OVERRIDE` for its check instead, for
-example by running it through `setpriv`: that would fix only the hook, and a
-direct `cargo test` or `mise run check` as root would still fail.
+[Apply the convention for testing a denied write](../contributing/permission-tests.md#tests-that-rely-on-a-refused-write).

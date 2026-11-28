@@ -2,8 +2,8 @@ name: Release
 
 # TODO(#132): remove this temporary CLI route after the published native evidence.
 # releases the fixed historical CLI from a manual dispatch on main, and on
-# nothing else. docs/operations/cli-recovery.md describes the two source identities and
-# docs/conventions/security.md the controls and residual risks. it runs on
+# nothing else. docs/runner-recovery/release.md describes the two source identities and
+# docs/security/release-authority.md the controls and residual risks. it runs on
 # GitHub-hosted runners only.
 #
 # build obtains an isolated historical tree. sign-macos signs and notarizes the macOS
@@ -84,7 +84,7 @@ jobs:
   # overrides. the first line of each script names it for that test, which runs
   # the scripts against recording stand-ins of the macOS tools. the keychain
   # password and secrets reach `security` as arguments, the one exception to
-  # "no secret on a command line" that docs/conventions/security.md records.
+  # "no secret on a command line" in docs/security/disclosure.md#nothing-identifying-or-secret-is-committed.
   sign-macos:
     name: Sign And Notarize The macOS Files
     needs: [plan, build]
@@ -198,7 +198,7 @@ jobs:
       # DeveloperIDG2CA.cer, fetched from
       # https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer on
       # 2026-11-03 over TLS, valid until 2031-09-17. the job refuses it unless its
-      # SHA-256 equals the pin, which docs/conventions/security.md also records.
+      # SHA-256 equals the pin in docs/security/dependency-pins.md#pinning-convention.
       - name: Create The Keychain And Import The Certificates
         env:
           APPLE_APPLICATION_P12_BASE64: ${{ secrets.APPLE_APPLICATION_P12_BASE64 }}

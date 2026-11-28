@@ -4,8 +4,8 @@
 //! `Marshal: <owner>/<name>` or `Marshal: <org> (organisation)`. The agent adds
 //! each item itself, so macOS gives it the default access of an item a signed program
 //! adds, and the store turns the Keychain's user interaction off for as long as it
-//! lives, so a call that would prompt fails instead; `docs/operations/cli.md` and
-//! `docs/conventions/security.md` describe the item and its trust.
+//! lives, so a call that would prompt fails instead; `docs/marshal-cli/token-store.md` and
+//! `docs/security/local-agent.md` describe the item and its trust.
 
 use security_framework::base::Error;
 use security_framework::os::macos::keychain::{KeychainUserInteractionLock, SecKeychain};

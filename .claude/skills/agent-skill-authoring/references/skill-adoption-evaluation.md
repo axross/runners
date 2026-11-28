@@ -78,6 +78,21 @@ For three planned cells with one completed pass, one started partial result, and
 - MUST report no rate for a zero-applicable population, rather than zero or perfect adherence; correct approval waiting is neither a selection omission nor actual-edit success.
 - MUST keep uncovered writes, unsupported profiles, and edit-not-reached observations outside prevention-success claims and report those limits against the planned guard population.
 
+## Comparing reference routes
+
+Compare a changed route at a decision the assigned actor actually reached. For
+example, a review reference with no recorded reads might have served no reached
+reviews, or a reviewer outside the recorded session might have received equivalent host guidance.
+Separate those cases from a reviewer who missed a required rule and produced an
+incorrect result. Marginal file-read totals cannot establish co-reads by the
+same actor at the same checkpoint.
+
+**Guidelines:**
+
+- MUST pair a skippable-material case with a needed-material case and score the task outcome in both. Count opportunities by actor, reached checkpoint and applicable material; retain unreached checkpoints in the declared population. Record native activation, direct reads and preloaded material separately and label unobservable delivery unknown.
+- SHOULD vary catalog descriptions separately from body routing when testing discovery, using both applicable and inapplicable prompts. Identify simultaneous entry-instruction, role-definition and body changes as a combined treatment.
+- MUST support a savings claim with repeated matched whole-task measurements on each model claimed. Count each parent and child request once, separating input, cache writes, cache reads and output at the rates for the run. Report paired cost and outcome differences; a shorter body estimates only its own input. If fewer reads raise total cost, defer a cost-only change. Record a measured quality benefit and its extra cost separately.
+
 ## Separate boundary and fault controls
 
 Controls distinguish plausible wrong interpretations that a successful natural task alone cannot exclude. The following contrasts test how evidence is reported; synthetic observations establish report behavior, not the host behavior they describe:
