@@ -1442,13 +1442,14 @@ const MAC_APP_ACTIONS = ["actions/checkout", "actions/upload-artifact"];
 // the tools the staged Mac signing steps call that the signing tools step must
 // measure, whatever else it lists; test-staged-sign-macos.sh compares the rest.
 const MAC_APP_MEASURED = ["ditto", "hdiutil"];
+const MAC_APP_MEASURING_STEP = "Check The Signing Tools";
 
 /**
  * records a Mac app job that holds a secret, uses an action other than checkout
  * and artifact upload, signs, does not hand over its archive's hash, does not
- * write the release version before it compiles, mixes its files into the unsigned
- * set, or leaves a measured tool out of its signing tools
- * step in problems, without running its scripts.
+ * write the release version before it compiles or writes a fixed one, mixes its
+ * files into the unsigned set, or leaves a measured tool out of its signing
+ * tools step in problems, without running its scripts.
  */
 function checkMacAppJob() {
   const file = "release-build.yaml";
@@ -1492,27 +1493,39 @@ function checkMacAppJob() {
       `${file}'s ${MAC_APP_JOB} job must build with \`cargo tauri build ... --no-sign\` after a --locked install`,
     );
   const scripts = scriptsOf(job);
+  const code = (step) => codeLines(step.run).join("\n");
   const stamp = scripts.findIndex((step) =>
-    step.run.includes("set-release-version.sh"),
+    /\bset-release-version\.sh\b/.test(code(step)),
   );
-  const firstCargo = scripts.findIndex((step) => /\bcargo\b/.test(step.run));
+  const firstCargo = scripts.findIndex((step) => /\bcargo\b/.test(code(step)));
   if (stamp === -1 || "if" in scripts[stamp])
     problem(
       `${file}'s ${MAC_APP_JOB} job must write the release version with set-release-version.sh in a step with no condition`,
     );
-  else if (firstCargo !== -1 && stamp >= firstCargo)
-    problem(
-      `${file}'s ${MAC_APP_JOB} job must write the release version before any step that runs cargo`,
-    );
-  // the measuring step names notarytool and stapler to look them up, so it is
-  // left out of the scan for them.
+  if (stamp !== -1) {
+    if (firstCargo !== -1 && stamp >= firstCargo)
+      problem(
+        `${file}'s ${MAC_APP_JOB} job must write the release version before any step that runs cargo`,
+      );
+    if (
+      !/\bset-release-version\.sh\s+"\$VERSION"/.test(code(scripts[stamp])) ||
+      text(scripts[stamp].env?.VERSION) !== "${{ inputs.version }}"
+    )
+      problem(
+        `${file}'s ${MAC_APP_JOB} job must pass set-release-version.sh "$VERSION", set from inputs.version, and no fixed version`,
+      );
+  }
+  // only the measuring step, found by its name, names notarytool and stapler to
+  // look them up, so only it is left out of the scan for them.
+  const measuringStep = scripts.find(
+    (step) => text(step.name) === MAC_APP_MEASURING_STEP,
+  );
   for (const step of scripts) {
-    const measuring = step.run.includes("MEASURED: signing tools");
     const found = [
-      /\bcodesign\b[^\n]*\s(?:--sign|-s)\b/,
+      /\bcodesign\b[^\n]*\s(?:--sign\b|-[A-Za-z]*s[A-Za-z]*\b)/,
       /\bsecurity\s+import\b/,
-      measuring ? null : /\b(?:notarytool|stapler)\b/,
-    ].find((pattern) => pattern?.test(codeLines(step.run).join("\n")));
+      step === measuringStep ? null : /\b(?:notarytool|stapler)\b/,
+    ].find((pattern) => pattern?.test(code(step)));
     if (found)
       problem(
         `${file}'s ${MAC_APP_JOB} job step "${text(step.name)}" signs, imports a certificate, notarizes or staples; the job builds unsigned`,
@@ -1524,10 +1537,14 @@ function checkMacAppJob() {
       `${file} assemble needs ${MAC_APP_JOB}; the Mac files stay out of the unsigned set`,
     );
 
-  const step = scriptsOf(job).find((entry) =>
-    entry.run.includes("MEASURED: signing tools"),
-  );
+  const step = measuringStep;
   if (!step) {
+    problem(
+      `${file}'s ${MAC_APP_JOB} job has no step named ${MAC_APP_MEASURING_STEP}`,
+    );
+    return;
+  }
+  if (!code(step).includes("MEASURED: signing tools")) {
     problem(
       `${file}'s ${MAC_APP_JOB} job has no step that prints the MEASURED: signing tools line`,
     );
@@ -1554,6 +1571,10 @@ function checkMacAppJob() {
   for (const tool of MAC_APP_MEASURED)
     if (!measured.has(tool))
       problem(`${file}'s signing tools step does not measure /usr/bin/${tool}`);
+  if (!code(step).includes("/usr/bin/openssl enc -base64 -d -A"))
+    problem(
+      `${file}'s signing tools step does not run /usr/bin/openssl enc -base64 -d -A, the decode the staged jobs rely on`,
+    );
   if (!step.run.includes(`for tool in ${XCRUN_TOOLS.join(" ")}`))
     problem(
       `${file}'s signing tools step does not look for ${XCRUN_TOOLS.join(" and ")} with xcrun --find`,

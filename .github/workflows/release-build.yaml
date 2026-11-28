@@ -264,7 +264,7 @@ jobs:
       # absolute path, and a tool that moves on a new runner image should fail a
       # pull request here instead of a release. the lists must name every tool those
       # jobs and test-signed-dmg.sh call; test-staged-sign-macos.sh compares them.
-      # base64 and shasum are run, since their flags are what the jobs rely on.
+      # the openssl decode and shasum are run, since their flags are what the jobs rely on.
       - name: Check The Signing Tools
         run: |
           bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"
@@ -293,11 +293,8 @@ jobs:
               missing="${missing} xcrun:${tool}"
             fi
           done
-          base64_path="$(command -v base64)" || base64_path=""
-          if [[ -n "$base64_path" && "$(printf 'dGVzdA==' | base64 --decode)" == "test" ]]; then
-            found="${found} base64=${base64_path}"
-          else
-            missing="${missing} base64:--decode"
+          if [[ "$(printf 'dGVzdA==' | /usr/bin/openssl enc -base64 -d -A)" != "test" ]]; then
+            missing="${missing} openssl:base64-decode"
           fi
           if [[ "$(/usr/bin/shasum -a 256 </dev/null)" != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855* ]]; then
             missing="${missing} shasum:-a-256"

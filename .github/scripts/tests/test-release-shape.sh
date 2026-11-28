@@ -692,11 +692,21 @@ expect_fail "a Mac app job that writes the release version after the location te
   "$app_build" 'run: cargo test --locked --release --package marshal-session --lib location' $'run: |\n          cargo test --locked --release --package marshal-session --lib location\n          bash ../.github/scripts/set-release-version.sh x'
 expect_fail "a release version step with a condition" "must write the release version with set-release-version.sh in a step with no condition" \
   "$app_build" $'      # stamped tree is kept for the check after the build.\n      - name: Write The Release Version\n' $'      # stamped tree is kept for the check after the build.\n      - name: Write The Release Version\n        if: github.event_name == \'workflow_dispatch\'\n'
+expect_fail "a release version step that writes a fixed version" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$app_build" "$stamp_step" $'          bash ../.github/scripts/set-release-version.sh 1.2.3\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a release version step that only mentions the script in a comment" "must write the release version with set-release-version.sh in a step with no condition" \
+  "$app_build" "$stamp_step" $'          # bash ../.github/scripts/set-release-version.sh "$VERSION"\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a release version step whose VERSION is not the input" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$app_build" $'        env:\n          VERSION: ${{ inputs.version }}\n        run: |\n          bash ../.github/scripts/set-release-version.sh "$VERSION"' $'        env:\n          VERSION: 9.9.9\n        run: |\n          bash ../.github/scripts/set-release-version.sh "$VERSION"'
 signing_anchor='          test -f "${app}/Contents/Resources/icon.icns"'
-for signing in '/usr/bin/codesign --force --sign - "$app"' '/usr/bin/codesign -s - "$app"' '/usr/bin/security import cert.p12 -k login.keychain' '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
-  expect_fail "the Mac app job running ${signing%% *}" "signs, imports a certificate, notarizes or staples" \
+for signing in '/usr/bin/codesign --force --sign - "$app"' '/usr/bin/codesign -s - "$app"' '/usr/bin/codesign -fs - "$app"' '/usr/bin/security import cert.p12 -k login.keychain' '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
+  expect_fail "the Mac app job running ${signing}" "signs, imports a certificate, notarizes or staples" \
     "$app_build" "$signing_anchor" "${signing_anchor}"$'\n          '"${signing}"
 done
+expect_fail "the measuring step's marker in a comment of another step" "signs, imports a certificate, notarizes or staples" \
+  "$app_build" "$signing_anchor" "${signing_anchor}"$'\n          # MEASURED: signing tools\n          /usr/bin/xcrun notarytool submit app.zip'
+expect_fail "a measuring step that does not run the openssl decode" "does not run /usr/bin/openssl enc -base64 -d -A" \
+  "$app_build" "printf 'dGVzdA==' | /usr/bin/openssl enc -base64 -d -A" "printf 'dGVzdA==' | /usr/bin/openssl version"
 expect_fail "a measuring step that does not list hdiutil" "does not measure /usr/bin/hdiutil" \
   "$app_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun ditto"'
 expect_fail "a measuring step that does not list ditto" "does not measure /usr/bin/ditto" \
