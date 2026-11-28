@@ -100,6 +100,10 @@ requires [updating the runner](#updating-the-runner).
 
 ## Updating the Runner
 
+This app-update procedure applies when app publication resumes. During F0 recovery,
+the fixed historical CLI does not incorporate runner bumps on main; use
+[CLI Recovery](../runner-recovery/index.md) for the bounded release route, not an app update.
+
 A newer runner reaches the host only through a new release, because the app embeds
 the image definition:
 

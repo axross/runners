@@ -1,7 +1,7 @@
 ---
 type: Procedure
 title: "macOS Runner Host"
-description: "Prepare Tart, Softnet and a signed-in session on Apple silicon for the library's VM runtime."
+description: "Prepare Tart, Softnet and a signed-in session on Apple silicon, and distinguish the historical CLI from the app release route."
 ---
 
 # macOS Runner Host
@@ -13,18 +13,22 @@ with the code that names it. [CLI](../marshal-cli/index.md) owns how the runtime
 rules the host is reviewed against are in [Security](../security/index.md). The
 Windows equivalent is [Windows Runner Host](./index.md#windows-with-docker-desktop).
 
-**No supported way to run axmc yet.** Since W1's installer pull request no `marshal`
-command line is built from main and no release carries a macOS file, so axmc has no
-supported way to run its runners until M2's Mac app; the maintainer accepted that gap.
-A Mac that runs the last command-line release keeps it;
-[The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
-identifies that release. It is built from the program tree at W1's first parent, which
-includes M1, so its `start` and `build` run axmc's pools in Tart VMs; `v0.1.0`
-predates M1 and refuses `--profile axmc`. That release's tag holds the procedures for
-installing `marshal`, and the program tree it identifies holds the commands `build`,
-`start` and its clients `status`, `restart`, `stop` and `diagnostics`. Below, `start`
-and `build` name the library's entry points of those names, which that release ran as
-commands and which M2's Mac app is to run.
+**No supported app release for axmc yet.** W1's app release baseline builds no
+`marshal` command line and carries no macOS file; M2's Mac app remains the planned
+release route. During bounded F0 recovery, the temporary release workflow instead
+builds the fixed historical CLI, including the macOS bare binary and legacy pkg.
+[recovery CLI installation and rollback](../runner-recovery/install.md#installing-updating-and-rolling-back) owns the actual-version installation lifecycle
+procedures. The recovery is not a supported parallel CLI product, and no recovery
+release version or native installer evidence is recorded
+yet. App source and normal builds remain; app publication resumes only after
+successful public F0 evidence and a separate reviewed restoration.
+
+A Mac that already runs the command line keeps it. [The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release) identifies the fixed historical tree, which includes M1,
+so its `start` and `build` run axmc's pools in Tart VMs; `v0.1.0` predates M1 and
+refuses `--profile axmc`. Runtime command procedures remain in that tree's copy
+of the macOS host guide. In the current host procedures, `start` and `build` name the library's entry points of
+those names, which the historical CLI runs as commands and which M2's Mac app is to
+run.
 
 `start` on the axmc profile runs the `os: "linux"` and `os: "macos"` pools of the
 configuration through the library; see

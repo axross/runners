@@ -308,8 +308,7 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-  # the same reusable workflow release.yaml calls, at a dry-run version; it
-  # publishes and attests nothing.
+  # keep the app build exercised while the temporary CLI recovery owns releases.
   release-build:
     name: Release Build Dry Run
     uses: ./.github/workflows/release-build.yaml
@@ -317,6 +316,74 @@ jobs:
       contents: read
     with:
       version: 0.0.0-dryrun.${{ github.run_number }}
+
+  cli-recovery-build:
+    name: CLI Recovery Build Dry Run
+    uses: ./.github/workflows/cli-recovery-build.yaml
+    permissions:
+      contents: read
+    with:
+      version: 0.0.0-dryrun.${{ github.run_number }}
+
+  cli-recovery-install-blocks:
+    name: CLI Recovery Install Blocks On ${{ matrix.os }}
+    needs: cli-recovery-build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    env:
+      RELEASE_VERSION: 0.0.0-dryrun.${{ github.run_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download The Unsigned CLI Recovery Files
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.cli-recovery-build.outputs.artifact }}
+          path: ${{ runner.temp }}/release
+      - name: Run The macOS Blocks Against Stand-Ins Under zsh
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks.sh zsh
+      - name: Run The macOS Blocks Against Stand-Ins Under The System bash
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks.sh /bin/bash
+      - name: Run The macOS Blocks Against The Unsigned Package Under zsh
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks-real.sh zsh "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
+      - name: Run The macOS Blocks Against The Unsigned Package Under The System bash
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/cli-recovery-install-tests/test-install-blocks-real.sh /bin/bash "${RUNNER_TEMP}/release" "$RELEASE_VERSION"
+      - name: Run The Windows Blocks Against Stand-Ins Under Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\.github\scripts\cli-recovery-install-tests\test-install-blocks.ps1
+      - name: Run The Windows Blocks Against Stand-Ins Under PowerShell 7
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/cli-recovery-install-tests/test-install-blocks.ps1
+      - name: Run The Windows Blocks Against The CLI MSI
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\.github\scripts\cli-recovery-install-tests\test-install-blocks-real.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION -LogDirectory (Join-Path $env:RUNNER_TEMP 'cli-recovery-install-block-logs')
+      - name: Run The Check Block And CLI Install As A Standard User
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\.github\scripts\cli-recovery-install-tests\test-msi-standard-user.ps1 -ReleaseDirectory (Join-Path $env:RUNNER_TEMP 'release') -Version $env:RELEASE_VERSION
+      - name: Upload The CLI Install Block Logs
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-recovery-install-block-logs-windows
+          path: ${{ runner.temp }}/cli-recovery-install-block-logs
+          retention-days: 14
+          if-no-files-found: ignore
 
   # the install, check, and uninstall blocks of docs/marshal-cli/install-on-windows.md, extracted
   # from the document: first against stand-ins, then against the dry run's real

@@ -12,7 +12,7 @@ description: "Check capacity, session and lock ownership before building, and de
 when the new one is complete. It is needed after installing Tart and Softnet, after
 any change of the library that raises the golden VM version or the image contract
 version, when the runtime reports a missing or mismatched golden VM, and when the
-freshness warnings ask for it. The last command-line release ran it as
+freshness warnings ask for it. The historical CLI runs it as
 [`marshal build --profile axmc --config <path>`](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/macos-runner-host.md#building-the-golden-vm).
 
 **Before you start**

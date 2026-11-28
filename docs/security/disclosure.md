@@ -47,15 +47,15 @@ e-mail address of any other kind, or anywhere else, is still a finding.
 token files, and private keys so that a local working file cannot be committed by
 accident; it is a backstop, not the control. The workflows read one repository
 secret, `CLAUDE_CODE_OAUTH_TOKEN`, used by `claude-review.yaml` and added by the
-maintainer. The `release` Environment keeps six Environment secrets, held for M2's
-and W4's signing jobs and read by no job until one returns,
+maintainer. The `release` Environment keeps six Environment secrets, read only
+by the temporary CLI signing job and retained for M2's and W4's later signing jobs:
 `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`,
 `APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and one
 Environment variable that is not secret, `APPLE_TEAM_ID`; the maintainer creates
 them, and no value is committed. A secret value is never echoed, passed on a command
 line, or written into an image layer or build cache. Two exceptions for a
-credential on a command line are recorded, both in `sign-macos`, and held with it for
-M2. The password
+credential on a command line are recorded in `sign-macos` for the temporary CLI
+and M2's later app signing. The password
 arguments of `security` were allowed at the plan gate. The `--key-id` and `--issuer`
 arguments of `notarytool`, which carry the API key's ID and issuer ID, were allowed
 by the maintainer on 2026-11-04 PST. Neither tool has a non-interactive alternative:

@@ -7,6 +7,7 @@ to browse the current documentation by subject.
 - [Agent sessions](./agent-sessions.md)
 - [Agent skills](./agent-skills.md)
 - [Marshal app](./app.md)
+- [Historical CLI recovery](./cli-recovery.md)
 - [marshal-cli library](./cli.md)
 - [Development setup](./development-setup.md)
 - [Development workflow](./development-workflow.md)

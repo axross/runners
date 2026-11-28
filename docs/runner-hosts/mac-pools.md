@@ -81,8 +81,8 @@ place of `axmc` when `labels` replaces it. A job that names neither, such as one
 names only `self-hosted`, can land on axmc. Search each repository's workflows for
 `runs-on` and check every hit.
 
-With the last command-line release, the golden VM is built once and the pools are
-started from a terminal of the signed-in session, using the [build and start commands in its program tree](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/macos-runner-host.md#starting-watching-and-stopping). `start` validates the configuration, opens its log under
+With the historical CLI, the golden VM is built once and the pools are
+started from a terminal of the signed-in session, using the [build and start commands for the historical CLI](https://github.com/axross/runners/blob/dc8e1ebcc0722997206487f3dcca2ae7e519cf02/docs/operations/macos-runner-host.md#starting-watching-and-stopping). `start` validates the configuration, opens its log under
 `~/Library/Logs/marshal/`, checks Tart and Softnet, checks the golden VM of each
 configured OS, prepares every pool, and runs every slot until it is stopped. It also holds off idle
 sleep and watches for a sleep or a network change; see
