@@ -65,6 +65,7 @@ function Test-Case {
         $null = New-Item -ItemType Directory -Path "$directory/bin"
         Set-Content -LiteralPath "$directory/bin/docker" -Value $standIn
         & chmod +x "$directory/bin/docker"
+        if ($LASTEXITCODE -ne 0) { throw "chmod of the stand-in docker failed with exit code $LASTEXITCODE" }
         Set-Content -LiteralPath "$directory/script" -Value $Script
         Set-Content -LiteralPath "$directory/calls" -Value '' -NoNewline
         $env:STAND_IN_DIR = $directory
