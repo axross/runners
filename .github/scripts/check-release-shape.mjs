@@ -2,7 +2,9 @@
 // records: that no job declares an Environment or reads a signing secret until
 // the next signing job, M2's or W4's, joins them; how the jobs of release.yaml
 // chain from plan through assemble-signed to attest and release; and that no job
-// can bypass a failed one.
+// can bypass a failed one. it also holds release-build.yaml's app-macos job to its
+// rules: an unsigned build with no secret, signing tool or cache, outside the
+// unsigned set.
 //
 //   node .github/scripts/check-release-shape.mjs [root]
 //
