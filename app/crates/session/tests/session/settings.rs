@@ -361,6 +361,45 @@ async fn a_check_a_refusal_a_failure_and_a_timeout_leave_the_notes() {
     drop(gate);
 }
 
+/// a session whose only setting was answered with the lost-contact failure, so that its
+/// note says Marshal lost contact with the agent.
+async fn with_a_lost_contact_setting() -> (Agent, Running) {
+    let (agent, session) = connected().await;
+    agent.answer("lifecycle_set", Err(Failure::Lost));
+    session
+        .handle
+        .set_setting("keep_awake".to_string(), false)
+        .await
+        .unwrap();
+    session.settle().await;
+    let shown = note(&session, "keep_awake").expect("a lost-contact note");
+    assert!(shown.contains("lost contact"), "{shown}");
+    (agent, session)
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_applied_reload_or_edit_removes_the_lost_contact_note() {
+    for request in [reload(false), edit(false)] {
+        let (agent, session) = with_a_lost_contact_setting().await;
+        agent.answer_config(Ok(ConfigAnswer::Change(change())));
+        session.handle.config(request.clone()).await.unwrap();
+        session.settle().await;
+        assert_eq!(note(&session, "keep_awake"), None, "{request:?}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_check_leaves_the_lost_contact_note() {
+    for request in [reload(true), edit(true)] {
+        let (agent, session) = with_a_lost_contact_setting().await;
+        let before = note(&session, "keep_awake");
+        agent.answer_config(Ok(ConfigAnswer::Change(change())));
+        session.handle.config(request.clone()).await.unwrap();
+        session.settle().await;
+        assert_eq!(note(&session, "keep_awake"), before, "{request:?}");
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_read_and_a_token_removal_remove_no_note() {
     let read: ConfigRead = serde_json::from_value(json!({
