@@ -126,8 +126,10 @@ web view.
   failed unregistration's code while macOS still holds the item. A failed call is
   logged with its code and tried again at the next launch, Start all or change of a
   setting; a failed unregistration shows as "Could not be removed (code N)" with its
-  note and button, as does an item macOS still holds when the setting is off. This is unverified on axmc until M4's Mac run. Before removing Marshal,
-  turn the setting off, or remove Marshal in Login Items.
+  note and button. An item macOS still holds while the setting is off shows as On or
+  Waiting for approval, with a note and the same button. This is unverified on axmc
+  until M4's Mac run. Before removing Marshal, turn the setting off, or remove Marshal
+  in Login Items.
 - **A login launch on the Mac shows only the icon.** The login item passes no argument,
   so the app tells the launch by the open-application Apple Event (`'aevt'`/`'oapp'`)
   macOS sends at launch: when its `keyAEPropData` (`'prdt'`) parameter holds the enum
