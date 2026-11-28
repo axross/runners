@@ -38,6 +38,8 @@ Run from the repository root.
 | `mise run test:set-release-version` | Run the version write script, `.github/scripts/set-release-version.sh`, against temporary copies of the CLI's and the app's `Cargo.toml` and `Cargo.lock`: a release and a prerelease version, invalid versions, a missing placeholder or package, a duplicate entry, and CRLF files                                                                           |
 | `mise run test:verify-release`      | Run the retained app release gate, `.github/scripts/verify-release.sh`, against temporary release files: the plan phase's output, the exact files, a missing, extra, or misnamed executable or installer, a directory in place of a file, a checksum mismatch, and an unset or unknown phase. Active CLI asset globs are checked by `test:cli-recovery`.       |
 | `mise run test:assemble-release`    | Run `.github/scripts/assemble-release.sh`, which writes `SHA256SUMS` for the release's app executable and MSI, against temporary directories: the two lines in their fixed order, and a refusal for another file set, a changed file, or a hash that is not a SHA-256. It needs GNU `sha256sum` and GNU `find -printf`, so it runs on Linux (CI), not on macOS |
+| `mise run test:sign-update`         | Run the `sign-update` scripts staged in `.github/staged/release-feed.yaml`, extracted from that file, against a stand-in signer: a signature for the build's MSI, and a refusal of a changed MSI, a changed signer, and an empty secret                                                                                                                        |
+| `mise run test:update-tools`        | Check the update tools' scripts: the committed `tauri-cli` crate checksum against the pin, the refusal of another crate archive, and the feed `write-update-feed.sh` writes                                                                                                                                                                                    |
 | `mise run check:release-shape`      | Check the temporary seven-stage CLI release and retained unsigned app builds; only inline sign-macos reaches the release Environment. The recovery source and signed-output boundary are checked against Security's active release record; this catches mistakes, not hostile edits.                                                                           |
 | `mise run test:release-shape`       | Run that check against the unchanged workflows, then against copies altered one change at a time, and expect each alteration to fail                                                                                                                                                                                                                           |
 | `mise run test:installer-version`   | Run `.github/scripts/installer-version.sh`: a release `X.Y.Z` is kept, `0.0.0-dryrun.<n>` maps to `0.0.0`, and a version beyond the MSI limits or in another prerelease form is refused                                                                                                                                                                        |
@@ -81,6 +83,16 @@ against those unsigned real CLI installers. It covers zsh/system bash and Window
 PowerShell5.1/7, including a standard local user install on hosted Windows. The
 current app dry run and app install-block job remain separate. No hosted check,
 unsigned artifact or stand-in satisfies F0's maintainer-owned native evidence.
+
+Merge checks also run `Update Feed Round Trip` and `Update Feed In The App On Windows`
+after the app dry run, on a push to main and on pull requests that change the release
+workflows, `.github/staged/`, the scripts, the `tauri-cli` files, the feed crate or
+the app's updater; on other pull requests the first reports success without building.
+They hold `contents: read` and reach no Environment: the first signs the dry run's
+MSI with a throwaway key by running the staged `sign-update` scripts, and the second
+gives the feed it wrote to the updater plugin's own verification.
+[CLI](../marshal-cli/release-artifacts.md#the-update-feeds-tools-and-checks)
+describes them.
 
 The installed copies under `.claude/skills/` are generated and are excluded from
 formatting and linting. [Agent Skills](../agent-work/skill-installation.md) owns

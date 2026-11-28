@@ -137,8 +137,9 @@ review label a violation Important; Codex review uses its native priority label.
   are the default runner labels `axpc` and `axmc`, the two committed host labels,
   kept by the maintainer's decision, and the macOS signing team ID and designated
   requirement that a later CLI record may hold, and the maintainer's update-feed
-  public key in `app/crates/app/tauri.conf.json` and the test that pins it, as
-  Security records (see
+  public key in `app/crates/app/tauri.conf.json`, the separate release-verification
+  public key in `app/crates/feed/release-public-key.txt`, and the tests that pin
+  each, as Security records (see
   [Security](./docs/security/disclosure.md#nothing-identifying-or-secret-is-committed)).
   Verbatim third-party licence and copyright text in the notices under
   `app/notices/` and the licence copies they draw on, the crates' published
@@ -340,8 +341,9 @@ Apply the lens for each kind of file in the diff.
   an MSI that asks for elevation, writes `PATH`, or shares the command line's upgrade
   code or a component code, a download that is none of the pinned WiX package, the
   recorded Rust toolchain exception, the recorded `tauri-cli` exception installed at
-  the pin `tauri-cli-version.sh` reads, or the Node that `actions/setup-node` installs
-  (recorded under Security's Pinning Convention), or a departure from the record that
+  the pin `tauri-cli-version.sh` reads, the `tauri-cli` crate archive that the staged
+  `update-tool` refuses unless it matches `app/tauri-cli.crate.sha256`, or the Node that
+  `actions/setup-node` installs (recorded under Security's Pinning Convention), or a departure from the record that
   the change does not also make to the record, is a finding. Install-time
   verification is optional for the installer, so a document or comment that presents
   the check block as required of an operator is a finding, and so is a change that
@@ -354,11 +356,27 @@ Apply the lens for each kind of file in the diff.
   [Security's held record](./docs/security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
   A job or step that a later job can pass without, such as `continue-on-error`, a
   job-level `always()`, `!cancelled()` or `failure()`, a step condition in
-  `assemble-signed`, or one in `attest` or `release` that skips a step, which the
-  shape check does not see, and an attest or release job that reads the unsigned set
-  are findings. A change to the identifier `app.axross.marshal`, the team pin, or the
-  G2 intermediate's pin without its source and the record's update is a finding. A
-  change that relaxes the record needs the maintainer's review.
+  `assemble-signed`, in the staged `update-tool` or `sign-update`, or one in `attest`
+  or `release` that skips a step, which the shape check does not see, and an attest
+  or release job that reads the unsigned set are findings. A change to the identifier `app.axross.marshal`, the team pin, or the
+  G2 intermediate's pin without its source and the record's update is a finding.
+  The update feed's jobs are staged in `.github/staged/release-feed.yaml` until W4's
+  last pull request moves them into `release.yaml`, and the staged text is reviewed as
+  the jobs it will become. These are findings: a feed job in `.github/workflows/`, or
+  `latest.json` in the release set, before that pull request; an `environment:` on any
+  job but `sign-update`; a secret read outside `sign-update`'s sign step; a checkout,
+  another action, a package manager or a download in `sign-update`; the signer run
+  other than by its hash-checked path under `unshare --net`; the two update-feed
+  secrets on a command line or in output; a `latest.json` published without passing
+  the feed check against the committed release-verification public key, or left outside
+  `SHA256SUMS` and the attestation; a change to
+  `app/crates/feed/release-public-key.txt` without the rotation record and procedure
+  that The Update-Feed Key in [Updates](./docs/marshal/updates.md#the-update-feed-key)
+  describes; an accepted advisory added to `app/tauri-cli.deny.toml` without the
+  maintainer's review; and a `tauri-cli` pin move without the checksum in
+  `app/tauri-cli.crate.sha256`, or an `update-tool` that builds a crate archive it has
+  not checked against it. A change that relaxes the record needs the maintainer's
+  review.
 - **Rust.** The CLI under `cli/` and the app's crates under `app/` have no
   `unsafe` and no panic on an input path (`unwrap`, `expect`, `panic!`,
   indexing). The CLI collects every error in the order

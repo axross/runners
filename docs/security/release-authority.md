@@ -162,7 +162,11 @@ record a change to either workflow, to the build call in
     `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and its variable is
     `APPLE_TEAM_ID`, which is not secret. A job reads them only if it declares the
     Environment, and only after the reviewer approves it. No repository secret is
-    added for signing.
+    added for signing. W4's `sign-update` adds two more Environment secrets,
+    `UPDATE_FEED_SIGNING_KEY` and `UPDATE_FEED_SIGNING_KEY_PASSWORD`, which the
+    maintainer creates before the first release with the feed. They reach only its
+    signing step, through `env:` and never a command line, and no job reads them
+    until that job is in the release run.
   - **The signing identifier** `app.axross.marshal` and the team are fixed and
     checked at each release, so the designated requirement of the code object that
     carries it stays the same. Changing either breaks the Keychain trust that later
@@ -181,7 +185,13 @@ record a change to either workflow, to the build call in
     request can edit it, so it guards against mistakes, not against a hostile pull
     request, and [CLI](../marshal-cli/release-extensions.md#extending-the-release-workflows) names
     what it does not read. What keeps pull requests away is the branch rule on the
-    Environment and that `release.yaml` runs only on a dispatch.
+    Environment and that `release.yaml` runs only on a dispatch. The text of W4's
+    `update-tool` and `sign-update` jobs and of `assemble-signed`'s feed steps is
+    staged in [`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml),
+    outside `.github/workflows/`: GitHub never runs it and the shape check does not
+    read it, so its `environment: release` reaches nothing. The `update-feed` jobs of
+    `merge-checks.yaml` hold `contents: read`, reach no Environment and read no
+    secret; they run the staged signing scripts with a throwaway key made for the run.
   - **No secret is printed.** In a signing job, secret values reach the scripts through `env:` and
     files written with mode 0600 under the runner's temporary directory, and each
     line of the `.p8` is masked. The keychain and those files are deleted whether the
@@ -252,7 +262,10 @@ record a change to either workflow, to the build call in
   the recorded Rust toolchain and `tauri-cli` exceptions is WiX, pinned under
   [Pinning Convention](./dependency-pins.md#pinning-convention). `jdx/mise-action` was rejected for Node
   here: at this repository's pin it caches by default, installs every mise tool, and
-  receives the job token. `actions/setup-node` installs Node `24.21.0`, the version
+  receives the job token. W4's staged `update-tool` job and the `update-feed` job of
+  `merge-checks.yaml` use the pinned action only to install `cargo-deny`, with
+  `install_args: cargo-deny` and `cache: false`, and neither holds the Environment.
+  `actions/setup-node` installs Node `24.21.0`, the version
   in `mise.toml`, and the Node download is trusted under the same joint-trust
   decision, not by a checksum; see [Pinning Convention](./dependency-pins.md#pinning-convention).
   `release/package.json` names an exact version of semantic-release and of each
