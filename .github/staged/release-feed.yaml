@@ -37,7 +37,7 @@ jobs:
         with:
           version: 2026.9.17
           # SHA-256 of the extracted mise binary, not of the archive the action
-          # downloads. update with the version; see docs/operations/agent-sessions.md.
+          # downloads. update with the version; see docs/agent-work/session-setup.md.
           sha256: 63049bc35fb9065e8dc35ac8b25fdae53e9bd6f1885a843aedeba398e046a1ee
           install_args: cargo-deny
           cache: false

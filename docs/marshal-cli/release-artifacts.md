@@ -287,39 +287,23 @@ writes it. The jobs that will are staged in
 no Environment. W4's last pull request moves the staged text into `release.yaml` after
 the app's publication is restored, and deletes the file. The file holds:
 
-- **`update-tool`**, which runs on `ubuntu-latest` with `contents: read`, no
-  Environment, no secret and no cache. It runs
-  [`build-update-tools.sh`](../../.github/scripts/build-update-tools.sh), which
-  downloads the `tauri-cli` crate archive at the pin and refuses it unless its SHA-256
-  equals the one [`app/tauri-cli.crate.sha256`](../../app/tauri-cli.crate.sha256)
-  commits, runs `cargo deny check advisories` on the archive's own lockfile with the
-  advisories the maintainer accepted in
-  [`app/tauri-cli.deny.toml`](../../app/tauri-cli.deny.toml), builds `cargo-tauri`
-  from it with `--locked`, and builds `marshal-feed-check` from the app's workspace.
-  It hands both binaries' SHA-256 on as job outputs, apart from the `update-tools`
-  artifact. Its timeout of 40 minutes is a first estimate, replaced by twice the
-  job's time in its first run, as the build leg's was.
-- **`sign-update`**, which runs on `ubuntu-latest` with `contents: read` under the
-  `release` Environment, with no checkout; its only actions download and upload
-  artifacts. Each script starts with a `# sign-update: <name>` marker. Shell built-ins
-  and base utilities run by name; `awk`, `sha256sum` and `unshare` use
-  `$SYSTEM_BIN/<tool>`. The check step refuses unless the MSI's SHA-256 equals the
-  build's `SHA256SUMS` line and `cargo-tauri`'s equals `update-tool`'s output. The sign
-  step refuses unless both secrets are set, then runs
-  `unshare --map-root-user --net "$RUNNER_TEMP/update-tools/cargo-tauri" signer sign --app-version <version>`
-  on a copy of the unchanged MSI, with no network. The secrets reach only that step,
-  as `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in its
-  `env:`. It uploads only the detached signature, as `update-signature`.
-- **`assemble-signed`'s feed steps**, which check `marshal-feed-check` against
-  `update-tool`'s output, write `latest.json` with
+- **`update-tool`** builds `cargo-tauri` and `marshal-feed-check` with
+  [`build-update-tools.sh`](../../.github/scripts/build-update-tools.sh), the script
+  the merge checks also run. [Dependency pins](../security/dependency-pins.md#pinning-convention)
+  owns how the `tauri-cli` archive is pinned and checked.
+- **`sign-update`** signs the build's MSI under the `release` Environment with the
+  scripts in the staged file, each marked `# sign-update: <name>`.
+  [The extension contracts](./release-extensions.md#w4s-feed-pull-request-and-m4s-archive)
+  own its checks and limits, and
+  [Security](../security/release-authority.md#retained-app-release-baseline-suspended)
+  owns its secrets.
+- **`assemble-signed`'s feed steps** write `latest.json` with
   [`write-update-feed.sh`](../../.github/scripts/write-update-feed.sh), one
-  `<platform>=<file>=<signature>` argument per signed file, and run the feed check on it
-  against the committed release-verification public key before `SHA256SUMS` is written.
-  The platform entries are a list, so M4
-  ([#90](https://github.com/axross/runners/issues/90)) adds `darwin-aarch64` as one
-  more argument, with `sign-update` signing the Mac archive beside the MSI. These steps
-  call `assemble-release.sh` in a `signed` mode that does not exist yet; the last pull
-  request adds it, with `latest.json` in the signed set.
+  `<platform>=<file>=<signature>` argument per signed file, and run the feed check on
+  it. These steps call `assemble-release.sh` in a `signed` mode that does not exist
+  yet; the last pull request adds it, and M4
+  ([#90](https://github.com/axross/runners/issues/90)) adds `darwin-aarch64` as one more
+  argument.
 
 **The round trip in the merge checks.** The `Update Feed Round Trip` job of
 `merge-checks.yaml` needs the release build's dry run. It runs on a push to main and on
@@ -335,7 +319,7 @@ own scripts, extracted from the staged file with
 dry run's MSI with that key. The feed check passes the feed `write-update-feed.sh`
 writes, and refuses, with the diagnostic for each cause, a changed MSI, another key's
 signature, a signature for another version, and the throwaway signature against the
-committed key; the job's output is searched for the key and its password. The
+release-verification key; the job's output is searched for the key and its password. The
 staged `update-tool` and `assemble-signed` text is not extracted: the round trip runs
 the scripts those steps call. `Update Feed In The App On Windows` then runs the app's
 `tests/update_feed.rs`, which gives the same feed and MSI to the updater plugin's own

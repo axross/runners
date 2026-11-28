@@ -362,8 +362,12 @@ Apply the lens for each kind of file in the diff.
   G2 intermediate's pin without its source and the record's update is a finding.
   The update feed's jobs are staged in `.github/staged/release-feed.yaml` until W4's
   last pull request moves them into `release.yaml`, and the staged text is reviewed as
-  the jobs it will become. These are findings: a feed job in `.github/workflows/`, or
-  `latest.json` in the release set, before that pull request; an `environment:` on any
+  the jobs it will become. These are findings: a release-run feed job (`update-tool`,
+  `sign-update` or `assemble-signed`'s feed steps), or `latest.json` in the release set,
+  in `release.yaml` or `release-build.yaml` before that pull request. The
+  `merge-checks.yaml` dry runs `update-feed` and `update-feed-app` are not release-run
+  jobs, and are findings only if they declare an `environment:`, read a secret or
+  publish. Also findings: an `environment:` on any
   job but `sign-update`; a secret read outside `sign-update`'s sign step; a checkout,
   another action, a package manager or a download in `sign-update`; the signer run
   other than by its hash-checked path under `unshare --net`; the two update-feed

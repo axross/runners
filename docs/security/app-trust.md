@@ -162,7 +162,9 @@ runs; these are the rules it is reviewed against.
   checks. Only the merge checks use the throwaway-key override; the rotation
   procedure is in [Updates](../marshal/updates.md#the-update-feed-key). The feed
   check and its tests exist; the release run does not use them until W4's last pull
-  request adds the feed to it.
+  request adds the feed to it. That pull request also adds the release shape check's
+  exact-text guard for this rule; until then `--public-key` exists only for the merge
+  checks' throwaway-key round trip, and no release workflow step calls the feed check.
 - **Only newer, only from this repository.** The app takes a release only when its
   version is newer than its own, and only when the download address is `https`, on
   `github.com` with no port or credentials, under
