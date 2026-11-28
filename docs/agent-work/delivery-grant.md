@@ -166,8 +166,8 @@ the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as 
 artifact of the run. Its `app-macos` job, on a macOS hosted runner with `contents: read`
 and a 45-minute timeout, installs `tauri-cli` the same way, runs the location rule's
 tests in the release profile, bundles the unsigned `Marshal.app` at bundle version
-`0.0.0`, writes the release version into the app's manifest and lockfile before it
-compiles, so the executable carries it as the Windows app's does, fails as the `app` job
+`0.0.0`, writes the release version into the CLI's and the app's manifests and lockfiles
+before it compiles, so the executable carries it as the Windows app's does, fails as the `app` job
 does if the build changed a tracked file beyond that, checks the
 bundle's layout, and builds an unsigned disk image with `hdiutil`. It keeps the app's
 `ditto` archive and the disk image as the `marshal-macos-app` artifact, outside the

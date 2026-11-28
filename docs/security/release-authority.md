@@ -310,10 +310,12 @@ record a change to either workflow, to the build call in
   states the rules. Nothing is committed back: `cli/Cargo.toml`, `app/Cargo.toml` and
   their lockfiles on main hold `0.0.0-dev`, and
   [`set-release-version.sh`](../../.github/scripts/set-release-version.sh) writes
-  the version in the build leg. It refuses unless every version it owns holds the
-  placeholder, `--locked` fails if a manifest and its lockfile disagree, and the
-  leg's product-version check compares the built `marshal-app.exe` with the
-  version.
+  the version in the build, in the Windows leg and in the `app-macos` job alike. It
+  refuses unless every version it owns holds the placeholder, and `--locked` fails
+  if a manifest and its lockfile disagree. The Windows leg's product-version check
+  compares the built `marshal-app.exe` with the version. The Mac job has no
+  product-version check: its tracked-file check compares the diff after the build
+  with the diff of the stamp, so the stamp is the only change the build may leave.
 
 What protects a release is outside the workflow files:
 
