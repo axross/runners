@@ -65,15 +65,10 @@ check() {
 check "the guard passes on the shipped workflow" node "$guard" "$workflow"
 
 workflow_text="$(cat "$workflow")"
-# alter <name> <old text> <new text> <message the guard must print>: the guard must
-# fail on a copy of the workflow with the old text, which occurs once, replaced.
-alter() {
-  local name="$1" old="$2" new="$3" want="$4" altered output status=0
-  if [[ $workflow_text != *"$old"* ]]; then
-    flunk "${name}: the workflow does not contain '${old}'"
-    return
-  fi
-  altered="${workflow_text/"$old"/"$new"}"
+# reject <name> <altered workflow text> <message the guard must print>: the guard must
+# fail on the altered workflow and say the message.
+reject() {
+  local name="$1" altered="$2" want="$3" output status=0
   printf '%s\n' "$altered" >"${work}/altered.yaml"
   output="$(node "$guard" "${work}/altered.yaml" 2>&1)" || status=$?
   if [[ $status -eq 0 ]]; then
@@ -83,6 +78,16 @@ alter() {
   else
     pass "$name"
   fi
+}
+# alter <name> <old text> <new text> <message the guard must print>: the guard must
+# fail on a copy of the workflow with the old text, which occurs once, replaced.
+alter() {
+  local name="$1" old="$2" new="$3" want="$4"
+  if [[ $workflow_text != *"$old"* ]]; then
+    flunk "${name}: the workflow does not contain '${old}'"
+    return
+  fi
+  reject "$name" "${workflow_text/"$old"/"$new"}" "$want"
 }
 
 copy_path="/usr/local/libexec/claude-review/read-head"
@@ -129,6 +134,35 @@ alter "a hyphenated disallowed-tools flag fails the guard" \
   "--max-turns 200" "--disallowed-tools \"Task\" --max-turns 200" "spells a tool-permission flag --disallowed-tools"
 alter "an equals-form allowed-tools flag fails the guard" \
   "--max-turns 200" "--allowedTools=Bash(ls:*) --max-turns 200" "--allowedTools must appear exactly once"
+
+alter "a copy step with a condition fails the guard" \
+  "      - name: Install Head Reader
+" "      - name: Install Head Reader
+        if: always()
+" "the copy step must not set if"
+alter "a copy step that continues on error fails the guard" \
+  "      - name: Install Head Reader
+" "      - name: Install Head Reader
+        continue-on-error: true
+" "the copy step must not set continue-on-error"
+
+alter "a workflow without a checkout step before the copy step fails the guard" \
+  "uses: actions/checkout@v7" "uses: actions/cache@v4" "the copy step must come after the checkout step"
+
+# the copy step, which comes last but one, moved behind the action step, which comes last
+copy_marker="      # the reviewer reads pull request head files only through this copy."
+action_marker="      - name: Claude Review"
+if [[ $workflow_text == *"$copy_marker"* && $workflow_text == *"$action_marker"* ]]; then
+  before_copy="${workflow_text%%"$copy_marker"*}"
+  from_copy="${workflow_text#"$before_copy"}"
+  copy_block="${from_copy%%"$action_marker"*}"
+  action_block="${from_copy#"$copy_block"}"
+  reject "a copy step after the action step fails the guard" \
+    "${before_copy}${action_block}
+${copy_block}" "the copy step must come before the Claude Review step"
+else
+  flunk "a copy step after the action step fails the guard: the workflow lacks the step markers"
+fi
 
 unconfigured_source_refuses() {
   local output status=0

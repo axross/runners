@@ -1,7 +1,8 @@
 // fails unless the Claude CI review workflow keeps the head-reading boundary that
 // docs/security/workflow-permissions.md records: the exact tools the reviewer may
 // run, the denied git command, one copy path shared by the copy step, the allowlist
-// entry and the prompt, and the prompt's two prohibitions.
+// entry and the prompt, the copy step's place between the checkout and the action and
+// its lack of a condition, and the prompt's two prohibitions.
 //
 //   node .github/scripts/check-review-workflow.mjs [workflow file]
 //
@@ -80,6 +81,31 @@ function copyStep(workflow) {
   return step;
 }
 
+// the copy step must run after the checkout and before the action, on every run, and
+// fail the job when it fails
+function copyStepProblems(steps, copy, action) {
+  const problems = [];
+  const copyIndex = steps.indexOf(copy);
+  const checkoutIndex = steps.findIndex(
+    (step) =>
+      typeof step.uses === "string" &&
+      step.uses.startsWith("actions/checkout@"),
+  );
+  if (checkoutIndex === -1 || checkoutIndex > copyIndex)
+    problems.push(
+      "the copy step must come after the checkout step, which supplies the script it copies",
+    );
+  if (copyIndex > steps.indexOf(action))
+    problems.push("the copy step must come before the Claude Review step");
+  for (const key of ["if", "continue-on-error"]) {
+    if (key in copy)
+      problems.push(
+        `the copy step must not set ${key}, so that it runs every time and a failure fails the job`,
+      );
+  }
+  return problems;
+}
+
 function checkWorkflow(workflow) {
   const problems = [];
   const steps = reviewSteps(workflow);
@@ -126,7 +152,9 @@ function checkWorkflow(workflow) {
 
   let copyEnvironment = {};
   try {
-    copyEnvironment = copyStep(workflow).env ?? {};
+    const copy = copyStep(workflow);
+    copyEnvironment = copy.env ?? {};
+    problems.push(...copyStepProblems(steps, copy, action));
   } catch (error) {
     problems.push(error.message);
   }
