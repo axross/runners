@@ -206,18 +206,26 @@ or Puppeteer, and writes its screenshots and measurements under
 The renderer uses `dump_view --editor-profile axpc|axmc` over recorded running,
 stopped, transition and lost-contact snapshots, and a fake Tauri command bridge
 with shaped protocol replies, not captured native command executions.
+For the Settings tab it uses `dump_view --editor-profile axpc --agent-offers-editor`
+over `running_lifecycle.json`, the one recorded snapshot with a `lifecycle` part.
 The bridge retains pool membership edits in memory for read-back, not on disk;
 it does not reproduce other field writes or live runner effects.
 It covers the editor states in both themes, with and without forced colours, at
-880 and 480 px. It measures horizontal overflow, the scroll/footer boundary, a
-balloon cut off by the scrolling area, text contrast (4.5:1), field boundaries and
-keyboard focus (3:1), and Chromium's accessibility tree for field names,
-problem/reason descriptions and pool headings.
+880 and 480 px. It also renders the Settings tab on the axpc profile, in the same
+themes and widths, while the editor holds unapplied changes: each setting's
+checkbox stays focusable, does not toggle, is reported disabled in Chromium's
+accessibility tree, and carries the editing reason in its accessible description
+and balloon.
+It measures horizontal overflow, the scroll/footer boundary, a balloon cut off by
+the scrolling area, text contrast (4.5:1), field boundaries and keyboard focus
+(3:1), and Chromium's accessibility tree for field names, problem/reason
+descriptions and pool headings.
 Keyboard checks retain focus through held writes, confirmation refusals, token
 removal retries and failed read-back. They keep uneditable Host Settings inert
 with an explained reason. Pool heading expectations come from fixture names,
 including pools marked for removal, not from the headings already in the DOM.
-Deliberate overflow, low-contrast, broken-name and missing-heading mutations must fail those
-checks. The job retains screenshots and measurements for 14 days. This is browser
-evidence, not a native Windows or Mac app, IPC, contrast-theme or screen-reader
-run; those stay manual checks on a real host.
+Deliberate overflow, low-contrast, broken-name, missing-heading and
+missing-reason mutations must fail those checks. The job retains screenshots and
+measurements for 14 days. This is browser evidence, not a native Windows or Mac
+app, IPC, contrast-theme or screen-reader run; those stay manual checks on a real
+host.

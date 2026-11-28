@@ -120,4 +120,7 @@ The agent's side, `[lifecycle]` taken at an Edit or Reload and a setting refused
 while an image is checked, is in `cli/tests/agent_lifecycle.rs` and
 `cli/tests/agent_signals.rs`. Narrator, the contrast
 theme on a real Windows desktop and the keyboard-only use of the tab are W3's
-out-of-tree check on axpc.
+out-of-tree check on axpc. `mise run test:app-render` renders the tab in the
+pinned Chromium while the configuration editor holds unapplied changes and checks
+that each checkbox is disabled, focusable and describes why; that is browser
+evidence, not Narrator or the contrast theme.
