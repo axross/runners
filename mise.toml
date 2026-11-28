@@ -430,6 +430,14 @@ bash .github/scripts/tests/test-cli-recovery-release.sh
 description = "Run the actual inline signing scripts against recording stand-ins, including secret masking, refusal and cleanup paths; no signing takes place"
 run = "bash .github/scripts/tests/test-sign-macos.sh"
 
+[tasks."test:staged-sign-macos"]
+description = "Run the staged Mac app signing steps in .github/staged/release-macos-app.yaml against recording stand-ins of the macOS signing tools: every refusal, the flags, hdiutil's retries, the clean-up, that no workflow names the file, and that its disk image arguments and tools match the app job's"
+run = "bash .github/scripts/tests/test-staged-sign-macos.sh"
+
+[tasks."test:staged-signed-dmg"]
+description = "Run the staged verify-macos disk image check against stand-ins and produce each of its refusals"
+run = "bash .github/scripts/tests/test-signed-dmg-refusals.sh"
+
 [tasks."test:signed-pkg-refusals"]
 description = "Exercise signed CLI/package verification and cleanup with stand-ins, including both designated-requirement forms and invalid signature or payload refusals"
 run = "bash .github/scripts/tests/test-signed-pkg-refusals.sh"
@@ -442,7 +450,7 @@ pwsh -NoProfile -File .github/scripts/cli-recovery-install-tests/test-install-bl
 '''
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, the staged Mac app signing and disk image tests, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -459,6 +467,8 @@ depends = [
   "test:cli-recovery",
   "test:sign-macos",
   "test:signed-pkg-refusals",
+  "test:staged-sign-macos",
+  "test:staged-signed-dmg",
   "test:cli-recovery-install-blocks",
   "test:installer-version",
   "test:fetch-wix",
