@@ -35,8 +35,13 @@ is none, keeps the agent's reason on its card, and its repository's row shows th
 store's words, such as "The token store failed: access was refused (kind
 access_refused, code 5).", instead of "No token", with no "No repository has a token
 yet" banner; Set Token stays, since a save goes through the same store and says if it
-fails too. A token save or removal the agent has not answered says so, and the row
-then follows the snapshot, since the agent may still do it.
+fails too. A pool skipped because the agent knows the token is stored but could not read
+it, which the agent says as "the token is stored but could not be read", keeps that
+reason on its card; its repository's row still reads "Token set", so it offers Replace
+Token and not Set Token, and saving through Replace Token is how the pool is admitted
+again. The announcement of a save names such a pool beside those skipped for want of a
+token. A token save or removal the agent has not answered says so, and the row then
+follows the snapshot, since the agent may still do it.
 
 | File                                                | Holds                                                                                                                                  |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |

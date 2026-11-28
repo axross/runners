@@ -634,7 +634,7 @@ mod tests {
             macos_golden,
             entry(),
             &BTreeMap::new(),
-            &StoreTokens::new(None),
+            &StoreTokens::new(None, std::time::Duration::ZERO),
         )
     }
 
@@ -707,8 +707,11 @@ mod tests {
                 &crate::runtime::secret::Secret::new("t".to_string()),
             )
             .unwrap();
-        let tokens = StoreTokens::new(Some(store.clone()));
-        tokens.refresh([&repository, &TokenKey::parse_organization("octo").unwrap()]);
+        let tokens = StoreTokens::new(Some(store.clone()), std::time::Duration::ZERO);
+        tokens.refresh(
+            [&repository, &TokenKey::parse_organization("octo").unwrap()],
+            &crate::runtime::fake::MemoryLog::default(),
+        );
         store.fail_with(Some("keychain locked"));
         let _ = tokens.read(&repository);
         tokens

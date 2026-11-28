@@ -550,9 +550,10 @@ async fn organization_keys_and_token_limits_are_checked_before_sending() {
     assert!(!everything(&session).contains(&"a".repeat(40)));
 }
 
-/// saving repairs a missing credential, not a failed store or an already running pool.
+/// saving repairs a missing or unreadable credential, not a failed store or an already
+/// running pool.
 #[tokio::test(start_paused = true)]
-async fn an_organization_save_announces_only_its_pools_skipped_for_no_token() {
+async fn an_organization_save_announces_only_its_pools_skipped_for_want_of_a_readable_token() {
     let (agent, session) = connected("running").await;
     let mut snapshot = fixture("running");
     let missing = snapshot
@@ -565,6 +566,12 @@ async fn an_organization_save_announces_only_its_pools_skipped_for_no_token() {
         ("org-one", "owner", "skipped", "pool[3]: no token."),
         ("org-two", "owner", "skipped", "repositories[4]: no token."),
         ("other-org", "other", "skipped", "pool[5]: no token."),
+        (
+            "org-unreadable",
+            "owner",
+            "skipped",
+            "pool[7]: the token is stored but could not be read.",
+        ),
         (
             "store-unavailable",
             "owner",
@@ -587,7 +594,7 @@ async fn an_organization_save_announces_only_its_pools_skipped_for_no_token() {
     );
     assert_eq!(
         marshal_view::pools_started_by(&snapshot, "owner"),
-        ["org-one", "org-two"]
+        ["org-one", "org-two", "org-unreadable"]
     );
     agent.push(snapshot.clone());
     session.settle().await;
@@ -597,12 +604,9 @@ async fn an_organization_save_announces_only_its_pools_skipped_for_no_token() {
         .await
         .unwrap();
     session.settle().await;
-    assert!(
-        session
-            .screen
-            .announced()
-            .contains(&"Token for owner saved. Starting pools org-one and org-two.".into())
-    );
+    assert!(session.screen.announced().contains(
+        &"Token for owner saved. Starting pools org-one, org-two and org-unreadable.".into()
+    ));
     snapshot.agent.state = "stopped".into();
     assert!(marshal_view::pools_started_by(&snapshot, "owner").is_empty());
     agent.push(snapshot);

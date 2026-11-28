@@ -87,10 +87,11 @@ Create the token while signed in as an owner of the organisation:
    **Organisations**. Choose **Set Token**, paste the token and choose **Save**.
 
 Every organisation pool with that login uses this token. Saving it starts pools
-skipped for **no token** while the agent is running. Use **Replace Token** to
-rotate it; the next registration reads the replacement. **Remove Token** stops
-those pools from getting new runners, but runners already up finish their job.
-Repository rows keep their separate tokens.
+skipped for **no token**, or for **the token is stored but could not be read**,
+while the agent is running. Use **Replace Token** to rotate it; the next
+registration reads the replacement. **Remove Token** stops those pools from
+getting new runners, but runners already up finish their job. Repository rows
+keep their separate tokens.
 
 Removing an organisation's last pool does not remove its token, and the window then
 shows no row to remove it from. Before removing the last pool for a login, choose

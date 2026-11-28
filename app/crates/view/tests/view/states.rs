@@ -650,6 +650,46 @@ fn no_pool_could_start_for_another_reason_points_to_the_pools() {
 }
 
 #[test]
+fn no_pool_could_start_for_tokens_stored_but_unreadable_points_to_the_pools_and_keeps_them_set() {
+    let reason = format!("{}.", marshal_cli::agent::tokens::STORED_UNREADABLE);
+    let snapshot = patched("stopped_no_pool_started", |value| {
+        for (index, pool) in value["pools"]
+            .as_array_mut()
+            .expect("pools")
+            .iter_mut()
+            .enumerate()
+        {
+            pool["has_token"] = true.into();
+            pool["reason"] = format!("pool[{index}]: {reason}").into();
+        }
+        for repository in value["repositories"].as_array_mut().expect("repositories") {
+            repository["has_token"] = true.into();
+        }
+    });
+    let view = view_of(&snapshot);
+    assert_eq!(
+        first_banner(&view).lines,
+        ["Each pool below says why. Fix them, then choose Start All."]
+    );
+    let list = list(&view);
+    assert_eq!(
+        list.pools[0].note.as_deref(),
+        Some("pool[0]: the token is stored but could not be read.")
+    );
+    assert!(
+        list.tokens
+            .rows
+            .iter()
+            .all(|row| row.state_text == "Token set")
+    );
+    assert!(
+        view.banners()
+            .iter()
+            .all(|banner| banner.heading != "No repository has a token yet")
+    );
+}
+
+#[test]
 fn the_restart_limit_stop_names_the_log_and_start_all() {
     let snapshot = load("stopped_restart_limit");
     let view = view_of(&snapshot);

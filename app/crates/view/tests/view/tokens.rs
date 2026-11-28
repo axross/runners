@@ -136,6 +136,46 @@ fn assert_skipped_for_no_token(view: &marshal_view::View) {
     );
 }
 
+/// a token the agent knows is stored but could not read keeps showing as stored, shows
+/// the agent's words on the pool's card, and a save of the token is announced as
+/// starting the pool.
+#[test]
+fn a_pool_skipped_for_a_stored_token_the_agent_could_not_read_is_started_by_a_save() {
+    let reason = format!(
+        "pool[2]: {}.",
+        marshal_cli::agent::tokens::STORED_UNREADABLE
+    );
+    let snapshot = patched("running", |value| {
+        value["repositories"][2]["has_token"] = true.into();
+        value["pools"][2]["has_token"] = true.into();
+        value["pools"][2]["reason"] = reason.as_str().into();
+    });
+    assert_eq!(pools_started_by(&snapshot, "owner/docs"), ["docs"]);
+    assert!(pools_started_by(&snapshot, "owner/app").is_empty());
+    let view = view_of(&snapshot);
+    let list = list(&view);
+    assert_eq!(list.tokens.rows[2].state, TokenState::Set);
+    assert_eq!(list.tokens.rows[2].state_text, "Token set");
+    let labels: Vec<_> = list.tokens.rows[2]
+        .controls
+        .iter()
+        .map(|control| control.label.as_str())
+        .collect();
+    assert_eq!(labels, ["Replace Token", "Remove Token"]);
+    assert_eq!(
+        list.pools[2].note.as_deref(),
+        Some("pool[2]: the token is stored but could not be read.")
+    );
+    assert!(list.pools[2].pill.is_none());
+    assert_eq!(list.header.tokens_chip, None);
+    let stopped = patched("running", |value| {
+        value["agent"]["state"] = "stopped".into();
+        value["pools"][2]["has_token"] = true.into();
+        value["pools"][2]["reason"] = reason.as_str().into();
+    });
+    assert!(pools_started_by(&stopped, "owner/docs").is_empty());
+}
+
 #[test]
 fn pools_on_one_repository_share_one_row_and_one_state() {
     let view = view_of(&load("shared_repository"));
