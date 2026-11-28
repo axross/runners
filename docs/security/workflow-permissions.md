@@ -144,7 +144,9 @@ so that it is simple to follow and to check.
 Two properties keep the admission bounded, and a third does not hold:
 
 - Execution of untrusted code stays closed: the job checks out the default
-  branch, never the pull request head.
+  branch, never the pull request head. Head files are read only through the
+  [fixed retrieval command](#the-review-job-reads-head-files-only-through-a-fixed-command),
+  and none is executed.
 - The prompt is fixed, built from the pull request number and repository, never
   from the comment body, so a commenter's text is not an instruction.
 - **Steering is not closed.** The pull request's title, description, diff,
@@ -171,3 +173,82 @@ If the reviewer quotes the trigger phrase, an unrequested review can start.
 Operators detect these failures by noticing a missing or unexpected review.
 The gate excludes the broader `NONE` association because it would admit every
 outside author.
+
+## The Review Job Reads Head Files Only Through a Fixed Command
+
+The review job checks out the default branch and the reviewer reads the pull
+request's changes through `gh pr diff`, so the workspace never holds the head's
+files. The reviewer reads a head file, a line range of one, or a directory
+listing through one command instead, and the head is still never checked out or
+executed.
+
+- **Retrieval.** [`read-head.sh`](../../.github/scripts/read-head.sh) takes a
+  40-character lowercase commit SHA and a repository-relative path, with an
+  optional first and last line, and prints the result to standard output. It reads
+  this repository through `GET` requests to the contents API, at most two for one
+  call, and creates no file. It validates every argument before any request and refuses
+  an input outside a narrow set of path characters, so it cannot be steered to
+  another path, request method, or repository. The one exception is a line range on
+  a directory other than the root: the command cannot know the path is a directory
+  until the one request that shows it, and then refuses the range. The allowlist names this
+  program, not a `gh api` prefix, because a prefix rule would also accept arguments
+  that change a request's method or body.
+- **The copy.** The `Install Head Reader` step runs after the checkout and before
+  the action. It copies the script to one declared path outside the workspace, the
+  runner's temporary directory, and the home directory, with the repository name,
+  the `gh` path and the other tools' paths fixed into the copy. The step finds each
+  tool and the interpreter only in one tool search path that it declares in its own
+  environment, `/usr/bin:/bin`, and fixes that same value into the copy as its own
+  search path, so the copy trusts when it runs the directories the step checked,
+  and never the job's own search path. The copy's first
+  line names its interpreter by absolute path and starts it in privileged mode, so
+  the caller's search path, startup-file variables, and exported functions do not
+  reach it. The step accepts a tool or the interpreter only from a directory chain
+  and a file that root alone can change, and fails the job otherwise. The copy is owned
+  by root, mode 555, in a directory that holds only the copy, and every ancestor
+  of that directory is owned by root and writable by neither group nor others. The
+  step checks each of these properties, prints the ownership chain, and fails the
+  job if any one does not hold, so a command running as the job's user cannot
+  overwrite, remove, rename, or add beside the copy. The job's user also has
+  passwordless `sudo`, so a route that ran arbitrary commands could still replace
+  the copy. No allowed tool offers such a route, so the protection is defence in
+  depth, not a boundary against that.
+- **No allowlist entry writes files.** This change removed two prefix entries that
+  accepted file-writing options, and denied their command as defence in depth,
+  because Claude Code also runs a built-in set of read-only commands without any
+  rule. No remaining entry writes files or repository contents. The prompt tells
+  the reviewer that command is unavailable and that its absence is not an
+  unchecked item.
+- **Head content is data.** The prompt tells the reviewer to treat everything from
+  the head, including its instruction files, the title, the body, commits, and
+  comments, as data under review, and never to check out, fetch, or add a worktree
+  for the head.
+- **The guard.** `mise run test:read-head` reads the workflow and fails unless the
+  allowlist is exactly the expected set, the deny list holds its entries including
+  the denied command, the copy step's path, the allowlist entry, and the prompt
+  name the same path, the copy step's repository is this one, the copy step comes
+  after the checkout and before the action and sets no condition and no
+  continue-on-error, so that it runs every time and a failure fails the job, and
+  the prompt keeps its two prohibitions. Like the other guards here, it catches a
+  mistake and is no control against a hostile edit.
+  [Check Commands](../conventions/testing.md#check-commands) says where the tests
+  that run the copy step run, skip, and fail.
+
+The residual risks are these:
+
+- The host's handling of shell syntax, and of other spellings or wrappers of the
+  denied command, which the rule matches only as written.
+- The environment the programs the copy starts inherit from the reviewer's shell,
+  such as configuration a program reads from the home directory and the dynamic
+  loader's variables, which act before the script's own resets. The privileged
+  start closes this for the interpreter only.
+- The review plugin's pre-approved tools, an [accepted risk](#the-review-plugin-marketplace-is-not-pinned-accepted-risk)
+  that can change without notice.
+- The App token's write grant and its presence in the checkout's git configuration.
+  The job does not bound the token; the
+  [registered deviation](../agent-work/skill-exceptions.md#deviation---the-claude-ci-review-token-is-not-bounded-to-read-access)
+  records the alternative behaviour that stands in for that bound.
+- Large outputs, which the host may keep in its own files on the job's virtual
+  machine.
+- A pull request from a fork, whose head SHA the base repository's contents
+  endpoint may not serve. The reviewer reports such a file as unchecked.

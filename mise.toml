@@ -398,6 +398,10 @@ run = "bash .github/scripts/tests/test-set-release-version.sh"
 description = "Check the release gate that semantic-release runs before it tags and publishes"
 run = "bash .github/scripts/tests/test-verify-release.sh"
 
+[tasks."test:read-head"]
+description = "Check the Claude CI review workflow's head-reading boundary, and the command and copy step behind it; the tests that need a root-owned directory run as root or with passwordless sudo, skip with a note elsewhere, and fail on GitHub Actions"
+run = "bash .github/scripts/tests/test-read-head.sh"
+
 [tasks."test:installer-version"]
 description = "Check the script that maps a release version to the version its MSI carries"
 run = "bash .github/scripts/tests/test-installer-version.sh"
@@ -419,7 +423,7 @@ description = "Run the release shape check against altered copies of the workflo
 run = "bash .github/scripts/tests/test-release-shape.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, head-reader tests, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -431,6 +435,7 @@ depends = [
   "test:set-release-version",
   "test:verify-release",
   "test:assemble-release",
+  "test:read-head",
   "check:release-shape",
   "test:release-shape",
   "test:installer-version",

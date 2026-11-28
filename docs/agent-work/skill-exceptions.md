@@ -148,3 +148,40 @@ made [Claude CI](./claude-ci-review.md#claude-ci-review-from-claude-code) the po
 [`reviewer` subagent](./delegate.md#use-claude-code-subagents) serves the pre-push review.
 The [previous register](https://github.com/axross/runners/blob/a070ff3488b3df526ef5083e77c908ecc383c49c/docs/operations/agent-skills.md#deviation---the-claude-code-review-subagents-limits-and-closure)
 records the former exception, its adoption, and its limits.
+
+### Deviation - the Claude CI review token is not bounded to read access
+
+- **Status:** Active.
+- **Rule:** `code-review`'s Running a Reviewer Safely in CI section, in
+  `references/posted-review-policy.md`, the guideline on scoping the reviewer's
+  credentials to the least privilege it needs and never granting write access to
+  repository contents. This is the installed copy at `axross/skills` commit
+  `99e6407460d4e477a1a0690e40bee8f7079acbf2`.
+- **Counterexample:** the review job does not bound the token its `gh` uses. The
+  action takes the installed Claude GitHub App's grant through an OpenID Connect
+  exchange, so the job's `permissions:` block does not limit it, and that grant
+  can include writing contents. Bounding it needs the job token passed through the
+  action's `github_token` input, which changes the posting identity and needs
+  pull request write scope.
+- **Alternative behaviour:** no allowlist entry writes files or repository
+  contents, and the `git` command is denied. Head files are read through a fixed
+  read-only command, as the
+  [Security](../security/workflow-permissions.md#the-review-job-reads-head-files-only-through-a-fixed-command)
+  page records.
+- **Rationale:** the posting identity and the review gate's admission depend on
+  the App's bot, and switching the token is a separate decision.
+- **Adoption evidence:** the maintainer's answers of 2026-11-27 (PST) in the run's
+  question tool, recorded at
+  [#182 comment 7230279897](https://github.com/axross/runners/issues/182#issuecomment-7230279897);
+  the plan-approval record at
+  [#182 comment 7230663882](https://github.com/axross/runners/issues/182#issuecomment-7230663882)
+  and the revision-5 approval at
+  [#182 comment 7230785663](https://github.com/axross/runners/issues/182#issuecomment-7230785663);
+  and the merge of the change that carries this entry.
+- **Scope:** the Claude CI review job.
+- **Reassessment:** when the token, the allowlist, the review plugin's
+  pre-approved tools, or the rule changes, or when
+  [axross/skills#773](https://github.com/axross/skills/issues/773) resolves.
+- **Upstream status:** no skill defect is claimed. axross/skills#773 evaluates
+  moving that repository's own review workflow to the job token. It was reported
+  open on 2026-11-27, and was not read from this run's session.

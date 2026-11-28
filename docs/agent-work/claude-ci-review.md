@@ -87,3 +87,38 @@ Each round follows these rules:
 - **Cap.** Every request counts against the four-round cap, including a failed
   round. After a failed round, the run may post a new request once the cause is
   addressed, and that request counts toward the cap.
+
+## What a Claude CI round reads
+
+A round reads four things:
+
+- the pull request's title, description, comments and head commit, through
+  `gh pr view`;
+- the pull request's diff, through `gh pr diff`;
+- the default branch's checkout, which shows files as they were before the
+  pull request;
+- head files, through [`read-head.sh`](../../.github/scripts/read-head.sh), which the
+  workflow installs root-owned, where no tool the reviewer may run can change it. It
+  prints one file, a line range, or a directory listing at the head commit the
+  reviewer names. The
+  [Security](../security/workflow-permissions.md#the-review-job-reads-head-files-only-through-a-fixed-command)
+  page says how it is protected and where that protection stops.
+
+There is no head-wide search, so a question across the whole head stays a long
+scan of single reads or an unchecked item. The workflow runs from the default
+branch, so a pull request that changes it does not change its own round.
+
+A round's report of unchecked scope sorts under
+[Review Completion Evidence](../../.claude/skills/loop-engineering/references/post-push-review.md#review-completion-evidence)
+as follows:
+
+- **A head file.** Reachable when the command can read it, so a report that
+  names one as unchecked is a finding about the round, not a limit of the route.
+  A path with a character outside ASCII letters, digits, `.`, `_`, `-` and `/`,
+  or over 1,024 characters, is refused, and a fork pull request's head may not
+  be served; both are unreachable through this route, and the reviewer reports
+  them as unchecked.
+- **An earlier round's threads.** Outside required scope, unless the assignment
+  asks the reviewer to read them.
+- **Material outside the repository.** Unreachable, unless a plan designates an
+  out-of-tree check for it.
