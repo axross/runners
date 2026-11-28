@@ -1484,19 +1484,10 @@ async fn stop_of(conn: &Conn) -> (String, String) {
 
 /// a reload, or an edit of the first pool's runners, at the file's current revision.
 async fn write_change(conn: &Conn, edit: bool) -> Result<Value, CallError> {
-    let revision = read_revision(conn).await;
     if edit {
-        conn.call(
-            "config_edit",
-            json!({
-                "revision": revision,
-                "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
-            }),
-        )
-        .await
+        conn.edit_first_pool_runners(false).await
     } else {
-        conn.call("config_reload", json!({"revision": revision}))
-            .await
+        conn.reload_config(false).await
     }
 }
 
@@ -1613,6 +1604,51 @@ async fn a_written_change_keeps_every_other_stop_reason() {
         let unusable = stop_of(&conn).await;
         write_change(&conn, true).await.unwrap();
         assert_eq!(stop_of(&conn).await, unusable);
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_written_change_keeps_a_stop_for_no_pool_started() {
+    // no token is stored, so the only pool is skipped
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.write_toml(ONE_POOL_TOML);
+    rig.hold_jobs();
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        let stopped = stop_of(&conn).await;
+        assert_eq!(stopped.0, "no_pool_started");
+        for edit in [false, true] {
+            write_change(&conn, edit).await.unwrap();
+            assert_eq!(stop_of(&conn).await, stopped, "edit: {edit}");
+        }
+        conn.ok("quit").await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_written_change_keeps_a_stop_for_restart_limit() {
+    // the core fails each time a job container is run, so it stops at the fourth failure
+    let rig = Rig::new(ONE_POOL);
+    rig.remove("config.json");
+    rig.write_toml(ONE_POOL_TOML);
+    rig.store_token("o", "r", TOKEN);
+    rig.hold_jobs();
+    rig.clock.pause.set(Duration::from_millis(400));
+    rig.backend.state.borrow_mut().on_run = Some(Box::new(|| panic!("the core broke")));
+    let rig = &rig;
+    rig.drive(Launch::Running, |conn| async move {
+        conn.until_state("stopped").await;
+        let stopped = stop_of(&conn).await;
+        assert_eq!(stopped.0, "restart_limit");
+        for edit in [false, true] {
+            write_change(&conn, edit).await.unwrap();
+            assert_eq!(stop_of(&conn).await, stopped, "edit: {edit}");
+        }
         conn.ok("quit").await;
     })
     .await;

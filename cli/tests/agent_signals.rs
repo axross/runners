@@ -308,31 +308,6 @@ fn hand_edited(lifecycle: &str) -> String {
     format!("{ONE_POOL_TOML}\n[lifecycle]\n{lifecycle}")
 }
 
-async fn revision(conn: &Conn) -> String {
-    conn.ok("config_read").await["revision"]
-        .as_str()
-        .unwrap()
-        .to_string()
-}
-
-async fn reload(conn: &Conn) {
-    conn.call("config_reload", json!({"revision": revision(conn).await}))
-        .await
-        .unwrap();
-}
-
-async fn edit_runners(conn: &Conn) {
-    conn.call(
-        "config_edit",
-        json!({
-            "revision": revision(conn).await,
-            "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
-        }),
-    )
-    .await
-    .unwrap();
-}
-
 #[tokio::test(flavor = "current_thread")]
 async fn an_applied_reload_that_turns_the_network_stop_off_leaves_a_network_change_alone() {
     let rig = rig("resume_after_stop = false\n");
@@ -342,7 +317,7 @@ async fn an_applied_reload_that_turns_the_network_stop_off_leaves_a_network_chan
         conn.until_runner_runs().await;
         rig.mark_running();
         rig.write_toml(&hand_edited("stop_on_network_change = false\n"));
-        reload(&conn).await;
+        conn.reload_config(false).await.unwrap();
         rig.signals.set_network(network(Kind::Ethernet, 3, 2));
         tokio::time::sleep(Duration::from_millis(600)).await;
         assert_eq!(conn.status().await.agent.state, "running");
@@ -361,11 +336,11 @@ async fn an_applied_reload_that_turns_keep_awake_off_ends_the_hold_and_one_that_
         rig.mark_running();
         assert!(!rig.signals.is_held());
         rig.write_toml(&hand_edited("keep_awake = true\n"));
-        reload(&conn).await;
+        conn.reload_config(false).await.unwrap();
         conn.eventually("the hold taken", || rig.signals.is_held())
             .await;
         rig.write_toml(&hand_edited("keep_awake = false\n"));
-        reload(&conn).await;
+        conn.reload_config(false).await.unwrap();
         conn.eventually("the hold ended", || !rig.signals.is_held())
             .await;
         conn.ok("quit").await;
@@ -394,7 +369,7 @@ async fn an_applied_reload_that_turns_resume_off_cancels_a_waiting_resume() {
     rig.drive(Launch::Running, |conn| async move {
         waiting_to_resume(&conn, rig).await;
         rig.write_toml(&hand_edited("resume_after_stop = false\n"));
-        reload(&conn).await;
+        conn.reload_config(false).await.unwrap();
         resume_stays_cancelled(&conn, rig).await;
         conn.ok("quit").await;
     })
@@ -409,7 +384,7 @@ async fn an_applied_edit_that_turns_resume_off_cancels_a_waiting_resume() {
     rig.drive(Launch::Running, |conn| async move {
         waiting_to_resume(&conn, rig).await;
         rig.write_toml(&hand_edited("resume_after_stop = false\n"));
-        edit_runners(&conn).await;
+        conn.edit_first_pool_runners(false).await.unwrap();
         resume_stays_cancelled(&conn, rig).await;
         conn.ok("quit").await;
     })
@@ -437,18 +412,16 @@ async fn a_check_and_a_refused_reload_leave_a_waiting_resume_alone() {
     rig.drive(Launch::Running, |conn| async move {
         waiting_to_resume(&conn, rig).await;
         rig.write_toml(&hand_edited("resume_after_stop = false\n"));
-        conn.call(
-            "config_reload",
-            json!({"revision": revision(&conn).await, "check": true}),
-        )
-        .await
-        .unwrap();
+        conn.reload_config(true).await.unwrap();
         let waiting = (Some("waiting".to_string()), Some("slept".to_string()));
         assert_eq!(resume_of(&conn.status().await), waiting);
 
         rig.write_toml(&hand_edited("resume_after_stop = 3\n"));
         let code = conn
-            .code("config_reload", json!({"revision": revision(&conn).await}))
+            .code(
+                "config_reload",
+                json!({"revision": conn.config_revision().await}),
+            )
             .await;
         assert!(code.starts_with("config_"), "{code}");
         assert_eq!(resume_of(&conn.status().await), waiting);

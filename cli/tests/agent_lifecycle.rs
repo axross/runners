@@ -335,13 +335,6 @@ fn hand_edited(lifecycle: &str) -> String {
     ONE_POOL_TOML.replace("\n[[pool]]", &format!("{lifecycle}\n[[pool]]"))
 }
 
-async fn revision(conn: &Conn) -> String {
-    conn.ok("config_read").await["revision"]
-        .as_str()
-        .unwrap()
-        .to_string()
-}
-
 /// how a change of the file is sent: `config_reload`, or a `config_edit` of the
 /// first pool's runners.
 #[derive(Clone, Copy, Debug)]
@@ -354,26 +347,9 @@ impl Via {
     const BOTH: [Self; 2] = [Self::Reload, Self::Edit];
 
     async fn send(self, conn: &Conn, check: bool) -> Result<Value, CallError> {
-        let revision = revision(conn).await;
         match self {
-            Self::Reload => {
-                conn.call(
-                    "config_reload",
-                    json!({"revision": revision, "check": check}),
-                )
-                .await
-            }
-            Self::Edit => {
-                conn.call(
-                    "config_edit",
-                    json!({
-                        "revision": revision,
-                        "check": check,
-                        "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
-                    }),
-                )
-                .await
-            }
+            Self::Reload => conn.reload_config(check).await,
+            Self::Edit => conn.edit_first_pool_runners(check).await,
         }
     }
 }
@@ -497,7 +473,7 @@ async fn a_check_a_refusal_and_a_stale_revision_leave_the_settings_in_effect() {
             }
 
             // a revision the file has left is refused
-            let stale = revision(&conn).await;
+            let stale = conn.config_revision().await;
             rig.write_toml(&format!("# edited again\n{hand_edited_file}"));
             let code = conn.code("config_reload", json!({"revision": stale})).await;
             assert_eq!(code, "config_changed");
@@ -505,7 +481,10 @@ async fn a_check_a_refusal_and_a_stale_revision_leave_the_settings_in_effect() {
             // a file that breaks the rules is refused, and keeps what is in effect
             rig.write_toml(&hand_edited(&format!("{HAND_EDIT}keep_awake = 3\n")));
             let code = conn
-                .code("config_reload", json!({"revision": revision(&conn).await}))
+                .code(
+                    "config_reload",
+                    json!({"revision": conn.config_revision().await}),
+                )
                 .await;
             assert!(code.starts_with("config_"), "{code}");
             let lifecycle = conn.status().await.lifecycle.unwrap();
@@ -526,7 +505,7 @@ async fn an_edit_at_a_revision_read_before_a_setting_change_is_refused_as_change
     let rig = rig("");
     let rig = &rig;
     rig.drive(Launch::Stopped, |conn| async move {
-        let read = revision(&conn).await;
+        let read = conn.config_revision().await;
         conn.call(
             "lifecycle_set",
             json!({ "key": "keep_awake", "value": false }),
@@ -568,7 +547,7 @@ async fn on_the_mac_profile_an_applied_reload_or_edit_changes_no_setting() {
                     running(&conn, rig).await;
                 }
                 rig.write_toml(&format!("# a hand edit\n{config}"));
-                via.send_axmc(&conn).await;
+                via.send(&conn, false).await.unwrap();
                 let snapshot = conn.status().await;
                 assert!(snapshot.lifecycle.is_none(), "{via:?} {launch:?}");
                 assert!(rig.sign_in.command.borrow().is_none());
@@ -580,45 +559,23 @@ async fn on_the_mac_profile_an_applied_reload_or_edit_changes_no_setting() {
     }
 }
 
-impl Via {
-    /// sends the change to an axmc agent, whose pool is `os = "linux"` with a disk.
-    async fn send_axmc(self, conn: &Conn) {
-        let revision = revision(conn).await;
-        match self {
-            Self::Reload => {
-                conn.call("config_reload", json!({"revision": revision}))
-                    .await
-                    .unwrap();
-            }
-            Self::Edit => {
-                conn.call(
-                    "config_edit",
-                    json!({
-                        "revision": revision,
-                        "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
-                    }),
-                )
-                .await
-                .unwrap();
-            }
-        }
-    }
-}
-
 /// sends a change that names another image, which the agent checks before it writes:
 /// a reload of a file whose `image_name` was changed by hand, or an edit of it.
 async fn image_change(conn: &Conn, rig: &Rig, via: Via) -> Result<Value, CallError> {
     match via {
         Via::Reload => {
             rig.write_toml(&file(rig).replace("actions-runner:local", "other:2"));
-            conn.call("config_reload", json!({"revision": revision(conn).await}))
-                .await
+            conn.call(
+                "config_reload",
+                json!({"revision": conn.config_revision().await}),
+            )
+            .await
         }
         Via::Edit => {
             conn.call(
                 "config_edit",
                 json!({
-                    "revision": revision(conn).await,
+                    "revision": conn.config_revision().await,
                     "edits": [{"op": "set", "path": "image_name", "value": "other:2"}],
                 }),
             )

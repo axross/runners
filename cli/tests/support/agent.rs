@@ -446,6 +446,39 @@ impl Conn {
         self.client.token_set(repository, token).await
     }
 
+    /// the revision of `config.toml` that `config_read` names now.
+    pub async fn config_revision(&self) -> String {
+        self.ok("config_read").await["revision"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    /// a `config_reload` at the file's current revision; a check writes nothing.
+    pub async fn reload_config(&self, check: bool) -> Result<Value, CallError> {
+        let revision = self.config_revision().await;
+        self.call(
+            "config_reload",
+            json!({"revision": revision, "check": check}),
+        )
+        .await
+    }
+
+    /// a `config_edit` that sets the first pool's runners to 2, at the file's current
+    /// revision; a check writes nothing.
+    pub async fn edit_first_pool_runners(&self, check: bool) -> Result<Value, CallError> {
+        let revision = self.config_revision().await;
+        self.call(
+            "config_edit",
+            json!({
+                "revision": revision,
+                "check": check,
+                "edits": [{"op": "set", "path": "pool[0].runners", "value": 2}],
+            }),
+        )
+        .await
+    }
+
     /// the next push, within 20 s.
     pub async fn push(&mut self) -> Push {
         tokio::time::timeout(Duration::from_secs(20), self.pushes.recv())
