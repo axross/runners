@@ -614,7 +614,7 @@ mod tests {
     }
 
     /// the runner-age warnings of the golden macOS VM's entry in the snapshot of a
-    /// view whose clock is `days` after the release of runner 2.337.0, as
+    /// view whose clock is `days_after_release` days after the release of runner 2.337.0, as
     /// `(code, days, version)`; `None` is a check that found no golden macOS VM.
     fn runner_age_warnings(
         golden: Option<&str>,
@@ -664,12 +664,15 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_runner_gives_only_an_unknown_age_and_a_missing_golden_macos_vm_no_runner_warning()
-    {
+    fn an_unknown_runner_gives_only_an_unknown_age() {
         assert_eq!(
             runner_age_warnings(Some("marshal-golden-macos-g1-r9.9.9-20260101000000"), 10),
             [("runner_age_unknown".to_string(), None, None)]
         );
+    }
+
+    #[test]
+    fn a_missing_golden_macos_vm_gives_no_runner_warning() {
         assert_eq!(runner_age_warnings(None, 10), []);
     }
 

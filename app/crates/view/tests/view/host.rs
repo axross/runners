@@ -25,6 +25,8 @@ fn with_m3_items() -> Snapshot {
 /// [`with_m3_items`] with the golden macOS VM built with runner `runner_version`
 /// and carrying `warnings`, which are the ones the agent can send together: at most
 /// one of the runner's age warnings, and `runner_age_unknown` only without the others.
+/// A runner age warning's code, days and version are kept in step by hand with the
+/// CLI's `the_golden_macos_vm_entry_warns_of_its_runner_in_the_linux_golden_vms_age_bands`.
 fn with_golden_macos_vm(runner_version: &str, warnings: Value) -> Snapshot {
     patched("running", |value| {
         let runners = &mut value["pools"][1]["runners"];
@@ -205,6 +207,13 @@ fn a_golden_macos_vm_runner_released_10_days_ago_may_have_a_newer_one() {
     ));
     let line = "Warning: runner 2.337.0 was released 10 days ago, and a newer runner may exist.";
     assert_eq!(warnings.matches(line).count(), 1, "{warnings}");
+    // beside the Linux golden VM's own may-be-newer warning, for another runner
+    assert!(
+        warnings.contains(
+            "Warning: runner 2.338.2 was released 9 days ago, and a newer runner may exist."
+        ),
+        "{warnings}"
+    );
     assert!(!warnings.contains("never updates itself"), "{warnings}");
 }
 
