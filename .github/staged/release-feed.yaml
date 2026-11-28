@@ -153,7 +153,7 @@ jobs:
             exit 1
           fi
           while IFS= read -r file; do
-            "$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION" "signing/${file}"
+            "$SYSTEM_BIN/unshare" --map-root-user --net "${RUNNER_TEMP}/update-tools/cargo-tauri" signer sign --app-version "$VERSION" "signing/${file}" </dev/null
             mv "signing/${file}.sig" "signature/${file}.sig"
             echo "Signed ${file} for ${VERSION}."
           done < checked-files

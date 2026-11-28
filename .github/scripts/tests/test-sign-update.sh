@@ -24,10 +24,13 @@ password="PASSWORD-2b9d44e0"
 
 # the stand-in signer writes a signature next to the file it is given and
 # records its arguments and the two variables. it learns where to record from
-# the stand-in unshare, so a signer called without unshare fails.
+# the stand-in unshare, so a signer called without unshare fails. it drains its
+# standard input, as a signer that prompts would, so a signer left holding the
+# loop's file list consumes the names after the first.
 cat >"${work}/cargo-tauri" <<'SIGNER'
 #!/usr/bin/env bash
 set -euo pipefail
+cat >/dev/null
 printf '%s\n' "$*" >>"${STANDIN_RECORD}.signer"
 printf 'key=%s password=%s\n' "${TAURI_SIGNING_PRIVATE_KEY-}" "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD-}" >>"${STANDIN_RECORD}.secrets"
 printf 'c2lnbmF0dXJl\n' >"${!#}.sig"
