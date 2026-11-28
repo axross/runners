@@ -413,7 +413,7 @@ fn the_intro_gives_the_reason_only_when_it_is_that_the_file_has_problems() {
 }
 
 #[test]
-fn the_macs_agent_reporting_no_settings_leaves_every_setting_unavailable_without_the_chip() {
+fn a_mac_snapshot_without_settings_leaves_every_setting_unavailable_without_the_chip() {
     let snapshot = patched("running", |value| {
         value["configuration"]["status"] = json!("valid");
     });
