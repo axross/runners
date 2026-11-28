@@ -207,7 +207,7 @@ review label a violation Important; Codex review uses its native priority label.
 - **Secrets stay out of logs and images.** A secret is never echoed, passed on
   a command line that a process listing exposes, written into an image layer
   (`ENV`, `ARG`, `COPY`), or left in a build cache. Two exceptions for a
-  credential are recorded in `sign-macos` for temporary CLI recovery and M2's later app signing:
+  credential are recorded, both in `sign-macos` and held with it for M2:
   `security`'s password arguments, and `notarytool`'s `--key-id` and `--issuer`
   arguments for the notary key's ID and issuer ID. The `.p8` key reaches
   `notarytool` only as a file path. Any other change to how the key's ID, issuer ID
@@ -319,18 +319,6 @@ Apply the lens for each kind of file in the diff.
   the release tooling under [`release/`](./release), or `cli/.cargo/config.toml` is
   checked against each bullet of the release record in
   [Security](./docs/security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
-  During temporary CLI recovery, apply Security's active recovery record instead
-  of the app-only asset/MSI and no-Environment clauses below. Only inline
-  `sign-macos` may reach `release`; it checks out and executes no repository code
-  or package manager. The complete historical checkout is fixed and revalidated
-  around its version-only stamp, build and packaging. A wrong source/lock/version,
-  app/helper substitution, changed input, privilege leak, or checksums/attestation
-  over unsigned macOS inputs is a finding. The recovery set is bare Windows CLI,
-  legacy CLI MSI, signed/notarized bare macOS CLI and pkg, and SHA256SUMS. Both
-  source identities must remain explicit; default provenance must not be claimed
-  to prove every historical input. Normal app checks remain separate, native
-  evidence remains pending, and app restoration is a later reviewed change.
-  Outside that bounded exception, the retained app baseline requires:
   A publish or attest step outside `release.yaml`, a job that both runs the npm tree
   and holds `id-token: write`, an asset other than the app executable
   `marshal-<v>-windows-x64.exe`, the MSI `marshal-<v>-windows-x64.msi` and

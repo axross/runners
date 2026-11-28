@@ -9,14 +9,11 @@ description: "What do the test-only foreground commands do on startup, stop, sig
 ## Running a Host
 
 This section describes the library's foreground instance, its `build` and its version
-1 clients. The normal app executable does not run them: the
+1 clients. Since W1's installer pull request no released executable built from main's source runs them: the
 app's agent runs a host instead, as [the resident agent](./resident-agent.md#the-agent) describes, with the
 runtime layer, the image check, the log and containment that this section shares
 with it. The tests run them through `commands-helper`, and the last command-line
 release's tag documents them as commands.
-
-The temporary recovery CLI uses its fixed historical program tree, not this
-current library. Use [CLI Recovery](../runner-recovery/index.md) for that release's procedures.
 
 `start` runs the host's pools in the foreground through the instance layer and the
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal

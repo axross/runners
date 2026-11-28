@@ -74,10 +74,10 @@ not check that a pool has a token; the Tokens tab shows which have none.
 ### On-Demand Pools in the Resident Agent
 
 On-demand pools run in the resident agent of a Marshal that contains them, from its
-TOML configuration. No published release does yet: app publication is suspended, as
-[Installing Marshal](./windows-setup.md#installing-marshal) says, and the temporary recovery release
-builds the fixed historical command line, which predates on-demand pools
-([CLI Recovery](../runner-recovery/index.md)). Build the runner image and meet the same Docker
+TOML configuration. No published release does yet: the last command-line release
+builds a program tree that predates on-demand pools
+([The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)),
+so these pools need a Marshal release that includes them. Build the runner image and meet the same Docker
 Desktop prerequisites before starting these pools.
 
 In `%LOCALAPPDATA%\marshal\config.toml`, add `scale_set` to the intended pool and

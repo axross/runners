@@ -6,7 +6,7 @@ description: "Where must Marshal be installed, and how is it upgraded or removed
 
 # Installing the Mac app
 
-These steps apply to the [Marshal app bundle](../marshal/mac-app.md#the-bundle-and-the-disk-image). While F0 recovery publishes the historical CLI and package, use [CLI Recovery](../runner-recovery/index.md).
+These steps apply to the [Marshal app bundle](../marshal/mac-app.md#the-bundle-and-the-disk-image).
 
 ## Installing, Upgrading and Uninstalling
 
@@ -27,11 +27,11 @@ Keychain items are kept. Until M4, Marshal has no login item and no updates of i
 own.
 
 With the command line still running, the app shows that another Marshal holds the
-runner lock. Stop it with `marshal stop` before handing the pools to the app. For a
-pkg install, use the uninstall procedure in the recovery release tag's
-[CLI Recovery](../runner-recovery/index.md) guide. For a manual copy at `~/.local/bin/marshal`,
-use that guide's macOS block under Migrating From a Manual Install instead. Then
-use the app to run the pools.
+runner lock. Stop it with `marshal stop`, then remove the command line with the
+uninstall procedure of the guide at the last command-line release's tag, which
+[The Last Command-Line Release](../marshal-cli/release-artifacts.md#the-last-command-line-release)
+says how to open. For a manual copy at `~/.local/bin/marshal`, use that guide's macOS block under
+Migrating From a Manual Install instead. From then on the app runs the pools.
 
 To uninstall, quit Marshal and move it to the Trash. What it leaves, and how to remove
 each:
