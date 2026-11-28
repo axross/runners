@@ -149,15 +149,10 @@ installs `tauri-cli` with `cargo install --locked` at the version in
 runs `cargo tauri build --no-bundle`, fails if the build changed a tracked file or
 left a file that is neither tracked nor ignored, and keeps the built
 `marshal-app.exe` as the run's artifact. An `app-macos` job on a macOS hosted runner
-holds `contents: read` and builds the whole workspace for the Mac app: it installs
-`tauri-cli` the same way, lints and tests every crate with the `fake-engine`
-feature, runs the location rule's tests in the release profile, bundles the unsigned
-`Marshal.app` at bundle version 0.0.0, fails as the `app` job does if the build
-changed a tracked file, checks the bundle's layout, and keeps the app as a `ditto`
-archive and an unsigned disk image as the run's artifact. It signs, notarizes and
-publishes nothing. None of the three jobs uses a cache action, so `tauri-cli`
-compiles on every run, and the `app` and `app-macos` jobs' timeouts are 45 minutes;
-[App](../marshal/building.md#building-the-app) records how the first was set.
+holds `contents: read` and lints and tests every crate of the workspace with the
+`fake-engine` feature. None of the app jobs uses a cache action, so `tauri-cli`
+compiles on every run, and the `app` job's timeout is 45 minutes;
+[App](../marshal/building.md#building-the-app) records how it was set.
 The workflow also builds the
 runner image for linux/arm64 on the hosted `ubuntu-24.04-arm` runner, in a job of its
 own that builds the image, runs the same smoke test, which expects no Android toolchain
@@ -168,7 +163,16 @@ Windows app on a hosted `windows-latest` runner with `tauri-cli` at its pin, run
 release-profile tests, checks that the app's product version is the stamped version
 and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
 the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
-artifact of the run. The dry run signs nothing and references no Environment, and no
+artifact of the run. Its `app-macos` job, on a macOS hosted runner with `contents: read`
+and a 45-minute timeout, checks that the compiler's host target is `aarch64-apple-darwin`, installs `tauri-cli`
+the same way, runs the location rule's tests in the release profile, bundles the
+unsigned `Marshal.app` at bundle version `0.0.0`, writes the release version into the CLI's and the app's manifests and lockfiles
+before it compiles, so the executable carries it as the Windows app's does, fails as the `app` job
+does if the build changed a tracked file beyond that, checks the
+bundle's layout, and builds an unsigned disk image with `hdiutil`. It keeps the app's
+`ditto` archive and the disk image as the `marshal-macos-app` artifact, outside the
+unsigned set, and hands the archive's SHA-256 over as the workflow output
+`app_sha256`. The dry run signs nothing and references no Environment, and no
 job of any workflow declares one until the next signing job returns. It holds
 `contents: read`, and nothing is attested or published; [CLI](../marshal-cli/release-artifacts.md#releases)
 describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,

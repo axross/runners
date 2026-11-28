@@ -13,7 +13,8 @@ The maintainer controls release dispatch and Environment approval. Use the recor
 [`release.yaml`](../../.github/workflows/release.yaml) releases the app with
 semantic-release, and
 [`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the app
-executable and its MSI; [CLI](../marshal-cli/release-artifacts.md#releases) owns the steps. This is the
+executable and its MSI, and the unsigned Mac app and disk image, which no release reads
+until M2's pull request 3, as the staged jobs' last bullet below records; [CLI](../marshal-cli/release-artifacts.md#releases) owns the steps. This is the
 record a change to either workflow, to the build call in
 [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml), to
 [`release/`](../../release), or to the scripts under
@@ -154,6 +155,50 @@ record a change to either workflow, to the build call in
     crates.io index checksums.
     [CLI](../marshal-cli/release-extensions.md#extending-the-release-workflows) owns the release
     sets, job dependencies, restoration point and each extension's obligations.
+- **M2's Mac app signing jobs are staged.** M2's pull request 2 stages `sign-macos`
+  and `verify-macos`, rewritten for the app and the disk image, in
+  [`.github/staged/release-macos-app.yaml`](../../.github/staged/release-macos-app.yaml),
+  outside `.github/workflows/`: GitHub never runs it, so its `environment: release`
+  reaches nothing, and the shape check and `actionlint` do not read it. Its stand-in
+  tests run the staged scripts against recording tools, with no credential, and check
+  that no workflow names the file. M2's pull request 3 moves the jobs into
+  `release.yaml` under this record, and brings back the shape check's rules for them
+  before any release can run them. The record the staged jobs are written to:
+  - **`sign-macos` holds `contents: read`**, checks nothing out, runs no repository
+    file and no package manager, and uses no action but `actions/download-artifact`
+    and `actions/upload-artifact`. It fetches no tool or certificate. Each signing
+    tool it calls is called by its absolute system path, so nothing earlier on `PATH`
+    can stand in for one; its other commands are shell built-ins and macOS base
+    utilities called by name. The Developer ID G2 intermediate it imports is embedded
+    and checked against the pin under
+    [Pinning Convention](./dependency-pins.md#pinning-convention). Every context value
+    reaches its scripts through `env:`. The job's inline steps are the job's own
+    definition, which the maintainer's approval covers.
+  - **It reads all the signing secrets but `APPLE_INSTALLER_P12_BASE64`**, which only
+    the command line's package used. The Mac app and its disk image carry the
+    Developer ID Application signature alone.
+  - **`verify-macos` holds no secret and no signing identity.** It runs a repository
+    script, checks that the unsigned app archive is the one the app job hashed, that
+    the disk image is the one `sign-macos` hashed, and that the notary log is of the
+    submission `sign-macos` made.
+  - **The disk image is the only container notarized and stapled.** It holds only
+    `Marshal.app` and a link to `/Applications`, so opening it runs no code, and
+    notarizing it notarizes the app inside. The app carries no entitlement.
+  - **The two jobs' tools are measured in every pull request.** The `app-macos` job of
+    `release-build.yaml` holds no secret, builds the app with `--no-sign` at the release
+    version, and checks
+    that every signing tool the staged jobs call exists where they call it, since a
+    tool that moves on a new runner image should fail a pull request and not a
+    release. Its `tauri-cli` install is the recorded exception under the
+    [Pinning Convention](./dependency-pins.md#pinning-convention).
+  - **Until pull request 3, a release dispatch also runs `app-macos`.** The `build`
+    job of `release.yaml` calls `release-build.yaml`, so the dispatch runs the Mac app
+    job too. It builds the unsigned Mac app and disk image and keeps them apart as
+    `marshal-macos-app`. It holds `contents: read`, no secret and no Environment.
+    Nothing in the release reads its output, and the files are in neither the
+    unsigned nor the signed set. A failure of the job fails `build` and so blocks the
+    release. This lasts until pull request 3 wires `sign-macos`, which consumes the
+    output.
 - **The documented install blocks run against the dry run's installer on a hosted
   runner.** The `Install Blocks` job in
   [`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) needs the dry run,
@@ -215,10 +260,12 @@ record a change to either workflow, to the build call in
   states the rules. Nothing is committed back: `cli/Cargo.toml`, `app/Cargo.toml` and
   their lockfiles on main hold `0.0.0-dev`, and
   [`set-release-version.sh`](../../.github/scripts/set-release-version.sh) writes
-  the version in the build leg. It refuses unless every version it owns holds the
-  placeholder, `--locked` fails if a manifest and its lockfile disagree, and the
-  leg's product-version check compares the built `marshal-app.exe` with the
-  version.
+  the version in the build, in the Windows leg and in the `app-macos` job alike. It
+  refuses unless every version it owns holds the placeholder, and `--locked` fails
+  if a manifest and its lockfile disagree. The Windows leg's product-version check
+  compares the built `marshal-app.exe` with the version. The Mac job has no
+  product-version check: its tracked-file check compares the diff after the build
+  with the diff of the stamp, so the stamp is the only change the build may leave.
 
 What protects a release is outside the workflow files:
 

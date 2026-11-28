@@ -6,10 +6,12 @@
 # signing secret read in any workflow; release.yaml triggered by anything but a
 # dispatch; a job without its guard, its runner, its permissions or its place in
 # the chain; a step condition that could skip assemble-signed's check; a write to
-# SHA256SUMS in the build's assemble job; PATH, BASH_ENV or ENV set in
-# release.yaml; and a way past a failed job, whatever the case of its status
-# function. a change the test cannot find in the files fails the test, so it
-# cannot go stale and pass.
+# SHA256SUMS in the build's assemble job; a Mac app job that holds a secret, signs,
+# uses a cache or an action other than checkout and artifact upload, does not check
+# the compiler's host target or write the release version before it compiles, joins
+# the unsigned set or leaves a measured tool out; PATH, BASH_ENV or ENV set in release.yaml; and a way past a
+# failed job, whatever the case of its status function. a change the test cannot
+# find in the files fails the test, so it cannot go stale and pass.
 # shellcheck disable=SC2016 # the texts the changes find and replace are literal, not expansions.
 set -euo pipefail
 
@@ -263,6 +265,85 @@ expect_fail "ALWAYS() on a step of release" "can run after a failure" \
 # a condition that skips a step also skips a check.
 expect_fail "a condition on a step of assemble-signed" "release.yaml assemble-signed: step \"Check The Hashes And Write SHA256SUMS\" has a condition" \
   "$release" "$assemble_check" $'      - name: Check The Hashes And Write SHA256SUMS\n        if: false\n        env:\n          VERSION: ${{ needs.plan.outputs.version }}\n        run: |'
+
+echo "-- the Mac app job --"
+expect_fail "the Mac app job on a self-hosted runner" "app-macos job must run on macos-latest" \
+  "$release_build" $'    name: Build The Mac App\n    runs-on: macos-latest' $'    name: Build The Mac App\n    runs-on: self-hosted'
+expect_fail "the Mac app job with another time bound" "app-macos job must be bounded at 45 minutes" \
+  "$release_build" $'    name: Build The Mac App\n    runs-on: macos-latest\n    timeout-minutes: 45' $'    name: Build The Mac App\n    runs-on: macos-latest\n    timeout-minutes: 90'
+expect_fail "an Environment on the Mac app job" "release-build.yaml: job app-macos declares an environment" \
+  "$release_build" $'    name: Build The Mac App\n' $'    name: Build The Mac App\n    environment: release\n'
+expect_fail "a signing secret in the Mac app job" "release-build.yaml: jobs.app-macos.env.APPLE_P12_PASSWORD reads" \
+  "$release_build" $'    name: Build The Mac App\n' $'    name: Build The Mac App\n    env:\n      APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
+expect_fail "the Mac app job without its hash output" "must output app_sha256 from its hash step" \
+  "$release_build" $'      app_sha256: ${{ steps.hash.outputs.app_sha256 }}\n' ''
+expect_fail "a workflow that does not hand over the app hash" "must hand over the app-macos job's app_sha256" \
+  "$release_build" 'value: ${{ jobs.app-macos.outputs.app_sha256 }}' 'value: ${{ jobs.assemble.outputs.artifact }}'
+expect_fail "a cache action in the Mac app job" "app-macos job uses actions/cache" \
+  "$release_build" $'      # holds no secret. the staged' $'      - name: Cache\n        uses: actions/cache@v4\n        with:\n          path: target\n          key: mac\n      # holds no secret. the staged'
+expect_fail "the Mac app in the unsigned set's artifact" "must upload marshal-macos-app once and no other artifact" \
+  "$release_build" $'          name: marshal-macos-app\n' $'          name: marshal-release\n'
+expect_fail "a Mac app build that signs" "must build with \`cargo tauri build ... --no-sign\`" \
+  "$release_build" 'cargo tauri build --bundles app --no-sign' 'cargo tauri build --bundles app'
+expect_fail "a Mac app build installed without --locked" "must build with \`cargo tauri build ... --no-sign\`" \
+  "$release_build" '--version "=${tauri_cli_version}" --locked' '--version "=${tauri_cli_version}"'
+expect_fail "an unsigned set that waits for the Mac app" "assemble needs app-macos" \
+  "$release_build" $'  assemble:\n    name: Assemble The Release Files\n    needs: build\n' $'  assemble:\n    name: Assemble The Release Files\n    needs: [build, app-macos]\n'
+stamp_step=$'          bash ../.github/scripts/set-release-version.sh "$VERSION"\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a Mac app job that never writes the release version" "app-macos job must write the release version with set-release-version.sh" \
+  "$release_build" "$stamp_step" $'          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a Mac app job that writes the release version only after the build" "app-macos job must write the release version before any step that runs cargo" \
+  "$release_build" "$stamp_step" $'          git diff > "${RUNNER_TEMP}/stamp.diff"\n' \
+  "$release_build" $'      - name: Fail If The Build Changed A Tracked File\n        run: |\n' $'      - name: Fail If The Build Changed A Tracked File\n        run: |\n          bash ../.github/scripts/set-release-version.sh x\n'
+expect_fail "a Mac app job that writes the release version after the location test" "app-macos job must write the release version before any step that runs cargo" \
+  "$release_build" "$stamp_step" $'          git diff > "${RUNNER_TEMP}/stamp.diff"\n' \
+  "$release_build" 'run: cargo test --locked --release --package marshal-session --lib location' $'run: |\n          cargo test --locked --release --package marshal-session --lib location\n          bash ../.github/scripts/set-release-version.sh x'
+expect_fail "a release version step with a condition" "must write the release version with set-release-version.sh in a step with no condition" \
+  "$release_build" $'      # stamped tree is kept for the check after the build.\n      - name: Write The Release Version\n' $'      # stamped tree is kept for the check after the build.\n      - name: Write The Release Version\n        if: github.event_name == \'workflow_dispatch\'\n'
+expect_fail "a release version step that writes a fixed version" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$release_build" "$stamp_step" $'          bash ../.github/scripts/set-release-version.sh 1.2.3\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a release version step that only mentions the script in a comment" "must write the release version with set-release-version.sh in a step with no condition" \
+  "$release_build" "$stamp_step" $'          # bash ../.github/scripts/set-release-version.sh "$VERSION"\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a release version step whose VERSION is not the input" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$release_build" $'        env:\n          VERSION: ${{ inputs.version }}\n        run: |\n          bash ../.github/scripts/set-release-version.sh "$VERSION"' $'        env:\n          VERSION: 9.9.9\n        run: |\n          bash ../.github/scripts/set-release-version.sh "$VERSION"'
+expect_fail "a release version step that ignores the script's failure" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$release_build" "$stamp_step" $'          bash ../.github/scripts/set-release-version.sh "$VERSION" || true\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+expect_fail "a release version step that gives the script another argument" "must pass set-release-version.sh \"\$VERSION\", set from inputs.version, and no fixed version" \
+  "$release_build" "$stamp_step" $'          bash ../.github/scripts/set-release-version.sh "$VERSION" "$RUNNER_TEMP"\n          git diff > "${RUNNER_TEMP}/stamp.diff"\n'
+host_block=$'      # the build is native, so a change of runner image fails here instead of\n      # shipping an executable of the wrong architecture.\n      - name: Check The Compiler\'s Host Target\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple-darwin" ]]; then\n            echo "error: rustc\'s host target is \'${host}\', not aarch64-apple-darwin; this runner image builds the wrong architecture" >&2\n            exit 1\n          fi\n          echo "rustc\'s host target is ${host}."\n'
+expect_fail "a Mac app job that does not check the compiler's host target" "must fail unless rustc's host target is aarch64-apple-darwin" \
+  "$release_build" "$host_block" ''
+expect_fail "a Mac app job that checks for another host target" "must fail unless rustc's host target is aarch64-apple-darwin" \
+  "$release_build" '[[ "$host" != "aarch64-apple-darwin" ]]' '[[ "$host" != "x86_64-apple-darwin" ]]'
+expect_fail "a host target check with a condition" "must fail unless rustc's host target is aarch64-apple-darwin" \
+  "$release_build" $'      - name: Check The Compiler\'s Host Target\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple' $'      - name: Check The Compiler\'s Host Target\n        if: github.event_name == \'workflow_dispatch\'\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple'
+signing_anchor='          test -f "${app}/Contents/Resources/icon.icns"'
+for signing in '/usr/bin/codesign --force --sign - "$app"' '/usr/bin/codesign -s - "$app"' '/usr/bin/codesign -fs - "$app"' '/usr/bin/security import cert.p12 -k login.keychain' '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
+  expect_fail "the Mac app job running ${signing}" "signs, imports a certificate, notarizes or staples" \
+    "$release_build" "$signing_anchor" "${signing_anchor}"$'\n          '"${signing}"
+done
+expect_fail "the measuring step's marker in a comment of another step" "signs, imports a certificate, notarizes or staples" \
+  "$release_build" "$signing_anchor" "${signing_anchor}"$'\n          # MEASURED: signing tools\n          /usr/bin/xcrun notarytool submit app.zip'
+expect_fail "a measuring step that does not run the openssl decode" "does not run /usr/bin/openssl enc -base64 -d -A" \
+  "$release_build" "printf 'dGVzdA==' | /usr/bin/openssl enc -base64 -d -A" "printf 'dGVzdA==' | /usr/bin/openssl version"
+for operation in '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
+  expect_fail "the measuring step running ${operation}" "signs, imports a certificate, notarizes or staples" \
+    "$release_build" '          echo "MEASURED: signing tools:${found}"' $'          echo "MEASURED: signing tools:${found}"\n          '"${operation}"
+done
+expect_fail "a measuring step that does not list hdiutil" "does not measure /usr/bin/hdiutil" \
+  "$release_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun ditto"'
+expect_fail "a measuring step that does not list ditto" "does not measure /usr/bin/ditto" \
+  "$release_build" 'bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"' 'bin_tools="security codesign openssl plutil shasum xcrun hdiutil"'
+expect_fail "a measuring step that does not look for the xcrun tools" "does not look for notarytool and stapler with xcrun --find" \
+  "$release_build" 'for tool in notarytool stapler; do' 'for tool in notarytool; do'
+expect_fail "a measuring step that does not fail" "does not fail when a tool is missing" \
+  "$release_build" $'            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2\n            exit 1' $'            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2'
+expect_fail "a measuring step with a condition" "has a condition, which could skip it" \
+  "$release_build" $'      - name: Check The Signing Tools\n' $'      - name: Check The Signing Tools\n        if: github.event_name == \'workflow_dispatch\'\n'
+expect_fail "a measuring step that receives a signing value" "receives a signing value" \
+  "$release_build" $'      - name: Check The Signing Tools\n' $'      - name: Check The Signing Tools\n        env:\n          APPLE_P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}\n'
+expect_fail "a measuring step that does not print MEASURED" "has no step that prints the MEASURED: signing tools line" \
+  "$release_build" 'echo "MEASURED: signing tools:${found}"' 'echo "signing tools:${found}"'
 
 echo "-- a file the check cannot read --"
 expect_fail "a workflow in a syntax the check does not support" "cannot be read" \

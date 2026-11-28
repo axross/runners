@@ -53,8 +53,8 @@ replaces this second manifest and the `embed-resource` build dependency.
 version of `tauri-cli`: one line holding one exact `X.Y.Z`.
 [`tauri-cli-version.sh`](../../.github/scripts/tauri-cli-version.sh) reads it and
 refuses a file that is a range, a prefix or more than one line, so a loose value
-never reaches `cargo install`. The Windows `app` job and the macOS `app-macos` job of
-`merge-checks.yaml` install `tauri-cli` with
+never reaches `cargo install`. The Windows `app` job of
+`merge-checks.yaml`, and the Windows leg and the `app-macos` job of `release-build.yaml`, install `tauri-cli` with
 `cargo install tauri-cli --version "=<pin>" --locked` under `$RUNNER_TEMP`, with no
 cache, so the tool compiles on every run. The release build that W1's installer pull
 request (pull request 3) adds reads the same file the same way, and so does W4's tool job once it

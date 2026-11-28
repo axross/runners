@@ -2,8 +2,10 @@ name: Release Build
 
 # builds the Windows app at the version its caller passes, packs it into an
 # unsigned per-user MSI, tests the MSI, and puts the app executable, the MSI and
-# SHA256SUMS in one artifact. merge-checks.yaml calls it as a dry run and
-# release.yaml for a release; it has no publish or attest step. see
+# SHA256SUMS in one artifact. it also builds the unsigned Mac app and a disk image
+# of it, kept apart in marshal-macos-app for the staged signing job.
+# merge-checks.yaml calls it as a dry run and release.yaml for a release; it has
+# no publish or attest step. see
 # docs/security/release-authority.md, which also says why only the callers declare
 # `concurrency`.
 
@@ -18,6 +20,9 @@ on:
       artifact:
         description: The artifact holding the app executable, its MSI, and SHA256SUMS
         value: ${{ jobs.assemble.outputs.artifact }}
+      app_sha256:
+        description: The SHA-256 of the unsigned Mac app's ditto archive in marshal-macos-app
+        value: ${{ jobs.app-macos.outputs.app_sha256 }}
 
 permissions:
   contents: read
@@ -218,6 +223,232 @@ jobs:
           path: |
             dist/${{ steps.asset.outputs.name }}
             dist/${{ steps.asset.outputs.installer }}
+          if-no-files-found: error
+
+  # the Mac app, built unsigned at the installer version, since a bundle version
+  # takes only X.Y.Z. `tauri-cli` is installed from source at the pin with --locked,
+  # as in merge-checks.yaml's app jobs, and nothing else is downloaded. the app goes
+  # in a ditto archive, which keeps file modes an artifact would drop, and its hash
+  # is the workflow's app_sha256, which the staged signing job checks. the disk
+  # image is the dry run's; the staged signing job builds its own from the archive
+  # with the same hdiutil arguments. marshal-macos-app stays outside
+  # marshal-release, so the unsigned set holds no Mac file. see
+  # docs/marshal/mac-app.md.
+  app-macos:
+    name: Build The Mac App
+    runs-on: macos-latest
+    timeout-minutes: 45
+    outputs:
+      app_sha256: ${{ steps.hash.outputs.app_sha256 }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Pinned Rust Toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      # the build is native, so a change of runner image fails here instead of
+      # shipping an executable of the wrong architecture.
+      - name: Check The Compiler's Host Target
+        run: |
+          host="$(rustc -vV | tr -d '\r' | sed -n 's/^host: //p')"
+          if [[ "$host" != "aarch64-apple-darwin" ]]; then
+            echo "error: rustc's host target is '${host}', not aarch64-apple-darwin; this runner image builds the wrong architecture" >&2
+            exit 1
+          fi
+          echo "rustc's host target is ${host}."
+      # before anything compiles, so `--locked` fails if a manifest and its lockfile
+      # disagree, and the app's product version is the input's. the diff of the
+      # stamped tree is kept for the check after the build.
+      - name: Write The Release Version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          bash ../.github/scripts/set-release-version.sh "$VERSION"
+          git diff > "${RUNNER_TEMP}/stamp.diff"
+      # holds no secret. the staged sign-macos and verify-macos call these tools by
+      # absolute path, and a tool that moves on a new runner image should fail a
+      # pull request here instead of a release. the lists must name every tool those
+      # jobs and test-signed-dmg.sh call; test-staged-sign-macos.sh compares them.
+      # the openssl decode and shasum are run, since their flags are what the jobs rely on.
+      - name: Check The Signing Tools
+        run: |
+          bin_tools="security codesign openssl plutil shasum xcrun ditto hdiutil"
+          sbin_tools="diskutil spctl"
+          found=""
+          missing=""
+          for tool in $bin_tools; do
+            if [[ -x "/usr/bin/${tool}" ]]; then
+              found="${found} ${tool}=/usr/bin/${tool}"
+            else
+              missing="${missing} /usr/bin/${tool}"
+            fi
+          done
+          for tool in $sbin_tools; do
+            if [[ -x "/usr/sbin/${tool}" ]]; then
+              found="${found} ${tool}=/usr/sbin/${tool}"
+            else
+              missing="${missing} /usr/sbin/${tool}"
+            fi
+          done
+          for tool in notarytool stapler; do
+            path="$(/usr/bin/xcrun --find "$tool" 2>/dev/null)" || path=""
+            if [[ -n "$path" ]]; then
+              found="${found} ${tool}=${path}"
+            else
+              missing="${missing} xcrun:${tool}"
+            fi
+          done
+          if [[ "$(printf 'dGVzdA==' | /usr/bin/openssl enc -base64 -d -A)" != "test" ]]; then
+            missing="${missing} openssl:base64-decode"
+          fi
+          if [[ "$(/usr/bin/shasum -a 256 </dev/null)" != e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855* ]]; then
+            missing="${missing} shasum:-a-256"
+          fi
+          echo "MEASURED: signing tools:${found}"
+          if [[ -n "$missing" ]]; then
+            echo "error: the signing jobs call tools that are missing or do not behave as they rely on:${missing}" >&2
+            exit 1
+          fi
+      # the release's X.Y.Z, or 0.0.0 for a dry run, since 0.0.0-dryrun.<n> is not a
+      # valid bundle version. the file names keep the full version.
+      - name: Map The Bundle Version
+        id: bundle-version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          bundle_version="$(bash ../.github/scripts/installer-version.sh "$VERSION")"
+          echo "version=${bundle_version}" >> "$GITHUB_OUTPUT"
+          echo "The app carries bundle version ${bundle_version}."
+      # a debug build lets a test run Marshal from anywhere; this builds the location
+      # rule's tests in the release profile with the variable set, so the test that a
+      # release build ignores it fails if it does not.
+      - name: Test That A Release Build Ignores The Location Variable
+        env:
+          MARSHAL_EXPECT_RELEASE: "1"
+          MARSHAL_TEST_ANY_LOCATION: "1"
+        run: cargo test --locked --release --package marshal-session --lib location
+      # one step, so the tool's install and the build share one bound. --no-sign
+      # keeps Tauri's own signer out: it passes no secure timestamp, which
+      # notarization needs, and the job holds no identity anyway.
+      - name: Install tauri-cli At The Pin And Build The Mac App
+        timeout-minutes: 30
+        env:
+          BUNDLE_VERSION: ${{ steps.bundle-version.outputs.version }}
+        run: |
+          tauri_cli_version="$(bash ../.github/scripts/tauri-cli-version.sh)"
+          cargo install tauri-cli --version "=${tauri_cli_version}" --locked --root "${RUNNER_TEMP}/tauri-cli"
+          export PATH="${RUNNER_TEMP}/tauri-cli/bin:${PATH}"
+          cd crates/app
+          cargo tauri build --bundles app --no-sign --config "{\"version\":\"${BUNDLE_VERSION}\"}"
+      # the stamp is the only change the build may leave in a tracked file.
+      - name: Fail If The Build Changed A Tracked File
+        run: |
+          git diff > "${RUNNER_TEMP}/build.diff"
+          if ! cmp -s "${RUNNER_TEMP}/stamp.diff" "${RUNNER_TEMP}/build.diff"; then
+            echo "error: the build changed a tracked file beyond the release version:" >&2
+            diff "${RUNNER_TEMP}/stamp.diff" "${RUNNER_TEMP}/build.diff" >&2 || true
+            exit 1
+          fi
+          untracked="$(git ls-files --others --exclude-standard --full-name -- :/)"
+          if [[ -n "$untracked" ]]; then
+            echo "error: the build left files that are neither tracked nor ignored:" >&2
+            echo "$untracked" >&2
+            exit 1
+          fi
+      - name: Check The Bundle's Layout
+        env:
+          BUNDLE_VERSION: ${{ steps.bundle-version.outputs.version }}
+        run: |
+          app=target/release/bundle/macos/Marshal.app
+          plist="${app}/Contents/Info.plist"
+          [[ "$(ls "${app}/Contents/MacOS")" == marshal-app ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == app.axross.marshal ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" == "$BUNDLE_VERSION" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")" == "$BUNDLE_VERSION" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" == 26.0 ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$plist")" == true ]]
+          test -f "${app}/Contents/Resources/icon.icns"
+          test -f "${app}/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+          if /usr/bin/codesign --verify "$app" 2>/dev/null; then
+            echo "error: the app carries a signature; the release build must leave it unsigned" >&2
+            exit 1
+          fi
+      - name: Archive The App
+        id: hash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir ../dist
+          archive="../dist/marshal-${VERSION}-macos-arm64-app.zip"
+          /usr/bin/ditto -c -k --norsrc --noextattr --keepParent target/release/bundle/macos/Marshal.app "$archive"
+          line="$(/usr/bin/shasum -a 256 "$archive")"
+          hash="${line%% *}"
+          if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "error: '${line}' does not start with a SHA-256" >&2
+            exit 1
+          fi
+          echo "app_sha256=${hash}" >> "$GITHUB_OUTPUT"
+          echo "${hash}  ${archive##*/}"
+      # hdiutil create has failed on hosted runners with "Resource busy", so it gets
+      # three attempts 10 seconds apart. the arguments are the ones the signing job
+      # uses.
+      - name: Make The Disk Image
+        timeout-minutes: 10
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          stage="${RUNNER_TEMP}/marshal-dmg"
+          image="../dist/marshal-${VERSION}-macos-arm64.dmg"
+          mkdir -p "$stage"
+          /usr/bin/ditto target/release/bundle/macos/Marshal.app "${stage}/Marshal.app"
+          /bin/ln -s /Applications "${stage}/Applications"
+          attempt=1
+          until /usr/bin/hdiutil create -volname Marshal -srcfolder "$stage" -format UDZO -ov "$image"; do
+            if [[ "$attempt" -ge 3 ]]; then
+              echo "error: hdiutil create failed ${attempt} times" >&2
+              exit 1
+            fi
+            echo "hdiutil create failed on attempt ${attempt}; trying again in 10 seconds"
+            attempt=$((attempt + 1))
+            sleep 10
+          done
+      - name: Check The Disk Image's Layout
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          image="../dist/marshal-${VERSION}-macos-arm64.dmg"
+          mount="${RUNNER_TEMP}/marshal-dmg-mount"
+          mkdir -p "$mount"
+          /usr/bin/hdiutil attach -readonly -nobrowse -noautoopen -mountpoint "$mount" "$image" >/dev/null
+          trap '/usr/bin/hdiutil detach -quiet "$mount" || /usr/bin/hdiutil detach -force -quiet "$mount"' EXIT
+          entries=""
+          shopt -s dotglob nullglob
+          for entry in "$mount"/*; do
+            case "${entry##*/}" in
+              .DS_Store | .fseventsd | .Trashes) ;;
+              *) entries="${entries} ${entry##*/}" ;;
+            esac
+          done
+          if [[ "$entries" != " Applications Marshal.app" ]]; then
+            echo "error: the disk image holds '${entries}', not Applications and Marshal.app" >&2
+            exit 1
+          fi
+          [[ -L "${mount}/Applications" && "$(readlink "${mount}/Applications")" == /Applications ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${mount}/Marshal.app/Contents/Info.plist")" == app.axross.marshal ]]
+          [[ "$(/usr/sbin/diskutil info "$mount" | sed -n 's/^ *Volume Name: *//p')" == Marshal ]]
+          echo "The disk image holds Marshal.app and the Applications link, on volume Marshal."
+      - name: Upload The App Archive And The Disk Image
+        uses: actions/upload-artifact@v7
+        with:
+          name: marshal-macos-app
+          path: |
+            dist/marshal-${{ inputs.version }}-macos-arm64-app.zip
+            dist/marshal-${{ inputs.version }}-macos-arm64.dmg
           if-no-files-found: error
 
   # the hashes are handed over as job outputs, apart from the artifact, so a file

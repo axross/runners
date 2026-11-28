@@ -13,7 +13,9 @@ The maintainer releases the app by dispatching
 works out the version from the commits, as [Version Rules](./versions.md#version-rules) describes.
 [Release artifacts and workflow boundaries](../marshal-cli/release-artifacts.md#releases) describes what the workflow builds, and the
 [release policy](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
-records why each control is there. The maintainer takes every step in this
+records why each control is there. Until M2's pull request 3 wires `sign-macos`, the
+dispatch's build also runs the Mac app job, and a failure of that job blocks the
+release; nothing in the release reads its output. The maintainer takes every step in this
 section. The [standing delivery grant](../agent-work/delivery-grant.md#authorizing-delivery-operations) lets an explicit human instruction cover release,
 deployment, and settings effects, but the release rule in Security is stricter: an
 agent never dispatches `release.yaml`, never approves a deployment of it, never

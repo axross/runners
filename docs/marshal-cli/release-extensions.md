@@ -179,8 +179,30 @@ M2's Keychain trust depends on that identity.
 
 ### M2's Disk-Image Pull Request
 
-M2 MUST restore `sign-macos`, `verify-macos`, the measured-tools step, their
-shape-check rules and test cases from the restoration point. It leaves out the
+M2's disk-image work lands in two pull requests. Pull request 2 builds the unsigned
+disk image in the app job, adds the app job's shape rules, and stages the text of
+`sign-macos` and `verify-macos`, rewritten for the app and the disk image, in
+[`.github/staged/release-macos-app.yaml`](../../.github/staged/release-macos-app.yaml).
+It changes no job of `release.yaml`, nor `assemble-release.sh`,
+`verify-release.sh`, `.releaserc.json` or the shape check's rules for `release.yaml`,
+and nothing in it reaches an Environment. Its stand-in test,
+`test-staged-sign-macos.sh`, which also runs `verify-macos`'s hash step, and the
+`verify-macos` refusal suite, `test-signed-dmg-refusals.sh`, are in `mise run check`.
+The stand-in test also checks that no workflow names the staged file, that the staged
+`hdiutil create` arguments equal the app job's, and that the app job measures every
+tool the staged scripts call. Pull request 3 moves the staged jobs into `release.yaml`, changes only what
+its job names, `needs` and outputs require, makes `assemble-signed` need them again,
+gives the signed release set the disk image, restores the shape check's rules for
+them and deletes the staged file. The requirements below for `sign-macos`,
+`verify-macos`, their shape rules and the signed release set are pull request 3's, and
+it marks the split wired. Pull request 2 meets the app job's requirements, the
+measured-tools step among them.
+[Signing the Mac App](./signing.md#signing-the-mac-app-staged) describes what is
+staged now.
+
+M2 MUST restore `sign-macos`, `verify-macos`, their shape-check rules and test
+cases from the restoration point. Pull request 2 restored the measured-tools step, in
+the app job. It leaves out the
 command-line signing and package steps, the Installer identity's check, import
 and exported name, the `pkgbuild` argument and `build-pkg.sh` existence rules,
 and package-only tools such as `pkgbuild`, `pkgutil`, `lsbom` and `installer`.
@@ -190,7 +212,8 @@ Its app job in `release-build.yaml` MUST run on `macos-latest` with a 45-minute
 timeout, install `tauri-cli` by the Windows leg's route, build the unsigned app,
 archive it with `ditto`, and upload `marshal-macos-app` separately from
 `marshal-release`. It exposes `app_sha256` as a reusable-workflow output. The
-measured-tools step moves into that job, and `checkMeasuredTools` follows it.
+measured-tools step moves into that job, and the app job's shape rules check it.
+Pull request 2 meets this paragraph.
 
 The restored `sign-macos` MUST check the app archive against `app_sha256`, sign
 inside-out without `--deep`, use the hardened runtime and a timestamp, and put

@@ -18,15 +18,15 @@ so this document describes an app that CI builds and tests and the release ships
 not one a host has run. The same pull request removed the command line: no `marshal`
 binary is built on any operating system, and the app is the only way to run a host.
 
-| Part                                                                                    | State                                                                                                                                                                                          |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The app, its menu and its main window                                                   | Built by the Windows and macOS app jobs of `merge-checks.yaml`; each build is kept as a run artifact                                                                                           |
-| The agent's resident mode and protocol version 2                                        | In the `marshal-cli` library, served by the app's executable in its agent mode                                                                                                                 |
-| The token store                                                                         | The Credential Manager on Windows and the login keychain on macOS, entered in the main window                                                                                                  |
-| The installer, the release, the [install layout](../marshal/rollback.md#install-layout) | Built and tested by the release build on every pull request; see [the installer contract](../marshal-cli/release-artifacts.md#installers). The Mac's disk image comes with M2's pull request 2 |
-| Updates                                                                                 | The app's side, with the committed public key; the feed comes with W4's last pull request                                                                                                      |
-| The command line's removal                                                              | Done in W1's installer pull request; the last command-line release keeps it                                                                                                                    |
-| Verification on axpc                                                                    | Not done; see [Verification Status](#verification-status)                                                                                                                                      |
+| Part                                                                                    | State                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The app, its menu and its main window                                                   | Built by the Windows app job of `merge-checks.yaml` and the `app-macos` job of `release-build.yaml`; each build is kept as a run artifact. The macOS app job of `merge-checks.yaml` lints and tests the workspace                                                               |
+| The agent's resident mode and protocol version 2                                        | In the `marshal-cli` library, served by the app's executable in its agent mode                                                                                                                                                                                                  |
+| The token store                                                                         | The Credential Manager on Windows and the login keychain on macOS, entered in the main window                                                                                                                                                                                   |
+| The installer, the release, the [install layout](../marshal/rollback.md#install-layout) | Built and tested by the release build on every pull request; see [the installer contract](../marshal-cli/release-artifacts.md#installers). The Mac's unsigned dry-run disk image is built by `release-build.yaml`; its signed release disk image comes with M2's pull request 3 |
+| Updates                                                                                 | The app's side, with the committed public key; the feed comes with W4's last pull request                                                                                                                                                                                       |
+| The command line's removal                                                              | Done in W1's installer pull request; the last command-line release keeps it                                                                                                                                                                                                     |
+| Verification on axpc                                                                    | Not done; see [Verification Status](#verification-status)                                                                                                                                                                                                                       |
 
 ## Verification Status
 
@@ -36,8 +36,9 @@ does not take a build for a host that has run it:
 - **Run on every pull request:** the checks of [The App Workspace](../marshal-cli/toolchain.md#the-app-workspace)
   on Linux, the Windows job's clippy, tests and `cargo tauri build --no-bundle`, and
   the mode dispatch on macOS, in the debug profile and then in the release profile,
-  and the macOS app job's clippy, tests, location rule in the release profile, and
-  unsigned `Marshal.app` and disk image.
+  the clippy and tests of the macOS app job of `merge-checks.yaml`, and the location
+  rule in the release profile and the unsigned `Marshal.app` and disk image of the
+  `app-macos` job of `release-build.yaml`.
   The Windows job runs the tests with `--no-fail-fast`, so one test executable that
   fails shows every other executable's result in the same run.
 - **Run by the Windows and macOS app jobs:** the app's whole workspace, including the

@@ -418,8 +418,16 @@ run = "node .github/scripts/check-release-shape.mjs"
 description = "Run the release shape check against altered copies of the workflows, one change at a time, and expect each to fail"
 run = "bash .github/scripts/tests/test-release-shape.sh"
 
+[tasks."test:staged-sign-macos"]
+description = "Run the staged Mac app signing steps in .github/staged/release-macos-app.yaml against recording stand-ins of the macOS signing tools: every refusal, the flags, hdiutil's retries, the clean-up, verify-macos's hash step, that no workflow names the file, and that its disk image arguments and tools match the app job's"
+run = "bash .github/scripts/tests/test-staged-sign-macos.sh"
+
+[tasks."test:staged-signed-dmg"]
+description = "Run the staged verify-macos disk image check against stand-ins and produce each of its refusals"
+run = "bash .github/scripts/tests/test-signed-dmg-refusals.sh"
+
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, the staged Mac app signing and disk image tests, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -433,6 +441,8 @@ depends = [
   "test:assemble-release",
   "check:release-shape",
   "test:release-shape",
+  "test:staged-sign-macos",
+  "test:staged-signed-dmg",
   "test:installer-version",
   "test:fetch-wix",
   "test:rust",

@@ -16,18 +16,18 @@ owns the Keychain store.
 
 ### The Bundle and the Disk Image
 
-| Item                 | Value                                                                                                                                                                                                                                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Disk image           | `marshal-<version>-macos-arm64.dmg`: read-only and zlib-compressed, with the volume name `Marshal`, holding `Marshal.app` and a link named `Applications` to `/Applications`                                                                                                                                                                     |
-| Disk image signature | Planned for M2's pull request 2: Developer ID Application, secure timestamp, identifier `app.axross.marshal.dmg`; notarized and stapled                                                                                                                                                                                                          |
-| Bundle               | `Marshal.app`, installed at `/Applications/Marshal.app`, with the bundle identifier `app.axross.marshal`, which is also the executable's signing identifier                                                                                                                                                                                      |
-| Executable           | `Marshal.app/Contents/MacOS/` holds the one executable and nothing else                                                                                                                                                                                                                                                                          |
-| Version              | `CFBundleShortVersionString` and `CFBundleVersion` are the release's `X.Y.Z`, or `0.0.0` for a dry run, since `0.0.0-dryrun.<n>` is not a valid bundle version; the release's app job, planned for M2's pull request 2, passes it to Tauri's build; the macOS app job of `merge-checks.yaml` builds at `0.0.0`. File names keep the full version |
-| Minimum system       | `LSMinimumSystemVersion` is `26.0`; the executable is arm64 only                                                                                                                                                                                                                                                                                 |
-| Menu bar app         | `LSUIElement` is `true`, so Marshal starts with no Dock icon; it becomes a regular app while its main window is open, and an accessory again when it closes                                                                                                                                                                                      |
-| Resources            | `icon.icns`, and the macOS licence notices as `THIRD-PARTY-NOTICES.txt`                                                                                                                                                                                                                                                                          |
-| Not in the bundle    | a command line, a helper, a login item, a framework, a plug-in, an installer package                                                                                                                                                                                                                                                             |
-| Signature            | Planned for M2's pull request 2: Developer ID Application, hardened runtime, secure timestamp, no entitlements, signed inside-out without `--deep`; the app has no stapled ticket of its own, since notarizing the disk image notarizes it                                                                                                       |
+| Item                 | Value                                                                                                                                                                                                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Disk image           | `marshal-<version>-macos-arm64.dmg`: read-only and zlib-compressed, with the volume name `Marshal`, holding `Marshal.app` and a link named `Applications` to `/Applications`                                                                                                                                   |
+| Disk image signature | Staged until M2's pull request 3: Developer ID Application, secure timestamp, identifier `app.axross.marshal.dmg`; notarized and stapled. The dry run's disk image is unsigned                                                                                                                                 |
+| Bundle               | `Marshal.app`, installed at `/Applications/Marshal.app`, with the bundle identifier `app.axross.marshal`, which is also the executable's signing identifier                                                                                                                                                    |
+| Executable           | `Marshal.app/Contents/MacOS/` holds the one executable and nothing else                                                                                                                                                                                                                                        |
+| Version              | `CFBundleShortVersionString` and `CFBundleVersion` are the release's `X.Y.Z`, or `0.0.0` for a dry run, since `0.0.0-dryrun.<n>` is not a valid bundle version; the `app-macos` job of `release-build.yaml` passes it to Tauri's build, and builds at `0.0.0` in the dry run. File names keep the full version |
+| Minimum system       | `LSMinimumSystemVersion` is `26.0`; the executable is arm64 only                                                                                                                                                                                                                                               |
+| Menu bar app         | `LSUIElement` is `true`, so Marshal starts with no Dock icon; it becomes a regular app while its main window is open, and an accessory again when it closes                                                                                                                                                    |
+| Resources            | `icon.icns`, and the macOS licence notices as `THIRD-PARTY-NOTICES.txt`                                                                                                                                                                                                                                        |
+| Not in the bundle    | a command line, a helper, a login item, a framework, a plug-in, an installer package                                                                                                                                                                                                                           |
+| Signature            | Staged until M2's pull request 3: Developer ID Application, hardened runtime, secure timestamp, no entitlements, signed inside-out without `--deep`; the app has no stapled ticket of its own, since notarizing the disk image notarizes it                                                                    |
 
 While its main window is open, Marshal shows its own menus in place of Tauri's
 default: Marshal (About Marshal, with the name and version only; Hide Marshal, Hide
@@ -46,10 +46,25 @@ image is made from it with `hdiutil`, not by Tauri's bundler. The app starts its
 the fixed `PATH` `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`, because an app
 opened from the Finder gets launchd's short `PATH`; the agent finds `tart`, and Tart
 finds `softnet`, on it, as
-[macOS Runner Host](../runner-hosts/mac-setup.md#installing-tart-and-softnet) says. Until M2's pull request 2
-adds the release's app job and restores the signing job, nothing signs or notarizes
-either: the `app-macos` job of `merge-checks.yaml` keeps the unsigned app, as a
-`ditto` archive, and an unsigned disk image as a workflow artifact for testing. The bundler copies every binary of
+[macOS Runner Host](../runner-hosts/mac-setup.md#installing-tart-and-softnet) says. The `app-macos` job of
+[`release-build.yaml`](../../.github/workflows/release-build.yaml) builds the app with
+`--no-sign` at the release's `X.Y.Z`, or `0.0.0` in a dry run, and checks its layout.
+Before anything compiles it fails unless the compiler's host target is
+`aarch64-apple-darwin`, so a change of runner image cannot ship another architecture,
+and it writes the release version into the CLI's and the app's
+manifests and lockfiles with `set-release-version.sh`, as the Windows app's build does, so the
+executable's own product version is the release's and not the placeholder `0.0.0-dev`.
+It packs the app in a `ditto` archive, whose SHA-256 is the workflow's `app_sha256`
+output, makes a disk image from it with up to three `hdiutil create` attempts 10
+seconds apart, checks that image's layout, and uploads both as the `marshal-macos-app`
+artifact, outside `marshal-release`. Every pull request's release dry run keeps that
+artifact for testing on a Mac; the `app-macos` job of `merge-checks.yaml` lints and
+tests the workspace. Nothing signs or notarizes either file yet: M2's `sign-macos`
+and `verify-macos` are staged in
+[`.github/staged/release-macos-app.yaml`](../../.github/staged/release-macos-app.yaml)
+until pull request 3 wires them into the release, as
+[Signing the Mac App](../marshal-cli/signing.md#signing-the-mac-app-staged)
+describes. The bundler copies every binary of
 `marshal-app` whose features are on, so `fake-docker`, the process tests' stand-in for
 the docker client, and those tests need the `fake-engine` feature, which no shipped
 build turns on: run the workspace's tests with

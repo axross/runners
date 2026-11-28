@@ -100,7 +100,7 @@ the app may do with that reach. [App](../marshal/index.md) owns how it works.
   `tart` program or GitHub address of an installed Marshal, or let a copy outside
   Applications start an agent, as for the CLI under
   [One Instance per Machine](./local-agent.md#one-instance-per-machine-reached-only-by-its-user). The
-  `app-macos` job tests the location rule in the release profile with the variable
+  `app-macos` job of `release-build.yaml` tests the location rule in the release profile with the variable
   set.
 - **The app starts its agent from a file it checked.** It starts it from its own
   executable's absolute path as a plain detached child, never through Tauri's shell

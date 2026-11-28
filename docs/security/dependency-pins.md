@@ -166,8 +166,11 @@ comes before the first `security` call. Its source is
 `https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer`, fetched on
 2026-11-03 PST, and it expires on 2031-09-17. To replace it, fetch the certificate
 again from that URL, compute its SHA-256 from the download, and change the embedded
-text and the pin together, with the maintainer's review. The job downloads only the
-run's own artifacts.
+text and the pin together, with the maintainer's review. M2's `sign-macos`, staged
+in [`.github/staged/release-macos-app.yaml`](../../.github/staged/release-macos-app.yaml)
+until its pull request 3, embeds the same certificate under the same pin, and its
+stand-in test refuses a certificate that differs from it, so a replacement changes
+both jobs' text. The job downloads only the run's own artifacts.
 
 The Rust toolchain is one of three downloads in this repository that are not
 checksum-pinned, and the maintainer accepted that exception when approving the
@@ -206,13 +209,16 @@ W4's tool job, which signs update archives, commits one that moves with the pin 
 it lands. The
 install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
-the Windows and macOS app jobs of `merge-checks.yaml` and, since W1's installer pull
-request, in the Windows leg of [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the released app.
-Each holds `contents: read`, reads no secret and publishes nothing, and each installs
-the tool the same way, at the same pin read through the same script, under
-`$RUNNER_TEMP` with no cache. The macOS job, which M2 adds, signs nothing and keeps
-the unsigned Mac app and disk image only as a workflow artifact. `tauri-cli`'s build
-scripts and procedural macros run code at build time under those jobs' accounts,
+the Windows app job of `merge-checks.yaml` and, in
+[`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the
+released app, in the Windows leg and, since M2's pull request 2, in the `app-macos`
+job. Each holds `contents: read`, reads no secret and publishes nothing, and each
+installs the tool the same way, at the same pin read through the same script, under
+`$RUNNER_TEMP` with no cache. The macOS job signs nothing and keeps the unsigned Mac
+app and disk image only as the `marshal-macos-app` workflow artifact, outside the
+unsigned release set; the staged `sign-macos` checks the archive against the job's
+hash once pull request 3 wires it in. `tauri-cli`'s build scripts and procedural macros run
+code at build time under those jobs' accounts,
 which is why the jobs are what bounds them; in the release build the tool's output is
 the app that the next jobs attest and publish, so the exception covers the released
 app's build too. Nothing else installs the tool. To move the pin, see

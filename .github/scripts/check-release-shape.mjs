@@ -287,6 +287,178 @@ function checkChain() {
   }
 }
 
+// ---- release-build.yaml's Mac app job --------------------------------------
+
+const MAC_APP_JOB = "app-macos";
+const MAC_APP_ARTIFACT = "marshal-macos-app";
+const MAC_APP_ACTIONS = ["actions/checkout", "actions/upload-artifact"];
+// the tools the staged Mac signing steps call that the signing tools step must
+// measure, whatever else it lists; test-staged-sign-macos.sh compares the rest.
+const MAC_APP_MEASURED = ["ditto", "hdiutil"];
+// the xcrun tools the measuring step looks up with xcrun --find.
+const MAC_APP_XCRUN_TOOLS = ["notarytool", "stapler"];
+const MAC_APP_MEASURING_STEP = "Check The Signing Tools";
+const MAC_APP_HOST = "aarch64-apple-darwin";
+
+/**
+ * records a Mac app job that holds a secret, uses an action other than checkout
+ * and artifact upload, signs, does not hand over its archive's hash, does not
+ * write the release version before it compiles or writes a fixed one, does not
+ * check that it builds for arm64, mixes its files into the unsigned set, or leaves
+ * a measured tool out of its signing tools step in problems, without running its
+ * scripts.
+ */
+function checkMacAppJob() {
+  const file = "release-build.yaml";
+  const job = jobsOf(releaseBuild).find(([id]) => id === MAC_APP_JOB)?.[1];
+  if (!job) {
+    problem(`${file} has no ${MAC_APP_JOB} job`);
+    return;
+  }
+  if (job["runs-on"] !== "macos-latest")
+    problem(`${file}'s ${MAC_APP_JOB} job must run on macos-latest`);
+  if (text(job["timeout-minutes"]) !== "45")
+    problem(`${file}'s ${MAC_APP_JOB} job must be bounded at 45 minutes`);
+  if (text(job.outputs?.app_sha256) !== "${{ steps.hash.outputs.app_sha256 }}")
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must output app_sha256 from its hash step`,
+    );
+  if (
+    text(releaseBuild?.on?.workflow_call?.outputs?.app_sha256?.value) !==
+    `\${{ jobs.${MAC_APP_JOB}.outputs.app_sha256 }}`
+  )
+    problem(`${file} must hand over the ${MAC_APP_JOB} job's app_sha256`);
+  for (const step of stepsOf(job)) {
+    const action = text(step.uses).split("@")[0];
+    if (action && !MAC_APP_ACTIONS.includes(action))
+      problem(
+        `${file}'s ${MAC_APP_JOB} job uses ${action}; it may use only ${MAC_APP_ACTIONS.join(" and ")}`,
+      );
+  }
+  const uploads = stepsOf(job).filter((step) =>
+    text(step.uses).startsWith("actions/upload-artifact@"),
+  );
+  if (uploads.length !== 1 || uploads[0].with?.name !== MAC_APP_ARTIFACT)
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must upload ${MAC_APP_ARTIFACT} once and no other artifact`,
+    );
+  const build = scriptsOf(job).find((step) =>
+    /\bcargo tauri build\b/.test(step.run),
+  );
+  if (!build || !/--no-sign\b/.test(build.run) || !/--locked\b/.test(build.run))
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must build with \`cargo tauri build ... --no-sign\` after a --locked install`,
+    );
+  const scripts = scriptsOf(job);
+  const code = (step) => codeLines(step.run).join("\n");
+  const stamp = scripts.findIndex((step) =>
+    /\bset-release-version\.sh\b/.test(code(step)),
+  );
+  const firstCargo = scripts.findIndex((step) => /\bcargo\b/.test(code(step)));
+  if (stamp === -1 || "if" in scripts[stamp])
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must write the release version with set-release-version.sh in a step with no condition`,
+    );
+  if (stamp !== -1) {
+    if (firstCargo !== -1 && stamp >= firstCargo)
+      problem(
+        `${file}'s ${MAC_APP_JOB} job must write the release version before any step that runs cargo`,
+      );
+    if (
+      !/^\s*bash\s+\S*set-release-version\.sh\s+"\$VERSION"\s*$/m.test(
+        code(scripts[stamp]),
+      ) ||
+      text(scripts[stamp].env?.VERSION) !== "${{ inputs.version }}"
+    )
+      problem(
+        `${file}'s ${MAC_APP_JOB} job must pass set-release-version.sh "$VERSION", set from inputs.version, and no fixed version`,
+      );
+  }
+  const hostCheck = scripts.findIndex(
+    (step) =>
+      /\brustc\s+-vV\b/.test(code(step)) &&
+      new RegExp(String.raw`!=\s*"?${MAC_APP_HOST}"?\s*\]\]`).test(
+        code(step),
+      ) &&
+      /\bexit 1\b/.test(code(step)),
+  );
+  if (hostCheck === -1 || "if" in scripts[hostCheck])
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must fail unless rustc's host target is ${MAC_APP_HOST}, in a step with no condition`,
+    );
+  else if (firstCargo !== -1 && hostCheck >= firstCargo)
+    problem(
+      `${file}'s ${MAC_APP_JOB} job must check rustc's host target before any step that runs cargo`,
+    );
+  // only the measuring step, found by its name, looks notarytool and stapler up
+  // with `xcrun --find`; any other mention of them, and an operation of either in
+  // the measuring step, is a finding.
+  const measuringStep = scripts.find(
+    (step) => text(step.name) === MAC_APP_MEASURING_STEP,
+  );
+  for (const step of scripts) {
+    const found = [
+      /\bcodesign\b[^\n]*\s(?:--sign\b|-[A-Za-z]*s[A-Za-z]*\b)/,
+      /\bsecurity\s+import\b/,
+      step === measuringStep
+        ? /\bxcrun"?\s+(?:notarytool|stapler)\b/
+        : /\b(?:notarytool|stapler)\b/,
+    ].find((pattern) => pattern?.test(code(step)));
+    if (found)
+      problem(
+        `${file}'s ${MAC_APP_JOB} job step "${text(step.name)}" signs, imports a certificate, notarizes or staples; the job builds unsigned`,
+      );
+  }
+  const assemble = jobsOf(releaseBuild).find(([id]) => id === "assemble")?.[1];
+  if (asList(assemble?.needs).includes(MAC_APP_JOB))
+    problem(
+      `${file} assemble needs ${MAC_APP_JOB}; the Mac files stay out of the unsigned set`,
+    );
+
+  const step = measuringStep;
+  if (!step) {
+    problem(
+      `${file}'s ${MAC_APP_JOB} job has no step named ${MAC_APP_MEASURING_STEP}`,
+    );
+    return;
+  }
+  if (!code(step).includes("MEASURED: signing tools")) {
+    problem(
+      `${file}'s ${MAC_APP_JOB} job has no step that prints the MEASURED: signing tools line`,
+    );
+    return;
+  }
+  if ("if" in step)
+    problem(
+      `${file}'s signing tools step has a condition, which could skip it`,
+    );
+  if (!/exit 1/.test(step.run))
+    problem(
+      `${file}'s signing tools step does not fail when a tool is missing`,
+    );
+  if (
+    "env" in step &&
+    Object.keys(step.env ?? {}).some((key) => /SECRET|APPLE_/.test(key))
+  )
+    problem(`${file}'s signing tools step receives a signing value`);
+  const measured = new Set(
+    (step.run.match(/^\s*bin_tools="([^"]*)"/m)?.[1] ?? "")
+      .split(/\s+/)
+      .filter(Boolean),
+  );
+  for (const tool of MAC_APP_MEASURED)
+    if (!measured.has(tool))
+      problem(`${file}'s signing tools step does not measure /usr/bin/${tool}`);
+  if (!code(step).includes("/usr/bin/openssl enc -base64 -d -A"))
+    problem(
+      `${file}'s signing tools step does not run /usr/bin/openssl enc -base64 -d -A, the decode the staged jobs rely on`,
+    );
+  if (!step.run.includes(`for tool in ${MAC_APP_XCRUN_TOOLS.join(" ")}`))
+    problem(
+      `${file}'s signing tools step does not look for ${MAC_APP_XCRUN_TOOLS.join(" and ")} with xcrun --find`,
+    );
+}
+
 // ---- release-build.yaml's assemble ----------------------------------------
 
 // a command that writes a file named SHA256SUMS: a redirection to it, tee, or cp
@@ -365,6 +537,7 @@ if (release) {
 if (release && releaseBuild) {
   checkChain();
   checkBuildAssemble();
+  checkMacAppJob();
 }
 
 if (problems.length > 0) {

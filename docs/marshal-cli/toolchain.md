@@ -113,7 +113,8 @@ the gates that cover it, so a change to the library knows what the app relies on
 
 **Gates.** `mise run check` covers what builds without the web view's system
 libraries, so the Check job on Linux needs none; the Windows `app` job and the macOS
-`app-macos` job cover the rest.
+`app-macos` job of `merge-checks.yaml` cover the rest, and the `app-macos` job of
+`release-build.yaml` builds the Mac app.
 
 | Task                             | Runs                                                                                                                                                                                                 |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
