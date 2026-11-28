@@ -109,8 +109,12 @@ A round's report of unchecked scope sorts under
 [Review Completion Evidence](../../.claude/skills/loop-engineering/references/post-push-review.md#review-completion-evidence)
 as follows:
 
-- **A head file.** Reachable: the command reads it, so a report that names one
-  as unchecked is a finding about the round, not a limit of the route.
+- **A head file.** Reachable when the command can read it, so a report that
+  names one as unchecked is a finding about the round, not a limit of the route.
+  A path with a character outside ASCII letters, digits, `.`, `_`, `-` and `/`,
+  or over 1,024 characters, is refused, and a fork pull request's head may not
+  be served; both are unreachable through this route, and the reviewer reports
+  them as unchecked.
 - **An earlier round's threads.** Outside required scope, unless the assignment
   asks the reviewer to read them.
 - **Material outside the repository.** Unreachable, unless a plan designates an
