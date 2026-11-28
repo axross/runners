@@ -910,9 +910,8 @@ impl<D: Dial> Session<D> {
                 let after_start_all = self.pending.is_some_and(|pending| {
                     pending.kind == PendingKind::StartAll && shows(&snapshot, pending)
                 });
-                let lifecycle = snapshot.lifecycle.clone();
                 self.change_login_item(|login_item, log| {
-                    login_item.learn(lifecycle.as_ref(), after_start_all, log);
+                    login_item.learn(snapshot.lifecycle.as_ref(), after_start_all, log);
                 });
                 self.snapshot = Some(*snapshot);
                 self.snapshot_for_drain();
