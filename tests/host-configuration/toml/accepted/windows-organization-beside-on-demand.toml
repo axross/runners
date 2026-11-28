@@ -1,0 +1,15 @@
+schema_version = 1
+routing_label = "axpc"
+image_name = "example-image:tag"
+
+[[pool]]
+name = "alpha"
+organization = "Octo"
+runner_group = "builders"
+runners = 2
+
+[[pool]]
+name = "beta"
+repository = "octo/hello"
+runners = 1
+scale_set = "axpc-demand"

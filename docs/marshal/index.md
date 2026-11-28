@@ -9,6 +9,7 @@ The desktop app starts a resident agent and presents its pools, configuration an
 - [How do token entry, file diagnostics and applying or discarding a pool edit work?](./configuration.md)
 - [Which controls can the operator change and when do they take effect?](./settings.md)
 - [When does the window subscribe to GitHub and what can its indicators establish?](./github-status.md)
+- [What does an on-demand pool's card show about its scale set, listener state and assigned jobs?](./github-status.md#on-demand-pools-in-the-windows-window)
 - [When does the app install an update, wait for a job, or prompt again?](./updates.md)
 
 ## Install and recover

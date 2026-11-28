@@ -10,7 +10,7 @@ While the main window is shown and not minimized, the session opens a second
 connection to the agent and holds the `github` subscription on it, renewing it every
 30 s and subscribing again when the agent answers `not_subscribed`. Hiding or
 minimizing the window closes that connection, which ends the subscription, so the
-agent asks GitHub only while someone can see the answer; [CLI](../marshal-cli/github-status.md#github-status)
+agent collects GitHub display status only while someone can see the answer; [CLI](../marshal-cli/github-status.md#github-status)
 owns the topic and what the agent does with it. The app tells the session when the
 window is shown, hidden, minimized or restored, from the window's events and from
 every place it shows or hides it.
@@ -63,3 +63,44 @@ subscription's lifecycle and Open run's address, `tests/frontend/github.test.mjs
 column, the link's Tab stop, name and focus move, and `tests/ipc.rs` that showing and
 hiding the window opens and ends the subscription and that the opener plugin's own
 commands are refused.
+
+## On-Demand Pools in the Windows Window
+
+A pool with `scale_set` adds a text line to its existing card:
+"On demand · `<scale set>` · `<listener state>`". While listening with the window
+subscribed to `github`, it adds "`<n>` assigned" from that pool's `scale_sets`
+entry. The assigned, running and registered-idle counts come from the listener's
+existing session statistics; showing them makes no extra display request. The
+entry can exist without a repository display entry, and an unanswered initial
+session is not a measured zero. The `repositories` and `budget` scopes keep their
+existing meanings.
+
+The listener states are listening, another listener, rejected, store error,
+backing off and stopped. The card shows the applicable non-secret reason, HTTP
+status, refused host, or token-store error kind and code; a status or host the
+reason already names is not added a second time. The state word is the plain
+"Rejected", because the reason says whether GitHub or Marshal refused the pool.
+The view draws the line for any snapshot that carries `on_demand`, whatever the
+host. A Mac window shows none because the Mac agent's configuration check
+rejects `scale_set`, not because the view tests the host. A label mismatch says
+"scale-set label mismatch", without inventing an HTTP status. Incomplete cleanup
+keeps the exact pending non-secret runner identities visible; a stopped container
+is not evidence that GitHub has removed the registration. Listener-state changes
+use the existing status announcements without moving focus. There is no new
+layout, control or view.
+
+The listener belongs to the resident agent, not the window's display connection.
+Hiding or minimizing the window ends display collection but jobs still start.
+**Stop all runners**, **Start all runners**, **Quit Marshal** and update drain retain their existing
+lifecycle behavior. [On-demand pools](../marshal-cli/on-demand-pools.md) owns admission,
+failures, token refresh and cleanup, and
+[Configure Windows runner pools](../runner-hosts/windows-pools.md#on-demand-pools-in-the-resident-agent)
+gives the operator setup and manual scale-set deletion.
+
+This section describes the Windows implementation contract, not a live product
+verification result. Native-Windows rendering of every listener state, its status
+announcement and hidden-window job delivery remain unverified here. It does not
+add Mac on-demand support or change Mac always-on pools. The Mac follow-up waits
+for the Windows pull request to merge; its M2 prerequisite is met by merged pull
+request #118, as the maintainer decided on
+[#72](https://github.com/axross/runners/issues/72#issuecomment-7000962487).

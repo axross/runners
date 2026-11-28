@@ -17,5 +17,6 @@ The [Marshal roadmap](https://github.com/axross/runners/issues/72) assigns these
 | W4    | [Automatic updates](./updates.md#updates), [drain and `ending`](../marshal-cli/agent-lifecycle.md#the-update-drain), and the [build tool archive checksum](./building.md#the-tauri-cli-pin) |
 | M2    | [Mac app distribution, Keychain access and stop reasons](./mac-app.md#the-mac-app)                                                                                                          |
 | W3    | [The Settings tab](./settings.md#the-settings-tab)                                                                                                                                          |
+| X1    | [The on-demand pool's scale-set name, listener state and assigned count on its existing card](./github-status.md#on-demand-pools-in-the-windows-window)                                     |
 
 Document a new agent message with the [protocol version rules](../marshal-cli/agent-protocol.md#version-rules).

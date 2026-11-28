@@ -124,21 +124,7 @@ impl Reader for TomlReader<'_> {
             }
             _ => path_text(&problem.path),
         };
-        let message = match &problem.kind {
-            Kind::UnknownField(name)
-                if name == "scale_set"
-                    && table_at(&problem.path) == Some(Table::Pool)
-                    && self
-                        .find(problem.path.segments())
-                        .0
-                        .member("organization")
-                        .is_some() =>
-            {
-                "not allowed with organization".to_string()
-            }
-            _ => self.message(&problem.kind),
-        };
-        format!("line {line}: {path}: {message}")
+        format!("line {line}: {path}: {}", self.message(&problem.kind))
     }
 }
 

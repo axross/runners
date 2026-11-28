@@ -551,9 +551,14 @@ pub struct FakeRegistrar {
     /// asked for the stop during the first request, before it answers.
     pub stop_during_request: RefCell<Option<watch::Sender<bool>>>,
     pub timeline: Timeline,
+    pub base_override: Option<String>,
 }
 
 impl Registrar for FakeRegistrar {
+    fn base_override(&self) -> Option<&str> {
+        self.base_override.as_deref()
+    }
+
     async fn request_jit(&self, request: &JitRequest<'_>) -> Result<Secret, RegistrationError> {
         self.timeline.push("register");
         self.seen.borrow_mut().push(SeenRegistration {

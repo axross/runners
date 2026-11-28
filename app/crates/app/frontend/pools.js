@@ -263,12 +263,24 @@ function card(poolCard, ctx) {
         poolCard.line,
       ),
     ),
-    poolCard.organization && poolCard.runner_group
-      ? h("p", {
-          class: "caption low wrap card-line",
-          text: `Runs jobs for the repositories that the runner group ${poolCard.runner_group} admits`,
-        })
-      : null,
+    poolCard.on_demand
+      ? h(
+          "div",
+          { class: "card-note" },
+          h("p", { class: "description wrap", text: poolCard.on_demand.line }),
+          poolCard.on_demand.detail
+            ? h("p", {
+                class: "caption low wrap",
+                text: poolCard.on_demand.detail,
+              })
+            : null,
+        )
+      : poolCard.organization && poolCard.runner_group
+        ? h("p", {
+            class: "caption low wrap card-line",
+            text: `Runs jobs for the repositories that the runner group ${poolCard.runner_group} admits`,
+          })
+        : null,
     note,
     poolCard.github_notes.map((githubNote) =>
       h(
