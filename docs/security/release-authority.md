@@ -243,7 +243,8 @@ record a change to either workflow, to the build call in
     `Marshal.app` and a link to `/Applications`, so opening it runs no code, and
     notarizing it notarizes the app inside. The app carries no entitlement.
   - **The two jobs' tools are measured in every pull request.** The `app-macos` job of
-    `release-build.yaml` holds no secret, builds the app with `--no-sign`, and checks
+    `release-build.yaml` holds no secret, builds the app with `--no-sign` at the release
+    version, and checks
     that every signing tool the staged jobs call exists where they call it, since a
     tool that moves on a new runner image should fail a pull request and not a
     release. Its `tauri-cli` install is the recorded exception under the
