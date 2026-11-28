@@ -121,7 +121,8 @@ taken during the build or during the check skips or abandons the check, which le
 the `images` entry as it was; a build that still commits after the stop stays `ready`.
 A `build` that succeeds and is not cancelled leaves the agent stopped by you
 (`by_you`), whatever it was stopped for before; the build reads no file, so the
-snapshot's problems and pools are those of the latest `start_all` or start. Its outcome, `ready`, is only in `agent.build`,
+snapshot's problems and pools are those of the file's latest read, at the start, a `start_all`, a
+`config_edit` or a `config_reload`. Its outcome, `ready`, is only in `agent.build`,
 and the refreshed image entry is in `images`: "stopped with the image ready", in
 the state table above, is that outcome and not a reason. A build that fails
 stops the agent for `image_build_failed`, and a cancelled one is stopped by you.

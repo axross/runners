@@ -11,8 +11,10 @@ description: "What does the agent do when a client reads, edits or reloads confi
 `config_read`, `config_edit` and `config_reload` let a client edit `config.toml` and
 apply a change without `stop_all` and `start_all`. `cli/src/agent/machine/configure.rs`
 answers them, `cli/src/agent/config/` reads the edits and works out each pool's
-effect, and `cli/src/agent/core.rs` applies it. The agent reads the file for these
-methods, at its start and at `start_all`, and never watches it.
+effect, and `cli/src/agent/core.rs` applies it. The agent reads the file at its start,
+at `start_all` and for each of these methods, and never watches it. Only the start,
+`start_all` and an applied `config_edit` or `config_reload` make what it read the
+configuration in use.
 
 - **`revision`** is a digest of the file's bytes and their length, from std's
   default hasher, compared for equality only. It names no path. A `config_edit` or `config_reload` names the revision it was made
