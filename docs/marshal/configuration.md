@@ -49,8 +49,12 @@ them. It adds no state, control or banner kind; the wording lives in the
 - **A footer warning** stands beside the image warnings while the agent holds a
   configuration that is not the file's: the last valid one, naming the file's problems
   (or that it is missing) and when the configuration in use was read; or `config.json`'s,
-  after a migration that could not write `config.toml`, with why. Each ends with the
-  next step below.
+  after a migration that could not write `config.toml`, with why. The warning for the
+  last valid configuration, and the one for `config.json`'s when `config.toml` has
+  appeared since, end with the next step below; the one for a migration that could not
+  write `config.toml` says instead that Marshal tries again when it next starts. A
+  migration still waiting to happen is a warning of its own: quit Marshal and launch it
+  again.
 - **The stopped banners** keep their roles. With no configuration the banner names
   `config.toml`, and says to launch Marshal again when `config.json` waits to be
   migrated. When `config.json` broke the rules at its migration, the invalid
