@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# checks the Claude CI review workflow's head-reading boundary in two parts. the guard
+# checks the Claude CI review workflow's head-reading boundary in three parts. the guard
 # part needs nothing but Node and always runs: it reads the workflow through
 # workflow-reader.mjs, and expects an altered copy that adds an allowlist entry, drops
-# the git deny rule, or lets the copy path, allowlist and prompt disagree to fail.
+# the git deny rule, or lets the copy path, allowlist and prompt disagree to fail. the
+# extractor part, which also always runs, checks that the helper that reads the copy
+# step out of the workflow fails clearly when it cannot find what it is asked for.
 #
 # the copy part runs the workflow's own copy step, read from the workflow, as root with
 # the destination moved under a fresh root-owned directory directly under / and a stand-in
@@ -18,6 +20,8 @@ scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 root="$(cd "${scripts}/../.." && pwd)"
 workflow="${root}/.github/workflows/claude-review.yaml"
 guard="${scripts}/check-review-workflow.mjs"
+extractor="${scripts}/tests/extract-run-scripts.mjs"
+copy_step_name="Install Head Reader"
 work="$(mktemp -d)"
 parent=""
 use_sudo=false
@@ -142,6 +146,42 @@ unfilled_search_path_refuses() {
 }
 check "a copy with an unfilled search path refuses to run" unfilled_search_path_refuses
 
+# --- the extractor ---------------------------------------------------------------
+
+# extractor_refuses <name> <message> <argument>...: the extractor must exit 1 with the
+# message and write nothing to standard output.
+extractor_refuses() {
+  local name="$1" want="$2" output status=0
+  shift 2
+  node "$extractor" "$@" >"${work}/extract.out" 2>"${work}/extract.err" || status=$?
+  if [[ $status -ne 1 ]]; then
+    flunk "${name}: the extractor exited ${status}, not 1"
+  elif ! grep -qF -- "$want" "${work}/extract.err"; then
+    flunk "${name}: the extractor did not say '${want}': $(cat "${work}/extract.err")"
+  elif [[ -s "${work}/extract.out" ]]; then
+    flunk "${name}: the extractor wrote to standard output"
+  else
+    pass "$name"
+  fi
+}
+
+extracted_script_starts_the_copy_step() {
+  [[ "$(node "$extractor" --step "$workflow" review "$copy_step_name" | head -n 1)" == "set -euo pipefail" ]]
+}
+check "the extractor prints the copy step's script" extracted_script_starts_the_copy_step
+check "the extractor prints a variable the copy step declares" \
+  test "$(node "$extractor" --step-env "$workflow" review "$copy_step_name" READ_HEAD_TOOL_PATH)" = "/usr/bin:/bin"
+extractor_refuses "the extractor fails for a job the workflow lacks" "has no job nojob" \
+  --step "$workflow" nojob "$copy_step_name"
+extractor_refuses "the extractor fails for a step the job lacks" "has no step named Renamed Step" \
+  --step "$workflow" review "Renamed Step"
+extractor_refuses "the extractor fails for a step without a run script" "has no run script" \
+  --step "$workflow" review "Claude Review"
+extractor_refuses "the extractor fails for a variable the step does not declare" "declares no env NOT_DECLARED" \
+  --step-env "$workflow" review "$copy_step_name" NOT_DECLARED
+extractor_refuses "the extractor fails for a variable of a missing step" "has no step named Renamed Step" \
+  --step-env "$workflow" review "Renamed Step" READ_HEAD_COPY
+
 # --- the copy --------------------------------------------------------------------
 
 # make_root_directory <mktemp template>: tries to make a root-owned directory, directly and
@@ -234,7 +274,7 @@ fi
 GH
 as_root install -D -o root -g root -m 0755 "${work}/gh" "${parent}/stub-bin/gh"
 
-node "$guard" --print-copy-step "$workflow" >"${work}/copy-step.sh"
+node "$extractor" --step "$workflow" review "$copy_step_name" >"${work}/copy-step.sh"
 
 repository="example/widgets"
 # run_step <destination> [<repository>]: runs the shipped copy step as the workflow's
@@ -258,8 +298,8 @@ run_step() {
 real_destination_test() {
   local real_copy real_tool_path
   [[ ${GITHUB_ACTIONS:-} == "true" ]] || return 0
-  real_copy="$(node "$guard" --print-copy-env READ_HEAD_COPY "$workflow")"
-  real_tool_path="$(node "$guard" --print-copy-env READ_HEAD_TOOL_PATH "$workflow")"
+  real_copy="$(node "$extractor" --step-env "$workflow" review "$copy_step_name" READ_HEAD_COPY)"
+  real_tool_path="$(node "$extractor" --step-env "$workflow" review "$copy_step_name" READ_HEAD_TOOL_PATH)"
   if [[ -e "$(dirname "$real_copy")" ]]; then
     flunk "the real destination's directory already exists, so the step is not run there"
     return 0

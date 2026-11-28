@@ -4,14 +4,10 @@
 // entry and the prompt, and the prompt's two prohibitions.
 //
 //   node .github/scripts/check-review-workflow.mjs [workflow file]
-//   node .github/scripts/check-review-workflow.mjs --print-copy-step [workflow file]
-//   node .github/scripts/check-review-workflow.mjs --print-copy-env <name> [workflow file]
 //
 // the workflow defaults to the one beside this script's repository; the test points
-// the check at altered copies. --print-copy-step writes the copy step's run script
-// to standard output, so the test runs the shipped step, and --print-copy-env writes the
-// value the step declares for one of its environment variables. the check guards against
-// a mistake: a pull request can edit it, so it is no control against a hostile one.
+// the check at altered copies. the check guards against a mistake: a pull request can
+// edit it, so it is no control against a hostile one.
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readWorkflow } from "./workflow-reader.mjs";
@@ -173,30 +169,11 @@ function checkWorkflow(workflow) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const mode = process.argv[2]?.startsWith("--") ? process.argv[2] : null;
-const fileArgument = mode === "--print-copy-env" ? 4 : mode ? 3 : 2;
 const file = resolve(
-  process.argv[fileArgument] ??
-    join(here, "..", "workflows", "claude-review.yaml"),
+  process.argv[2] ?? join(here, "..", "workflows", "claude-review.yaml"),
 );
 
-const workflow = readWorkflow(file);
-if (mode === "--print-copy-step") {
-  process.stdout.write(copyStep(workflow).run);
-} else if (mode === "--print-copy-env") {
-  const name = process.argv[3];
-  const value = copyStep(workflow).env?.[name];
-  if (typeof value !== "string") {
-    console.error(`the copy step declares no ${name}`);
-    process.exit(1);
-  }
-  process.stdout.write(value);
-} else if (mode) {
-  console.error(`unknown option ${mode}`);
-  process.exit(2);
-} else {
-  const problems = checkWorkflow(workflow);
-  for (const problem of problems) console.error(`error: ${problem}`);
-  if (problems.length > 0) process.exit(1);
-  console.log(`${file} keeps the head-reading boundary.`);
-}
+const problems = checkWorkflow(readWorkflow(file));
+for (const problem of problems) console.error(`error: ${problem}`);
+if (problems.length > 0) process.exit(1);
+console.log(`${file} keeps the head-reading boundary.`);
