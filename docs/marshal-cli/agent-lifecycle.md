@@ -22,7 +22,7 @@ there.
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `start_at_login`          | The agent keeps the sign-in item registered, so the app starts at sign-in with `--sign-in`; off, it removes the item       | off     |
 | `start_runners_on_launch` | `launch` starts the runners; off, `launch` leaves the agent stopped by you, with the banner's "not started at launch" line | on      |
-| `keep_awake`              | Windows is kept from idle sleep while the agent is `running`, `resuming`, `building` or `stopping`                         | on      |
+| `keep_awake`              | The computer is kept from idle sleep while the agent is `running`, `resuming`, `building` or `stopping`                    | on      |
 | `stop_on_network_change`  | A change of the primary network stops every runner with `network_changed`                                                  | on      |
 | `resume_after_stop`       | After a sleep or network-change stop, the agent starts the runners again once it is back on the recorded network           | off     |
 
