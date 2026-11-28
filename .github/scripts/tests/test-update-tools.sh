@@ -4,10 +4,11 @@
 # refuse a checksum file whose version is not the pin or whose line is not one
 # `<sha256>  tauri-cli-<X.Y.Z>.crate`; build-update-tools.sh, which must refuse
 # a crate archive whose SHA-256 is not the committed one before it builds
-# anything; and write-update-feed.sh, which must write the feed's version and
-# one entry per signed file at its release address, and refuse what is not a
-# file, a platform or a signature. each case checks the exit status and the
-# cause the script names.
+# anything, and put a relative directory under the caller's; and
+# write-update-feed.sh, which must write the feed's version and one entry per
+# signed file at its release address, and refuse what is not a file, a platform
+# or a signature. each case checks the exit status and the cause the script
+# names.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,6 +71,45 @@ if [[ -e "${work}/tools" ]]; then
 fi
 expect "build-update-tools.sh with an unknown option" 2 "Usage:" \
   bash "${scripts}/build-update-tools.sh" "${work}/tools" --other "${work}/forged.crate"
+
+# a copy of the scripts over a stand-in checkout, with a `cargo` that writes empty
+# programs, runs the whole script without a build: a relative directory must land
+# under the caller's directory, not under the checkout's app/.
+fake="${work}/checkout"
+mkdir -p "${fake}/.github/scripts" "${fake}/app" "${work}/stubs" "${work}/caller" "${work}/crate/tauri-cli-9.9.9"
+cp -- "${scripts}/build-update-tools.sh" "${scripts}/tauri-cli-crate.sh" "${scripts}/tauri-cli-version.sh" \
+  "${fake}/.github/scripts/"
+printf '9.9.9\n' >"${fake}/app/tauri-cli.version"
+: >"${work}/crate/tauri-cli-9.9.9/Cargo.toml"
+: >"${work}/crate/tauri-cli-9.9.9/Cargo.lock"
+tar --create --gzip --file "${work}/stand-in.crate" --directory "${work}/crate" tauri-cli-9.9.9
+line="$(sha256sum "${work}/stand-in.crate")"
+printf '%s  tauri-cli-9.9.9.crate\n' "${line%% *}" >"${fake}/app/tauri-cli.crate.sha256"
+cat >"${work}/stubs/cargo" <<'SH'
+#!/usr/bin/env bash
+[[ "$1" == deny ]] && exit 0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target-dir) target="$2" ;;
+    --bin) bin="$2" ;;
+  esac
+  shift
+done
+mkdir -p "${target}/release"
+: >"${target}/release/${bin}"
+SH
+chmod 0755 "${work}/stubs/cargo"
+in_caller() { (cd "${work}/caller" && "$@"); }
+expect "a relative directory" 0 "marshal-feed-check" in_caller \
+  env PATH="${work}/stubs:${PATH}" bash "${fake}/.github/scripts/build-update-tools.sh" tools \
+  --archive "${work}/stand-in.crate"
+if [[ ! -f "${work}/caller/tools/cargo-tauri" || ! -f "${work}/caller/tools/marshal-feed-check" ]]; then
+  echo "FAIL the relative directory is not under the caller's directory" >&2
+  failures=$((failures + 1))
+elif [[ -e "${fake}/app/tools" ]]; then
+  echo "FAIL the relative directory landed under app/" >&2
+  failures=$((failures + 1))
+fi
 
 echo "-- write-update-feed.sh --"
 version=1.2.3

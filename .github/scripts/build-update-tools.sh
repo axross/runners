@@ -18,6 +18,8 @@ usage() {
 }
 [[ $# -eq 1 || ($# -eq 3 && "$2" == "--archive") ]] || usage
 output="$1"
+# the build runs from app/, so a relative directory is resolved against the caller's first.
+[[ "$output" == /* ]] || output="${PWD}/${output}"
 archive="${3-}"
 
 refuse() {

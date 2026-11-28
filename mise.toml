@@ -415,7 +415,7 @@ description = "Run the staged release feed file's sign-update scripts against a 
 run = "bash .github/scripts/tests/test-sign-update.sh"
 
 [tasks."test:update-tools"]
-description = "Check the update tools' scripts: the committed tauri-cli checksum against the pin, the refusal of another crate archive, and the feed write-update-feed.sh writes"
+description = "Check the update tools' scripts: the committed tauri-cli checksum against the pin, the refusal of another crate archive, a relative output directory, and the feed write-update-feed.sh writes"
 run = "bash .github/scripts/tests/test-update-tools.sh"
 
 [tasks."check:release-shape"]
