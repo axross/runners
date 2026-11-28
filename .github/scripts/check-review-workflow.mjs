@@ -5,12 +5,12 @@
 //
 //   node .github/scripts/check-review-workflow.mjs [workflow file]
 //   node .github/scripts/check-review-workflow.mjs --print-copy-step [workflow file]
-//   node .github/scripts/check-review-workflow.mjs --print-copy-destination [workflow file]
+//   node .github/scripts/check-review-workflow.mjs --print-copy-env <name> [workflow file]
 //
 // the workflow defaults to the one beside this script's repository; the test points
 // the check at altered copies. --print-copy-step writes the copy step's run script
-// to standard output, so the test runs the shipped step, and --print-copy-destination
-// writes the path it installs to. the check guards against
+// to standard output, so the test runs the shipped step, and --print-copy-env writes the
+// value the step declares for one of its environment variables. the check guards against
 // a mistake: a pull request can edit it, so it is no control against a hostile one.
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,22 @@ import { readWorkflow } from "./workflow-reader.mjs";
 
 const COPY_STEP_NAME = "Install Head Reader";
 const COPY_ENV_NAME = "READ_HEAD_COPY";
+const TOOL_PATH_ENV_NAME = "READ_HEAD_TOOL_PATH";
+const EXPECTED_TOOL_PATH = "/usr/bin:/bin";
+const EXPECTED_CLAUDE_ARGS_FLAGS = [
+  "--append-system-prompt",
+  "--allowedTools",
+  "--disallowedTools",
+  "--max-turns",
+];
+const EXPECTED_ACTION_INPUTS = [
+  "claude_code_oauth_token",
+  "allowed_bots",
+  "plugin_marketplaces",
+  "plugins",
+  "prompt",
+  "claude_args",
+];
 
 const EXPECTED_ALLOWED = [
   "mcp__github_inline_comment__create_inline_comment",
@@ -68,6 +84,14 @@ export function copyStep(workflow) {
   return step;
 }
 
+function copyStepEnvironment(workflow) {
+  try {
+    return copyStep(workflow).env ?? {};
+  } catch {
+    return {};
+  }
+}
+
 export function checkWorkflow(workflow) {
   const problems = [];
   const steps = reviewSteps(workflow);
@@ -75,6 +99,21 @@ export function checkWorkflow(workflow) {
   const claudeArgs = action?.with?.claude_args;
   if (typeof claudeArgs !== "string")
     return ["the Claude Review step has no claude_args"];
+
+  for (const input of Object.keys(action.with)) {
+    if (!EXPECTED_ACTION_INPUTS.includes(input))
+      problems.push(
+        `the Claude Review step sets the input ${input}, which the guard does not expect`,
+      );
+  }
+  // quoted values are arguments, not flags, so the prompt's own words are not read as flags
+  const unquoted = claudeArgs.replace(/"[^"]*"/g, '""');
+  for (const match of unquoted.matchAll(/(?:^|\s)(-{1,2}[A-Za-z][\w-]*)/g)) {
+    if (!EXPECTED_CLAUDE_ARGS_FLAGS.includes(match[1]))
+      problems.push(
+        `claude_args holds the flag ${match[1]}, which the guard does not expect`,
+      );
+  }
 
   const permissionFlags = [
     ...claudeArgs.matchAll(/--(?:allowed|disallowed)[-_]?tools/gi),
@@ -108,6 +147,12 @@ export function checkWorkflow(workflow) {
       `the copy step must declare an absolute ${COPY_ENV_NAME}, found ${JSON.stringify(destination)}`,
     );
 
+  const toolPath = copyStepEnvironment(workflow)[TOOL_PATH_ENV_NAME];
+  if (toolPath !== EXPECTED_TOOL_PATH)
+    problems.push(
+      `the copy step must declare ${TOOL_PATH_ENV_NAME} as ${EXPECTED_TOOL_PATH}, found ${JSON.stringify(toolPath ?? null)}`,
+    );
+
   const expectedAllowed =
     typeof destination === "string"
       ? [...EXPECTED_ALLOWED, `Bash(${destination}:*)`]
@@ -136,8 +181,9 @@ export function checkWorkflow(workflow) {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mode = process.argv[2]?.startsWith("--") ? process.argv[2] : null;
+const fileArgument = mode === "--print-copy-env" ? 4 : mode ? 3 : 2;
 const file = resolve(
-  process.argv[mode ? 3 : 2] ??
+  process.argv[fileArgument] ??
     join(here, "..", "workflows", "claude-review.yaml"),
 );
 
@@ -149,8 +195,14 @@ if (
   const workflow = readWorkflow(file);
   if (mode === "--print-copy-step") {
     process.stdout.write(copyStep(workflow).run);
-  } else if (mode === "--print-copy-destination") {
-    process.stdout.write(copyStep(workflow).env[COPY_ENV_NAME]);
+  } else if (mode === "--print-copy-env") {
+    const name = process.argv[3];
+    const value = copyStep(workflow).env?.[name];
+    if (typeof value !== "string") {
+      console.error(`the copy step declares no ${name}`);
+      process.exit(1);
+    }
+    process.stdout.write(value);
   } else if (mode) {
     console.error(`unknown option ${mode}`);
     process.exit(2);

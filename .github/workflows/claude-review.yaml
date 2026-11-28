@@ -63,6 +63,7 @@ jobs:
         env:
           READ_HEAD_COPY: /usr/local/libexec/claude-review/read-head
           READ_HEAD_REPOSITORY: ${{ github.repository }}
+          READ_HEAD_TOOL_PATH: /usr/bin:/bin
         run: |
           set -euo pipefail
           fail() {
@@ -85,14 +86,25 @@ jobs:
               current="$(dirname "$current")"
             done
           }
-          # the absolute path of a program the copy may run: found on the search path,
-          # in a directory chain only root can change, and resolving to a regular file
-          # that only root can change. the found path is kept, since a multicall binary
-          # reads the name it was started under.
+          # the first executable named $1 in READ_HEAD_TOOL_PATH, the same directories the
+          # installed script trusts; the job's own search path is never read
+          find_tool() {
+            local directory
+            for directory in "${tool_directories[@]}"; do
+              [[ $directory =~ ^/[A-Za-z0-9._/+-]*$ ]] || fail "the tool search path has an entry that is not an absolute, plain path"
+              if [[ -f "${directory%/}/$1" && -x "${directory%/}/$1" ]]; then
+                printf '%s' "${directory%/}/$1"
+                return 0
+              fi
+            done
+            return 1
+          }
+          # the absolute path of a program the copy may run: in a directory chain only root
+          # can change, and resolving to a regular file that only root can change. the found
+          # path is kept, since a multicall binary reads the name it was started under.
           resolve() {
             local found canonical
-            found="$(command -v "$1")" || fail "$1 is not on the search path"
-            [[ $found =~ ^/[A-Za-z0-9._/+-]+$ ]] || fail "the path of $1 has a character the copy does not accept"
+            found="$(find_tool "$1")" || fail "$1 is not in the tool search path $READ_HEAD_TOOL_PATH"
             canonical="$(readlink -f -- "$found")" || fail "the path of $1 cannot be resolved"
             [[ "$(stat -c %F "$canonical")" == "regular file" ]] || fail "$canonical is not a regular file"
             require_root_chain "$(dirname "$found")"
@@ -100,6 +112,7 @@ jobs:
             require_root_chain "$canonical"
             printf '%s' "$found"
           }
+          IFS=: read -r -a tool_directories <<<"$READ_HEAD_TOOL_PATH"
           [[ $READ_HEAD_REPOSITORY =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "the repository name is not owner/name"
           [[ $READ_HEAD_COPY =~ ^/[A-Za-z0-9._/+-]+$ ]] || fail "the copy path must be absolute, with plain characters"
 
@@ -112,11 +125,13 @@ jobs:
           fill REPOSITORY "$READ_HEAD_REPOSITORY"
           for tool in gh jq base64 sed wc; do
             tool_path="$(resolve "$tool")"
+            echo "$tool is $tool_path"
             fill "${tool^^}" "$tool_path"
           done
           # the copy starts under this interpreter, not whichever bash env finds first,
           # and in privileged mode, which reads no startup file or exported function
           interpreter="$(resolve bash)"
+          echo "the interpreter is $interpreter"
           [[ $body == '#!/usr/bin/env bash'$'\n'* ]] || fail "the script does not start with its expected interpreter line"
           body="#!${interpreter} -p"$'\n'"${body#*$'\n'}"
 

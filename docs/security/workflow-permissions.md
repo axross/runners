@@ -186,15 +186,20 @@ executed.
   40-character lowercase commit SHA and a repository-relative path, with an
   optional first and last line, and prints the result to standard output. It reads
   this repository through `GET` requests to the contents API, at most two for one
-  call, and creates no file. It validates every argument before any request and
-  refuses an input outside a narrow set of path characters, so it cannot be steered
-  to another path, request method, or repository. The allowlist names this
+  call, and creates no file. It validates every argument before any request and refuses
+  an input outside a narrow set of path characters, so it cannot be steered to
+  another path, request method, or repository. The one exception is a line range on
+  a directory other than the root: the command cannot know the path is a directory
+  until the one request that shows it, and then refuses the range. The allowlist names this
   program, not a `gh api` prefix, because a prefix rule would also accept arguments
   that change a request's method or body.
 - **The copy.** The `Install Head Reader` step runs after the checkout and before
   the action. It copies the script to one declared path outside the workspace, the
   runner's temporary directory, and the home directory, with the repository name,
-  the `gh` path and the other tools' paths fixed into the copy. The copy's first
+  the `gh` path and the other tools' paths fixed into the copy. The step finds each
+  tool and the interpreter only in one tool search path that it declares in its own
+  environment, `/usr/bin:/bin`, the directories the copy trusts when it runs, and
+  never in the job's own search path. The copy's first
   line names its interpreter by absolute path and starts it in privileged mode, so
   the caller's search path, startup-file variables, and exported functions do not
   reach it. The step accepts a tool or the interpreter only from a directory chain
@@ -229,6 +234,10 @@ The residual risks are these:
 
 - The host's handling of shell syntax, and of other spellings or wrappers of the
   denied command, which the rule matches only as written.
+- The environment the programs the copy starts inherit from the reviewer's shell,
+  such as configuration a program reads from the home directory and the dynamic
+  loader's variables, which act before the script's own resets. The privileged
+  start closes this for the interpreter only.
 - The review plugin's pre-approved tools, an [accepted risk](#the-review-plugin-marketplace-is-not-pinned-accepted-risk)
   that can change without notice.
 - The App token's write grant and its presence in the checkout's git configuration.
