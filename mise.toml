@@ -410,6 +410,14 @@ run = "bash .github/scripts/tests/test-fetch-wix.sh"
 description = "Check the script that writes SHA256SUMS for the release's app executable and MSI and refuses another file set or a changed file"
 run = "bash .github/scripts/tests/test-assemble-release.sh"
 
+[tasks."test:sign-update"]
+description = "Run the staged release feed file's sign-update scripts against a stand-in signer: a signature for the build's MSI, a refusal of a changed MSI, a changed signer and an empty secret, and the userns step's sudo call with the limit file at 1, at 0 and absent"
+run = "bash .github/scripts/tests/test-sign-update.sh"
+
+[tasks."test:update-tools"]
+description = "Check the update tools' scripts: the committed tauri-cli checksum against the pin, the refusal of another crate archive, a relative output directory, and the feed write-update-feed.sh writes"
+run = "bash .github/scripts/tests/test-update-tools.sh"
+
 [tasks."check:release-shape"]
 description = "Check that the release workflows keep the shape the release record describes: no job in an Environment or reading a signing secret, and each job's place in the chain"
 run = "node .github/scripts/check-release-shape.mjs"
@@ -419,7 +427,7 @@ description = "Run the release shape check against altered copies of the workflo
 run = "bash .github/scripts/tests/test-release-shape.sh"
 
 [tasks.check]
-description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
+description = "Run every gate: format check, lint, link check, docs validators, skills lock, Amp plugin and Claude SessionStart tests, release script tests, the update signing and feed tests, release shape check and its test, assemble test, installer version and WiX fetch tests, Rust tests, Rust dependency check, the app's toolchain and tauri-cli pin checks, lockfile check, licence notices, tests, page tests and dependency check"
 depends = [
   "format:check",
   "lint",
@@ -431,6 +439,8 @@ depends = [
   "test:set-release-version",
   "test:verify-release",
   "test:assemble-release",
+  "test:sign-update",
+  "test:update-tools",
   "check:release-shape",
   "test:release-shape",
   "test:installer-version",

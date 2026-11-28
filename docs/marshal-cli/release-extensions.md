@@ -33,8 +33,10 @@ W4's `sign-update` job is the one exception to the last rule. It runs `tauri-cli
 `signer sign`. A tool job without the Environment builds that binary with `--locked`
 from a crate archive whose SHA-256 must equal one committed in the repository. The
 signing job checks the binary it receives against the SHA-256 that the tool job
-outputs, before running it. W1 owns the `tauri-cli` pin and W4 owns that checksum;
-a change to one MUST move both in the same pull request once the checksum exists.
+outputs, before running it. W1 owns the `tauri-cli` pin and W4 owns that checksum in
+[`app/tauri-cli.crate.sha256`](../../app/tauri-cli.crate.sha256); a change to one MUST
+move both in the same pull request, and `mise run test:update-tools` fails while the
+two versions differ.
 
 ### Release Sets and Job Dependencies
 
@@ -214,6 +216,11 @@ documents named above, without restoring the command-line package.
 
 ### W4's Feed Pull Request and M4's Archive
 
+W4's feed work lands in two pull requests, and the requirements below are the last
+one's, which reviews whatever the release graph then needs.
+[The update feed's tools and checks](./release-artifacts.md#the-update-feeds-tools-and-checks)
+describes what the first one added and staged, and what exists now.
+
 W4 MUST add `update-tool` on `ubuntu-latest`, with `contents: read`, no Environment,
 no secret or cache, and a checkout with `persist-credentials: false`. It runs W4's
 tool script, also run by the merge checks, and uploads the built `tauri-cli` and
@@ -223,6 +230,8 @@ successful run's wall-clock time, rounded up to a whole five minutes.
 `sign-update` MUST run on `ubuntu-latest`, with `environment: release`,
 `contents: read`, no checkout and only the download and upload artifact actions.
 Every `run:` starts with `# sign-update: <name>`, with no `${{ }}` inside it.
+Before the signing step, a guarded `userns` step
+[lifts Ubuntu's user namespace restriction](../security/workflow-permissions.md#feed-signing-lifts-ubuntus-user-namespace-restriction).
 Before signing, the job MUST refuse unless all three conditions hold:
 
 - the MSI matches its `SHA256SUMS` line in `marshal-release`;

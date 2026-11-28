@@ -26,10 +26,12 @@ designated requirement, which a documentation change records in the CLI document
 after the first signed release as the contract text for later work. The team ID is
 public in every signed file, so recording it discloses nothing; it is not an account
 credential. Another is the maintainer's update-feed public key, committed in
-`app/crates/app/tauri.conf.json` and pinned by the feed crate's configuration test:
-the app verifies every update against it, so it must be in the build, and a public key
-lets no one sign or sign in. Its private key and password are never committed; their
-custody is the feed's pull request's to record.
+`app/crates/app/tauri.conf.json`, and the separate release-verification public key in
+`app/crates/feed/release-public-key.txt`, with the tests that pin each. The app and
+the publication check need these public values in their builds, and a public key lets
+no one sign or sign in. The two may differ during a rotation. This exception permits
+only those public sources and their pinning tests, never a private key or a password;
+the key's custody is in [Updates](../marshal/updates.md#the-update-feed-key).
 
 The checked-in licence notices under `app/notices/` reproduce third-party licence
 texts and copyright notices verbatim, as those licences require, including the names
@@ -52,7 +54,10 @@ and W4's signing jobs and read by no job until one returns,
 `APPLE_APPLICATION_P12_BASE64`, `APPLE_INSTALLER_P12_BASE64`, `APPLE_P12_PASSWORD`,
 `APPLE_NOTARY_KEY_P8`, `APPLE_NOTARY_TEAM_KEY_ID` and `APPLE_NOTARY_ISSUER_ID`, and one
 Environment variable that is not secret, `APPLE_TEAM_ID`; the maintainer creates
-them, and no value is committed. A secret value is never echoed, passed on a command
+them, and no value is committed. W4's two update-feed secrets,
+`UPDATE_FEED_SIGNING_KEY` and `UPDATE_FEED_SIGNING_KEY_PASSWORD`, are retained for its
+`sign-update` job, which reads them only in its signing step through `env:`, and no
+job reads them until that job is in the release run. A secret value is never echoed, passed on a command
 line, or written into an image layer or build cache. Two exceptions for a
 credential on a command line are recorded, both in `sign-macos`, and held with it for
 M2. The password

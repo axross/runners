@@ -258,6 +258,65 @@ The runner image's definition is embedded in the library (see [Build](./build-im
 change to it, such as a runner bump, reaches a host only through a new release and
 an update.
 
+### The Update Feed's Tools and Checks
+
+[Updates](../marshal/updates.md#updates), under The Update-Feed Key, owns the installed
+app's behavior and the key procedure.
+[Security](../security/app-trust.md#updates-come-only-from-the-signed-feed) owns the
+release-verification trust rules, and
+[the extension contracts](./release-extensions.md#w4s-feed-pull-request-and-m4s-archive)
+own what the feed adds to the release graph.
+
+The release run does not publish `latest.json` yet, because no release job signs or
+writes it. The jobs that will are staged in
+[`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml), outside
+`.github/workflows/`, so GitHub never runs it, its `environment: release` reaches no
+Environment and `check-release-shape.mjs` does not read it. The first of W4's two feed
+pull requests staged it and changed no release workflow, `release/.releaserc.json`,
+`verify-release.sh` or release rule of the shape check. The app release route is restored
+(#188), so the last one moves the staged text into `release.yaml` as #188 left it, deletes
+the file and points the merge checks' extraction at `release.yaml`. The file holds:
+
+- **`update-tool`** builds `cargo-tauri` and `marshal-feed-check` with
+  [`build-update-tools.sh`](../../.github/scripts/build-update-tools.sh), the script
+  the merge checks also run. [Dependency pins](../security/dependency-pins.md#pinning-convention)
+  owns how the `tauri-cli` archive is pinned and checked.
+- **`sign-update`** signs the build's MSI under the `release` Environment with the
+  scripts in the staged file, each marked `# sign-update: <name>`.
+  [The extension contracts](./release-extensions.md#w4s-feed-pull-request-and-m4s-archive)
+  own its checks and limits, and
+  [Security](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
+  owns its secrets.
+- **`assemble-signed`'s feed steps** write `latest.json` with
+  [`write-update-feed.sh`](../../.github/scripts/write-update-feed.sh), one
+  `<platform>=<file>=<signature>` argument per signed file, and run the feed check on
+  it. These steps call `assemble-release.sh` in a `signed` mode that does not exist
+  yet; the last pull request adds it, and M4
+  ([#90](https://github.com/axross/runners/issues/90)) adds `darwin-aarch64` as one more
+  argument.
+
+**The round trip in the merge checks.** The `Update Feed Round Trip` job of
+`merge-checks.yaml` needs the release build's dry run. It runs on a push to main and on
+pull requests that change the release workflows, the staged file, the scripts, the
+`tauri-cli` files, `app/Cargo.lock`, the feed crate or the app's updater; on others it
+reports success without building. It reaches no Environment and holds no secret. It builds
+the tools with `build-update-tools.sh`, the script `update-tool` runs, then
+[`feed-round-trip.sh`](../../.github/scripts/tests/feed-round-trip.sh) makes a throwaway
+key for the run, and
+[`run-sign-update.sh`](../../.github/scripts/tests/run-sign-update.sh) runs `sign-update`'s
+own scripts, extracted from the staged file with
+[`extract-run-scripts.mjs`](../../.github/scripts/tests/extract-run-scripts.mjs), on the
+dry run's MSI with that key. The feed check passes the feed `write-update-feed.sh`
+writes, and refuses, with the diagnostic for each cause, a changed MSI, another key's
+signature, a signature for another version, and the throwaway signature against the
+release-verification key; the job's output is searched for the key and its password. The
+staged `update-tool` and `assemble-signed` text is not extracted: the round trip runs
+the scripts those steps call. `Update Feed In The App On Windows` then runs the app's
+`tests/update_feed.rs`, which gives the same feed and MSI to the updater plugin's own
+`Update::verify` under the app's updater configuration with the throwaway key: it accepts
+them, refuses a changed MSI and another key as signature check failures, and refuses
+another version as a signed version mismatch.
+
 ### The Last Command-Line Release
 
 The last command-line release is the CLI recovery release. It was cut after W1's

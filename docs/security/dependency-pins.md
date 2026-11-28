@@ -200,11 +200,17 @@ place the version is set, through
 a file that is anything but one exact `X.Y.Z`. `--locked` makes Cargo build the
 tool's own published `Cargo.lock`, and Cargo checks the crate archive and each
 locked dependency against the checksums in the crates.io index, so the trust rests
-on that index over HTTPS, as for any crate. What this repository does not record is
-a hash of the tool's own archive, so it is not checksum-pinned like the tools above;
-W4's tool job, which signs update archives, commits one that moves with the pin once
-it lands. The
-install goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
+on that index over HTTPS, as for any crate. These installs record no hash of the
+tool's own archive, so they are not checksum-pinned like the tools above. The update
+signer is the exception: W4's `update-tool` job, staged in
+[`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml) until the
+release run takes it, builds it from the archive whose SHA-256
+[`app/tauri-cli.crate.sha256`](../../app/tauri-cli.crate.sha256) commits, refuses any
+other, builds with `--locked`, and runs the pinned `cargo-deny` advisories check on the
+archive's own lockfile with the pinned `jdx/mise-action`, `cache: false` and only
+`cargo-deny` selected. The checksum moves with the pin, and a check in `mise run check`
+fails when their versions differ. The
+`cargo install` goes to `$RUNNER_TEMP`, uses no cache, and so compiles on every run: a cache
 would be a trust boundary for a job that builds code and runs the tool. It runs in
 the Windows and macOS app jobs of `merge-checks.yaml` and, since W1's installer pull
 request, in the Windows leg of [`release-build.yaml`](../../.github/workflows/release-build.yaml), which builds the released app.

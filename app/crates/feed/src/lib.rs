@@ -1,9 +1,10 @@
 //! the update feed: the rules that decide whether the app takes a release, and the
-//! check the release run makes of `latest.json` before it publishes it. The app
+//! check the release run makes of `latest.json` before it publishes it. the app
 //! downloads and verifies through Tauri's updater plugin; this crate holds what the
 //! plugin does not, the download address rule and the committed public key, and the same
-//! signature rules the plugin applies, so the feed check accepts exactly what the app
-//! would.
+//! signature rules the plugin applies. the feed check supplies its own embedded
+//! release-verification key, independent of the app's, so a transition release can
+//! rotate the app's key.
 
 use std::collections::BTreeMap;
 use std::fmt;

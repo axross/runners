@@ -1,0 +1,132 @@
+//! the last step of the feed round trip in merge-checks.yaml's update-feed-app job: the
+//! feed and the dry-run MSI that the release run's own signing scripts signed with a
+//! throwaway key are accepted by the updater plugin's own verification, under the app's
+//! updater configuration with that key, and a changed file, another key's signature and a
+//! signature for another version are refused. the job hands the files over in the
+//! directory `MARSHAL_UPDATE_FEED_DIR` names, so these tests are ignored by default and
+//! fail when run without it.
+#![cfg(windows)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+
+use std::path::PathBuf;
+
+use serde_json::Value;
+use tauri::test::{mock_builder, mock_context, noop_assets};
+use tauri_plugin_updater::{Error, Update, UpdaterExt};
+
+/// the platform entry the app reads on Windows.
+const PLATFORM: &str = "windows-x86_64";
+
+/// minisign's wording for a file that does not match its signature.
+const VERIFICATION_FAILED: &str = "The signature verification failed";
+
+/// minisign's wording for a signature made under another key than the one given.
+const DIFFERENT_KEY: &str = "The signature was created with a different key than the one provided";
+
+fn directory() -> PathBuf {
+    PathBuf::from(
+        std::env::var_os("MARSHAL_UPDATE_FEED_DIR")
+            .expect("MARSHAL_UPDATE_FEED_DIR must name the feed round trip's files"),
+    )
+}
+
+fn read(name: &str) -> Vec<u8> {
+    let path = directory().join(name);
+    std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}
+
+/// the update the plugin restores from `feed`, a feed file of the round trip, and the
+/// bytes of the MSI its entry names. the app's own updater configuration is used, with
+/// the throwaway public key in place of the committed one; any version counts as newer,
+/// since the dry run's version is below a mock app's.
+fn update(feed: &str, installed_key: &str) -> (Update, Vec<u8>) {
+    let public_key = String::from_utf8(read(installed_key)).unwrap();
+    let mut configuration: Value =
+        serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+    let mut updater = configuration["plugins"]["updater"].take();
+    updater["pubkey"] = Value::from(public_key.trim());
+    let mut context = mock_context(noop_assets());
+    context
+        .config_mut()
+        .plugins
+        .0
+        .insert("updater".to_string(), updater);
+    let app = mock_builder()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .build(context)
+        .unwrap();
+    let feed: Value = serde_json::from_slice(&read(feed)).unwrap();
+    let msi = feed["platforms"][PLATFORM]["url"]
+        .as_str()
+        .and_then(|url| url.rsplit('/').next())
+        .unwrap_or_else(|| panic!("{feed} has no {PLATFORM} address"))
+        .to_string();
+    let update = app
+        .updater_builder()
+        .version_comparator(|_, _| true)
+        .build()
+        .unwrap()
+        .restore_update(feed)
+        .unwrap()
+        .expect("the feed offers an update");
+    (update, read(&msi))
+}
+
+/// the plugin's signature check refused, in minisign's wording for why, which tells a
+/// signature that does not verify from a feed or a key the plugin could not read.
+fn assert_refused_by_minisign(refusal: &Error, wording: &str) {
+    assert!(matches!(refusal, Error::Minisign(_)), "{refusal}");
+    assert_eq!(refusal.to_string(), wording);
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn the_installed_old_key_accepts_the_transition_signature() {
+    let (update, msi) = update("latest.json", "update.pub");
+    update.verify(&msi).unwrap();
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn a_changed_msi_is_refused() {
+    let (update, mut msi) = update("latest.json", "update.pub");
+    let last = msi.last_mut().expect("the MSI is not empty");
+    *last ^= 1;
+    assert_refused_by_minisign(&update.verify(&msi).unwrap_err(), VERIFICATION_FAILED);
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn the_installed_old_key_refuses_the_new_keys_signature() {
+    let (update, msi) = update("latest-another-key.json", "update.pub");
+    assert_refused_by_minisign(&update.verify(&msi).unwrap_err(), DIFFERENT_KEY);
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn the_installed_new_key_accepts_the_subsequent_signature() {
+    let (update, msi) = update("latest-another-key.json", "other.pub");
+    update.verify(&msi).unwrap();
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn the_installed_new_key_refuses_the_old_keys_signature() {
+    let (update, msi) = update("latest.json", "other.pub");
+    assert_refused_by_minisign(&update.verify(&msi).unwrap_err(), DIFFERENT_KEY);
+}
+
+#[test]
+#[ignore = "needs the feed round trip's files in MARSHAL_UPDATE_FEED_DIR"]
+fn a_signature_for_another_version_is_refused() {
+    let (update, msi) = update("latest-another-version.json", "update.pub");
+    assert!(matches!(
+        update.verify(&msi),
+        Err(Error::SignedVersionMismatch { .. })
+    ));
+}

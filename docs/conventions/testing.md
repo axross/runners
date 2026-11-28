@@ -38,6 +38,8 @@ Run from the repository root.
 | `mise run test:set-release-version` | Run the version write script, `.github/scripts/set-release-version.sh`, against temporary copies of the CLI's and the app's `Cargo.toml` and `Cargo.lock`: a release and a prerelease version, invalid versions, a missing placeholder or package, a duplicate entry, and CRLF files                                                                                                                                                              |
 | `mise run test:verify-release`      | Run the release gate, `.github/scripts/verify-release.sh`, against temporary release files: the plan phase's output, the exact files, a missing, extra, or misnamed executable or installer, a directory in place of a file, a checksum mismatch, an unset or unknown phase, and the asset globs in `release/.releaserc.json` against the exact files                                                                                             |
 | `mise run test:assemble-release`    | Run `.github/scripts/assemble-release.sh`, which writes `SHA256SUMS` for the release's app executable and MSI, against temporary directories: the two lines in their fixed order, and a refusal for another file set, a changed file, or a hash that is not a SHA-256. It needs GNU `sha256sum` and GNU `find -printf`, so it runs on Linux (CI), not on macOS                                                                                    |
+| `mise run test:sign-update`         | Run the `sign-update` scripts staged in `.github/staged/release-feed.yaml`, extracted from that file, against a stand-in signer: a signature for the build's MSI, a refusal of a changed MSI, a changed signer, and an empty secret, and the `userns` step's `sudo` call with the limit file at 1, at 0 and absent. It needs GNU `sha256sum`, so it runs on Linux (CI), not on macOS                                                              |
+| `mise run test:update-tools`        | Check the update tools' scripts: the committed `tauri-cli` crate checksum against the pin, the refusal of another crate archive, a relative output directory, and the feed `write-update-feed.sh` writes. It needs GNU `sha256sum` and GNU `date --utc`, so it runs on Linux (CI), not on macOS                                                                                                                                                   |
 | `mise run check:release-shape`      | Read the `.yaml` and `.yml` workflows with `.github/scripts/check-release-shape.mjs` and fail unless the release jobs keep the shape the release record describes: no job declares an Environment or reads a signing secret, and each release job keeps its place in the chain. It catches mistakes, not a hostile edit; the rules are listed in [What the Release Tests Cover](../marshal-cli/release-artifacts.md#what-the-release-tests-cover) |
 | `mise run test:release-shape`       | Run that check against the unchanged workflows, then against copies altered one change at a time, and expect each alteration to fail                                                                                                                                                                                                                                                                                                              |
 | `mise run test:installer-version`   | Run `.github/scripts/installer-version.sh`: a release `X.Y.Z` is kept, `0.0.0-dryrun.<n>` maps to `0.0.0`, and a version beyond the MSI limits or in another prerelease form is refused                                                                                                                                                                                                                                                           |
@@ -64,6 +66,16 @@ host other than Linux x64, can still run `check`. The Check job prepares the gat
 and runs it as its own step after `mise run check`;
 The [merge workflow](../../.github/workflows/merge-checks.yaml) lists the remaining steps. [App](../marshal/configuration.md#the-configuration-editor) describes the
 checks and their limits.
+
+Merge checks also run `Update Feed Round Trip` and `Update Feed In The App On Windows`
+after Release Build Dry Run, on a push to main and on pull requests that change the release
+workflows, `.github/staged/`, the scripts, the `tauri-cli` files, the feed crate or
+the app's updater; on other pull requests the first reports success without building.
+They hold `contents: read` and reach no Environment: the first signs the dry run's
+MSI with a throwaway key by running the staged `sign-update` scripts, and the second
+gives the feed it wrote to the updater plugin's own verification.
+[CLI](../marshal-cli/release-artifacts.md#the-update-feeds-tools-and-checks)
+describes them.
 
 The installed copies under `.claude/skills/` are generated and are excluded from
 formatting and linting. [Agent Skills](../agent-work/skill-installation.md) owns

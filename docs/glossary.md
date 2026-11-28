@@ -45,6 +45,8 @@ explains how contributors choose new terms.
 
 **Resident Agent** — The long-running supervisor controlled over the local channel. It starts and stops runners, builds images and can remain up after a configuration, image or pool failure. It shares the foreground instance’s lock, channel and log directory, so they cannot run together. [Resident agent lifecycle](./marshal-cli/resident-agent.md#the-agent).
 
+**Update Drain** — The resident agent’s wait, at the Marshal App’s request, for the jobs already running to finish before an update installs. [The update drain](./marshal-cli/agent-lifecycle.md#the-update-drain).
+
 **Marshal App** — The desktop client and its executable under `app/`. On Windows the notification-area menu opens the main window. The executable’s `agent` mode runs the resident agent as a separate process that outlives the window. The client uses protocol version 2; the agent owns configuration, credentials and runner operations. [Executable and process roles](./marshal/session.md#the-executable-and-its-modes).
 
 **Instance State** — The foreground instance’s running, stopping, stopped-with-reason or resuming state, or `building` when a build holds the lock. It determines which requests the instance accepts. [Foreground state and requests](./marshal-cli/foreground-instance.md#instance-state).
@@ -89,7 +91,9 @@ explains how contributors choose new terms.
 
 **Check Block** — An optional download-verification block. The app MSI check verifies checksums, the tag commit on main, attestation and the app inside the MSI without installing anything. A failure reports `refused:` and its cause. The guide at the last command-line release’s tag has the block for a CLI artifact. [App download checks](./marshal-cli/install-on-windows.md#checking-the-download).
 
-**Release Environment** — The GitHub Environment `release`, which holds macOS signing secrets and `APPLE_TEAM_ID`. It admits main and requires the maintainer’s approval for each run. No job declares it from W1’s installer pull request until M2’s or W4’s signing job returns; it and its secrets are kept for that job. The maintainer controls its settings. [Signing contracts](./marshal-cli/signing.md#the-signing-contracts).
+**Release Environment** — The GitHub Environment `release`, which holds macOS signing secrets and `APPLE_TEAM_ID`. It admits main and requires the maintainer’s approval for each run. No job declares it from W1’s installer pull request until M2’s or W4’s signing job returns; it and its secrets are kept for that job; W4’s `sign-update` will declare it for the update-feed key’s two secrets once that job is in the release run. The maintainer controls its settings. [Signing contracts](./marshal-cli/signing.md#the-signing-contracts).
+
+**Update Feed** — The file `latest.json` that names a release’s version and, for each platform, the address of the file to install and its minisign signature. The Marshal App reads it from the latest release. No release publishes it until W4’s last pull request adds it to the release run. [Signed updates](./marshal/updates.md#updates).
 
 **Signing Identifier** — The identifier `app.axross.marshal` used for the CLI’s macOS binary and package in the command-line releases and for the Mac app once it ships. The fixed identifier and team give the designated requirement continuity across releases, including the trust decision used for keychain items. [Signing contracts](./marshal-cli/signing.md#the-signing-contracts).
 

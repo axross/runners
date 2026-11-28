@@ -57,14 +57,24 @@ never reaches `cargo install`. The Windows `app` job and the macOS `app-macos` j
 `merge-checks.yaml` install `tauri-cli` with
 `cargo install tauri-cli --version "=<pin>" --locked` under `$RUNNER_TEMP`, with no
 cache, so the tool compiles on every run. The release build that W1's installer pull
-request (pull request 3) adds reads the same file the same way, and so does W4's tool job once it
-lands, which commits a checksum of the crate archive that moves with the pin. Do not
+request (pull request 3) adds reads the same file the same way, and so does W4's
+`update-tool` job, staged in `.github/staged/release-feed.yaml` until the release run
+takes it, which builds the update signer from the crate archive whose SHA-256
+[`app/tauri-cli.crate.sha256`](../../app/tauri-cli.crate.sha256) commits. Do not
 write the version anywhere else. To move it:
 
 1. Look up the latest `tauri-cli` release, never recall it.
 2. Change the one line of `app/tauri-cli.version`, and run `mise run check:app-pins`
    and `mise run test:tauri-cli-version`.
-3. Check the `tauri` crate's version in `app/Cargo.toml` is one the new tool supports,
+3. In the same change, write the new archive's line in `app/tauri-cli.crate.sha256`,
+   `<sha256>  tauri-cli-<X.Y.Z>.crate`, with the SHA-256 of
+   `https://static.crates.io/crates/tauri-cli/tauri-cli-<X.Y.Z>.crate` checked
+   against the `cksum` the crates.io index lists for that version, and run
+   `mise run test:update-tools`, which fails while the two versions differ. Revisit
+   [`app/tauri-cli.deny.toml`](../../app/tauri-cli.deny.toml), the advisories the
+   maintainer accepted for the old archive's lockfile: drop those the new lockfile no
+   longer has, and bring each new one to the maintainer.
+4. Check the `tauri` crate's version in `app/Cargo.toml` is one the new tool supports,
    and let the Windows job run `cargo tauri build --no-bundle` against it.
 
 Dependabot does not cover the pin, because it is not a crate of the workspace.

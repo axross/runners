@@ -1,0 +1,25 @@
+# cargo-deny's advisory check of the lockfile inside the tauri-cli crate archive that
+# app/tauri-cli.crate.sha256 commits. the staged update-tool job builds the
+# update signer from that archive (.github/scripts/build-update-tools.sh), and any
+# advisory not listed here stops it. each entry is one the maintainer accepted for that
+# archive; a pull request that moves the pin and the checksum revisits the list. see
+# docs/marshal/building.md.
+[advisories]
+ignore = [
+  # brought in by tauri-bundler's RPM packaging and macOS signing, through rpm, pgp and
+  # tauri-macos-sign
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5, through rpm and pgp; the job runs only signer sign" },
+  { id = "RUSTSEC-2025-0144", reason = "ml-dsa 0.0.4, through rpm and pgp; the job runs only signer sign" },
+  { id = "RUSTSEC-2023-0071", reason = "rsa 0.9.10, through rpm and pgp and through tauri-macos-sign; the job runs only signer sign" },
+  # brought in by the icon and image commands, through image and resvg
+  { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 is unmaintained, through image; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0206", reason = "rustybuzz 0.20.1 is unmaintained, through resvg; the job runs only signer sign" },
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser 0.25.1 is unmaintained, through resvg; the job runs only signer sign" },
+  # brought in by the development server, through axum and jsonrpsee
+  { id = "RUSTSEC-2026-0441", reason = "pin-utils 0.1.0 is unmaintained, through futures-util; the job runs only signer sign" },
+  # brought in by the RPM packaging, the macOS signing and the mobile tooling, through rpm,
+  # tauri-macos-sign and x509-certificate
+  { id = "RUSTSEC-2026-0543", reason = "chrono 0.4.41 is unmaintained, through rpm, tauri-macos-sign and x509-certificate; the job runs only signer sign" },
+  # brought in by URL parsing across tauri-cli, the bundler and tauri-utils, through url
+  { id = "RUSTSEC-2026-0592", reason = "url 2.5.8 overflows the stack on nested blob: URLs in Url::origin, through tauri-cli, jsonrpsee-client-transport, tauri-bundler and tauri-utils; the job runs only signer sign" },
+]

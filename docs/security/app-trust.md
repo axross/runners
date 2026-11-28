@@ -152,6 +152,19 @@ runs; these are the rules it is reviewed against.
   one public key committed there, with `requireSignedVersion`, so the signature's
   trusted comment must name the feed's version. A build with no committed key, or a
   development build at `0.0.0-dev`, never checks.
+- **Separate release trust.** The publication check MUST use the hash-checked feed
+  check with the public key embedded from `app/crates/feed/release-public-key.txt`,
+  not the newly built app's key. The separate source lets a transition app carry a
+  new key while the installed apps and the publication check still trust the old
+  signing key. Missing, malformed or wrong release trust MUST prevent publication,
+  with no fallback to the app's key. The release workflow MUST NOT override that
+  key or bypass the signature, signed-version, build-hash or release-address
+  checks. Only the merge checks use the throwaway-key override; the rotation
+  procedure is in [Updates](../marshal/updates.md#the-update-feed-key). The feed
+  check and its tests exist; the release run does not use them until W4's last pull
+  request adds the feed to it. That pull request also adds the release shape check's
+  exact-text guard for this rule; until then `--public-key` exists only for the merge
+  checks' throwaway-key round trip, and no release workflow step calls the feed check.
 - **Only newer, only from this repository.** The app takes a release only when its
   version is newer than its own, and only when the download address is `https`, on
   `github.com` with no port or credentials, under
@@ -170,7 +183,16 @@ runs; these are the rules it is reviewed against.
 Residual risks, accepted:
 
 - Anyone who can publish a release here and holds the update-feed key can ship code
-  every installed app runs. The key, its custody and its rotation are the feed's
-  pull request's to record.
+  every installed app runs. The key goes in the `release` Environment, which admits
+  `main` only and needs the maintainer's approval for each run; its offline backup,
+  rotation and recovery are in [Updates](../marshal/updates.md#the-update-feed-key).
+- Once `sign-update` is in the release run, the pinned `tauri-cli` and its locked
+  dependencies run beside the key. The committed archive checksum and the binary's
+  hash between the jobs fix what runs, not whether it is trustworthy; the roadmap
+  accepts that, with the network cut during signing and the Environment's per-run
+  approval. The advisories in the archive's lockfile that the maintainer accepted are
+  listed in [`app/tauri-cli.deny.toml`](../../app/tauri-cli.deny.toml); every one is in
+  a part of `tauri-cli` that `signer sign` does not use, and a new advisory stops
+  `update-tool`.
 - Tauri's updater keeps each downloaded MSI in the temporary folder
   (tauri-apps/plugins-workspace#2389); Windows' storage cleanup removes it.

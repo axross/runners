@@ -90,16 +90,65 @@ area after an update.
 
 **The feed check.** The `marshal-feed` crate holds the address rule and the same
 signature rules the plugin applies, and builds `marshal-feed-check`, which the release
-run uses on the feed it writes before anything is published:
+run is to use on the feed it writes before anything is published:
 
 ```text
-marshal-feed-check <latest.json> <version> <SHA256SUMS> <platform>=<file>...
+marshal-feed-check [--public-key <file>] <latest.json> <version> <SHA256SUMS> <platform>=<file>...
 ```
 
 It checks the feed's version, that it has exactly the given platforms, each entry's
 address under the release's tag, each file's SHA-256 against `SHA256SUMS`, and each
-signature against the key committed in `tauri.conf.json`, and lists every problem. Its
-tests use throwaway keys in `app/crates/feed/tests/fixtures/`.
+signature, and lists every problem. Without `--public-key` it checks against the
+release-verification public key embedded when it is built, which is separate from the
+key in `tauri.conf.json`; [Security](../security/app-trust.md#updates-come-only-from-the-signed-feed)
+owns that rule. `--public-key` selects a throwaway key for the merge checks' round
+trip. Its tests use throwaway keys in `app/crates/feed/tests/fixtures/`.
 
-The key's generation, its secrets, rotation and recovery come with the feed's pull
-request.
+**Where the feed stands.** The scripts that sign and write the feed and the merge checks
+that run them are in place; the release run does not publish `latest.json` yet, and the
+first release after W4's last pull request is the first to carry a feed. [The update
+feed's tools and checks](../marshal-cli/release-artifacts.md#the-update-feeds-tools-and-checks)
+owns the staging and the scripts.
+
+### The Update-Feed Key
+
+The key is a minisign key made by `tauri signer generate`, protected by a password.
+Agents never handle the private key or its password.
+
+The maintainer manages the key as follows:
+
+- **Generation.** Generate and publish the public key as follows:
+  1. Generate the key on your own machine with a password.
+  2. Post the public key on [#78](https://github.com/axross/runners/issues/78).
+  3. Commit the public key as the updater's `pubkey` in
+     `app/crates/app/tauri.conf.json`, with the same approved public value in the
+     release-verification source, `app/crates/feed/release-public-key.txt`.
+
+  Both keys now committed have the minisign key ID `6F39E3131E21E1E4`.
+
+- **The two secrets.** The maintainer stores the private key, the whole text of the
+  file `tauri signer generate` wrote, as the `release` Environment secret
+  `UPDATE_FEED_SIGNING_KEY`, and its password as `UPDATE_FEED_SIGNING_KEY_PASSWORD`.
+  No job reads them until the feed's last pull request adds `sign-update`.
+- **The offline backup.** The maintainer keeps a copy of the key file and of the
+  password offline, the two stored apart, and reports on the tracking issue that the
+  secrets and the backup exist before the first release after the feed lands.
+- **Rotation.** Installed apps trust one key, so a new key is introduced through a
+  release:
+  1. Commit the new app public key, retaining the old public key in the separate
+     release-verification source. Sign the transition release with the old key,
+     which the installed apps and the publication check both accept.
+  2. Replace the two secrets with the new key and its password, and switch the
+     committed release-verification source to the new public key, only after the
+     maintainer confirms that the hosts have taken that release and before
+     publishing the next release. A mismatch blocks publication; no override
+     bypasses the check.
+  3. Reinstall any host that missed the release in step 1 from a newer release's
+     MSI.
+- **Loss.** Without the old key no installed app accepts a new one through the feed.
+  Recover as follows:
+  1. Generate a new key.
+  2. Commit its public key in both the app and release-verification sources.
+  3. Release with the new signing key.
+  4. Reinstall each host from that release's MSI.
+- **A leak.** Rotate at once, as above.

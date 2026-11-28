@@ -78,8 +78,9 @@ tool resolves, including `cargo`, `rustfmt`, and `clippy` for the toolchain
 marker, so an environment provisioned before Rust support gains the line when
 setup runs again. When changing the pinned mise version, update it in every place
 together: the `version` and `sha256` inputs of each `jdx/mise-action` step in
-[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml) and
-[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml), and the
+[`merge-checks.yaml`](../../.github/workflows/merge-checks.yaml),
+[`rust-advisories.yaml`](../../.github/workflows/rust-advisories.yaml) and the staged
+[`release-feed.yaml`](../../.github/staged/release-feed.yaml), and the
 `version` and `expected_sha256` in `.agents/setup`. Both hold the SHA-256 of the
 bare `mise-v<version>-linux-x64` binary, taken from the release's published
 `SHASUMS256.txt`; the action hashes the binary it extracts from its archive, so

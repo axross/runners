@@ -1,15 +1,15 @@
-//! `marshal-feed-check <latest.json> <version> <SHA256SUMS> <platform>=<file>...`: the
-//! release run's check of the feed it wrote, before anything is published. It checks the
-//! feed against the public key committed in the app's configuration, the same key every
-//! installed app verifies with, and exits 1 listing every problem it found.
+//! `marshal-feed-check [--public-key <file>] <latest.json> <version> <SHA256SUMS>
+//! <platform>=<file>...`: the release run's check of the feed it wrote, before anything is
+//! published. its embedded `release-public-key.txt` is independent of the app's key so
+//! an old-key-signed transition can carry a new app key. it exits 1 listing every
+//! problem. `--public-key` is only for throwaway merge checks, never a release run.
 
 use std::path::Path;
 use std::process::ExitCode;
 
-use marshal_feed::{Released, check_feed, committed_public_key, recorded_sha256};
+use marshal_feed::{Released, check_feed, recorded_sha256};
 
-const USAGE: &str =
-    "usage: marshal-feed-check <latest.json> <version> <SHA256SUMS> <platform>=<file>...";
+const USAGE: &str = "usage: marshal-feed-check [--public-key <file>] <latest.json> <version> <SHA256SUMS> <platform>=<file>...";
 
 fn main() -> ExitCode {
     match run(&std::env::args().skip(1).collect::<Vec<_>>()) {
@@ -33,6 +33,10 @@ fn read(path: &str) -> Result<Vec<u8>, String> {
 }
 
 fn run(arguments: &[String]) -> Result<Vec<String>, Vec<String>> {
+    let (key_file, arguments) = match arguments {
+        [flag, file, rest @ ..] if flag == "--public-key" => (Some(file), rest),
+        _ => (None, arguments),
+    };
     let [feed, version, sums, files @ ..] = arguments else {
         return Err(vec![USAGE.to_string()]);
     };
@@ -68,7 +72,15 @@ fn run(arguments: &[String]) -> Result<Vec<String>, Vec<String>> {
     if !problems.is_empty() {
         return Err(problems);
     }
-    let public_key = committed_public_key().map_err(|refusal| vec![refusal.to_string()])?;
+    let public_key = match key_file {
+        Some(file) => String::from_utf8(read(file).map_err(|error| vec![error])?)
+            .map_err(|_| vec![format!("{file} is not text")])?
+            .trim_end()
+            .to_string(),
+        None => include_str!("../release-public-key.txt")
+            .trim_end()
+            .to_string(),
+    };
     let released: Vec<Released<'_>> = loaded
         .iter()
         .map(|(platform, name, bytes, recorded)| Released {
@@ -80,11 +92,12 @@ fn run(arguments: &[String]) -> Result<Vec<String>, Vec<String>> {
         .collect();
     check_feed(&feed, version, &released, &public_key)
         .map_err(|refusals| refusals.iter().map(ToString::to_string).collect::<Vec<_>>())?;
+    let key = key_file.map_or_else(|| "the release-verification key".to_string(), Clone::clone);
     Ok(released
         .iter()
         .map(|file| {
             format!(
-                "{}: {} is signed for {version} with the committed key, at its release address",
+                "{}: {} is signed for {version} with {key}, at its release address",
                 file.platform, file.name
             )
         })
