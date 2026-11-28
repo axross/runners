@@ -8,11 +8,7 @@ description: "Which signatures and identities bind the CLI, package and planned 
 
 ## Signing, Held for M2 and W4
 
-The temporary recovery reinstates bare-CLI/pkg signing under CLI Recovery's
-bounded exception. The following held contract concerns the app path after
-restoration, not that temporary CLI job.
-
-No job of the suspended app baseline signs anything from W1's installer pull request until the
+No job of `release.yaml` signs anything from W1's installer pull request until the
 next signing job joins the chain: M2's disk-image pull request brings back
 `sign-macos` and `verify-macos`, rewritten for the app and the disk image, and W4's
 feed pull request adds `update-tool` and `sign-update`. Each joins before
@@ -30,8 +26,8 @@ The contracts below stay in force through the gap.
 
 ## The Signing Contracts
 
-The temporary recovery uses these contracts for the bare CLI/pkg. They also remain
-held for M2 and W4's app-signing jobs after restoration. F0 owns these. W1, W4, M2
+These are held for M2 and W4: no job uses them until M2's or W4's signing job
+joins the chain, and they stay in force through the gap. F0 owns these. W1, W4, M2
 and M4 consume them. Each is a child of roadmap
 [#72](https://github.com/axross/runners/issues/72), as F0 is:
 
@@ -127,22 +123,8 @@ The contracts F0 owns are these:
 
 ## Reading a Signature
 
-For the temporary CLI recovery, these read-only commands inspect the actual
-release package and installed CLI. Replace `<version>` with its real version.
-They do not install or sign anything, and expected output is not measured evidence:
-
-```bash
-pkgutil --check-signature marshal-<version>-macos-arm64.pkg
-spctl --assess --type install -vv marshal-<version>-macos-arm64.pkg
-xcrun stapler validate marshal-<version>-macos-arm64.pkg
-codesign --verify --strict -vv /usr/local/bin/marshal
-codesign -d -r- /usr/local/bin/marshal
-```
-
-The package is expected to show a Developer ID Installer chain of the same team
-as the CLI, a notarized Developer ID assessment and a valid staple. The bare or
-installed CLI's designated requirement must match the existing identifier/team
-contract; its notarization is read from the CDHash in the notary log, not
-`spctl --type execute`. The actual team, requirement form and native outcomes remain
-pending for F0's measured record. App/dmg signature instructions remain M2's work
-after restoration, not substitutes for these CLI/pkg subjects.
+No file of a release is signed until M2's disk-image pull request. The commands that
+read the command line's signed macOS package are in this section of this document at
+the last command-line release's tag. [The Last Command-Line Release](./release-artifacts.md#the-last-command-line-release)
+says how to find that tag's version and open the file there. M2's pull request brings this section back, rewritten for the app
+and the disk image.

@@ -39,7 +39,7 @@ explains how contributors choose new terms.
 
 ### Marshal and the agent
 
-**CLI** — The `marshal-cli` library under `cli/`, named for the historic `marshal` command. Its `validate`, `build` and `start` implement validation, image builds and foreground supervision. Current main exposes the library to the app and test helpers. Recovery builds the historical CLI from a fixed tree. [Library entry points](./marshal-cli/entry-points.md).
+**CLI** — The `marshal-cli` library under `cli/`, named for the historic `marshal` command. Its `validate`, `build` and `start` implement validation, image builds and foreground supervision. Current main exposes the library to the app and test helpers. [Library entry points](./marshal-cli/entry-points.md).
 
 **Supervisor** — The host process that keeps slots filled by requesting JIT credentials and starting a fresh runner after each job. This is the resident agent in Marshal or the foreground `start` in command-line releases. [Registration and the slot loop](./marshal-cli/pool-runtime.md#names-and-the-slot-loop).
 
@@ -83,15 +83,15 @@ explains how contributors choose new terms.
 
 ### Release names
 
-**Marshal Release** — A `v<version>` tag on main and its GitHub release. The maintainer dispatches `release.yaml`; semantic-release chooses the version from commit subjects since the previous `v*` tag. The active recovery route publishes the historical CLI binaries, MSI, macOS pkg and checksums. The retained app release set has its own restoration conditions. [Active and suspended release sets](./security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
+**Marshal Release** — A `v<version>` tag on main and its GitHub release. The maintainer dispatches `release.yaml`; semantic-release chooses the version from commit subjects since the previous `v*` tag. A release carries the Windows app executable, the unsigned per-user MSI that holds it and `SHA256SUMS`, except `v0.1.0` and the CLI recovery release, the last command-line release, which carry the CLI binaries and, for the recovery release, its MSI and macOS pkg. [Release record](./security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main).
 
-**Marshal Installer** — In the app installation procedure, the unsigned, per-user Windows MSI containing `marshal-app.exe`, its licence notices and a Start menu entry. Its version is the release’s `X.Y.Z` or `0.0.0` for a dry run. The historical CLI MSI belongs to the recovery procedure. [App installer](./marshal-cli/install-on-windows.md#installing).
+**Marshal Installer** — In the app installation procedure, the unsigned, per-user Windows MSI containing `marshal-app.exe`, its licence notices and a Start menu entry. Its version is the release’s `X.Y.Z` or `0.0.0` for a dry run. [App installer](./marshal-cli/install-on-windows.md#installing).
 
-**Check Block** — An optional download-verification block. The app MSI check verifies checksums, the tag commit on main, attestation and the app inside the MSI without installing anything. A failure reports `refused:` and its cause. Use the recovery instructions for a CLI artifact. [App download checks](./marshal-cli/install-on-windows.md#checking-the-download).
+**Check Block** — An optional download-verification block. The app MSI check verifies checksums, the tag commit on main, attestation and the app inside the MSI without installing anything. A failure reports `refused:` and its cause. The guide at the last command-line release’s tag has the block for a CLI artifact. [App download checks](./marshal-cli/install-on-windows.md#checking-the-download).
 
-**Release Environment** — The GitHub Environment `release`, which holds macOS signing secrets and `APPLE_TEAM_ID`. It admits main and requires the maintainer’s approval for each run. In active recovery only `sign-macos` declares it. The maintainer controls its settings. [Signing authority](./security/release-authority.md#temporary-cli-recovery).
+**Release Environment** — The GitHub Environment `release`, which holds macOS signing secrets and `APPLE_TEAM_ID`. It admits main and requires the maintainer’s approval for each run. No job declares it from W1’s installer pull request until M2’s or W4’s signing job returns; it and its secrets are kept for that job. The maintainer controls its settings. [Signing contracts](./marshal-cli/signing.md#the-signing-contracts).
 
-**Signing Identifier** — The identifier `app.axross.marshal` used for the macOS code object and historical pkg. The fixed identifier and team give the designated requirement continuity across releases, including the trust decision used for keychain items. [Signing contracts](./marshal-cli/signing.md#the-signing-contracts).
+**Signing Identifier** — The identifier `app.axross.marshal` used for the CLI’s macOS binary and package in the command-line releases and for the Mac app once it ships. The fixed identifier and team give the designated requirement continuity across releases, including the trust decision used for keychain items. [Signing contracts](./marshal-cli/signing.md#the-signing-contracts).
 
 **Placeholder Version** — The `0.0.0-dev` in the CLI and app manifests and lockfiles on main. The release build writes the version into its runner checkout; the stamp is not committed. [Release versioning](./marshal-cli/release-artifacts.md#releases).
 
