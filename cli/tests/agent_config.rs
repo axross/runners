@@ -1462,8 +1462,6 @@ async fn an_edit_and_a_reload_are_busy_while_the_agent_stops() {
         .await;
 }
 
-// a stop for the file ends once an edit or a reload is written -------------------
-
 /// a rig with no `config.toml` and no `config.json`, or with `file` as its `config.toml`.
 fn without_a_usable_file(file: Option<&str>) -> Rig {
     let rig = Rig::new(ONE_POOL);

@@ -324,8 +324,6 @@ async fn the_sign_in_item_follows_start_at_login() {
     .await;
 }
 
-// an applied edit or reload puts `[lifecycle]` in effect ---------------------------
-
 /// a `[lifecycle]` table that differs from the defaults in three settings.
 const HAND_EDIT: &str =
     "\n[lifecycle]\nkeep_awake = false\nstart_at_login = true\nstop_on_network_change = false\n";

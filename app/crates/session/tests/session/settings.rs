@@ -209,8 +209,6 @@ async fn a_refusal_for_problems_keeps_them_as_the_snapshot_words_them() {
     );
 }
 
-// the notes under the settings after an edit or a reload ---------------------------
-
 /// a running agent whose lifecycle part holds three settings.
 async fn connected_with_three() -> (Agent, Running) {
     let (agent, link) = Agent::new();
@@ -379,8 +377,6 @@ async fn a_read_and_a_token_removal_remove_no_note() {
     session.settle().await;
     assert_eq!(note(&session, "keep_awake"), before);
 }
-
-// the next step a refused setting names ---------------------------------------------
 
 async fn refused_with_the_agent(
     snapshot: marshal_cli::agent::snapshot::Snapshot,
