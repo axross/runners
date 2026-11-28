@@ -116,10 +116,12 @@ container's resource limits and the cache boundaries, keep their meanings.
    says why.
 2. Arrange a quiet window, use **Stop all runners** before editing a running agent's file,
    and save the configuration. These controls stop every pool. A client using
-   `config_edit` or `config_reload` can instead apply the change to only the
-   affected pool, as [the configuration editing protocol](../marshal-cli/config-protocol.md#editing-the-configuration)
+   `config_edit` or `config_reload`, such as the window's **Reload config.toml**, can instead
+   apply the change to only the affected pool, as
+   [the configuration editing protocol](../marshal-cli/config-protocol.md#editing-the-configuration)
    describes; changing `scale_set` stops that pool's jobs.
-3. Use **Start all runners** to reread the file. Invalid settings leave the last valid
+3. Use **Start all runners** to reread the file, or **Reload config.toml** if the runners
+   were left running. Invalid settings leave the last valid
    configuration in use. Check the pool card for its scale-set name and
    listener state. A listening pool with no demand has no registered runner or
    job container after successful cleanup; an incomplete-cleanup report is not
