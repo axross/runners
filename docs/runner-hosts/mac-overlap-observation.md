@@ -107,6 +107,14 @@ network carries its time limit inside, as `timeout <seconds>` in the executed co
 so nothing lingers if you stop waiting. macOS has no `timeout` to wrap `tart exec`
 itself.
 
+A value you read from the VM or the container, such as the DNS address or an interface
+name, is untrusted, because a job can change what the container's files and the VM's
+interfaces hold. Each command passes such a value to the guest as one argument, never
+inside a string that a shell reads again, and the route helper refuses a DNS address
+that is not a dotted IPv4 address. Type the value in single quotes. If it does not
+start with a letter or digit, or holds anything beyond letters, digits, `.`, `-`, `_`
+and `:`, do not run the step that uses it, and record why.
+
 **Stop conditions.** They apply to every step.
 
 - The job VM is gone before or during the observation: stop, and report on #124 what
@@ -245,12 +253,13 @@ ctr ip -4 rule show
 ```bash
 route_lookup() {
   local want=$1 a b c d line iface dest gw metric mask len m matches=''
+  [[ $want =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo 'not an IPv4 address' >&2; return 1; }
   IFS=. read -r a b c d <<<"$want"
   want=$(( (d << 24) | (c << 16) | (b << 8) | a ))
   hex_ip() { printf '%d.%d.%d.%d' "0x${1:6:2}" "0x${1:4:2}" "0x${1:2:2}" "0x${1:0:2}"; }
   while read -r line; do
     read -r iface dest gw _ _ _ metric mask _ <<<"$line"
-    [[ $dest =~ ^[0-9A-F]{8}$ && $mask =~ ^[0-9A-F]{8}$ ]] || continue
+    [[ $dest =~ ^[0-9A-F]{8}$ && $mask =~ ^[0-9A-F]{8}$ && $gw =~ ^[0-9A-F]{8}$ ]] || continue
     (( (want & 16#$mask) == 16#$dest )) || continue
     len=0; m=$(( 16#$mask ))
     while (( m )); do len=$(( len + (m & 1) )); m=$(( m >> 1 )); done
@@ -262,10 +271,11 @@ route_lookup() {
 ctr cat /proc/net/route | route_lookup "$DNS" | tee -a "$EVIDENCE"
 ```
 
-The kernel prints each address in `/proc/net/route` as four bytes in hexadecimal,
-lowest byte first, and the helper decodes them. A `via 0.0.0.0` route is
-directly connected. If the best match is the bridge's connected route, the container
-treats the DNS address as a neighbour on the bridge, which is the hypothesis.
+The kernel prints each address in `/proc/net/route` as eight hexadecimal digits with
+the octets in reverse order (`0100007F` is 127.0.0.1), and the helper decodes them. A
+`via 0.0.0.0` route is directly connected. If the best match is the bridge's connected
+route, the container treats the DNS address as a neighbour on the bridge, which is the
+hypothesis.
 
 ### 5. Collect the VM's network and resolver files
 
@@ -323,8 +333,8 @@ ctr timeout 10 dig +tcp +time=3 +tries=1 "@$DNS" github.com A
 ```
 
 ```bash
-vm timeout 5 bash -c "exec 3<>/dev/tcp/$DNS/53"
-ctr timeout 5 bash -c "exec 3<>/dev/tcp/$DNS/53"
+vm timeout 5 bash -c 'exec 3<>/dev/tcp/"$1"/53' _ "$DNS"
+ctr timeout 5 bash -c 'exec 3<>/dev/tcp/"$1"/53' _ "$DNS"
 ```
 
 Compare the VM's answers with the container's. A lookup that works in the VM and times
