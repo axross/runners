@@ -169,9 +169,8 @@ release-profile tests, checks that the app's product version is the stamped vers
 and that it imports no `vcruntime` DLL, builds and tests Marshal's per-user MSI with
 the real `msiexec`, and uploads the app executable, the MSI and `SHA256SUMS` as one
 artifact of the run. The dry run signs nothing and references no Environment, and no
-app-build job declares one. The temporary CLI recovery has its own unsigned dry
-run; only its dispatch-only signing job declares the `release` Environment.
-The app dry run holds `contents: read`, and nothing is attested or published; [CLI](../marshal-cli/release-artifacts.md#releases)
+job of any workflow declares one until the next signing job returns. It holds
+`contents: read`, and nothing is attested or published; [CLI](../marshal-cli/release-artifacts.md#releases)
 describes the build. Its `Install Blocks` job runs on Windows, needs that dry run,
 and holds `contents: read`. It downloads the dry run's artifact and runs the check and
 uninstall blocks that [CLI](../marshal-cli/install-on-windows.md#installing-updating-and-rolling-back) documents:
