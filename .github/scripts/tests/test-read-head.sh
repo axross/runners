@@ -5,11 +5,12 @@
 # the git deny rule, or lets the copy path, allowlist and prompt disagree to fail.
 #
 # the copy part runs the workflow's own copy step, read from the workflow, as root with
-# the destination moved under a fresh root-owned directory in /opt and a stand-in gh
-# first on the search path, then runs the installed copy against that stand-in. it needs
-# a root-owned directory the copy's ancestor check accepts, which /tmp never is, so it
-# runs only where the test can create one, as root or through passwordless sudo, found
-# out by trying. elsewhere it says so and skips; on GitHub Actions it fails instead, as
+# the destination moved under a fresh root-owned directory directly under / and a stand-in
+# gh first on the search path, then runs the installed copy against that stand-in. it needs
+# a root-owned directory whose ancestors the copy's ancestor check accepts, which neither
+# /tmp nor /opt is (the hosted image makes /opt writable by everyone), so it runs only
+# where the test can create one, as root or through passwordless sudo, found out by
+# trying. elsewhere it says so and skips; on GitHub Actions it fails instead, as
 # docs/contributing/permission-tests.md requires.
 set -euo pipefail
 
@@ -167,17 +168,18 @@ make_root_directory() {
   return 1
 }
 
-# the probe is the attempt itself: a fresh directory under /opt. mktemp makes it mode 700,
-# so it is opened to 755 for the user that runs the installed copy to traverse it.
-if make_root_directory /opt/read-head-test.XXXXXX; then
+# the probe is the attempt itself: a fresh directory directly under /, whose only ancestor
+# is /. mktemp makes it mode 700, so it is opened to 755 for the user that runs the
+# installed copy to traverse it.
+if make_root_directory /read-head-test.XXXXXX; then
   parent="$probe_dir"
   use_sudo="$probe_sudo"
 else
   parent=""
   if [[ ${GITHUB_ACTIONS:-} == "true" ]]; then
-    flunk "the copy tests could not create a root-owned directory under /opt on GitHub Actions"
+    flunk "the copy tests could not create a root-owned directory directly under / on GitHub Actions"
   else
-    echo "skip the copy tests: this test could not create a root-owned directory under /opt, as the current user or through passwordless sudo, which the copy's ancestor check needs; run them as root or with passwordless sudo, and CI fails instead of skipping"
+    echo "skip the copy tests: this test could not create a root-owned directory directly under /, as the current user or through passwordless sudo, which the copy's ancestor check needs; run them as root or with passwordless sudo, and CI fails instead of skipping"
   fi
   [[ $failures -eq 0 ]] || exit 1
   exit 0
@@ -246,11 +248,42 @@ run_step() {
     bash -e "${work}/copy-step.sh") >"${work}/step.log" 2>&1
 }
 
+# on GitHub Actions the runner is ephemeral, so the step also runs at its real destination
+# with the tool search path the workflow declares, and prints the tools it finds there, to
+# show before merge that the hosted image's directories and tools pass it. nowhere else is
+# the real destination touched. it needs none of the copy tests, so it also runs when they
+# stop early, and a failure of the copy tests never hides the hosted image's chain.
+real_destination_test() {
+  local real_copy real_tool_path
+  [[ ${GITHUB_ACTIONS:-} == "true" ]] || return 0
+  real_copy="$(node "$guard" --print-copy-env READ_HEAD_COPY "$workflow")"
+  real_tool_path="$(node "$guard" --print-copy-env READ_HEAD_TOOL_PATH "$workflow")"
+  if [[ -e "$(dirname "$real_copy")" ]]; then
+    flunk "the real destination's directory already exists, so the step is not run there"
+    return 0
+  fi
+  real_dir="$(dirname "$real_copy")"
+  if (cd "$root" && env READ_HEAD_COPY="$real_copy" READ_HEAD_REPOSITORY="${GITHUB_REPOSITORY:-$repository}" \
+    READ_HEAD_TOOL_PATH="$real_tool_path" \
+    bash -e "${work}/copy-step.sh") >"${work}/step-real.log" 2>&1; then
+    pass "the shipped copy step passes at its real destination ${real_copy}"
+    cat "${work}/step-real.log"
+    check "the real copy is root-owned and mode 555" test "$(stat -c '%U:%G %a' "$real_copy")" = "root:root 555"
+  else
+    cat "${work}/step-real.log"
+    flunk "the shipped copy step failed at its real destination"
+  fi
+  as_root rm -rf -- "$real_dir"
+  real_dir=""
+}
+
 copy="${parent}/bin/read-head"
 if run_step "$copy"; then
   pass "the shipped copy step succeeds as a root-owned directory allows"
 else
   flunk "the shipped copy step failed: $(cat "${work}/step.log")"
+  real_destination_test
+  echo "${failures} check(s) failed, and the tests that need the copy did not run" >&2
   exit 1
 fi
 check "the copy is root-owned and mode 555" test "$(stat -c '%U:%G %a' "$copy")" = "root:root 555"
@@ -262,6 +295,46 @@ copy_has_fixed_values() {
     && ! grep -q "@[A-Z0-9]*@" "$copy"
 }
 check "the copy has the repository and the stand-in gh fixed in" copy_has_fixed_values
+
+# the job's user is tried, not inferred from modes: uid 65534 with gid 65534 and no
+# supplementary groups tries each way to change the installed copy or its directory, and
+# each must be refused with a permission error, the copy left as it was and nothing added.
+# a probe shows the route works and that user can read the copy, so a refusal is not a
+# missing tool or an unreadable directory.
+as_job_user() {
+  as_root setpriv --reuid=65534 --regid=65534 --clear-groups env LC_ALL=C "$@"
+}
+job_user_probe() {
+  [[ "$(as_job_user id -u)" == 65534 && "$(as_job_user id -G)" == 65534 ]] \
+    && as_job_user cat -- "$copy" >/dev/null
+}
+# job_user_refused <name> <command>...: the job's user runs the command, which must fail
+# with a permission error.
+job_user_refused() {
+  local name="$1"
+  shift
+  if as_job_user "$@" >"${work}/job-user.out" 2>&1; then
+    flunk "${name}: the attempt succeeded"
+  elif ! grep -qi "permission denied" "${work}/job-user.out"; then
+    flunk "${name}: the attempt failed without a permission error: $(head -c 300 "${work}/job-user.out")"
+  else
+    pass "$name"
+  fi
+}
+if job_user_probe; then
+  cp -- "$copy" "${work}/copy.before"
+  job_user_refused "the job's user cannot overwrite the copy" dd if=/dev/zero of="$copy" bs=1 count=1
+  job_user_refused "the job's user cannot append to the copy" dd if=/dev/zero of="$copy" bs=1 count=1 oflag=append conv=notrunc
+  job_user_refused "the job's user cannot remove the copy" rm -f -- "$copy"
+  job_user_refused "the job's user cannot rename the copy" mv -- "$copy" "${copy}.renamed"
+  job_user_refused "the job's user cannot add a file beside the copy" touch -- "$(dirname "$copy")/added"
+  check "the copy still holds its bytes after those attempts" cmp -s "${work}/copy.before" "$copy"
+  check "the copy's directory still holds only the copy" test "$(find "$(dirname "$copy")" -mindepth 1 | wc -l)" -eq 1
+elif [[ ${GITHUB_ACTIONS:-} == "true" ]]; then
+  flunk "the tests of the job's user could not run on GitHub Actions: setpriv did not run as uid 65534 or that user could not read the copy"
+else
+  echo "skip the tests of the job's user: setpriv did not run as uid 65534 with no groups, or that user could not read the copy; CI fails instead of skipping"
+fi
 
 # expect_step_failure <name> <message> <destination> [<repository>]: the step must fail,
 # and say why.
@@ -682,31 +755,7 @@ refused "an empty line number" "$sha" a.txt "" 2
 refused "a line number of 10 digits" "$sha" a.txt 1 1234567890
 refused "a first line greater than the last" "$sha" a.txt 5 3
 
-# on GitHub Actions the runner is ephemeral, so the step also runs at its real destination
-# with the tool search path the workflow declares, and prints the tools it finds there, to
-# show before merge that the hosted image's directories and tools pass it. nowhere else is
-# the real destination touched.
-if [[ ${GITHUB_ACTIONS:-} == "true" ]]; then
-  real_copy="$(node "$guard" --print-copy-env READ_HEAD_COPY "$workflow")"
-  real_tool_path="$(node "$guard" --print-copy-env READ_HEAD_TOOL_PATH "$workflow")"
-  if [[ -e "$(dirname "$real_copy")" ]]; then
-    flunk "the real destination's directory already exists, so the step is not run there"
-  else
-    real_dir="$(dirname "$real_copy")"
-    if (cd "$root" && env READ_HEAD_COPY="$real_copy" READ_HEAD_REPOSITORY="${GITHUB_REPOSITORY:-$repository}" \
-      READ_HEAD_TOOL_PATH="$real_tool_path" \
-      bash -e "${work}/copy-step.sh") >"${work}/step-real.log" 2>&1; then
-      pass "the shipped copy step passes at its real destination ${real_copy}"
-      cat "${work}/step-real.log"
-      check "the real copy is root-owned and mode 555" test "$(stat -c '%U:%G %a' "$real_copy")" = "root:root 555"
-    else
-      cat "${work}/step-real.log"
-      flunk "the shipped copy step failed at its real destination"
-    fi
-    as_root rm -rf -- "$real_dir"
-    real_dir=""
-  fi
-fi
+real_destination_test
 
 if [[ $failures -ne 0 ]]; then
   echo "${failures} check(s) failed" >&2
