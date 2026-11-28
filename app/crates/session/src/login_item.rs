@@ -108,7 +108,7 @@ impl LoginItem {
 
     /// brings the login item in step with `on` and says the state it leaves it in. macOS
     /// reports a Marshal that has never registered as not found, so not found counts as
-    /// not registered (plan revision 4).
+    /// not registered.
     fn reconcile(&self, on: bool, log: &dyn Log) -> LoginItemState {
         let status = self.service.status();
         match (on, status) {
