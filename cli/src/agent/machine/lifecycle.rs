@@ -141,7 +141,7 @@ impl<B: Backend, K: Clock, R: Registrar, D: ImageBuilder, M: Monitor> Agent<'_, 
         if self.read_revision.borrow().as_deref() != Some(revision(file.bytes()).as_str()) {
             return Err(ApiError::new(
                 ErrorCode::ConfigChanged,
-                "config.toml changed after the agent read it; Start all reads it again",
+                "config.toml changed after the agent read it; Start all, or an applied edit or reload, reads it again",
             ));
         }
         let above = self.above();

@@ -83,7 +83,7 @@ async fn a_change_refused_because_the_file_changed_is_shown_under_the_setting_an
         "lifecycle_set",
         Err(Failure::Config {
             code: "config_changed".to_string(),
-            message: "config.toml changed after the agent read it; Start all reads it again"
+            message: "config.toml changed after the agent read it; Start all, or an applied edit or reload, reads it again"
                 .to_string(),
             problems: Vec::new(),
         }),

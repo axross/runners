@@ -309,7 +309,8 @@ fn state_note(
             Some("failed") => note(
                 format!(
                     "Marshal could not register itself to start at sign-in ({}). It tries again \
-                     at the next launch or Start All.",
+                     at the next launch, at Start All, or when a change to config.toml is \
+                     applied.",
                     plain(
                         lifecycle
                             .sign_in_error
