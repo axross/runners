@@ -101,11 +101,12 @@ request() {
 object_type=application/vnd.github.object+json
 raw_type=application/vnd.github.raw
 
-# a name or target is data from the repository, so a control character in it is
-# written as \xNN and one entry cannot span lines
+# a name or target is data from the repository, so a control character or a
+# backslash in it is written as \xNN: one entry cannot span lines, and an escape
+# cannot be mistaken for a literal backslash sequence
 escape='def escape:
   explode
-  | map(if . < 32 or (. >= 127 and . <= 159)
+  | map(if . < 32 or . == 92 or (. >= 127 and . <= 159)
       then ("\\x" + ("0123456789abcdef"[(. / 16 | floor):(. / 16 | floor) + 1] + "0123456789abcdef"[(. % 16):(. % 16) + 1]) | explode)
       else [.] end)
   | (add // [])

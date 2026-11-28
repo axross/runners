@@ -391,6 +391,20 @@ finish "a control character in a name is escaped so an entry stays on one line" 
   "$(call_line "$object_type" "/docs?ref=${sha}")"
 
 new_case
+jq -n '{type: "dir", entries: [{type: "file", name: "a\\x0ab\\c"}]}' >"${case_dir}/response.1"
+printf 'file\ta\\x5cx0ab\\x5cc\n' >"${work}/want"
+run_head "$sha" "docs"
+finish "a backslash in a name is escaped, so a literal escape sequence stays distinguishable" 0 "${work}/want" "1 entries" \
+  "$(call_line "$object_type" "/docs?ref=${sha}")"
+
+new_case
+respond_text 1 '{"type": "symlink", "name": "link", "target": "a\\b\u0001"}'
+printf 'symlink\ta\\x5cb\\x01\n' >"${work}/want"
+run_head "$sha" "docs/link"
+finish "a backslash and a control character in a link target are escaped" 0 "${work}/want" "symlink" \
+  "$(call_line "$object_type" "/docs/link?ref=${sha}")"
+
+new_case
 jq -n '{type: "dir", entries: [range(1000) | {type: "file", name: "f\(.)"}]}' >"${case_dir}/response.1"
 run_head "$sha" "docs"
 if [[ $status -eq 0 ]] && grep -q "warning" "${case_dir}/err" && grep -qF "1000 entries" "${case_dir}/err"; then

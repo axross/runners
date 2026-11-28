@@ -174,7 +174,9 @@ records the former exception, its adoption, and its limits.
   question tool, recorded at
   [#182 comment 7230279897](https://github.com/axross/runners/issues/182#issuecomment-7230279897);
   the plan-approval record at
-  [#182 comment 7230663882](https://github.com/axross/runners/issues/182#issuecomment-7230663882);
+  [#182 comment 7230663882](https://github.com/axross/runners/issues/182#issuecomment-7230663882)
+  and the revision-5 approval at
+  [#182 comment 7230785663](https://github.com/axross/runners/issues/182#issuecomment-7230785663);
   and the merge of the change that carries this entry.
 - **Scope:** the Claude CI review job.
 - **Reassessment:** when the token, the allowlist, the review plugin's
