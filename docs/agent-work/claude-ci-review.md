@@ -90,8 +90,10 @@ Each round follows these rules:
 
 ## What a Claude CI round reads
 
-A round reads three things:
+A round reads four things:
 
+- the pull request's title, description, comments and head commit, through
+  `gh pr view`;
 - the pull request's diff, through `gh pr diff`;
 - the default branch's checkout, which shows files as they were before the
   pull request;
