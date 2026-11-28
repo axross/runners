@@ -5,6 +5,7 @@
 
 use marshal_cli::agent::snapshot::Snapshot;
 use marshal_session::{Act, LoginItemRecord, LoginItemRecordFile, LoginStatus};
+use marshal_view::SettingRow;
 use serde_json::json;
 
 use crate::support::{
@@ -374,7 +375,7 @@ fn the_record_file_is_the_record_and_removing_it_twice_succeeds() {
     record.remove().unwrap();
 }
 
-fn login_line(session: &Running) -> Option<String> {
+fn start_at_login_row(session: &Running) -> SettingRow {
     let view = session.screen.view();
     let list = view.list().expect("a list");
     list.settings
@@ -382,18 +383,16 @@ fn login_line(session: &Running) -> Option<String> {
         .iter()
         .flat_map(|group| &group.rows)
         .find(|row| row.key == "start_at_login")
-        .and_then(|row| row.login_item.clone())
+        .cloned()
+        .expect("the start_at_login row")
+}
+
+fn login_line(session: &Running) -> Option<String> {
+    start_at_login_row(session).login_item
 }
 
 fn open_button(session: &Running) -> Option<String> {
-    let view = session.screen.view();
-    let list = view.list().expect("a list");
-    list.settings
-        .groups
-        .iter()
-        .flat_map(|group| &group.rows)
-        .find(|row| row.key == "start_at_login")
-        .and_then(|row| row.open_login_items.clone())
+    start_at_login_row(session).open_login_items
 }
 
 #[tokio::test(start_paused = true)]
