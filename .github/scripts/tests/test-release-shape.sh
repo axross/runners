@@ -317,6 +317,10 @@ expect_fail "a Mac app job that checks for another host target" "must fail unles
   "$release_build" '[[ "$host" != "aarch64-apple-darwin" ]]' '[[ "$host" != "x86_64-apple-darwin" ]]'
 expect_fail "a host target check with a condition" "must fail unless rustc's host target is aarch64-apple-darwin" \
   "$release_build" $'      - name: Check The Compiler\'s Host Target\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple' $'      - name: Check The Compiler\'s Host Target\n        if: github.event_name == \'workflow_dispatch\'\n        run: |\n          host="$(rustc -vV | tr -d \'\\r\' | sed -n \'s/^host: //p\')"\n          if [[ "$host" != "aarch64-apple'
+location_test='run: cargo test --locked --release --package marshal-session --lib location'
+expect_fail "a Mac app job that checks the compiler's host target after the location test" "must check rustc's host target before any step that runs cargo" \
+  "$release_build" "$host_block" '' \
+  "$release_build" "$location_test" "${location_test}"$'\n'"${host_block%$'\n'}"
 signing_anchor='          test -f "${app}/Contents/Resources/icon.icns"'
 for signing in '/usr/bin/codesign --force --sign - "$app"' '/usr/bin/codesign -s - "$app"' '/usr/bin/codesign -fs - "$app"' '/usr/bin/security import cert.p12 -k login.keychain' '/usr/bin/xcrun notarytool submit app.zip' '/usr/bin/xcrun stapler staple app.dmg'; do
   expect_fail "the Mac app job running ${signing}" "signs, imports a certificate, notarizes or staples" \
