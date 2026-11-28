@@ -30,7 +30,7 @@ recurrence after it.
 
 ## Before You Start
 
-All of these must hold. If one does not, do not start.
+Do not start unless all of the following hold:
 
 - **A recurrence report.** A Linux pool's runner on axmc keeps retrying its connection
   to GitHub, or jobs on it fail to resolve names.
@@ -44,10 +44,10 @@ All of these must hold. If one does not, do not start.
 
 ## What Is Forbidden
 
-Option B forbids these. Nothing on this page does any of them.
+Option B forbids the following, and nothing on this page does any of it:
 
-- Restarting anything: the instance (`restart`, `stop` or `start`), the VM, the
-  container or Docker.
+- Restarting anything: the instance (`restart`, `stop` or `start`), a pool through a
+  configuration change, the VM, the container or Docker.
 - Changing a route, a network setting or any host configuration, in the VM, in the
   container or on the Mac. That includes installing a tool, starting a helper
   container, changing a firewall rule, resetting a counter and editing a file.
@@ -81,12 +81,14 @@ happens:
   runner and deletes every VM; see
   [Sleep, Wake, and Network Changes](./mac-resume.md#sleep-wake-and-network-changes).
 - Stop or restart the instance, update or quit the Mac app, or kill or start the
-  command line. A stop ends every VM within 30 s, and a `restart` waits up to 35 s
-  for the instance to run its container steps, delete the VMs and read the
-  configuration again. A dying CLI has each VM's shim delete its VM within 15 s, and
-  the next `start` deletes leftovers. See
+  command line. Each of these ends every VM within seconds, or leaves it for the next
+  `start` to delete; see
   [Starting, watching and stopping](./mac-pools.md#starting-watching-and-stopping) and
   [The Clients](../marshal-cli/foreground-commands.md#the-clients).
+- Apply a configuration change, an edit or a reload, through the Mac app. One that
+  removes a pool, lowers its `runners` or restarts it stops those slots, and each
+  stopped slot deletes its VM; see
+  [Editing the Configuration](../marshal-cli/config-protocol.md#editing-the-configuration).
 - Let the runner container exit. The slot then deletes the VM when the job ends; see
   the slot's cycle in [The Golden VM Contract](./linux-vm.md#the-golden-vm-contract).
 
@@ -115,7 +117,7 @@ that is not a dotted IPv4 address. Type the value in single quotes. If it does n
 start with a letter or digit, or holds anything beyond letters, digits, `.`, `-`, `_`
 and `:`, do not run the step that uses it, and record why.
 
-**Stop conditions.** They apply to every step.
+**Stop conditions.** These apply to every step:
 
 - The job VM is gone before or during the observation: stop, and report on #124 what
   you collected and when the VM went.
@@ -128,11 +130,12 @@ and `:`, do not run the step that uses it, and record why.
 
 ### 1. Prepare the shell
 
-Run the whole procedure in one `bash` session. macOS's default shell is zsh, so start
-`bash` first, before you define anything below, because a new shell drops the helpers
-and the variables. Then create a notes file that only you can read, which is the
-evidence file that [Post the Evidence](#post-the-evidence) scans. Give it an absolute
-path, because `~` does not expand inside the single quotes:
+Run the procedure in one `bash` session, apart from the second session that step 9 asks
+for. macOS's default shell is zsh, so start `bash` first, before you define anything
+below, because a new shell drops the helpers and the variables. Then create a notes file
+that only you can read, which is the evidence file that [Post the
+Evidence](#post-the-evidence) scans. Give it an absolute path, because `~` does not
+expand inside the single quotes:
 
 ```bash
 umask 077
@@ -399,9 +402,9 @@ vm sudo -n timeout 15 tcpdump -p -nn -c 20 -i '<interface>' 'arp or port 53'
 ```
 
 Each capture ends after 15 s or 20 packets. While it runs, repeat the container's
-lookup from step 6 in a second `bash` session while the capture runs, so that packets
-appear. Define step 1's `obs`, `vm` and `ctr` there, set the same values, and run the
-lookup through `ctr`, so that it lands in the same notes file:
+lookup from step 6 in a second `bash` session, so that packets appear. Define step 1's
+`obs`, `vm` and `ctr` there, set the same values, and run the lookup through `ctr`, so
+that it lands in the same notes file:
 
 ```bash
 VM='<vm>'
@@ -419,8 +422,8 @@ as a private registry. All of it falls under the scrub in
 
 ## Reading the Result
 
-The hypothesis predicts this pattern. Each point is evidence for or against it in this
-case, and none is proof.
+The hypothesis predicts the following pattern. Each point is evidence for or against it
+in this case, and none is proof:
 
 - The VM's address, its gateway and the DNS address fall inside the bridge's subnet:
   the ranges overlap.
