@@ -15,9 +15,6 @@ runtime layer, the image check, the log and containment that this section shares
 with it. The tests run them through `commands-helper`, and the last command-line
 release's tag documents them as commands.
 
-The temporary recovery CLI uses its fixed historical program tree, not this
-current library. Use [CLI Recovery](../runner-recovery/index.md) for that release's procedures.
-
 `start` runs the host's pools in the foreground through the instance layer and the
 runtime layer, and `stop`, `restart`, `status`, and `diagnostics` talk to it from another terminal
 over the control channel. `build` builds the runner image, and the same clients

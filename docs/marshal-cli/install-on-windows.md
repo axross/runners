@@ -6,8 +6,6 @@ description: "How does an operator verify, install, repair or remove an app rele
 
 # Checking and installing the Windows app MSI
 
-The app MSI procedure applies after restoration of app publication. While the release workflow builds the historical CLI, use [CLI Recovery](../runner-recovery/index.md) for the actual release.
-
 ## Installing, Updating and Rolling Back
 
 Marshal is installed from a release, never built on the host. You open the
@@ -27,14 +25,13 @@ replaced one.
 [Security](../security/release-authority.md#a-release-is-published-only-from-a-dispatch-on-main)
 records that risk.
 
-The last command-line release is the F0 recovery release, expected to be `0.2.0`,
-and every release after #132's restoration carries the app. The maintainer decided
-to keep releases on `0.x`, as
+The last command-line release is the CLI recovery release, and every release after
+it carries the app. The maintainer decided to keep releases on `0.x`, as
 [Version Rules](../releases/versions.md#version-rules) describes, so no major
 version marks the change. The check block below names `0.3.0` as an example. To
 check another release, change the block's `version` and `file` assignment lines. If
-the recovery release or the first release of the app gets another version, a later
-change corrects this paragraph and those lines. A host that runs the command line
+the first release of the app gets another version, a later change corrects this
+paragraph and those lines. A host that runs the command line
 moves to the app according to [The Last Command-Line Release](./release-artifacts.md#the-last-command-line-release).
 
 CI runs these blocks against stand-ins and against the dry run's real MSI in the
