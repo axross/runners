@@ -16,6 +16,10 @@
 //!   room for the subscription.
 //! - `--ended <pool>`: the pool whose Open run found its job ended.
 //! - `--editor-profile <axpc|axmc>`: include the editor fields of that profile.
+//! - `--agent-offers-editor`: the agent serves the configuration methods, so the
+//!   footer, the Settings tab and the banners name Reload config.toml as the step
+//!   while the runners run, as the window does; without it they name Stop All and
+//!   Start All.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -104,6 +108,7 @@ fn main() -> Result<(), Failure> {
     let mut tokens = TokenUi::default();
     let mut settled = None;
     let mut keep_snapshot = false;
+    let mut agent_offers_editor = false;
     let mut results = BTreeMap::new();
     let mut github: Option<Option<GithubStatus>> = None;
     let mut feed_word: Option<String> = None;
@@ -112,6 +117,10 @@ fn main() -> Result<(), Failure> {
     while let Some(flag) = arguments.next() {
         if flag == "--keep-snapshot" {
             keep_snapshot = true;
+            continue;
+        }
+        if flag == "--agent-offers-editor" {
+            agent_offers_editor = true;
             continue;
         }
         let value = arguments.next().ok_or(format!("{flag} needs a value"))?;
@@ -154,6 +163,7 @@ fn main() -> Result<(), Failure> {
     let shown = (holds_list || keep_snapshot).then_some(&snapshot);
     let mut input = Input::new(connected, shown, Clock::new(NOW_MS, 0))
         .pending(pending_action)
+        .editor(agent_offers_editor)
         .tokens(&tokens)
         .ended_jobs(&ended);
     input = match (feed_word.as_deref(), &github) {

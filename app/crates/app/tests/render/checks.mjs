@@ -199,3 +199,52 @@ export async function accessibility(page, poolNames = ["app", "site", "docs"]) {
     await session.detach();
   }
 }
+
+/**
+ * checks Chromium's tree for each Settings checkbox the recorded view lists: its name
+ * is its visible label, it reports itself disabled, and its description holds the
+ * reason it cannot be changed.
+ */
+export async function settingsAccessibility(page, rows, reason) {
+  const session = await page.context().newCDPSession(page);
+  try {
+    const { root } = await session.send("DOM.getDocument");
+    const { nodeIds } = await session.send("DOM.querySelectorAll", {
+      nodeId: root.nodeId,
+      selector: "[data-key^='setting:']",
+    });
+    assert.equal(
+      nodeIds.length,
+      rows.length,
+      "the Settings tab does not show every setting of the recorded view",
+    );
+    const { nodes } = await session.send("Accessibility.getFullAXTree");
+    for (const [index, nodeId] of nodeIds.entries()) {
+      const { node } = await session.send("DOM.describeNode", { nodeId });
+      const row = rows[index];
+      const accessible = nodes.find(
+        (entry) =>
+          entry.backendDOMNodeId === node.backendNodeId && !entry.ignored,
+      );
+      assert.ok(
+        accessible,
+        `setting missing from accessibility tree: ${row.label}`,
+      );
+      assert.equal(accessible.role?.value, "checkbox", row.label);
+      assert.equal(accessible.name?.value, row.label, "setting name");
+      assert.equal(
+        accessible.properties?.find((entry) => entry.name === "disabled")?.value
+          .value,
+        true,
+        `setting not reported disabled: ${row.label}`,
+      );
+      assert.ok(
+        accessible.description?.value.includes(reason),
+        `setting description lost its reason: ${row.label}`,
+      );
+    }
+    return { settings: nodeIds.length };
+  } finally {
+    await session.detach();
+  }
+}

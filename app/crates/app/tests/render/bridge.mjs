@@ -6,7 +6,7 @@ export function bridge({ views, scenario }) {
   const callbacks = new Map();
   let revision = 0;
   let current = structuredClone(
-    views[scenario === "stopped" ? "stopped" : "running"],
+    views[{ stopped: "stopped", settings: "settings" }[scenario] ?? "running"],
   );
   const document = {
     revision: "file-fixture",
