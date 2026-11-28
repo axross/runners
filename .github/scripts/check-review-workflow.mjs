@@ -69,13 +69,13 @@ function sameSet(actual, expected) {
   );
 }
 
-export function reviewSteps(workflow) {
+function reviewSteps(workflow) {
   const steps = workflow.jobs?.review?.steps;
   if (!Array.isArray(steps)) throw new Error("the workflow has no review job");
   return steps;
 }
 
-export function copyStep(workflow) {
+function copyStep(workflow) {
   const step = reviewSteps(workflow).find(
     (candidate) => candidate.name === COPY_STEP_NAME,
   );
@@ -84,15 +84,7 @@ export function copyStep(workflow) {
   return step;
 }
 
-function copyStepEnvironment(workflow) {
-  try {
-    return copyStep(workflow).env ?? {};
-  } catch {
-    return {};
-  }
-}
-
-export function checkWorkflow(workflow) {
+function checkWorkflow(workflow) {
   const problems = [];
   const steps = reviewSteps(workflow);
   const action = steps.find((step) => step.name === "Claude Review");
@@ -136,18 +128,19 @@ export function checkWorkflow(workflow) {
   const denied = (argument(claudeArgs, "--disallowedTools") ?? "").split(",");
   const prompt = argument(claudeArgs, "--append-system-prompt") ?? "";
 
-  let destination = null;
+  let copyEnvironment = {};
   try {
-    destination = copyStep(workflow).env?.[COPY_ENV_NAME] ?? null;
+    copyEnvironment = copyStep(workflow).env ?? {};
   } catch (error) {
     problems.push(error.message);
   }
+  const destination = copyEnvironment[COPY_ENV_NAME] ?? null;
   if (typeof destination !== "string" || !destination.startsWith("/"))
     problems.push(
       `the copy step must declare an absolute ${COPY_ENV_NAME}, found ${JSON.stringify(destination)}`,
     );
 
-  const toolPath = copyStepEnvironment(workflow)[TOOL_PATH_ENV_NAME];
+  const toolPath = copyEnvironment[TOOL_PATH_ENV_NAME];
   if (toolPath !== EXPECTED_TOOL_PATH)
     problems.push(
       `the copy step must declare ${TOOL_PATH_ENV_NAME} as ${EXPECTED_TOOL_PATH}, found ${JSON.stringify(toolPath ?? null)}`,
@@ -187,29 +180,23 @@ const file = resolve(
     join(here, "..", "workflows", "claude-review.yaml"),
 );
 
-// run as a program only; the module is also read for its exports
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
-  const workflow = readWorkflow(file);
-  if (mode === "--print-copy-step") {
-    process.stdout.write(copyStep(workflow).run);
-  } else if (mode === "--print-copy-env") {
-    const name = process.argv[3];
-    const value = copyStep(workflow).env?.[name];
-    if (typeof value !== "string") {
-      console.error(`the copy step declares no ${name}`);
-      process.exit(1);
-    }
-    process.stdout.write(value);
-  } else if (mode) {
-    console.error(`unknown option ${mode}`);
-    process.exit(2);
-  } else {
-    const problems = checkWorkflow(workflow);
-    for (const problem of problems) console.error(`error: ${problem}`);
-    if (problems.length > 0) process.exit(1);
-    console.log(`${file} keeps the head-reading boundary.`);
+const workflow = readWorkflow(file);
+if (mode === "--print-copy-step") {
+  process.stdout.write(copyStep(workflow).run);
+} else if (mode === "--print-copy-env") {
+  const name = process.argv[3];
+  const value = copyStep(workflow).env?.[name];
+  if (typeof value !== "string") {
+    console.error(`the copy step declares no ${name}`);
+    process.exit(1);
   }
+  process.stdout.write(value);
+} else if (mode) {
+  console.error(`unknown option ${mode}`);
+  process.exit(2);
+} else {
+  const problems = checkWorkflow(workflow);
+  for (const problem of problems) console.error(`error: ${problem}`);
+  if (problems.length > 0) process.exit(1);
+  console.log(`${file} keeps the head-reading boundary.`);
 }
