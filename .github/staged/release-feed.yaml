@@ -126,6 +126,17 @@ jobs:
             cp "unsigned/${file}" "signing/${file}"
             echo "${file} has the hash it was handed."
           done < checked-files
+      # unshare --map-root-user needs the user namespace limit AppArmor sets on
+      # Ubuntu 24.04 and later lifted. a runner without the limit never calls sudo.
+      - name: Lift The User Namespace Limit
+        run: |
+          # sign-update: userns
+          set -euo pipefail
+          : "${SYSTEM_BIN:=/usr/bin}"
+          knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [[ -f "$knob" && "$(<"$knob")" != 0 ]]; then
+            "$SYSTEM_BIN/sudo" sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       # the signer runs without a network, under unshare. the secrets are checked
       # here, where they are set.
       - name: Sign The Installer

@@ -370,10 +370,14 @@ Apply the lens for each kind of file in the diff.
   publish. Also findings: an `environment:` on any
   job but `sign-update`; a secret read outside `sign-update`'s sign step; a checkout,
   another action, a package manager or a download in `sign-update`; the signer run
-  other than by its hash-checked path under `unshare --net`; the two update-feed
-  secrets on a command line or in output; a `latest.json` published without passing
-  the feed check against the committed release-verification public key, or left outside
-  `SHA256SUMS` and the attestation; a change to
+  other than by its hash-checked path under `unshare --net`; a privileged
+  command in `sign-update` other than the guarded `sysctl` of its `userns` step,
+  which comes before the sign step, as
+  [Security](./docs/security/workflow-permissions.md#feed-signing-lifts-ubuntus-user-namespace-restriction)
+  records; the two update-feed secrets on a command line or in output; a
+  `latest.json` published without passing the feed check against the committed
+  release-verification public key, or left outside `SHA256SUMS` and the
+  attestation; a change to
   `app/crates/feed/release-public-key.txt` without the rotation record and procedure
   that The Update-Feed Key in [Updates](./docs/marshal/updates.md#the-update-feed-key)
   describes; an accepted advisory added to `app/tauri-cli.deny.toml` without the

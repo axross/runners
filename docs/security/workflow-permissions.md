@@ -82,7 +82,8 @@ The controls that remain are these, and none of them pins the command:
 
 - the subprocess environment scrub and the isolation step in the workflow, which
   installs bubblewrap and socat and lifts Ubuntu's AppArmor restriction on
-  unprivileged user namespaces for the job's ephemeral VM;
+  unprivileged user namespaces for the job's ephemeral VM, [as feed
+  signing does](#feed-signing-lifts-ubuntus-user-namespace-restriction);
 - the [least-privilege job permissions](#workflow-permissions-start-from-read-only);
 - the [author-association gate](#the-review-gate-admits-one-bot-identity-by-login-not-association), which limits who can start a run;
 - the default branch's ruleset, outside this repository's files, which blocks
@@ -93,6 +94,23 @@ The controls that remain are these, and none of them pins the command:
 
 Revisit the exception if the maintainer wants the command pinned; either route
 above does it without a new action or Claude Code feature.
+
+## Feed Signing Lifts Ubuntu's User Namespace Restriction
+
+Ubuntu 24.04 and later restrict unprivileged user namespaces through AppArmor
+(`kernel.apparmor_restrict_unprivileged_userns`), so `unshare --map-root-user`
+fails on `ubuntu-latest` with `write failed /proc/self/uid_map`. The signer runs
+under `unshare --map-root-user --net` to keep it off the network, and the
+maintainer chose to keep that isolation and lift the restriction, as the review
+workflow's isolation step already does. `sign-update`, staged in
+[`.github/staged/release-feed.yaml`](../../.github/staged/release-feed.yaml), has a
+marked step, `# sign-update: userns`, directly before its signing step. It runs
+`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` only where that
+file exists and holds something other than 0, so a runner without the restriction
+never calls `sudo`. The merge checks' round trip extracts and runs the same step,
+so `update-feed` carries no copy. The VM is ephemeral and GitHub-hosted, and the
+step runs before the signing step, which alone receives the secrets.
+[REVIEW.md](../../REVIEW.md) holds the rule that bounds it.
 
 ## Self-Hosted Runners Stay Out of This Repository's Own Jobs
 

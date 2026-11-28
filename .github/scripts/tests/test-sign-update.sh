@@ -8,6 +8,8 @@
 # empty key or password. a two-file list signs both files, and corruption of
 # either refuses the whole list before any signer runs. merge-checks.yaml's
 # update-feed job runs the same scripts with the real signer and a throwaway key.
+# the step that lifts AppArmor's user namespace limit runs ahead of the signer, and
+# its sudo is a stand-in.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,8 +36,9 @@ chmod +x "${work}/cargo-tauri"
 line="$(sha256sum "${work}/cargo-tauri")"
 tool_sha256="${line%% *}"
 
-# SYSTEM_BIN for the scripts: the real awk and sha256sum, and an unshare that
-# records its options and runs the rest. the record path reaches it through a
+# SYSTEM_BIN for the scripts: the real awk and sha256sum, an unshare that
+# records its options and runs the rest, and a sudo that records its arguments
+# and runs nothing. the record path reaches it through a
 # file, since each step runs with only its own environment.
 bin="${work}/bin"
 mkdir "$bin"
@@ -54,6 +57,12 @@ printf '%s\n' "\${options[*]}" >>"\${record}.unshare"
 STANDIN_RECORD="\$record" exec "\$@"
 UNSHARE
 chmod +x "${bin}/unshare"
+cat >"${bin}/sudo" <<SUDO
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "\$*" >>"\$(<"${work}/record-path").sudo"
+SUDO
+chmod +x "${bin}/sudo"
 
 failures=0
 fail() {
@@ -116,6 +125,20 @@ else
   else
     echo "ok   a signature for the build's MSI, by the signer under unshare, with the secrets in its environment only"
   fi
+fi
+
+# the user namespace step calls sudo exactly when this host has the limit set.
+knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+sysctl_call="sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
+if [[ -f "$knob" && "$(<"$knob")" != 0 ]]; then
+  want="$sysctl_call"
+else
+  want=""
+fi
+if [[ "$(cat "${work}/pass/record.sudo" 2>/dev/null)" != "$want" ]]; then
+  fail "the user namespace step called sudo as '$(cat "${work}/pass/record.sudo" 2>&1)', not '${want}'"
+else
+  echo "ok   the user namespace step calls sudo only where the limit is set"
 fi
 
 extra=stand-in-update.archive

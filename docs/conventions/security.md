@@ -40,6 +40,10 @@ Use the [security boundaries index](../security/index.md) to choose a control by
 
 [Permissions for workflows and automated review](../security/workflow-permissions.md#the-review-plugin-marketplace-is-not-pinned-accepted-risk).
 
+## Feed Signing Lifts Ubuntu's User Namespace Restriction
+
+[Permissions for workflows and automated review](../security/workflow-permissions.md#feed-signing-lifts-ubuntus-user-namespace-restriction).
+
 ## Self-Hosted Runners Stay Out of This Repository's Own Jobs
 
 [Permissions for workflows and automated review](../security/workflow-permissions.md#self-hosted-runners-stay-out-of-this-repositorys-own-jobs).

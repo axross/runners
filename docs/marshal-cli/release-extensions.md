@@ -238,6 +238,8 @@ successful run's wall-clock time, rounded up to a whole five minutes.
 `sign-update` MUST run on `ubuntu-latest`, with `environment: release`,
 `contents: read`, no checkout and only the download and upload artifact actions.
 Every `run:` starts with `# sign-update: <name>`, with no `${{ }}` inside it.
+Before the signing step, a guarded `userns` step
+[lifts Ubuntu's user namespace restriction](../security/workflow-permissions.md#feed-signing-lifts-ubuntus-user-namespace-restriction).
 Before signing, the job MUST refuse unless all three conditions hold:
 
 - the MSI matches its `SHA256SUMS` line in `marshal-release`;
