@@ -25,6 +25,7 @@ if ($null -eq $definition) { throw "Confirm-CpuSmokeRemoval is not defined in $s
 
 $standIn = @'
 #!/usr/bin/env bash
+set -euo pipefail
 printf '%s\n' "$*" >> "$STAND_IN_DIR/calls"
 calls=$(( $(wc -l < "$STAND_IN_DIR/calls") ))
 total=$(( $(wc -l < "$STAND_IN_DIR/script") ))
