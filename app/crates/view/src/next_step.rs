@@ -37,6 +37,7 @@ pub(crate) fn json_refused(context: &Context<'_>) -> bool {
 }
 
 impl NextStep {
+    /// the one step the window names for the state `context` describes.
     pub(crate) fn of(context: &Context<'_>) -> Self {
         if migration_is(context, "pending") || json_refused(context) {
             Self::QuitAndLaunch

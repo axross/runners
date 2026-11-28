@@ -1,7 +1,7 @@
 // the Settings tab and the configuration editor as the main window keeps them apart, run with
 // `mise run test:app-frontend`: each test loads its own copy of the page over a stand-in for
 // the document and for the app's `invoke` and `listen`, so no browser and no app run here.
-// The stand-in agent counts the revision of config.toml, which a saved setting moves.
+// the stand-in agent counts the revision of config.toml, which a saved setting moves.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -212,7 +212,7 @@ async function mount({ editor = true } = {}) {
     },
     /**
      * what a click on the setting's checkbox does in a browser: the click's default action
-     * toggles it and fires `change` unless the page prevented it. Returns whether it toggled.
+     * toggles it and fires `change` unless the page prevented it. returns whether it toggled.
      */
     clickSetting() {
       const box = page.byKey("setting:keep_awake");
