@@ -103,9 +103,10 @@ saved."), and after a setting change the editor reads the file again before it o
 its next form, so a draft made then is not refused as changed elsewhere.
 
 **Remaining limit.** A hand edit, or a setting change the agent saves after the 10 s
-the window waits for it, while a draft is open still moves the revision, so the
-agent refuses that draft as `config_changed`; Read Again, which still asks before it
-drops the draft, reads the file anew.
+the window waits for it, while a draft is open still refuses that draft as
+`config_changed`; the remaining limit in
+[The Configuration Editor](./configuration.md#the-configuration-editor) gives the
+reason and what Read Again does.
 
 `app/crates/view/tests/view/settings.rs` covers the states, defaults, notes, the chip
 and each unavailable case from recorded snapshots, and
